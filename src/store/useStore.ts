@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Absence, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
 import { absences as seedAbsences, members as seedMembers, planningSlots as seedPlanningSlots, tasks as seedTasks, timeEntries as seedTimeEntries } from '../data/seed';
+import { addDays, isWeekend, toISODate } from '../lib/date';
 
 interface StoreState {
   members: TeamMember[];
@@ -24,6 +25,7 @@ interface StoreState {
   removeTimeEntry: (id: string) => void;
 
   addAbsence: (absence: Omit<Absence, 'id'>) => void;
+  addAbsenceRange: (absence: Omit<Absence, 'id' | 'date'> & { startDate: string; endDate: string }) => void;
   removeAbsence: (id: string) => void;
 
   resetToSeed: () => void;
@@ -84,6 +86,17 @@ export const useStore = create<StoreState>()(
       removeTimeEntry: (id) => set((s) => ({ timeEntries: s.timeEntries.filter((e) => e.id !== id) })),
 
       addAbsence: (absence) => set((s) => ({ absences: [...s.absences, { ...absence, id: nextId('a') }] })),
+      addAbsenceRange: ({ startDate, endDate, ...rest }) =>
+        set((s) => {
+          const start = new Date(startDate);
+          const end = new Date(endDate);
+          const created: Absence[] = [];
+          for (let d = start; d <= end; d = addDays(d, 1)) {
+            if (isWeekend(d)) continue;
+            created.push({ ...rest, date: toISODate(d), id: nextId('a') });
+          }
+          return { absences: [...s.absences, ...created] };
+        }),
       removeAbsence: (id) => set((s) => ({ absences: s.absences.filter((a) => a.id !== id) })),
 
       resetToSeed: () =>

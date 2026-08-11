@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { toISODate } from '../lib/date';
 import { Avatar, Card } from './ui';
-import type { AbsenceType } from '../types';
+import type { AbsenceType, TeamMember } from '../types';
 
 const COLORS = ['#7c3aed', '#0ea5e9', '#db2777', '#16a34a', '#ea580c', '#64748b', '#0891b2', '#ca8a04'];
 
@@ -15,8 +15,9 @@ const absenceLabels: Record<AbsenceType, string> = {
 };
 
 export function TeamView() {
-  const { members, absences, addMember, updateMember, removeMember, addAbsence, removeAbsence } = useStore();
+  const { members, absences, addMember, updateMember, removeMember, addAbsenceRange, removeAbsence } = useStore();
   const [showMemberForm, setShowMemberForm] = useState(false);
+  const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
   const [showAbsenceForm, setShowAbsenceForm] = useState(false);
 
   const upcoming = [...absences].sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -39,20 +40,17 @@ export function TeamView() {
             <div className="mb-2 flex items-center gap-3">
               <Avatar name={m.name} color={m.color} initials={m.initials} />
               <div className="min-w-0 flex-1">
-                <input
-                  value={m.name}
-                  onChange={(e) => updateMember(m.id, { name: e.target.value, initials: initialsFrom(e.target.value) })}
-                  className="w-full truncate border-none bg-transparent p-0 text-sm font-semibold text-slate-900 outline-none dark:text-white"
-                />
-                <input
-                  value={m.role}
-                  onChange={(e) => updateMember(m.id, { role: e.target.value })}
-                  className="w-full truncate border-none bg-transparent p-0 text-xs text-slate-500 outline-none dark:text-slate-400"
-                />
+                <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">{m.name}</div>
+                <div className="truncate text-xs text-slate-500 dark:text-slate-400">{m.role}</div>
               </div>
-              <button onClick={() => removeMember(m.id)} className="text-xs text-slate-300 hover:text-red-500">
-                Suppr.
-              </button>
+              <div className="flex shrink-0 items-center gap-1">
+                <button onClick={() => setEditingMember(m)} className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+                  Modifier
+                </button>
+                <button onClick={() => removeMember(m.id)} className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10">
+                  Suppr.
+                </button>
+              </div>
             </div>
             <div className="mb-2 flex flex-wrap gap-1">
               {m.skills.map((s) => (
@@ -61,16 +59,7 @@ export function TeamView() {
                 </span>
               ))}
             </div>
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span>Volume hebdo :</span>
-              <input
-                type="number"
-                value={m.weeklyHours}
-                onChange={(e) => updateMember(m.id, { weeklyHours: parseFloat(e.target.value) || 0 })}
-                className="w-14 rounded border border-slate-200 px-1 py-0.5 dark:border-slate-700 dark:bg-slate-900"
-              />
-              <span>h</span>
-            </div>
+            <div className="text-xs text-slate-400">Volume hebdo : {m.weeklyHours}h</div>
           </Card>
         ))}
       </div>
@@ -107,21 +96,32 @@ export function TeamView() {
       </div>
 
       {showMemberForm && (
-        <NewMemberForm
+        <MemberForm
           onCancel={() => setShowMemberForm(false)}
-          onCreate={(payload) => {
+          onSave={(payload) => {
             addMember(payload);
             setShowMemberForm(false);
           }}
         />
       )}
 
+      {editingMember && (
+        <MemberForm
+          initial={editingMember}
+          onCancel={() => setEditingMember(null)}
+          onSave={(payload) => {
+            updateMember(editingMember.id, payload);
+            setEditingMember(null);
+          }}
+        />
+      )}
+
       {showAbsenceForm && (
-        <NewAbsenceForm
+        <AbsenceForm
           members={members}
           onCancel={() => setShowAbsenceForm(false)}
           onCreate={(payload) => {
-            addAbsence(payload);
+            addAbsenceRange(payload);
             setShowAbsenceForm(false);
           }}
         />
@@ -139,19 +139,41 @@ function initialsFrom(name: string) {
     .toUpperCase();
 }
 
-function NewMemberForm({ onCancel, onCreate }: { onCancel: () => void; onCreate: (p: { name: string; role: string; skills: string[]; weeklyHours: number; color: string; initials: string }) => void }) {
-  const [name, setName] = useState('');
-  const [role, setRole] = useState('');
-  const [skills, setSkills] = useState('');
+interface MemberFormPayload {
+  name: string;
+  role: string;
+  skills: string[];
+  weeklyHours: number;
+  color: string;
+  initials: string;
+}
+
+function MemberForm({
+  initial,
+  onCancel,
+  onSave,
+}: {
+  initial?: TeamMember;
+  onCancel: () => void;
+  onSave: (p: MemberFormPayload) => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? '');
+  const [role, setRole] = useState(initial?.role ?? '');
+  const [skills, setSkills] = useState(initial?.skills.join(', ') ?? '');
+  const [weeklyHours, setWeeklyHours] = useState(String(initial?.weeklyHours ?? 35));
 
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
       <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Ajouter un membre</h3>
+        <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">{initial ? 'Modifier le membre' : 'Ajouter un membre'}</h3>
         <div className="space-y-2.5">
           <input placeholder="Nom complet" value={name} onChange={(e) => setName(e.target.value)} className="input" />
           <input placeholder="Rôle (ex : Administrateur systèmes)" value={role} onChange={(e) => setRole(e.target.value)} className="input" />
           <input placeholder="Compétences (séparées par des virgules)" value={skills} onChange={(e) => setSkills(e.target.value)} className="input" />
+          <label className="block">
+            <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Volume hebdomadaire (h)</span>
+            <input type="number" value={weeklyHours} onChange={(e) => setWeeklyHours(e.target.value)} className="input" />
+          </label>
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onCancel} className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800">
@@ -160,18 +182,18 @@ function NewMemberForm({ onCancel, onCreate }: { onCancel: () => void; onCreate:
           <button
             disabled={!name.trim()}
             onClick={() =>
-              onCreate({
+              onSave({
                 name: name.trim(),
                 role: role.trim() || 'Membre équipe',
                 skills: skills.split(',').map((s) => s.trim()).filter(Boolean),
-                weeklyHours: 35,
-                color: COLORS[Math.floor(Math.random() * COLORS.length)],
+                weeklyHours: parseFloat(weeklyHours) || 0,
+                color: initial?.color ?? COLORS[Math.floor(Math.random() * COLORS.length)],
                 initials: initialsFrom(name.trim()),
               })
             }
             className="rounded-md bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
           >
-            Ajouter
+            {initial ? 'Enregistrer' : 'Ajouter'}
           </button>
         </div>
       </div>
@@ -179,20 +201,24 @@ function NewMemberForm({ onCancel, onCreate }: { onCancel: () => void; onCreate:
   );
 }
 
-function NewAbsenceForm({
+function AbsenceForm({
   members,
   onCancel,
   onCreate,
 }: {
   members: { id: string; name: string }[];
   onCancel: () => void;
-  onCreate: (p: { memberId: string; date: string; period: 'jour' | 'matin' | 'apres_midi'; type: AbsenceType; label?: string }) => void;
+  onCreate: (p: { memberId: string; startDate: string; endDate: string; period: 'jour' | 'matin' | 'apres_midi'; type: AbsenceType; label?: string }) => void;
 }) {
   const [memberId, setMemberId] = useState(members[0]?.id ?? '');
-  const [date, setDate] = useState(toISODate(new Date()));
+  const today = toISODate(new Date());
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
   const [period, setPeriod] = useState<'jour' | 'matin' | 'apres_midi'>('jour');
   const [type, setType] = useState<AbsenceType>('conge');
   const [label, setLabel] = useState('');
+
+  const rangeInvalid = endDate < startDate;
 
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
@@ -206,11 +232,28 @@ function NewAbsenceForm({
               </option>
             ))}
           </select>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input" />
+          <div className="grid grid-cols-2 gap-2.5">
+            <label className="block">
+              <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Du</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  if (e.target.value > endDate) setEndDate(e.target.value);
+                }}
+                className="input"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Au</span>
+              <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="input" />
+            </label>
+          </div>
           <select value={period} onChange={(e) => setPeriod(e.target.value as typeof period)} className="input">
-            <option value="jour">Journée complète</option>
-            <option value="matin">Matin</option>
-            <option value="apres_midi">Après-midi</option>
+            <option value="jour">Journée(s) complète(s)</option>
+            <option value="matin">Matin uniquement</option>
+            <option value="apres_midi">Après-midi uniquement</option>
           </select>
           <select value={type} onChange={(e) => setType(e.target.value as AbsenceType)} className="input">
             {Object.entries(absenceLabels).map(([k, v]) => (
@@ -220,14 +263,15 @@ function NewAbsenceForm({
             ))}
           </select>
           <input placeholder="Précision (optionnel)" value={label} onChange={(e) => setLabel(e.target.value)} className="input" />
+          <p className="text-xs text-slate-400">Les week-ends de la période sont automatiquement exclus.</p>
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onCancel} className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800">
             Annuler
           </button>
           <button
-            disabled={!memberId}
-            onClick={() => onCreate({ memberId, date, period, type, label: label || undefined })}
+            disabled={!memberId || rangeInvalid}
+            onClick={() => onCreate({ memberId, startDate, endDate, period, type, label: label || undefined })}
             className="rounded-md bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
           >
             Enregistrer
