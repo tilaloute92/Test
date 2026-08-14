@@ -1,4 +1,4 @@
-import type { Absence, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
+import type { Absence, ApiConnection, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
 import { addDays, startOfWeek, toISODate } from '../lib/date';
 
 // Deterministic PRNG so the seeded planning looks the same on every load.
@@ -145,4 +145,15 @@ export const timeEntries: TimeEntry[] = [
   { id: 'te5', taskId: 'p4', memberId: 'm2', date: toISODate(addDays(today, -1)), period: 'apres_midi', hours: 3.5 },
   { id: 'te6', taskId: 'p11', memberId: 'm5', date: toISODate(addDays(today, -1)), period: 'apres_midi', hours: 3 },
   { id: 'te7', taskId: 't6', memberId: 'm5', date: toISODate(addDays(today, -1)), period: 'matin', hours: 2.5 },
+];
+
+export const apiConnections: ApiConnection[] = [
+  {
+    id: 'c1',
+    name: 'Exemple public (JSONPlaceholder)',
+    baseUrl: 'https://jsonplaceholder.typicode.com',
+    authType: 'none',
+    rememberSecret: false,
+    headers: [{ key: 'Accept', value: 'application/json' }],
+  },
 ];

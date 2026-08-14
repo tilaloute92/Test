@@ -1,8 +1,17 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Absence, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
-import { absences as seedAbsences, members as seedMembers, planningSlots as seedPlanningSlots, tasks as seedTasks, timeEntries as seedTimeEntries } from '../data/seed';
+import type { Absence, ApiConnection, ApiRequestLog, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
+import {
+  absences as seedAbsences,
+  apiConnections as seedApiConnections,
+  members as seedMembers,
+  planningSlots as seedPlanningSlots,
+  tasks as seedTasks,
+  timeEntries as seedTimeEntries,
+} from '../data/seed';
 import { addDays, isWeekend, toISODate } from '../lib/date';
+
+const MAX_REQUEST_HISTORY = 30;
 
 interface StoreState {
   members: TeamMember[];
@@ -10,6 +19,8 @@ interface StoreState {
   planningSlots: PlanningSlot[];
   timeEntries: TimeEntry[];
   absences: Absence[];
+  apiConnections: ApiConnection[];
+  requestHistory: ApiRequestLog[];
 
   addMember: (member: Omit<TeamMember, 'id'>) => void;
   updateMember: (id: string, patch: Partial<TeamMember>) => void;
@@ -28,11 +39,23 @@ interface StoreState {
   addAbsenceRange: (absence: Omit<Absence, 'id' | 'date'> & { startDate: string; endDate: string }) => void;
   removeAbsence: (id: string) => void;
 
+  addApiConnection: (connection: Omit<ApiConnection, 'id'>) => void;
+  updateApiConnection: (id: string, patch: Partial<ApiConnection>) => void;
+  removeApiConnection: (id: string) => void;
+
+  addRequestLog: (log: Omit<ApiRequestLog, 'id'>) => void;
+  clearRequestHistory: () => void;
+
   resetToSeed: () => void;
 }
 
 let idCounter = 1000;
 const nextId = (prefix: string) => `${prefix}${idCounter++}`;
+
+function sanitizeConnection<T extends Partial<ApiConnection>>(connection: T): T {
+  if (connection.rememberSecret) return connection;
+  return { ...connection, secret: undefined };
+}
 
 export const useStore = create<StoreState>()(
   persist(
@@ -42,6 +65,8 @@ export const useStore = create<StoreState>()(
       planningSlots: seedPlanningSlots,
       timeEntries: seedTimeEntries,
       absences: seedAbsences,
+      apiConnections: seedApiConnections,
+      requestHistory: [],
 
       addMember: (member) =>
         set((s) => ({ members: [...s.members, { ...member, id: nextId('m') }] })),
@@ -99,6 +124,22 @@ export const useStore = create<StoreState>()(
         }),
       removeAbsence: (id) => set((s) => ({ absences: s.absences.filter((a) => a.id !== id) })),
 
+      addApiConnection: (connection) =>
+        set((s) => ({
+          apiConnections: [...s.apiConnections, { ...sanitizeConnection(connection), id: nextId('c') }],
+        })),
+      updateApiConnection: (id, patch) =>
+        set((s) => ({
+          apiConnections: s.apiConnections.map((c) => (c.id === id ? sanitizeConnection({ ...c, ...patch }) : c)),
+        })),
+      removeApiConnection: (id) => set((s) => ({ apiConnections: s.apiConnections.filter((c) => c.id !== id) })),
+
+      addRequestLog: (log) =>
+        set((s) => ({
+          requestHistory: [{ ...log, id: nextId('req') }, ...s.requestHistory].slice(0, MAX_REQUEST_HISTORY),
+        })),
+      clearRequestHistory: () => set({ requestHistory: [] }),
+
       resetToSeed: () =>
         set({
           members: seedMembers,
@@ -106,6 +147,8 @@ export const useStore = create<StoreState>()(
           planningSlots: seedPlanningSlots,
           timeEntries: seedTimeEntries,
           absences: seedAbsences,
+          apiConnections: seedApiConnections,
+          requestHistory: [],
         }),
     }),
     { name: 'infra-team-tracker' }

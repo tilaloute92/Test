@@ -5,8 +5,9 @@ import { PlanningView } from './components/PlanningView';
 import { TasksView } from './components/TasksView';
 import { TimeTrackingView } from './components/TimeTrackingView';
 import { TeamView } from './components/TeamView';
+import { ApiConsoleView } from './components/ApiConsoleView';
 
-type Tab = 'dashboard' | 'daily' | 'planning' | 'tasks' | 'time' | 'team';
+type Tab = 'dashboard' | 'daily' | 'planning' | 'tasks' | 'time' | 'team' | 'api';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'dashboard', label: "Vue d'ensemble" },
@@ -15,6 +16,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'tasks', label: 'Tâches & incidents' },
   { id: 'time', label: 'Temps' },
   { id: 'team', label: 'Équipe' },
+  { id: 'api', label: 'API' },
 ];
 
 function useTheme() {
@@ -41,7 +43,7 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
+        <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-sm font-bold text-white">IT</div>
             <div>
@@ -87,13 +89,14 @@ function App() {
         </nav>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className="mx-auto max-w-7xl px-4 py-6">
         {tab === 'dashboard' && <Dashboard onSelectMember={goToMember} />}
         {tab === 'daily' && <DailyView />}
         {tab === 'planning' && <PlanningView />}
         {tab === 'tasks' && <TasksView />}
         {tab === 'time' && <TimeTrackingView />}
         {tab === 'team' && <TeamView />}
+        {tab === 'api' && <ApiConsoleView />}
       </main>
     </div>
   );

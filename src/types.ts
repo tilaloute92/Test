@@ -58,3 +58,38 @@ export interface Absence {
   type: AbsenceType;
   label?: string;
 }
+
+export type ApiAuthType = 'none' | 'bearer' | 'apiKey' | 'basic';
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+export interface KeyValue {
+  key: string;
+  value: string;
+}
+
+export interface ApiConnection {
+  id: string;
+  name: string;
+  baseUrl: string;
+  authType: ApiAuthType;
+  apiKeyHeader?: string;
+  username?: string;
+  rememberSecret: boolean;
+  secret?: string;
+  headers: KeyValue[];
+}
+
+export interface ApiRequestLog {
+  id: string;
+  timestamp: string;
+  connectionId: string | null;
+  method: HttpMethod;
+  url: string;
+  requestHeaders: KeyValue[];
+  requestBody?: string;
+  status: number | null;
+  statusText: string;
+  durationMs: number;
+  responseBody: string;
+  error?: string;
+}
