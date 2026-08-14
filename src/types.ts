@@ -93,3 +93,19 @@ export interface ApiRequestLog {
   responseBody: string;
   error?: string;
 }
+
+/**
+ * Entra ID (Azure AD) single sign-on settings for the "public client" OAuth2/OIDC
+ * flow (Authorization Code + PKCE) used by @azure/msal-browser.
+ *
+ * Only public, non-secret identifiers are stored here — tenantId and clientId are
+ * meant to be visible in a browser (they identify the app registration, they don't
+ * grant access on their own). A SPA public client never holds a client secret.
+ */
+export interface AuthSettings {
+  enabled: boolean;
+  requireLogin: boolean;
+  tenantId: string;
+  clientId: string;
+  redirectUri: string;
+}

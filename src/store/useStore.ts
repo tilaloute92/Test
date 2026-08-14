@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Absence, ApiConnection, ApiRequestLog, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
+import type { Absence, ApiConnection, ApiRequestLog, AuthSettings, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
 import {
   absences as seedAbsences,
   apiConnections as seedApiConnections,
@@ -13,6 +13,14 @@ import { addDays, isWeekend, toISODate } from '../lib/date';
 
 const MAX_REQUEST_HISTORY = 30;
 
+const defaultAuthSettings: AuthSettings = {
+  enabled: false,
+  requireLogin: false,
+  tenantId: '',
+  clientId: '',
+  redirectUri: typeof window !== 'undefined' ? window.location.origin : '',
+};
+
 interface StoreState {
   members: TeamMember[];
   tasks: ProjectTask[];
@@ -21,6 +29,7 @@ interface StoreState {
   absences: Absence[];
   apiConnections: ApiConnection[];
   requestHistory: ApiRequestLog[];
+  authSettings: AuthSettings;
 
   addMember: (member: Omit<TeamMember, 'id'>) => void;
   updateMember: (id: string, patch: Partial<TeamMember>) => void;
@@ -46,6 +55,8 @@ interface StoreState {
   addRequestLog: (log: Omit<ApiRequestLog, 'id'>) => void;
   clearRequestHistory: () => void;
 
+  updateAuthSettings: (patch: Partial<AuthSettings>) => void;
+
   resetToSeed: () => void;
 }
 
@@ -67,6 +78,7 @@ export const useStore = create<StoreState>()(
       absences: seedAbsences,
       apiConnections: seedApiConnections,
       requestHistory: [],
+      authSettings: defaultAuthSettings,
 
       addMember: (member) =>
         set((s) => ({ members: [...s.members, { ...member, id: nextId('m') }] })),
@@ -140,6 +152,8 @@ export const useStore = create<StoreState>()(
         })),
       clearRequestHistory: () => set({ requestHistory: [] }),
 
+      updateAuthSettings: (patch) => set((s) => ({ authSettings: { ...s.authSettings, ...patch } })),
+
       resetToSeed: () =>
         set({
           members: seedMembers,
@@ -149,6 +163,7 @@ export const useStore = create<StoreState>()(
           absences: seedAbsences,
           apiConnections: seedApiConnections,
           requestHistory: [],
+          authSettings: defaultAuthSettings,
         }),
     }),
     { name: 'infra-team-tracker' }
