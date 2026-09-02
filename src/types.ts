@@ -29,6 +29,7 @@ export interface ProjectTask {
   estimatedHours: number;
   dueDate?: string;
   createdAt: string;
+  completedAt?: string;
   description?: string;
 }
 

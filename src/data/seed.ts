@@ -42,7 +42,7 @@ export const tasks: ProjectTask[] = [
   { id: 'i2', title: 'INC-1043 Lenteur VPN agence Lyon', type: 'Incident', assigneeId: 'm6', status: 'en_attente', priority: 'haute', estimatedHours: 3, dueDate: iso, createdAt: iso },
   { id: 'i3', title: 'INC-1044 Serveur de fichiers plein (Prod)', type: 'Incident', assigneeId: 'm1', status: 'a_faire', priority: 'haute', estimatedHours: 2, createdAt: iso },
   { id: 'i4', title: 'INC-1045 Poste utilisateur ne démarre plus - Direction', type: 'Incident', assigneeId: 'm4', status: 'a_faire', priority: 'normale', estimatedHours: 1.5, createdAt: iso },
-  { id: 'i5', title: 'INC-1046 Compte AD verrouillé en boucle', type: 'Incident', assigneeId: 'm3', status: 'termine', priority: 'normale', estimatedHours: 1, createdAt: iso },
+  { id: 'i5', title: 'INC-1046 Compte AD verrouillé en boucle', type: 'Incident', assigneeId: 'm3', status: 'termine', priority: 'normale', estimatedHours: 1, createdAt: iso, completedAt: today.toISOString() },
 
   // --- Projets ---
   { id: 'p1', title: 'Cadrage & inventaire salle serveur', type: 'Projet', project: 'Migration Datacenter Nord', assigneeId: 'm1', status: 'en_cours', priority: 'haute', estimatedHours: 14, dueDate: toISODate(addDays(today, 18)), createdAt: iso },
@@ -53,7 +53,7 @@ export const tasks: ProjectTask[] = [
   { id: 'p5', title: 'Déploiement boîtiers SD-WAN agence Nantes', type: 'Projet', project: 'Déploiement SD-WAN agences', assigneeId: 'm6', status: 'a_faire', priority: 'normale', estimatedHours: 17.5, dueDate: toISODate(addDays(today, 18)), createdAt: iso },
   { id: 'p6', title: 'Rédaction procédures & schémas réseau', type: 'Projet', project: 'Déploiement SD-WAN agences', assigneeId: 'm2', status: 'a_faire', priority: 'basse', estimatedHours: 7, createdAt: iso },
 
-  { id: 'p7', title: 'Étude & choix modèle firewall', type: 'Projet', project: 'Renouvellement parc firewalls', assigneeId: 'm2', status: 'termine', priority: 'normale', estimatedHours: 7, createdAt: iso },
+  { id: 'p7', title: 'Étude & choix modèle firewall', type: 'Projet', project: 'Renouvellement parc firewalls', assigneeId: 'm2', status: 'termine', priority: 'normale', estimatedHours: 7, createdAt: iso, completedAt: addDays(today, -2).toISOString() },
   { id: 'p8', title: 'Remplacement firewall siège', type: 'Projet', project: 'Renouvellement parc firewalls', assigneeId: 'm6', status: 'a_faire', priority: 'haute', estimatedHours: 14, dueDate: toISODate(addDays(today, 9)), createdAt: iso },
 
   { id: 'p9', title: 'Audit couverture Wifi sites pilotes', type: 'Projet', project: 'Passage Wifi 6 sièges', assigneeId: 'm4', status: 'en_cours', priority: 'normale', estimatedHours: 10.5, dueDate: toISODate(addDays(today, 15)), createdAt: iso },

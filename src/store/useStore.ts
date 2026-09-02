@@ -97,7 +97,18 @@ export const useStore = create<StoreState>()(
         return id;
       },
       updateTask: (id, patch) =>
-        set((s) => ({ tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)) })),
+        set((s) => ({
+          tasks: s.tasks.map((t) => {
+            if (t.id !== id) return t;
+            const next = { ...t, ...patch };
+            // Horodate automatiquement le passage à "Terminé" (et l'efface si la tâche est
+            // rouverte) — c'est ce qui permet au rapport hebdomadaire de savoir ce qui a été
+            // terminé pendant la semaine, sans champ à remplir à la main.
+            if (patch.status === 'termine' && t.status !== 'termine') next.completedAt = new Date().toISOString();
+            else if (patch.status && patch.status !== 'termine') next.completedAt = undefined;
+            return next;
+          }),
+        })),
       removeTask: (id) =>
         set((s) => ({
           tasks: s.tasks.filter((t) => t.id !== id),
