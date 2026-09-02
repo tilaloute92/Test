@@ -4,6 +4,7 @@ import { formatDayLabel, formatWeekRange, getWeeks, isToday, toISODate } from '.
 import { isAbsent } from '../lib/workload';
 import { getTaskById } from '../lib/selectors';
 import { Avatar, Card, TaskTypeBadge } from './ui';
+import { useConfirm } from './ConfirmProvider';
 import type { Period, TaskType } from '../types';
 
 const typeColor: Record<TaskType, string> = {
@@ -20,6 +21,7 @@ interface SelectedCell {
 
 export function PlanningView() {
   const { members, tasks, planningSlots, absences, setPlanningSlot } = useStore();
+  const confirm = useConfirm();
   const weeks = useMemo(() => getWeeks(new Date(), 3), []);
   const allDays = weeks.flat();
   const [selected, setSelected] = useState<SelectedCell | null>(null);
@@ -135,7 +137,16 @@ export function PlanningView() {
             <select
               className="min-w-64 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               value={selectedSlot?.taskId ?? ''}
-              onChange={(e) => setPlanningSlot(selected.memberId, selected.date, selected.period, e.target.value || null)}
+              onChange={async (e) => {
+                const value = e.target.value;
+                const label = value ? eligibleTasks.find((t) => t.id === value)?.title : 'aucune tâche';
+                if (
+                  selectedMember &&
+                  (await confirm({ title: 'Confirmer la modification', message: `Affecter "${label}" à ${selectedMember.name} sur ce créneau ?` }))
+                ) {
+                  setPlanningSlot(selected.memberId, selected.date, selected.period, value || null);
+                }
+              }}
             >
               <option value="">— Non planifié —</option>
               {eligibleTasks.map((t) => (

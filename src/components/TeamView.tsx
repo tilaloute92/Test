@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { toISODate } from '../lib/date';
 import { Avatar, Card } from './ui';
+import { useConfirm } from './ConfirmProvider';
 import type { AbsenceType, TeamMember } from '../types';
 
 const COLORS = ['#7c3aed', '#0ea5e9', '#db2777', '#16a34a', '#ea580c', '#64748b', '#0891b2', '#ca8a04'];
@@ -16,6 +17,7 @@ const absenceLabels: Record<AbsenceType, string> = {
 
 export function TeamView() {
   const { members, absences, addMember, updateMember, removeMember, addAbsenceRange, removeAbsence } = useStore();
+  const confirm = useConfirm();
   const [showMemberForm, setShowMemberForm] = useState(false);
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
   const [showAbsenceForm, setShowAbsenceForm] = useState(false);
@@ -47,7 +49,14 @@ export function TeamView() {
                 <button onClick={() => setEditingMember(m)} className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">
                   Modifier
                 </button>
-                <button onClick={() => removeMember(m.id)} className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10">
+                <button
+                  onClick={async () => {
+                    if (await confirm({ title: 'Supprimer le membre', message: `Supprimer définitivement ${m.name} de l'équipe ?`, confirmLabel: 'Supprimer', danger: true })) {
+                      removeMember(m.id);
+                    }
+                  }}
+                  className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
+                >
                   Suppr.
                 </button>
               </div>
@@ -86,7 +95,14 @@ export function TeamView() {
                   {absenceLabels[a.type]}
                 </span>
                 {a.label && <span className="hidden truncate text-xs text-slate-400 sm:block">{a.label}</span>}
-                <button onClick={() => removeAbsence(a.id)} className="ml-auto text-xs text-slate-300 hover:text-red-500">
+                <button
+                  onClick={async () => {
+                    if (await confirm({ title: "Supprimer l'absence", message: `Supprimer l'absence de ${m.name} le ${a.date} ?`, confirmLabel: 'Supprimer', danger: true })) {
+                      removeAbsence(a.id);
+                    }
+                  }}
+                  className="ml-auto text-xs text-slate-300 hover:text-red-500"
+                >
                   ✕
                 </button>
               </div>
@@ -109,9 +125,11 @@ export function TeamView() {
         <MemberForm
           initial={editingMember}
           onCancel={() => setEditingMember(null)}
-          onSave={(payload) => {
-            updateMember(editingMember.id, payload);
-            setEditingMember(null);
+          onSave={async (payload) => {
+            if (await confirm({ title: 'Confirmer la modification', message: `Enregistrer les modifications apportées à ${editingMember.name} ?` })) {
+              updateMember(editingMember.id, payload);
+              setEditingMember(null);
+            }
           }}
         />
       )}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { Card } from './ui';
+import { useConfirm } from './ConfirmProvider';
 import type { ApiAuthType, ApiConnection, HttpMethod, KeyValue } from '../types';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
@@ -46,6 +47,7 @@ interface ResponseState {
 
 export function ApiConsoleView() {
   const { apiConnections, requestHistory, addApiConnection, updateApiConnection, removeApiConnection, addRequestLog, clearRequestHistory } = useStore();
+  const confirm = useConfirm();
 
   const [showConnForm, setShowConnForm] = useState(false);
   const [editingConn, setEditingConn] = useState<ApiConnection | null>(null);
@@ -185,9 +187,11 @@ export function ApiConsoleView() {
                   Modifier
                 </button>
                 <button
-                  onClick={() => {
-                    removeApiConnection(c.id);
-                    if (connectionId === c.id) setConnectionId(null);
+                  onClick={async () => {
+                    if (await confirm({ title: 'Supprimer la connexion', message: `Supprimer définitivement la connexion "${c.name}" ?`, confirmLabel: 'Supprimer', danger: true })) {
+                      removeApiConnection(c.id);
+                      if (connectionId === c.id) setConnectionId(null);
+                    }
                   }}
                   className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
                 >
@@ -305,7 +309,14 @@ export function ApiConsoleView() {
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Historique</h2>
           {requestHistory.length > 0 && (
-            <button onClick={clearRequestHistory} className="text-xs text-slate-400 hover:text-red-500">
+            <button
+              onClick={async () => {
+                if (await confirm({ title: "Vider l'historique", message: `Supprimer les ${requestHistory.length} requête(s) de l'historique ?`, confirmLabel: 'Vider', danger: true })) {
+                  clearRequestHistory();
+                }
+              }}
+              className="text-xs text-slate-400 hover:text-red-500"
+            >
               Vider
             </button>
           )}
@@ -344,11 +355,16 @@ export function ApiConsoleView() {
             setShowConnForm(false);
             setEditingConn(null);
           }}
-          onSave={(payload) => {
-            if (editingConn) updateApiConnection(editingConn.id, payload);
-            else addApiConnection(payload);
-            setShowConnForm(false);
-            setEditingConn(null);
+          onSave={async (payload) => {
+            if (editingConn) {
+              if (await confirm({ title: 'Confirmer la modification', message: `Enregistrer les modifications apportées à la connexion "${editingConn.name}" ?` })) {
+                updateApiConnection(editingConn.id, payload);
+                setEditingConn(null);
+              }
+            } else {
+              addApiConnection(payload);
+              setShowConnForm(false);
+            }
           }}
         />
       )}

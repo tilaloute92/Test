@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { Avatar, Card, TaskTypeBadge } from './ui';
+import { useConfirm } from './ConfirmProvider';
 import type { Priority, TaskStatus, TaskType } from '../types';
 
 export function TasksView() {
   const { members, tasks, timeEntries, addTask, updateTask, removeTask } = useStore();
+  const confirm = useConfirm();
   const [typeFilter, setTypeFilter] = useState<TaskType | 'Tous'>('Tous');
   const [assigneeFilter, setAssigneeFilter] = useState<string>('Tous');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'Tous'>('Tous');
@@ -93,7 +95,13 @@ export function TasksView() {
                   <td className="px-3 py-2">
                     <select
                       value={t.assigneeId ?? ''}
-                      onChange={(e) => updateTask(t.id, { assigneeId: e.target.value || null })}
+                      onChange={async (e) => {
+                        const value = e.target.value;
+                        const name = members.find((m) => m.id === value)?.name ?? 'Non assigné';
+                        if (await confirm({ title: 'Confirmer la réaffectation', message: `Assigner "${t.title}" à ${name} ?` })) {
+                          updateTask(t.id, { assigneeId: value || null });
+                        }
+                      }}
                       className="rounded-md border border-transparent bg-transparent px-1 py-1 text-xs hover:border-slate-200 dark:hover:border-slate-700 dark:text-slate-200"
                     >
                       <option value="">Non assigné</option>
@@ -108,7 +116,12 @@ export function TasksView() {
                   <td className="px-3 py-2">
                     <select
                       value={t.priority}
-                      onChange={(e) => updateTask(t.id, { priority: e.target.value as Priority })}
+                      onChange={async (e) => {
+                        const value = e.target.value as Priority;
+                        if (await confirm({ title: 'Confirmer la modification', message: `Changer la priorité de "${t.title}" ?` })) {
+                          updateTask(t.id, { priority: value });
+                        }
+                      }}
                       className="rounded-md border border-transparent bg-transparent px-1 py-1 text-xs hover:border-slate-200 dark:hover:border-slate-700"
                     >
                       <option value="basse">Basse</option>
@@ -120,7 +133,12 @@ export function TasksView() {
                   <td className="px-3 py-2">
                     <select
                       value={t.status}
-                      onChange={(e) => updateTask(t.id, { status: e.target.value as TaskStatus })}
+                      onChange={async (e) => {
+                        const value = e.target.value as TaskStatus;
+                        if (await confirm({ title: 'Confirmer la modification', message: `Changer le statut de "${t.title}" ?` })) {
+                          updateTask(t.id, { status: value });
+                        }
+                      }}
                       className="rounded-md border border-transparent bg-transparent px-1 py-1 text-xs hover:border-slate-200 dark:hover:border-slate-700"
                     >
                       <option value="a_faire">À faire</option>
@@ -135,7 +153,11 @@ export function TasksView() {
                   <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{t.dueDate ?? '—'}</td>
                   <td className="px-3 py-2 text-right">
                     <button
-                      onClick={() => removeTask(t.id)}
+                      onClick={async () => {
+                        if (await confirm({ title: 'Supprimer la tâche', message: `Supprimer définitivement "${t.title}" ?`, confirmLabel: 'Supprimer', danger: true })) {
+                          removeTask(t.id);
+                        }
+                      }}
                       className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
                     >
                       Suppr.

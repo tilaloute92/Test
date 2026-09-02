@@ -3,9 +3,11 @@ import { useStore } from '../store/useStore';
 import { addDays, formatDateLong, formatWeekRange, getWorkingDaysOfWeek, startOfWeek, toISODate } from '../lib/date';
 import { getTaskById } from '../lib/selectors';
 import { Avatar, Card } from './ui';
+import { useConfirm } from './ConfirmProvider';
 
 export function TimeTrackingView() {
   const { members, tasks, timeEntries, absences, removeTimeEntry } = useStore();
+  const confirm = useConfirm();
   const [weekOffset, setWeekOffset] = useState(0);
   const [memberFilter, setMemberFilter] = useState('Tous');
 
@@ -140,7 +142,14 @@ export function TimeTrackingView() {
                 <span className="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-200">{t?.title ?? 'Tâche supprimée'}</span>
                 {e.note && <span className="hidden max-w-xs truncate text-xs text-slate-400 sm:block">{e.note}</span>}
                 <span className="w-12 shrink-0 text-right font-medium tabular-nums text-slate-800 dark:text-slate-100">{e.hours}h</span>
-                <button onClick={() => removeTimeEntry(e.id)} className="text-xs text-slate-300 hover:text-red-500">
+                <button
+                  onClick={async () => {
+                    if (await confirm({ title: 'Supprimer la saisie', message: `Supprimer cette saisie de ${e.hours}h ?`, confirmLabel: 'Supprimer', danger: true })) {
+                      removeTimeEntry(e.id);
+                    }
+                  }}
+                  className="text-xs text-slate-300 hover:text-red-500"
+                >
                   ✕
                 </button>
               </div>

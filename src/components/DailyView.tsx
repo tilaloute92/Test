@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore';
 import { addDays, formatDateLong, isToday, toISODate } from '../lib/date';
 import { absencesToday, getTaskById, hoursLoggedToday } from '../lib/selectors';
 import { Avatar, Card, PriorityBadge, TaskTypeBadge } from './ui';
+import { useConfirm } from './ConfirmProvider';
 import type { Period, TaskStatus } from '../types';
 
 const PERIOD_LABEL: Record<Period, string> = { matin: 'Matin — MCO & incidents', apres_midi: 'Après-midi — Projets' };
@@ -13,6 +14,7 @@ const eligibleTypes: Record<Period, ('MCO' | 'Incident' | 'Projet')[]> = {
 
 export function DailyView() {
   const { members, tasks, planningSlots, timeEntries, absences, setPlanningSlot, updateTask, addTimeEntry } = useStore();
+  const confirm = useConfirm();
   const [date, setDate] = useState(new Date());
   const [logging, setLogging] = useState<{ memberId: string; period: Period; taskId: string } | null>(null);
   const [hours, setHours] = useState('3.5');
@@ -90,7 +92,13 @@ export function DailyView() {
                             <select
                               className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                               value={task?.id ?? ''}
-                              onChange={(e) => setPlanningSlot(m.id, iso, period, e.target.value || null)}
+                              onChange={async (e) => {
+                                const value = e.target.value;
+                                const label = value ? memberTasks.find((t) => t.id === value)?.title : 'aucune tâche';
+                                if (await confirm({ title: 'Confirmer la modification', message: `Affecter "${label}" à ${m.name} sur ce créneau ?` })) {
+                                  setPlanningSlot(m.id, iso, period, value || null);
+                                }
+                              }}
                             >
                               <option value="">— Non planifié —</option>
                               {memberTasks.map((t) => (
@@ -110,7 +118,12 @@ export function DailyView() {
                                   <select
                                     className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                     value={task.status}
-                                    onChange={(e) => updateTask(task.id, { status: e.target.value as TaskStatus })}
+                                    onChange={async (e) => {
+                                      const value = e.target.value as TaskStatus;
+                                      if (await confirm({ title: 'Confirmer la modification', message: `Changer le statut de "${task.title}" ?` })) {
+                                        updateTask(task.id, { status: value });
+                                      }
+                                    }}
                                   >
                                     <option value="a_faire">À faire</option>
                                     <option value="en_cours">En cours</option>

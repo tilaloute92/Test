@@ -1,15 +1,32 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { Card } from './ui';
+import { useConfirm } from './ConfirmProvider';
 import { isAuthConfigured, signIn, signOut, trySilentAccount } from '../auth/msalClient';
 import type { AccountInfo } from '@azure/msal-browser';
 
 export function SettingsView() {
   const { authSettings, updateAuthSettings } = useStore();
+  const confirm = useConfirm();
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [httpsOk, setHttpsOk] = useState(false);
+
+  // Champs modifiés localement jusqu'à ce que "Enregistrer" soit confirmé — sans
+  // ça, chaque frappe clavier déclencherait sa propre demande de confirmation.
+  const [draft, setDraft] = useState({
+    tenantId: authSettings.tenantId,
+    clientId: authSettings.clientId,
+    redirectUri: authSettings.redirectUri,
+  });
+  const dirty = draft.tenantId !== authSettings.tenantId || draft.clientId !== authSettings.clientId || draft.redirectUri !== authSettings.redirectUri;
+
+  const saveDraft = async () => {
+    if (await confirm({ title: 'Confirmer la modification', message: 'Enregistrer ces paramètres de connexion Microsoft Entra ID ?' })) {
+      updateAuthSettings(draft);
+    }
+  };
 
   useEffect(() => {
     setHttpsOk(window.location.protocol === 'https:');
@@ -101,8 +118,8 @@ export function SettingsView() {
           <label className="block">
             <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">ID d'annuaire (locataire / tenant ID)</span>
             <input
-              value={authSettings.tenantId}
-              onChange={(e) => updateAuthSettings({ tenantId: e.target.value.trim() })}
+              value={draft.tenantId}
+              onChange={(e) => setDraft((d) => ({ ...d, tenantId: e.target.value.trim() }))}
               placeholder="ex : 8f3b2c1a-....-....-....-............"
               className="input"
             />
@@ -110,8 +127,8 @@ export function SettingsView() {
           <label className="block">
             <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">ID d'application (client ID)</span>
             <input
-              value={authSettings.clientId}
-              onChange={(e) => updateAuthSettings({ clientId: e.target.value.trim() })}
+              value={draft.clientId}
+              onChange={(e) => setDraft((d) => ({ ...d, clientId: e.target.value.trim() }))}
               placeholder="ex : 1a2b3c4d-....-....-....-............"
               className="input"
             />
@@ -121,18 +138,33 @@ export function SettingsView() {
           <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">
             URI de redirection (doit être identique à celle enregistrée dans Entra ID)
           </span>
-          <input
-            value={authSettings.redirectUri}
-            onChange={(e) => updateAuthSettings({ redirectUri: e.target.value.trim() })}
-            className="input"
-          />
+          <input value={draft.redirectUri} onChange={(e) => setDraft((d) => ({ ...d, redirectUri: e.target.value.trim() }))} className="input" />
         </label>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={saveDraft}
+            disabled={!dirty}
+            className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
+          >
+            Enregistrer les paramètres de connexion
+          </button>
+          {dirty && <span className="text-xs text-amber-600 dark:text-amber-400">Modifications non enregistrées</span>}
+        </div>
 
         <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
           <input
             type="checkbox"
             checked={authSettings.requireLogin}
-            onChange={(e) => updateAuthSettings({ requireLogin: e.target.checked, enabled: e.target.checked || authSettings.enabled })}
+            onChange={async (e) => {
+              const checked = e.target.checked;
+              const message = checked
+                ? 'Exiger la connexion Microsoft pour ouvrir l\'application ?'
+                : "Ne plus exiger de connexion pour ouvrir l'application ?";
+              if (await confirm({ title: 'Confirmer la modification', message })) {
+                updateAuthSettings({ requireLogin: checked, enabled: checked || authSettings.enabled });
+              }
+            }}
           />
           Exiger la connexion pour ouvrir l'application (une fois testée et fonctionnelle)
         </label>
