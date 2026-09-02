@@ -71,6 +71,19 @@ export async function signIn(settings: AuthSettings): Promise<AccountInfo> {
   return result.account;
 }
 
+/**
+ * Same as signIn, but also returns the raw id_token (JWT). Used when a backend is
+ * available: the token is sent to it so it can verify the signature itself and open a
+ * real server-side session (see src/auth/backendAuth.ts) — the client-side account
+ * object alone is not something the server can trust.
+ */
+export async function signInWithIdToken(settings: AuthSettings): Promise<{ account: AccountInfo; idToken: string }> {
+  const instance = await getMsalInstance(settings);
+  const result = await instance.loginPopup({ scopes: ['User.Read'] });
+  instance.setActiveAccount(result.account);
+  return { account: result.account, idToken: result.idToken };
+}
+
 export async function signOut(settings: AuthSettings): Promise<void> {
   const instance = await getMsalInstance(settings);
   const account = instance.getActiveAccount();

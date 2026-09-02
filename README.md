@@ -18,19 +18,20 @@ Application de suivi d'activité pour une équipe infrastructures systèmes & r�
 - **Requêtes API** : console pour interroger des applications externes (ticketing, supervision...) depuis le navigateur — connexions réutilisables (URL de base, authentification none/Bearer/clé API/Basic, en-têtes par défaut), éditeur de requête (méthode, chemin, en-têtes, corps JSON), réponse formatée et historique des derniers appels.
 
 - **Rapport hebdomadaire** : à générer le vendredi (ou n'importe quand) — météo de la semaine (☀️/🌤️/☁️/⛈️) calculée à partir de la charge moyenne, des incidents critiques encore ouverts, des tâches en retard et du nombre de personnes en surcharge (facteurs toujours affichés, jamais une boîte noire), indicateurs clés, charge par personne, faits marquants (incidents ouverts/résolus, tâches terminées/en retard), aperçu de la semaine suivante. Export en Markdown (presse-papiers, pour coller dans un e-mail/Teams) ou impression/PDF via le navigateur.
-- **Paramètres** : connexion automatique via SSO Microsoft Entra ID, statut HTTPS et guide de déploiement. Voir la section dédiée ci-dessous pour les détails et les limites.
+- **Paramètres** : authentification (SSO Microsoft, comptes locaux, LDAP/Active Directory), statut HTTPS et guide de déploiement. Voir la section dédiée ci-dessous.
 - **Confirmation systématique** : toute suppression et toute modification d'une donnée existante (changement de statut/priorité/assigné, réaffectation dans le planning, édition d'un membre ou d'une connexion API, activation de la connexion obligatoire...) déclenche une demande de confirmation avant d'être appliquée. Annuler laisse la donnée strictement inchangée. La création de nouvelles données (nouvelle tâche, nouveau membre, nouvelle absence...) n'est pas concernée — elle passe déjà par un formulaire explicite avec un bouton dédié.
 
-Le rapport hebdomadaire se génère à la demande, pas automatiquement : l'application n'ayant pas de serveur, rien ne peut se déclencher tout seul le vendredi ni envoyer un e-mail à votre place — il faut ouvrir l'onglet Rapport et utiliser "Copier en Markdown" ou "Imprimer / Enregistrer en PDF" pour le partager.
+Le rapport hebdomadaire se génère à la demande, pas automatiquement : rien ne peut se déclencher tout seul le vendredi ni envoyer un e-mail à votre place — il faut ouvrir l'onglet Rapport et utiliser "Copier en Markdown" ou "Imprimer / Enregistrer en PDF" pour le partager.
 
-Les données sont stockées dans le navigateur (`localStorage`) ; aucun backend n'est requis pour ce prototype. Les appels API sont exécutés directement par le navigateur : l'application distante doit autoriser le CORS depuis cette page, sinon la requête est bloquée. Par défaut les secrets d'authentification ne sont pas mémorisés (à ressaisir à chaque session) ; l'option "mémoriser" les enregistre en clair dans le stockage local du navigateur.
+Les données métier (tâches, planning, temps saisi...) sont stockées dans le navigateur (`localStorage`) de chaque utilisateur, avec ou sans le serveur d'authentification. Les appels API de l'onglet Requêtes API sont exécutés directement par le navigateur : l'application distante doit autoriser le CORS depuis cette page, sinon la requête est bloquée. Par défaut les secrets d'authentification de cet onglet ne sont pas mémorisés (à ressaisir à chaque session) ; l'option "mémoriser" les enregistre en clair dans le stockage local du navigateur.
 
 ## Authentification, annuaire et HTTPS
 
-L'application reste un site 100% statique (pas de serveur, pas de base de données), ce qui **contraint** ce qui est réellement possible en matière d'authentification et de sécurité réseau. Tout se configure dans l'onglet **Paramètres** :
+Trois façons de se connecter, configurables dans l'onglet **Paramètres** :
 
-- **SSO Microsoft Entra ID (fonctionnel)** : le seul mode de connexion automatique possible sans serveur. Fonctionne pour tout compte présent dans Entra ID (Azure AD), y compris les comptes AD locaux synchronisés via Azure AD Connect. Aucun secret d'application n'est nécessaire (flux OAuth "client public" + PKCE) — seuls l'ID d'annuaire (tenant) et l'ID d'application (client), qui ne sont pas sensibles, sont saisis et stockés. Un interrupteur "Exiger la connexion" rend le SSO obligatoire pour ouvrir l'app ; la page Paramètres reste toujours accessible depuis l'écran de connexion pour éviter tout blocage en cas de mauvaise configuration.
-- **Active Directory local pur (LDAP)** : **non disponible** sans backend. Un navigateur ne peut pas dialoguer en LDAP (protocole non-web). Si une partie de vos comptes n'est pas synchronisée vers Entra ID, il faudrait ajouter un petit service serveur (ex. Node.js + `ldapjs`) qui interroge le contrôleur de domaine — non inclus ici, car ça change le mode d'hébergement (plus un simple site statique).
+- **SSO Microsoft Entra ID** : fonctionne pour tout compte présent dans Entra ID (Azure AD), y compris les comptes AD locaux synchronisés via Azure AD Connect. Aucun secret d'application n'est nécessaire côté navigateur (flux OAuth "client public" + PKCE). C'est la seule méthode qui fonctionne même **sans** le serveur d'authentification (voir `server/`) — dans ce cas la session reste gérée par le navigateur seul, comme avant.
+- **Compte local (identifiant + mot de passe)** et **LDAP/Active Directory** : nécessitent le petit serveur d'authentification optionnel du dossier [`server/`](./server/README.md) — un navigateur ne peut techniquement pas vérifier un mot de passe en sécurité, ni dialoguer en LDAP, tout seul. Ce serveur hache les mots de passe locaux (jamais stockés en clair), ne conserve jamais un mot de passe LDAP (vérifié par "bind" direct auprès du contrôleur de domaine), et ouvre une session signée (cookie httpOnly) commune aux trois méthodes de connexion — y compris le SSO, dont le jeton est alors vérifié côté serveur avant d'ouvrir la session, ce qui en fait une vraie barrière serveur et pas seulement un contrôle d'interface (voir la section Sécurité ci-dessous).
+- Dans les deux cas, un interrupteur "Exiger la connexion" rend l'authentification obligatoire pour ouvrir l'app ; la page Paramètres reste toujours accessible depuis l'écran de connexion pour éviter tout blocage en cas de mauvaise configuration.
 - **Certificat SSL/HTTPS** : se configure toujours au niveau du serveur qui héberge les fichiers (IIS, nginx, reverse proxy...), jamais dans l'application. Il n'y a donc pas de formulaire pour importer un certificat dans l'app (un tel formulaire exposerait des clés privées dans le navigateur, ce qui serait une faille de sécurité) — la page Paramètres affiche un statut HTTPS en direct et un guide de déploiement IIS pas à pas.
 
 ## Sécurité
@@ -43,21 +44,31 @@ Vérifié dans le code (au dernier commit) :
 - **Build** : aucun script inline dans le HTML généré (`script-src 'self'` fonctionne sans exception), pas de source maps publiées.
 - **En-têtes HTTP** : Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy et Strict-Transport-Security sont fournis via `public/web.config` (inclus automatiquement dans chaque `dist/`) — testés sans aucune violation CSP sur tous les onglets de l'application. Le détail et la justification de chaque règle sont commentés dans ce fichier.
 
-Limites à connaître, propres à une application 100% statique (pas de serveur) — aucune ne peut être levée sans en ajouter un :
+Limites à connaître :
 
-- **Le verrou de connexion (onglet Paramètres) est un contrôle d'interface, pas une barrière de sécurité serveur.** Il masque l'application tant qu'on n'est pas connecté, mais les données restent dans le stockage local du navigateur : quelqu'un avec un accès physique/technique à l'appareil (outils de développement du navigateur) pourrait les consulter directement. Pour une confidentialité réellement opposable, il faudrait un backend qui ne renvoie les données qu'après vérification d'un jeton — hors périmètre actuel (cf. votre choix de rester sans serveur).
-- **Aucune donnée n'est centralisée** : chaque utilisateur a sa propre copie locale (planning, tâches, temps saisi). Rien n'est partagé automatiquement entre collègues, et rien n'est sauvegardé côté serveur.
+- **Sans le serveur d'authentification (`server/`), le verrou de connexion est un contrôle d'interface, pas une barrière de sécurité serveur.** Il masque l'application tant qu'on n'est pas connecté, mais les données restent dans le stockage local du navigateur : quelqu'un avec un accès physique/technique à l'appareil (outils de développement du navigateur) pourrait les consulter directement. **Avec** le serveur d'authentification, la connexion devient une vraie barrière (session vérifiée côté serveur à chaque appel, mots de passe locaux hachés, mots de passe LDAP jamais stockés) — mais les données métier de l'application (tâches, planning...) continuent, elles, de résider uniquement dans le navigateur de chaque utilisateur : le serveur ne protège l'accès à l'application, pas ces données une fois qu'on y est.
+- **Aucune donnée métier n'est centralisée** : chaque utilisateur a sa propre copie locale (planning, tâches, temps saisi). Rien n'est partagé automatiquement entre collègues, et rien n'est sauvegardé côté serveur — que le serveur d'authentification soit déployé ou non.
 - Je peux vérifier le code et les pratiques (c'est ce qui précède), mais je ne peux pas **certifier** une conformité formelle (ISO 27001, référentiel ANSSI, audit RGPD...) : ces démarches impliquent des processus organisationnels (gestion des accès physiques, politique de mots de passe, registre de traitement des données, etc.) qui dépassent le code de l'application.
 
 ## Déploiement
 
-Guide détaillé pas à pas pour Windows Server 2022 (IIS) : voir [`DEPLOYMENT.md`](./DEPLOYMENT.md). L'application est un site 100% statique (pas de Node.js à installer sur le serveur de production) — seul IIS sert les fichiers générés par `npm run build`.
+Guide détaillé pas à pas pour Windows Server 2022 (IIS) : voir [`DEPLOYMENT.md`](./DEPLOYMENT.md) — hébergement du site statique (obligatoire) et, si besoin, du serveur d'authentification optionnel (`server/`, voir aussi [`server/README.md`](./server/README.md)) pour le login local et LDAP.
 
 ## Démarrage
 
 ```bash
 npm install
 npm run dev
+```
+
+Pour tester aussi l'authentification locale/LDAP en développement, lancez en plus le serveur (voir [`server/README.md`](./server/README.md)) :
+
+```bash
+cd server
+npm install
+cp .env.example .env   # éditez JWT_SECRET et mettez COOKIE_SECURE=false
+npm run create-user -- admin MotDePasseSolide123 "Administrateur"
+npm start
 ```
 
 ## Build

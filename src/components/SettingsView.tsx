@@ -2,7 +2,21 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { Card } from './ui';
 import { useConfirm } from './ConfirmProvider';
-import { isAuthConfigured, signIn, signOut, trySilentAccount } from '../auth/msalClient';
+import { isAuthConfigured, signInWithIdToken, signOut, trySilentAccount } from '../auth/msalClient';
+import {
+  ApiError,
+  backendAvailable,
+  createLocalUser,
+  deleteLocalUser,
+  finalizeSsoSession,
+  getLdapConfig,
+  listLocalUsers,
+  saveLdapConfig,
+  type LdapConfig,
+} from '../auth/backendAuth';
+
+const NOT_LOGGED_IN_HINT =
+  "Connectez-vous d'abord avec un compte local ou LDAP existant (celui créé via `npm run create-user` sur le serveur, par exemple) pour gérer ceci depuis l'application.";
 import type { AccountInfo } from '@azure/msal-browser';
 
 export function SettingsView() {
@@ -12,6 +26,7 @@ export function SettingsView() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [httpsOk, setHttpsOk] = useState(false);
+  const [backendUp, setBackendUp] = useState<boolean | null>(null);
 
   // Champs modifiés localement jusqu'à ce que "Enregistrer" soit confirmé — sans
   // ça, chaque frappe clavier déclencherait sa propre demande de confirmation.
@@ -30,6 +45,7 @@ export function SettingsView() {
 
   useEffect(() => {
     setHttpsOk(window.location.protocol === 'https:');
+    backendAvailable().then(setBackendUp);
   }, []);
 
   useEffect(() => {
@@ -46,7 +62,14 @@ export function SettingsView() {
     setAuthBusy(true);
     setAuthError(null);
     try {
-      const acc = await signIn(authSettings);
+      const { account: acc, idToken } = await signInWithIdToken(authSettings);
+      if (backendUp) {
+        try {
+          await finalizeSsoSession(idToken);
+        } catch (err) {
+          setAuthError(err instanceof Error ? err.message : String(err));
+        }
+      }
       setAccount(acc);
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : String(err));
@@ -74,12 +97,20 @@ export function SettingsView() {
         <p className="text-sm text-slate-500 dark:text-slate-400">Authentification, annuaire et sécurité de l'application.</p>
       </div>
 
+      {backendUp === false && (
+        <Card className="p-3">
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            Serveur d'authentification non détecté (server/) — seule la connexion Microsoft (gérée par le navigateur) est disponible.
+            L'authentification locale et LDAP nécessitent ce serveur : voir <code>server/README.md</code>.
+          </p>
+        </Card>
+      )}
+
       {/* ------------------------------------------------------------------ */}
-      {/* 1. SSO Microsoft Entra ID — la seule connexion automatique possible */}
-      {/*    sans serveur : le navigateur redirige vers Microsoft, qui       */}
-      {/*    authentifie l'utilisateur et renvoie un jeton. Aucun secret     */}
-      {/*    d'application n'est nécessaire ni stocké ici (flux "client      */}
-      {/*    public" avec PKCE).                                            */}
+      {/* 1. SSO Microsoft Entra ID — fonctionne avec ou sans le serveur      */}
+      {/*    d'authentification : sans lui, la session reste gérée par le    */}
+      {/*    navigateur seul (comme avant) ; avec lui, le jeton est en plus   */}
+      {/*    vérifié côté serveur pour ouvrir une vraie session protégée.     */}
       {/* ------------------------------------------------------------------ */}
       <Card className="space-y-3 p-4">
         <div>
@@ -87,9 +118,8 @@ export function SettingsView() {
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
             Permet à vous et votre équipe de vous connecter avec votre compte Microsoft professionnel (le même que Windows/Office 365),
             sans mot de passe séparé. Fonctionne uniquement si vos comptes existent dans <strong>Microsoft Entra ID</strong> (anciennement
-            Azure AD) — soit nativement (cloud), soit synchronisés depuis votre Active Directory local via <em>Azure AD Connect</em>. Un
-            compte qui n'existe que dans un AD purement local, sans aucune synchronisation vers le cloud, ne peut pas se connecter par ce
-            biais : il faudrait alors un petit serveur dédié pour interroger l'annuaire directement (voir section suivante).
+            Azure AD) — soit nativement (cloud), soit synchronisés depuis votre Active Directory local via <em>Azure AD Connect</em>. Pour
+            les comptes qui n'existent que dans un AD purement local, utilisez la connexion LDAP plus bas.
           </p>
         </div>
 
@@ -111,6 +141,12 @@ export function SettingsView() {
               la page "Vue d'ensemble" de l'inscription, et collez-les ci-dessous.
             </li>
             <li>Aucun "secret client" n'est à créer : ce type d'application n'en utilise pas et n'en stocke pas.</li>
+            {backendUp && (
+              <li>
+                Renseignez aussi <code>ENTRA_TENANT_ID</code> et <code>ENTRA_CLIENT_ID</code> (mêmes valeurs) dans le fichier{' '}
+                <code>server/.env</code> du serveur, puis redémarrez-le — c'est ce qui lui permet de vérifier le jeton.
+              </li>
+            )}
           </ol>
         </details>
 
@@ -159,7 +195,7 @@ export function SettingsView() {
             onChange={async (e) => {
               const checked = e.target.checked;
               const message = checked
-                ? 'Exiger la connexion Microsoft pour ouvrir l\'application ?'
+                ? 'Exiger une connexion (Microsoft, locale ou LDAP) pour ouvrir l\'application ?'
                 : "Ne plus exiger de connexion pour ouvrir l'application ?";
               if (await confirm({ title: 'Confirmer la modification', message })) {
                 updateAuthSettings({ requireLogin: checked, enabled: checked || authSettings.enabled });
@@ -171,7 +207,7 @@ export function SettingsView() {
         {authSettings.requireLogin && !httpsOk && (
           <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
             L'application n'est pas servie en HTTPS actuellement. N'activez la connexion obligatoire qu'une fois le HTTPS en place (voir
-            section "Sécurité" ci-dessous) : les jetons de connexion ne doivent jamais transiter en clair.
+            section "Sécurité" ci-dessous) : les identifiants et jetons de connexion ne doivent jamais transiter en clair.
           </p>
         )}
 
@@ -202,30 +238,30 @@ export function SettingsView() {
       </Card>
 
       {/* ------------------------------------------------------------------ */}
-      {/* 2. Active Directory local (LDAP) — expliqué honnêtement : cette    */}
-      {/*    application est un site statique sans serveur, et un navigateur */}
-      {/*    ne peut techniquement pas parler le protocole LDAP (connexion   */}
-      {/*    réseau bas niveau vers le port 389/636). Il n'y a donc pas de   */}
-      {/*    formulaire fonctionnel ici — un formulaire qui aurait l'air de  */}
-      {/*    marcher sans rien faire serait trompeur.                       */}
+      {/* 2. Comptes locaux — géré par le serveur d'authentification (server/) */}
       {/* ------------------------------------------------------------------ */}
-      <Card className="space-y-2 p-4">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Annuaire Active Directory local (LDAP)</h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Non disponible dans cette version. Un navigateur ne peut pas interroger un annuaire LDAP directement (ce n'est pas un protocole
-          web) : il faut un petit service serveur qui fait la connexion à l'annuaire à votre place. Comme cette application est un site
-          statique sans serveur, on ne peut pas l'implémenter ici sans changer son mode d'hébergement.
-        </p>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Si une partie de vos comptes n'est pas synchronisée vers Entra ID (donc pas couverte par la section ci-dessus), la solution est
-          d'ajouter un petit serveur (quelques dizaines de lignes, ex. Node.js + <code>ldapjs</code>) qui vérifie les identifiants auprès
-          de votre contrôleur de domaine et ouvre une session. Dites-le-moi si vous voulez qu'on l'ajoute : ça implique d'avoir un serveur
-          disponible en continu dans votre infrastructure, ce que vous m'avez indiqué vouloir éviter pour l'instant.
-        </p>
-      </Card>
+      {backendUp && <LocalAccountsCard confirm={confirm} />}
 
       {/* ------------------------------------------------------------------ */}
-      {/* 3. Sécurité / HTTPS — le certificat TLS se configure toujours côté */}
+      {/* 3. Active Directory (LDAP) — géré par le serveur d'authentification  */}
+      {/*    quand il est présent ; sinon, explication honnête de pourquoi     */}
+      {/*    ça ne peut pas marcher sans lui (le navigateur ne parle pas LDAP). */}
+      {/* ------------------------------------------------------------------ */}
+      {backendUp ? (
+        <LdapConfigCard confirm={confirm} />
+      ) : (
+        <Card className="space-y-2 p-4">
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Annuaire Active Directory local (LDAP)</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Non disponible : un navigateur ne peut pas interroger un annuaire LDAP directement (ce n'est pas un protocole web), il faut le
+            serveur d'authentification (<code>server/</code>) pour ça. Démarrez-le (voir <code>server/README.md</code>) pour activer cette
+            section.
+          </p>
+        </Card>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* 4. Sécurité / HTTPS — le certificat TLS se configure toujours côté */}
       {/*    serveur web qui héberge l'application (IIS, nginx, reverse      */}
       {/*    proxy...), jamais dans l'application elle-même. Un formulaire   */}
       {/*    qui accepterait de coller une clé privée ici serait une faille  */}
@@ -266,10 +302,211 @@ export function SettingsView() {
           </ol>
         </details>
         <p className="text-xs text-slate-400">
-          N'activez "Exiger la connexion" dans la section SSO ci-dessus qu'une fois le HTTPS effectif : sans lui, les échanges
-          d'authentification circuleraient en clair sur le réseau.
+          N'activez "Exiger la connexion" dans la section SSO ci-dessus qu'une fois le HTTPS effectif : sans lui, les identifiants et jetons
+          de connexion circuleraient en clair sur le réseau.
         </p>
       </Card>
     </div>
+  );
+}
+
+type ConfirmFn = ReturnType<typeof useConfirm>;
+
+function LocalAccountsCard({ confirm }: { confirm: ConfirmFn }) {
+  const [users, setUsers] = useState<{ username: string; name: string }[] | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = () =>
+    listLocalUsers()
+      .then(setUsers)
+      .catch((err) => {
+        setError(err instanceof ApiError && err.status === 401 ? NOT_LOGGED_IN_HINT : err instanceof Error ? err.message : String(err));
+        setUsers([]);
+      });
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const submit = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      await createLocalUser(username, password, name);
+      setUsername('');
+      setPassword('');
+      setName('');
+      setShowForm(false);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (u: string) => {
+    if (await confirm({ title: 'Supprimer le compte', message: `Supprimer le compte local "${u}" ?`, confirmLabel: 'Supprimer', danger: true })) {
+      await deleteLocalUser(u);
+      await refresh();
+    }
+  };
+
+  return (
+    <Card className="space-y-3 p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Authentification locale</h2>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            Comptes identifiant + mot de passe gérés par le serveur (mots de passe hachés, jamais stockés en clair). À réserver aux
+            personnes sans compte Microsoft/AD — pour tout le reste, préférez le SSO ou le LDAP ci-dessus/dessous.
+          </p>
+        </div>
+        <button onClick={() => setShowForm(true)} className="shrink-0 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700">
+          + Compte
+        </button>
+      </div>
+
+      <div className="divide-y divide-slate-50 dark:divide-slate-800/60">
+        {users === null && !error && <p className="text-xs text-slate-400">Chargement…</p>}
+        {users?.length === 0 && !error && <p className="text-xs text-slate-400">Aucun compte local.</p>}
+        {error && !showForm && <p className="text-xs text-amber-600 dark:text-amber-400">{error}</p>}
+        {users?.map((u) => (
+          <div key={u.username} className="flex items-center gap-3 py-2 text-sm">
+            <span className="font-medium text-slate-700 dark:text-slate-200">{u.name}</span>
+            <span className="text-xs text-slate-400">{u.username}</span>
+            <button onClick={() => remove(u.username)} className="ml-auto text-xs text-slate-300 hover:text-red-500">
+              Suppr.
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowForm(false)}>
+          <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Nouveau compte local</h3>
+            <div className="space-y-2.5">
+              <input placeholder="Identifiant" value={username} onChange={(e) => setUsername(e.target.value)} className="input" />
+              <input placeholder="Nom complet" value={name} onChange={(e) => setName(e.target.value)} className="input" />
+              <input type="password" placeholder="Mot de passe (8 caractères min.)" value={password} onChange={(e) => setPassword(e.target.value)} className="input" />
+            </div>
+            {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setShowForm(false)} className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800">
+                Annuler
+              </button>
+              <button
+                onClick={submit}
+                disabled={busy || !username || password.length < 8}
+                className="rounded-md bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
+              >
+                {busy ? 'Création…' : 'Créer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function LdapConfigCard({ confirm }: { confirm: ConfirmFn }) {
+  const [draft, setDraft] = useState<LdapConfig | null>(null);
+  const [saved, setSaved] = useState<LdapConfig | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getLdapConfig()
+      .then((cfg) => {
+        setDraft(cfg);
+        setSaved(cfg);
+      })
+      .catch((err) => setError(err instanceof ApiError && err.status === 401 ? NOT_LOGGED_IN_HINT : err instanceof Error ? err.message : String(err)));
+  }, []);
+
+  if (!draft) {
+    return (
+      <Card className="p-4">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Annuaire Active Directory (LDAP)</h2>
+        {error ? (
+          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+        ) : (
+          <p className="mt-2 text-xs text-slate-400">Chargement…</p>
+        )}
+      </Card>
+    );
+  }
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+
+  const save = async () => {
+    if (await confirm({ title: 'Confirmer la modification', message: 'Enregistrer ces paramètres de connexion LDAP ?' })) {
+      const next = await saveLdapConfig(draft);
+      setSaved(next);
+      setDraft(next);
+    }
+  };
+
+  return (
+    <Card className="space-y-3 p-4">
+      <div>
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Annuaire Active Directory (LDAP)</h2>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Le serveur vérifie le mot de passe en tentant une connexion ("bind") directement auprès de votre contrôleur de domaine — il ne le
+          stocke jamais. À utiliser pour les comptes qui n'existent que dans votre AD local, sans synchronisation vers Entra ID.
+        </p>
+      </div>
+
+      <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+        <input type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} />
+        Activer la connexion LDAP
+      </label>
+
+      <label className="block">
+        <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">URL du contrôleur de domaine</span>
+        <input
+          value={draft.url}
+          onChange={(e) => setDraft({ ...draft, url: e.target.value })}
+          placeholder="ldap://dc01.monentreprise.local:389"
+          className="input"
+        />
+      </label>
+
+      <label className="block">
+        <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">
+          Motif d'identifiant ("{'{username}'}" est remplacé par ce que la personne saisit)
+        </span>
+        <input
+          value={draft.userDnPattern}
+          onChange={(e) => setDraft({ ...draft, userDnPattern: e.target.value })}
+          placeholder="{username}@monentreprise.local"
+          className="input font-mono text-xs"
+        />
+        <span className="mt-1 block text-xs text-slate-400">
+          Le plus simple avec Active Directory : <code>{'{username}'}@monentreprise.local</code> (nom d'utilisateur principal / UPN).
+        </span>
+      </label>
+
+      <div className="flex items-center gap-3">
+        <button
+          onClick={save}
+          disabled={!dirty}
+          className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
+        >
+          Enregistrer
+        </button>
+        {dirty && <span className="text-xs text-amber-600 dark:text-amber-400">Modifications non enregistrées</span>}
+      </div>
+      <p className="text-xs text-slate-400">
+        Pas de bouton "Tester" ici : essayez simplement de vous déconnecter puis de vous reconnecter avec un identifiant LDAP depuis l'écran
+        de connexion.
+      </p>
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+    </Card>
   );
 }

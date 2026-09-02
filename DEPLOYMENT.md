@@ -1,15 +1,21 @@
 # Déploiement sur Windows Server 2022 (IIS)
 
-L'application est un site **100 % statique** (HTML/CSS/JS générés par `npm run build`) :
-aucun runtime Node.js, base de données ni service applicatif ne tourne sur le serveur de
-production. IIS se contente de servir des fichiers. Ça réduit nettement la surface
-d'attaque du serveur : pas de processus applicatif à patcher, juste IIS et l'OS.
+L'application elle-même (ce que voient les utilisateurs) est un site **100 % statique**
+(HTML/CSS/JS générés par `npm run build`) : IIS se contente de servir des fichiers, sans
+runtime applicatif. Ça reste vrai avec ou sans authentification locale/LDAP.
+
+Deux parties dans ce guide :
+- **Partie A (obligatoire)** : héberger l'application elle-même sous IIS, en HTTPS.
+- **Partie B (optionnelle)** : ajouter le serveur d'authentification (`server/`) si vous
+  voulez du login/mot de passe local et/ou une connexion LDAP/Active Directory — le SSO
+  Microsoft, lui, fonctionne dès la Partie A, sans rien de plus.
 
 Le build peut être fait sur n'importe quel poste (le vôtre, un serveur de build/CI) —
-**pas besoin d'installer Node.js sur le serveur Windows 2022 lui-même**, sauf si vous
-préférez y faire le build directement.
+**pas besoin d'installer Node.js sur le serveur Windows 2022** pour la Partie A. La
+Partie B, elle, a besoin de Node.js sur le serveur, puisqu'un petit service y tourne en
+continu.
 
-## Vue d'ensemble des étapes
+## Vue d'ensemble — Partie A
 
 1. Générer le build (`dist/`)
 2. Installer le rôle IIS sur le serveur
@@ -47,9 +53,11 @@ Sur le serveur Windows Server 2022, en PowerShell (administrateur) :
 Install-WindowsFeature -Name Web-Server -IncludeManagementTools
 ```
 
-Ça installe IIS avec les fonctionnalités de base — suffisant pour ce site (aucun module
-supplémentaire n'est nécessaire : pas d'ASP.NET, pas de CGI, pas de module de réécriture
-d'URL requis, puisque l'application ne fait pas de routage par URL).
+Ça installe IIS avec les fonctionnalités de base — suffisant pour la Partie A seule
+(aucun module supplémentaire n'est nécessaire : pas d'ASP.NET, pas de CGI, pas de module
+de réécriture d'URL requis, puisque l'application ne fait pas de routage par URL). Si vous
+ajoutez la Partie B (authentification locale/LDAP), deux modules IIS supplémentaires
+seront nécessaires — voir cette section.
 
 ## 3. Copier les fichiers sur le serveur
 
@@ -144,14 +152,110 @@ Une fois l'URL finale connue (ex. `https://suivi-infra.monentreprise.local`) :
 
 ---
 
+## Partie B — Serveur d'authentification (login local + LDAP)
+
+Nécessaire uniquement si vous voulez du login/mot de passe local et/ou une connexion
+LDAP/Active Directory (voir onglet Paramètres de l'application, sections dédiées). Sans
+cette partie, le SSO Microsoft de la Partie A continue de fonctionner seul.
+
+### B.1 Installer Node.js sur le serveur
+
+Téléchargez et installez la version **LTS** depuis [nodejs.org](https://nodejs.org) (le
+choix par défaut de l'installeur convient).
+
+### B.2 Déployer le service
+
+```powershell
+# Sur le serveur, ou copié depuis un poste de build :
+git clone https://github.com/tilaloute92/Test.git C:\services\suivi-infra-auth
+cd C:\services\suivi-infra-auth\server
+npm install --omit=dev
+copy .env.example .env
+notepad .env
+```
+
+Dans `.env` (voir les commentaires du fichier pour le détail de chaque valeur) :
+renseignez au minimum `JWT_SECRET` (une valeur aléatoire longue), laissez
+`COOKIE_SECURE=true` (le site tourne en HTTPS via IIS), et mettez `CORS_ORIGIN` à l'URL
+finale de l'application (ex. `https://suivi-infra.monentreprise.local`). Si vous utilisez
+le SSO Microsoft, renseignez aussi `ENTRA_TENANT_ID` et `ENTRA_CLIENT_ID` (mêmes valeurs
+que dans l'onglet Paramètres de l'application).
+
+Créez le tout premier compte local, qui servira à se connecter une première fois pour
+ensuite tout gérer depuis l'application :
+
+```powershell
+npm run create-user -- admin "MotDePasseSolide123!" "Administrateur"
+```
+
+### B.3 Enregistrer le service Windows (NSSM)
+
+[NSSM](https://nssm.cc/) permet de faire tourner n'importe quel programme (ici `node`)
+comme un service Windows, démarré automatiquement et redémarré s'il plante — sans avoir à
+laisser une fenêtre PowerShell ouverte.
+
+```powershell
+# Téléchargez nssm.exe (nssm.cc) et placez-le dans le PATH, puis :
+nssm install SuiviInfraAuth "C:\Program Files\nodejs\node.exe" "C:\services\suivi-infra-auth\server\src\index.js"
+nssm set SuiviInfraAuth AppDirectory "C:\services\suivi-infra-auth\server"
+nssm start SuiviInfraAuth
+```
+
+Vérifiez qu'il tourne : `Invoke-WebRequest http://127.0.0.1:4000/api/health` doit répondre
+`{"ok":true}`. En cas de souci, les journaux du service (`nssm` peut aussi rediriger
+stdout/stderr vers un fichier — `nssm set SuiviInfraAuth AppStdout ...`) aident à
+diagnostiquer.
+
+### B.4 Faire relayer /api par IIS (reverse proxy)
+
+Le site continue d'être servi par IIS (Partie A) ; on lui ajoute juste une règle qui
+relaie les appels `/api/*` vers le service Node local, pour que le navigateur ne voie
+qu'une seule adresse.
+
+1. Installez deux modules IIS (téléchargements depuis iis.net) : **URL Rewrite** et
+   **Application Request Routing (ARR)**.
+2. Dans le **Gestionnaire IIS**, au niveau du serveur (pas du site), ouvrez *Application
+   Request Routing Cache* → *Server Proxy Settings* → cochez **Enable proxy** → *Appliquer*.
+3. Sur le site créé en Partie A, ouvrez *URL Rewrite* → *Ajouter une règle* → *Reverse
+   Proxy* → renseignez `127.0.0.1:4000` comme serveur, cochez **HTTPS** décoché (le saut
+   interne IIS → Node se fait en HTTP, seul le trajet navigateur → IIS est en HTTPS) →
+   IIS ajoute automatiquement une règle dans `web.config`.
+4. Modifiez cette règle générée pour qu'elle ne s'applique qu'aux chemins commençant par
+   `api/` (dans le champ *Modèle*, remplacez `(.*)` par `^api/(.*)$`, et l'URL de
+   réécriture par `http://127.0.0.1:4000/api/{R:1}`) — sinon IIS relaierait aussi les
+   fichiers de l'application vers Node, qui ne sait pas les servir.
+
+### B.5 Vérifier
+
+- `https://suivi-infra.monentreprise.local/api/health` doit répondre `{"ok":true}` (relayé
+  par IIS vers le service Node).
+- Dans l'application, onglet Paramètres : la carte "Authentification locale" doit lister
+  le compte `admin` créé en B.2, et la carte LDAP doit se charger sans erreur — signe que
+  le reverse proxy fonctionne. (Les deux resteront en erreur "Non authentifié" tant que
+  vous n'êtes connecté avec aucun compte — normal, connectez-vous d'abord avec `admin`
+  depuis l'écran de connexion.)
+- Testez une connexion avec le compte local `admin`, puis configurez LDAP si besoin.
+
+### Maintenance
+
+- Le service ne stocke que des identifiants et sessions (`server/data/`, hors dépôt Git) —
+  pensez à sauvegarder ce dossier si vous avez plusieurs comptes locaux configurés.
+- Mise à jour du service : `git pull`, `npm install --omit=dev`, `nssm restart
+  SuiviInfraAuth`.
+- `npm audit` (dans `server/`) avant chaque mise à jour des dépendances, comme pour le
+  frontend.
+
+---
+
 ## Ce que ce déploiement ne couvre pas
 
-- **Sauvegarde des données** : chaque utilisateur a ses données dans le stockage local
-  de *son* navigateur (voir README). Il n'y a rien à sauvegarder côté serveur, mais rien
-  n'est centralisé non plus — la perte du profil navigateur d'un utilisateur perd ses
-  données locales (planning, saisies de temps...).
-- **Haute disponibilité / répartition de charge** : un seul serveur IIS suffit pour un
-  usage interne à une équipe de 6 personnes ; non traité ici.
-- **LDAP sur Active Directory local** et **gestion de certificat dans l'application** :
-  volontairement non implémentés, voir l'onglet Paramètres de l'application et le
-  README pour l'explication.
+- **Sauvegarde des données métier** (tâches, planning, temps saisi...) : chaque
+  utilisateur les a dans le stockage local de *son* navigateur (voir README) — la Partie B
+  ne gère que l'authentification, pas ces données. La perte du profil navigateur d'un
+  utilisateur perd ses données locales.
+- **Haute disponibilité / répartition de charge** : un seul serveur IIS (+ un seul service
+  d'authentification) suffit pour un usage interne à une équipe de 6 personnes ; non
+  traité ici.
+- **Gestion de certificat dans l'application** : volontairement non implémentée (le
+  certificat se configure sur IIS, jamais dans l'app — voir onglet Paramètres et le
+  README pour l'explication).
