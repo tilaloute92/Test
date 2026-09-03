@@ -4,6 +4,8 @@ import { Avatar, Card, PrintButton, PrintHeader, TaskTypeBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import type { Priority, ProjectTask, TaskStatus, TaskType, TeamMember } from '../types';
 
+type ConfirmFn = ReturnType<typeof useConfirm>;
+
 export function TasksView() {
   const { members, tasks, timeEntries, addTask, updateTask, removeTask } = useStore();
   const confirm = useConfirm();
@@ -12,6 +14,7 @@ export function TasksView() {
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'Tous'>('Tous');
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
   const [openAssigneeMenu, setOpenAssigneeMenu] = useState<string | null>(null);
 
   const spentByTask = useMemo(() => {
@@ -187,6 +190,12 @@ export function TasksView() {
                   <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{t.dueDate ?? '—'}</td>
                   <td className="px-3 py-2 text-right print:hidden">
                     <button
+                      onClick={() => setEditingTask(t)}
+                      className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                    >
+                      Modifier
+                    </button>
+                    <button
                       onClick={async () => {
                         if (await confirm({ title: 'Supprimer la tâche', message: `Supprimer définitivement "${t.title}" ?`, confirmLabel: 'Supprimer', danger: true })) {
                           removeTask(t.id);
@@ -204,13 +213,22 @@ export function TasksView() {
         </table>
       </Card>
 
-      {showForm && (
-        <NewTaskForm
+      {(showForm || editingTask) && (
+        <TaskForm
           members={members}
-          onCancel={() => setShowForm(false)}
+          initial={editingTask}
+          confirm={confirm}
+          onCancel={() => {
+            setShowForm(false);
+            setEditingTask(null);
+          }}
           onCreate={(payload) => {
             addTask(payload);
             setShowForm(false);
+          }}
+          onUpdate={(id, patch) => {
+            updateTask(id, patch);
+            setEditingTask(null);
           }}
         />
       )}
@@ -242,31 +260,72 @@ function Select<T extends string>({ value, onChange, options, labels }: { value:
   );
 }
 
-function NewTaskForm({
+interface TaskFormPayload {
+  title: string;
+  type: TaskType;
+  project?: string;
+  assigneeIds: string[];
+  status: TaskStatus;
+  priority: Priority;
+  estimatedHours: number;
+  dueDate?: string;
+  description?: string;
+}
+
+function TaskForm({
   members,
+  initial,
+  confirm,
   onCancel,
   onCreate,
+  onUpdate,
 }: {
   members: TeamMember[];
+  initial: ProjectTask | null;
+  confirm: ConfirmFn;
   onCancel: () => void;
-  onCreate: (payload: { title: string; type: TaskType; project?: string; assigneeIds: string[]; status: TaskStatus; priority: Priority; estimatedHours: number; dueDate?: string }) => void;
+  onCreate: (payload: TaskFormPayload) => void;
+  onUpdate: (id: string, patch: TaskFormPayload) => void;
 }) {
-  const [title, setTitle] = useState('');
-  const [type, setType] = useState<TaskType>('Incident');
-  const [project, setProject] = useState('');
-  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
-  const [priority, setPriority] = useState<Priority>('normale');
-  const [estimatedHours, setEstimatedHours] = useState('3.5');
-  const [dueDate, setDueDate] = useState('');
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [type, setType] = useState<TaskType>(initial?.type ?? 'Incident');
+  const [project, setProject] = useState(initial?.project ?? '');
+  const [assigneeIds, setAssigneeIds] = useState<string[]>(initial?.assigneeIds ?? []);
+  const [status, setStatus] = useState<TaskStatus>(initial?.status ?? 'a_faire');
+  const [priority, setPriority] = useState<Priority>(initial?.priority ?? 'normale');
+  const [estimatedHours, setEstimatedHours] = useState(String(initial?.estimatedHours ?? '3.5'));
+  const [dueDate, setDueDate] = useState(initial?.dueDate ?? '');
+  const [description, setDescription] = useState(initial?.description ?? '');
 
   const toggleAssignee = (id: string) => {
     setAssigneeIds((prev) => (prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]));
   };
 
+  const submit = async () => {
+    const payload: TaskFormPayload = {
+      title: title.trim(),
+      type,
+      project: type === 'Projet' ? project.trim() || undefined : undefined,
+      assigneeIds,
+      status,
+      priority,
+      estimatedHours: parseFloat(estimatedHours) || 0,
+      dueDate: dueDate || undefined,
+      description: description.trim() || undefined,
+    };
+    if (initial) {
+      if (await confirm({ title: 'Confirmer la modification', message: `Enregistrer les modifications apportées à "${initial.title}" ?` })) {
+        onUpdate(initial.id, payload);
+      }
+    } else {
+      onCreate(payload);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Nouvelle tâche</h3>
+      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+        <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">{initial ? 'Modifier la tâche' : 'Nouvelle tâche'}</h3>
         <div className="space-y-2.5">
           <Field label="Titre">
             <input value={title} onChange={(e) => setTitle(e.target.value)} className="input" />
@@ -293,6 +352,16 @@ function NewTaskForm({
               <input value={project} onChange={(e) => setProject(e.target.value)} className="input" placeholder="Ex : Migration Datacenter Nord" />
             </Field>
           )}
+          {initial && (
+            <Field label="Statut">
+              <select value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)} className="input">
+                <option value="a_faire">À faire</option>
+                <option value="en_cours">En cours</option>
+                <option value="en_attente">En attente</option>
+                <option value="termine">Terminé</option>
+              </select>
+            </Field>
+          )}
           <Field label="Assigné(s) à">
             <div className="flex max-h-32 flex-col gap-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-slate-700">
               {members.map((m) => (
@@ -312,6 +381,9 @@ function NewTaskForm({
               <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="input" />
             </Field>
           </div>
+          <Field label="Description (optionnel)">
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="input" />
+          </Field>
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onCancel} className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800">
@@ -319,21 +391,10 @@ function NewTaskForm({
           </button>
           <button
             disabled={!title.trim()}
-            onClick={() =>
-              onCreate({
-                title: title.trim(),
-                type,
-                project: type === 'Projet' ? project || undefined : undefined,
-                assigneeIds,
-                status: 'a_faire',
-                priority,
-                estimatedHours: parseFloat(estimatedHours) || 0,
-                dueDate: dueDate || undefined,
-              })
-            }
+            onClick={submit}
             className="rounded-md bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
           >
-            Créer
+            {initial ? 'Enregistrer' : 'Créer'}
           </button>
         </div>
       </div>
