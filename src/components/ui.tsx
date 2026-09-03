@@ -2,6 +2,22 @@ import type { Priority, RoadmapDomain, RoadmapStatus, TaskStatus, TaskType } fro
 import type { WorkloadLevel } from '../lib/workload';
 import { workloadColors } from '../lib/workload';
 
+/**
+ * Convention de couleurs — pour que les mêmes couleurs veuillent toujours dire la même
+ * chose dans toute l'application, quel que soit l'onglet :
+ * - rouge   : danger/urgence uniquement (priorité critique, statut FDR "Rouge", surcharge,
+ *             tâche en retard). Ne jamais l'utiliser pour une simple catégorie/étiquette.
+ * - ambre   : attention/avertissement (priorité haute, statut FDR "Orange", "en attente",
+ *             "reporté", charge élevée).
+ * - émeraude: succès/terminé (statut FDR "Vert", "terminé", charge équilibrée).
+ * - bleu/ciel: en cours / information neutre (statut "en cours", "planifié", sous-charge).
+ * - ardoise : neutre/inactif (à faire, idée, abandonné, priorité basse).
+ * Les étiquettes purement catégorielles (type de tâche, domaine FDR) évitent délibérément
+ * ces cinq couleurs pour ne jamais se faire passer pour un signal de sévérité.
+ */
+
+
+
 export function Avatar({ name, color, initials, size = 36 }: { name: string; color: string; initials: string; size?: number }) {
   return (
     <div
@@ -16,7 +32,10 @@ export function Avatar({ name, color, initials, size = 36 }: { name: string; col
 
 const typeStyles: Record<TaskType, string> = {
   MCO: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
-  Incident: 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300',
+  // Fuchsia plutôt que rouge : "Incident" est une catégorie de tâche, pas un niveau de
+  // sévérité — le rouge reste réservé à la priorité "Critique" et aux vrais signaux
+  // d'alerte, pour qu'une tâche Incident de priorité Basse ne s'affiche pas comme urgente.
+  Incident: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/20 dark:text-fuchsia-300',
   Projet: 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300',
 };
 
@@ -94,7 +113,10 @@ const roadmapStatusStyles: Record<RoadmapStatus, string> = {
   en_cours: 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300',
   termine: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
   reporte: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
-  abandonne: 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-300',
+  // Ardoise plutôt que rouge/rose : "Abandonné" est un état clos et neutre (comme "À
+  // faire"), pas une alerte à traiter — il ne doit pas rivaliser visuellement avec le
+  // rouge réservé aux statuts qui demandent une action.
+  abandonne: 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400',
 };
 
 export function RoadmapStatusBadge({ status }: { status: RoadmapStatus }) {
@@ -104,9 +126,13 @@ export function RoadmapStatusBadge({ status }: { status: RoadmapStatus }) {
 const roadmapDomainStyles: Record<RoadmapDomain, string> = {
   Infrastructure: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300',
   Réseau: 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300',
-  Sécurité: 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300',
+  // Fuchsia plutôt que rouge : le domaine "Sécurité" est une catégorie, pas un signal
+  // d'alerte — une initiative Sécurité au statut "Idée" ne doit pas sembler urgente.
+  Sécurité: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/20 dark:text-fuchsia-300',
   Cloud: 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300',
-  'Poste de travail': 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300',
+  // Teal plutôt que vert/émeraude : évite qu'une initiative "Poste de travail" ait l'air
+  // d'être déjà "en succès" simplement à cause de sa couleur de domaine.
+  'Poste de travail': 'bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300',
   Autre: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
 };
 

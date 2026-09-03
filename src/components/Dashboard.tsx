@@ -2,11 +2,14 @@ import { useMemo } from 'react';
 import { useStore } from '../store/useStore';
 import { formatDateLong, getWeeks } from '../lib/date';
 import { computeWorkload, workloadLevel, workloadColors } from '../lib/workload';
+import { computeRoadmapWeekStats } from '../lib/weeklyReport';
+import { computeFlashReport, listProjects } from '../lib/flashReport';
 import { absencesToday, getCurrentTask, openTasksForMember } from '../lib/selectors';
 import { Avatar, Card, PriorityBadge, PrintButton, PrintHeader, StatusBadge, TaskTypeBadge, WorkloadBar, WorkloadPill } from './ui';
+import type { Tab } from '../App';
 
-export function Dashboard({ onSelectMember }: { onSelectMember: (id: string) => void }) {
-  const { members, tasks, planningSlots, absences } = useStore();
+export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id: string) => void; onNavigate: (tab: Tab) => void }) {
+  const { members, tasks, timeEntries, planningSlots, absences, roadmapItems } = useStore();
   const today = new Date();
   const weeks = useMemo(() => getWeeks(today, 3), []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -27,6 +30,64 @@ export function Dashboard({ onSelectMember }: { onSelectMember: (id: string) => 
 
   const sortedMembers = [...members].sort((a, b) => loadThisWeek[b.id].ratio - loadThisWeek[a.id].ratio);
 
+  // --- Points d'attention : regroupe en un seul endroit les signaux qui, sinon, obligent à
+  // visiter Tâches, Planning, FDR et les flash reports séparément pour savoir "qu'est-ce qui
+  // a besoin de moi aujourd'hui ?". Chaque signal reste calculé avec les mêmes règles que
+  // dans son onglet d'origine (rien n'est réinventé ici) et pointe directement vers lui.
+  const criticalIncidents = tasks.filter(
+    (t) => t.type === 'Incident' && t.status !== 'termine' && (t.priority === 'critique' || t.priority === 'haute')
+  );
+  const overloadedMembers = members.filter((m) => workloadLevel(loadThisWeek[m.id].ratio) === 'surcharge');
+  const roadmapStats = computeRoadmapWeekStats(roadmapItems, today);
+  const projectSummaries = listProjects(tasks).map((p) => computeFlashReport(p, tasks, timeEntries, members, today));
+  const redProjects = projectSummaries.filter((r) => r.rag === 'rouge');
+  const orangeProjects = projectSummaries.filter((r) => r.rag === 'orange');
+
+  const attentionItems: { key: string; label: string; tone: 'danger' | 'warning'; onClick: () => void }[] = [];
+  if (criticalIncidents.length > 0) {
+    attentionItems.push({
+      key: 'incidents',
+      label: `${criticalIncidents.length} incident(s) critique(s)/haut(s) encore ouvert(s)`,
+      tone: 'danger',
+      onClick: () => onNavigate('tasks'),
+    });
+  }
+  if (enRetard > 0) {
+    attentionItems.push({ key: 'overdue', label: `${enRetard} tâche(s) en retard`, tone: 'danger', onClick: () => onNavigate('tasks') });
+  }
+  if (redProjects.length > 0) {
+    attentionItems.push({
+      key: 'red-projects',
+      label: `${redProjects.length} projet(s) en statut Rouge (flash report)`,
+      tone: 'danger',
+      onClick: () => onNavigate('tasks'),
+    });
+  }
+  if (overloadedMembers.length > 0) {
+    attentionItems.push({
+      key: 'overload',
+      label: `${overloadedMembers.length} personne(s) en surcharge cette semaine`,
+      tone: 'warning',
+      onClick: () => onNavigate('planning'),
+    });
+  }
+  if (orangeProjects.length > 0) {
+    attentionItems.push({
+      key: 'orange-projects',
+      label: `${orangeProjects.length} projet(s) en statut Orange (flash report)`,
+      tone: 'warning',
+      onClick: () => onNavigate('tasks'),
+    });
+  }
+  if (roadmapStats.notStartedButDue.length > 0) {
+    attentionItems.push({
+      key: 'roadmap',
+      label: `${roadmapStats.notStartedButDue.length} initiative(s) FDR pas démarrée(s) alors que leur trimestre est atteint`,
+      tone: 'warning',
+      onClick: () => onNavigate('roadmap'),
+    });
+  }
+
   return (
     <div className="space-y-6">
       <PrintHeader title="Tableau de bord" subtitle={`Aujourd'hui, ${formatDateLong(today)}`} />
@@ -39,6 +100,38 @@ export function Dashboard({ onSelectMember }: { onSelectMember: (id: string) => 
         </div>
         <PrintButton />
       </div>
+
+      <Card className="p-4">
+        <h2 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Points d'attention</h2>
+        {attentionItems.length === 0 ? (
+          <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+            <span aria-hidden="true">✓</span> Rien à signaler pour l'instant — pas de retard, pas de surcharge, pas d'alerte FDR ni de projet en Rouge/Orange.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {attentionItems.map((it) => (
+              <button
+                key={it.key}
+                onClick={it.onClick}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors print:hidden ${
+                  it.tone === 'danger'
+                    ? 'bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20'
+                    : 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20'
+                }`}
+              >
+                <span className="flex-1">{it.label}</span>
+                <span className="shrink-0 text-xs opacity-60">Voir →</span>
+              </button>
+            ))}
+            {/* Version imprimable des mêmes signaux, sans l'affordance de clic */}
+            <ul className="hidden space-y-1 text-sm text-slate-700 print:block">
+              {attentionItems.map((it) => (
+                <li key={it.key}>• {it.label}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </Card>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiCard label="Incidents ouverts" value={incidentsOuverts} accent="text-red-600 dark:text-red-400" />

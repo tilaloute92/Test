@@ -34,7 +34,7 @@ export interface RoadmapWeekStats {
   notStartedButDue: RoadmapItem[];
 }
 
-function computeRoadmapWeekStats(roadmapItems: RoadmapItem[], referenceDate: Date): RoadmapWeekStats {
+export function computeRoadmapWeekStats(roadmapItems: RoadmapItem[], referenceDate: Date): RoadmapWeekStats {
   const year = referenceDate.getFullYear();
   const yearItems = roadmapItems.filter((r) => r.year === year);
   const byStatus = ROADMAP_STATUSES.reduce((acc, s) => ({ ...acc, [s]: 0 }), {} as Record<RoadmapStatus, number>);
