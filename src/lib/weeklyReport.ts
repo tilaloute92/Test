@@ -57,7 +57,7 @@ export function computeWeeklyReport(opts: {
   const perMember: MemberWeekStats[] = members.map((m) => {
     const load = computeWorkload(m.id, weekDays, planningSlots, absences);
     const hoursLogged = timeEntries.filter((e) => e.memberId === m.id && isoDays.has(e.date)).reduce((s, e) => s + e.hours, 0);
-    const tasksCompleted = tasks.filter((t) => t.assigneeId === m.id && t.completedAt && isoDays.has(t.completedAt.slice(0, 10)));
+    const tasksCompleted = tasks.filter((t) => t.assigneeIds.includes(m.id) && t.completedAt && isoDays.has(t.completedAt.slice(0, 10)));
     const absenceDays = absences.filter((a) => a.memberId === m.id && isoDays.has(a.date)).length;
     return {
       member: m,
@@ -143,8 +143,13 @@ const absenceTypeLabels: Record<string, string> = {
   autre: 'absence',
 };
 
+function assigneeNames(task: ProjectTask, members: TeamMember[]): string {
+  const names = task.assigneeIds.map((id) => members.find((m) => m.id === id)?.name).filter((n): n is string => Boolean(n));
+  return names.length > 0 ? names.join(', ') : 'non assigné';
+}
+
 /** Rend le rapport en Markdown, pensé pour être collé tel quel dans un e-mail ou Teams/Slack. */
-export function buildMarkdownReport(report: WeeklyReport, teamLabel: string): string {
+export function buildMarkdownReport(report: WeeklyReport, teamLabel: string, members: TeamMember[]): string {
   const w = weatherMeta[report.weather];
   const lines: string[] = [];
 
@@ -171,17 +176,17 @@ export function buildMarkdownReport(report: WeeklyReport, teamLabel: string): st
   if (report.openCriticalIncidents.length > 0) {
     lines.push('');
     lines.push('## Incidents critiques/hauts encore ouverts');
-    for (const t of report.openCriticalIncidents) lines.push(`- ${t.title} (${t.priority})`);
+    for (const t of report.openCriticalIncidents) lines.push(`- ${t.title} (${t.priority}) — ${assigneeNames(t, members)}`);
   }
   if (report.tasksCompleted.length > 0) {
     lines.push('');
     lines.push('## Terminé cette semaine');
-    for (const t of report.tasksCompleted) lines.push(`- ${t.title}${t.project ? ` — ${t.project}` : ''}`);
+    for (const t of report.tasksCompleted) lines.push(`- ${t.title}${t.project ? ` — ${t.project}` : ''} — ${assigneeNames(t, members)}`);
   }
   if (report.overdueTasks.length > 0) {
     lines.push('');
     lines.push('## Tâches en retard');
-    for (const t of report.overdueTasks) lines.push(`- ${t.title} (échéance ${t.dueDate})`);
+    for (const t of report.overdueTasks) lines.push(`- ${t.title} (échéance ${t.dueDate}) — ${assigneeNames(t, members)}`);
   }
   lines.push('');
   lines.push('## Semaine prochaine');

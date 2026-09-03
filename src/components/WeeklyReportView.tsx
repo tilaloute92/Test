@@ -3,8 +3,14 @@ import { useStore } from '../store/useStore';
 import { addDays, formatDateLong, formatWeekRange, getWorkingDaysOfWeek, isToday, startOfWeek } from '../lib/date';
 import { buildMarkdownReport, computeWeeklyReport, weatherMeta } from '../lib/weeklyReport';
 import { Avatar, Card, WorkloadBar, WorkloadPill } from './ui';
+import type { ProjectTask, TeamMember } from '../types';
 
 const TEAM_LABEL = 'Équipe Infrastructure & Réseau';
+
+function assigneeNames(task: ProjectTask, members: TeamMember[]): string {
+  const names = task.assigneeIds.map((id) => members.find((m) => m.id === id)?.name).filter((n): n is string => Boolean(n));
+  return names.length > 0 ? names.join(', ') : 'Non assigné';
+}
 
 export function WeeklyReportView() {
   const { members, tasks, timeEntries, absences, planningSlots } = useStore();
@@ -23,7 +29,7 @@ export function WeeklyReportView() {
   const weather = weatherMeta[report.weather];
 
   const copyMarkdown = async () => {
-    const md = buildMarkdownReport(report, TEAM_LABEL);
+    const md = buildMarkdownReport(report, TEAM_LABEL, members);
     try {
       await navigator.clipboard.writeText(md);
       setCopied(true);
@@ -122,15 +128,12 @@ export function WeeklyReportView() {
             <p className="text-xs text-slate-400">Aucun — rien de bloquant en attente.</p>
           ) : (
             <ul className="space-y-1.5 text-sm">
-              {report.openCriticalIncidents.map((t) => {
-                const m = members.find((mm) => mm.id === t.assigneeId);
-                return (
-                  <li key={t.id} className="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-200">
-                    <span className="truncate">{t.title}</span>
-                    <span className="shrink-0 text-xs text-slate-400">{m?.name ?? 'Non assigné'}</span>
-                  </li>
-                );
-              })}
+              {report.openCriticalIncidents.map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-200">
+                  <span className="truncate">{t.title}</span>
+                  <span className="shrink-0 text-xs text-slate-400">{assigneeNames(t, members)}</span>
+                </li>
+              ))}
             </ul>
           )}
         </Card>
@@ -141,15 +144,12 @@ export function WeeklyReportView() {
             <p className="text-xs text-slate-400">Aucune tâche clôturée cette semaine.</p>
           ) : (
             <ul className="space-y-1.5 text-sm">
-              {report.tasksCompleted.map((t) => {
-                const m = members.find((mm) => mm.id === t.assigneeId);
-                return (
-                  <li key={t.id} className="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-200">
-                    <span className="truncate">{t.title}</span>
-                    <span className="shrink-0 text-xs text-slate-400">{m?.name ?? '—'}</span>
-                  </li>
-                );
-              })}
+              {report.tasksCompleted.map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-200">
+                  <span className="truncate">{t.title}</span>
+                  <span className="shrink-0 text-xs text-slate-400">{assigneeNames(t, members)}</span>
+                </li>
+              ))}
             </ul>
           )}
         </Card>
@@ -160,16 +160,13 @@ export function WeeklyReportView() {
             <p className="text-xs text-slate-400">Aucune — tout est dans les temps.</p>
           ) : (
             <ul className="space-y-1.5 text-sm">
-              {report.overdueTasks.map((t) => {
-                const m = members.find((mm) => mm.id === t.assigneeId);
-                return (
-                  <li key={t.id} className="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-200">
-                    <span className="truncate">{t.title}</span>
-                    <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">échéance {t.dueDate}</span>
-                    <span className="shrink-0 text-xs text-slate-400">{m?.name ?? '—'}</span>
-                  </li>
-                );
-              })}
+              {report.overdueTasks.map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-200">
+                  <span className="truncate">{t.title}</span>
+                  <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">échéance {t.dueDate}</span>
+                  <span className="shrink-0 text-xs text-slate-400">{assigneeNames(t, members)}</span>
+                </li>
+              ))}
             </ul>
           )}
         </Card>

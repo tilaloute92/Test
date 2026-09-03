@@ -23,7 +23,8 @@ export interface ProjectTask {
   title: string;
   type: TaskType;
   project?: string;
-  assigneeId: string | null;
+  /** Plusieurs personnes peuvent travailler ensemble sur un même incident/MCO/projet. */
+  assigneeIds: string[];
   status: TaskStatus;
   priority: Priority;
   estimatedHours: number;

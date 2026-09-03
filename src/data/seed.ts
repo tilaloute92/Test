@@ -29,56 +29,58 @@ const iso = toISODate(today);
 
 export const tasks: ProjectTask[] = [
   // --- MCO récurrent ---
-  { id: 't1', title: 'Supervision & contrôle des sauvegardes', type: 'MCO', assigneeId: 'm1', status: 'en_cours', priority: 'normale', estimatedHours: 3.5, createdAt: iso },
-  { id: 't2', title: 'Patch management serveurs Linux', type: 'MCO', assigneeId: 'm1', status: 'a_faire', priority: 'normale', estimatedHours: 7, createdAt: iso },
-  { id: 't3', title: 'Supervision réseau (Centreon/PRTG)', type: 'MCO', assigneeId: 'm6', status: 'en_cours', priority: 'normale', estimatedHours: 3.5, createdAt: iso },
-  { id: 't4', title: 'Support utilisateurs N2 - ticketing', type: 'MCO', assigneeId: 'm4', status: 'en_cours', priority: 'normale', estimatedHours: 10.5, createdAt: iso },
-  { id: 't5', title: 'Contrôle sauvegardes AD / GPO', type: 'MCO', assigneeId: 'm3', status: 'a_faire', priority: 'normale', estimatedHours: 3.5, createdAt: iso },
-  { id: 't6', title: 'Revue quotidienne alertes cloud', type: 'MCO', assigneeId: 'm5', status: 'en_cours', priority: 'normale', estimatedHours: 3.5, createdAt: iso },
-  { id: 't7', title: 'Astreinte réseau - vérification liens WAN', type: 'MCO', assigneeId: 'm2', status: 'a_faire', priority: 'normale', estimatedHours: 3.5, createdAt: iso },
+  { id: 't1', title: 'Supervision & contrôle des sauvegardes', type: 'MCO', assigneeIds: ['m1'], status: 'en_cours', priority: 'normale', estimatedHours: 3.5, createdAt: iso },
+  { id: 't2', title: 'Patch management serveurs Linux', type: 'MCO', assigneeIds: ['m1'], status: 'a_faire', priority: 'normale', estimatedHours: 7, createdAt: iso },
+  { id: 't3', title: 'Supervision réseau (Centreon/PRTG)', type: 'MCO', assigneeIds: ['m6'], status: 'en_cours', priority: 'normale', estimatedHours: 3.5, createdAt: iso },
+  { id: 't4', title: 'Support utilisateurs N2 - ticketing', type: 'MCO', assigneeIds: ['m4'], status: 'en_cours', priority: 'normale', estimatedHours: 10.5, createdAt: iso },
+  { id: 't5', title: 'Contrôle sauvegardes AD / GPO', type: 'MCO', assigneeIds: ['m3'], status: 'a_faire', priority: 'normale', estimatedHours: 3.5, createdAt: iso },
+  { id: 't6', title: 'Revue quotidienne alertes cloud', type: 'MCO', assigneeIds: ['m5'], status: 'en_cours', priority: 'normale', estimatedHours: 3.5, createdAt: iso },
+  { id: 't7', title: 'Astreinte réseau - vérification liens WAN', type: 'MCO', assigneeIds: ['m2'], status: 'a_faire', priority: 'normale', estimatedHours: 3.5, createdAt: iso },
 
   // --- Incidents ---
-  { id: 'i1', title: 'INC-1042 Panne switch salle serveur B12', type: 'Incident', assigneeId: 'm2', status: 'en_cours', priority: 'critique', estimatedHours: 4, dueDate: iso, createdAt: iso },
-  { id: 'i2', title: 'INC-1043 Lenteur VPN agence Lyon', type: 'Incident', assigneeId: 'm6', status: 'en_attente', priority: 'haute', estimatedHours: 3, dueDate: iso, createdAt: iso },
-  { id: 'i3', title: 'INC-1044 Serveur de fichiers plein (Prod)', type: 'Incident', assigneeId: 'm1', status: 'a_faire', priority: 'haute', estimatedHours: 2, createdAt: iso },
-  { id: 'i4', title: 'INC-1045 Poste utilisateur ne démarre plus - Direction', type: 'Incident', assigneeId: 'm4', status: 'a_faire', priority: 'normale', estimatedHours: 1.5, createdAt: iso },
-  { id: 'i5', title: 'INC-1046 Compte AD verrouillé en boucle', type: 'Incident', assigneeId: 'm3', status: 'termine', priority: 'normale', estimatedHours: 1, createdAt: iso, completedAt: today.toISOString() },
+  { id: 'i1', title: 'INC-1042 Panne switch salle serveur B12', type: 'Incident', assigneeIds: ['m2', 'm6'], status: 'en_cours', priority: 'critique', estimatedHours: 4, dueDate: iso, createdAt: iso },
+  { id: 'i2', title: 'INC-1043 Lenteur VPN agence Lyon', type: 'Incident', assigneeIds: ['m6'], status: 'en_attente', priority: 'haute', estimatedHours: 3, dueDate: iso, createdAt: iso },
+  { id: 'i3', title: 'INC-1044 Serveur de fichiers plein (Prod)', type: 'Incident', assigneeIds: ['m1'], status: 'a_faire', priority: 'haute', estimatedHours: 2, createdAt: iso },
+  { id: 'i4', title: 'INC-1045 Poste utilisateur ne démarre plus - Direction', type: 'Incident', assigneeIds: ['m4'], status: 'a_faire', priority: 'normale', estimatedHours: 1.5, createdAt: iso },
+  { id: 'i5', title: 'INC-1046 Compte AD verrouillé en boucle', type: 'Incident', assigneeIds: ['m3'], status: 'termine', priority: 'normale', estimatedHours: 1, createdAt: iso, completedAt: today.toISOString() },
 
   // --- Projets ---
-  { id: 'p1', title: 'Cadrage & inventaire salle serveur', type: 'Projet', project: 'Migration Datacenter Nord', assigneeId: 'm1', status: 'en_cours', priority: 'haute', estimatedHours: 14, dueDate: toISODate(addDays(today, 18)), createdAt: iso },
-  { id: 'p2', title: 'Migration VM prioritaires (vMotion)', type: 'Projet', project: 'Migration Datacenter Nord', assigneeId: 'm5', status: 'a_faire', priority: 'haute', estimatedHours: 21, dueDate: toISODate(addDays(today, 25)), createdAt: iso },
-  { id: 'p3', title: 'Bascule stockage SAN', type: 'Projet', project: 'Migration Datacenter Nord', assigneeId: 'm1', status: 'a_faire', priority: 'normale', estimatedHours: 10.5, dueDate: toISODate(addDays(today, 25)), createdAt: iso },
+  { id: 'p1', title: 'Cadrage & inventaire salle serveur', type: 'Projet', project: 'Migration Datacenter Nord', assigneeIds: ['m1', 'm5'], status: 'en_cours', priority: 'haute', estimatedHours: 14, dueDate: toISODate(addDays(today, 18)), createdAt: iso },
+  { id: 'p2', title: 'Migration VM prioritaires (vMotion)', type: 'Projet', project: 'Migration Datacenter Nord', assigneeIds: ['m5'], status: 'a_faire', priority: 'haute', estimatedHours: 21, dueDate: toISODate(addDays(today, 25)), createdAt: iso },
+  { id: 'p3', title: 'Bascule stockage SAN', type: 'Projet', project: 'Migration Datacenter Nord', assigneeIds: ['m1'], status: 'a_faire', priority: 'normale', estimatedHours: 10.5, dueDate: toISODate(addDays(today, 25)), createdAt: iso },
 
-  { id: 'p4', title: 'Déploiement boîtiers SD-WAN agence Lyon', type: 'Projet', project: 'Déploiement SD-WAN agences', assigneeId: 'm2', status: 'en_cours', priority: 'haute', estimatedHours: 17.5, dueDate: toISODate(addDays(today, 11)), createdAt: iso },
-  { id: 'p5', title: 'Déploiement boîtiers SD-WAN agence Nantes', type: 'Projet', project: 'Déploiement SD-WAN agences', assigneeId: 'm6', status: 'a_faire', priority: 'normale', estimatedHours: 17.5, dueDate: toISODate(addDays(today, 18)), createdAt: iso },
-  { id: 'p6', title: 'Rédaction procédures & schémas réseau', type: 'Projet', project: 'Déploiement SD-WAN agences', assigneeId: 'm2', status: 'a_faire', priority: 'basse', estimatedHours: 7, createdAt: iso },
+  { id: 'p4', title: 'Déploiement boîtiers SD-WAN agence Lyon', type: 'Projet', project: 'Déploiement SD-WAN agences', assigneeIds: ['m2', 'm6'], status: 'en_cours', priority: 'haute', estimatedHours: 17.5, dueDate: toISODate(addDays(today, 11)), createdAt: iso },
+  { id: 'p5', title: 'Déploiement boîtiers SD-WAN agence Nantes', type: 'Projet', project: 'Déploiement SD-WAN agences', assigneeIds: ['m6'], status: 'a_faire', priority: 'normale', estimatedHours: 17.5, dueDate: toISODate(addDays(today, 18)), createdAt: iso },
+  { id: 'p6', title: 'Rédaction procédures & schémas réseau', type: 'Projet', project: 'Déploiement SD-WAN agences', assigneeIds: ['m2'], status: 'a_faire', priority: 'basse', estimatedHours: 7, createdAt: iso },
 
-  { id: 'p7', title: 'Étude & choix modèle firewall', type: 'Projet', project: 'Renouvellement parc firewalls', assigneeId: 'm2', status: 'termine', priority: 'normale', estimatedHours: 7, createdAt: iso, completedAt: addDays(today, -2).toISOString() },
-  { id: 'p8', title: 'Remplacement firewall siège', type: 'Projet', project: 'Renouvellement parc firewalls', assigneeId: 'm6', status: 'a_faire', priority: 'haute', estimatedHours: 14, dueDate: toISODate(addDays(today, 9)), createdAt: iso },
+  { id: 'p7', title: 'Étude & choix modèle firewall', type: 'Projet', project: 'Renouvellement parc firewalls', assigneeIds: ['m2'], status: 'termine', priority: 'normale', estimatedHours: 7, createdAt: iso, completedAt: addDays(today, -2).toISOString() },
+  { id: 'p8', title: 'Remplacement firewall siège', type: 'Projet', project: 'Renouvellement parc firewalls', assigneeIds: ['m6'], status: 'a_faire', priority: 'haute', estimatedHours: 14, dueDate: toISODate(addDays(today, 9)), createdAt: iso },
 
-  { id: 'p9', title: 'Audit couverture Wifi sites pilotes', type: 'Projet', project: 'Passage Wifi 6 sièges', assigneeId: 'm4', status: 'en_cours', priority: 'normale', estimatedHours: 10.5, dueDate: toISODate(addDays(today, 15)), createdAt: iso },
-  { id: 'p10', title: 'Déploiement bornes Wifi 6 - bâtiment A', type: 'Projet', project: 'Passage Wifi 6 sièges', assigneeId: 'm3', status: 'a_faire', priority: 'normale', estimatedHours: 14, dueDate: toISODate(addDays(today, 22)), createdAt: iso },
+  { id: 'p9', title: 'Audit couverture Wifi sites pilotes', type: 'Projet', project: 'Passage Wifi 6 sièges', assigneeIds: ['m4'], status: 'en_cours', priority: 'normale', estimatedHours: 10.5, dueDate: toISODate(addDays(today, 15)), createdAt: iso },
+  { id: 'p10', title: 'Déploiement bornes Wifi 6 - bâtiment A', type: 'Projet', project: 'Passage Wifi 6 sièges', assigneeIds: ['m3'], status: 'a_faire', priority: 'normale', estimatedHours: 14, dueDate: toISODate(addDays(today, 22)), createdAt: iso },
 
-  { id: 'p11', title: 'Automatisation provisioning (Terraform)', type: 'Projet', project: 'Industrialisation Cloud', assigneeId: 'm5', status: 'en_cours', priority: 'normale', estimatedHours: 21, dueDate: toISODate(addDays(today, 20)), createdAt: iso },
-  { id: 'p12', title: 'Mise en place cluster Kubernetes de test', type: 'Projet', project: 'Industrialisation Cloud', assigneeId: 'm5', status: 'a_faire', priority: 'basse', estimatedHours: 14, createdAt: iso },
+  { id: 'p11', title: 'Automatisation provisioning (Terraform)', type: 'Projet', project: 'Industrialisation Cloud', assigneeIds: ['m5'], status: 'en_cours', priority: 'normale', estimatedHours: 21, dueDate: toISODate(addDays(today, 20)), createdAt: iso },
+  { id: 'p12', title: 'Mise en place cluster Kubernetes de test', type: 'Projet', project: 'Industrialisation Cloud', assigneeIds: ['m5'], status: 'a_faire', priority: 'basse', estimatedHours: 14, createdAt: iso },
 ];
 
 // --- Planning: 3 semaines glissantes, matin = MCO/Incident, après-midi = Projet ---
+// Un même identifiant de tâche peut apparaître pour plusieurs personnes ici : c'est le cas
+// normal d'une tâche à plusieurs intervenants (assigneeIds), chacun ayant son propre créneau.
 const mcoIncidentTasksByMember: Record<string, string[]> = {
   m1: ['t1', 't2', 'i3'],
   m2: ['t7', 'i1'],
   m3: ['t5', 'i5'],
   m4: ['t4', 'i4'],
   m5: ['t6'],
-  m6: ['t3', 'i2'],
+  m6: ['t3', 'i2', 'i1'],
 };
 const projetTasksByMember: Record<string, string[]> = {
   m1: ['p1', 'p3'],
   m2: ['p4', 'p6'],
   m3: ['p10'],
   m4: ['p9'],
-  m5: ['p2', 'p11', 'p12'],
-  m6: ['p5', 'p8'],
+  m5: ['p1', 'p2', 'p11', 'p12'],
+  m6: ['p4', 'p5', 'p8'],
 };
 
 export const planningSlots: PlanningSlot[] = [];

@@ -87,7 +87,7 @@ export const useStore = create<StoreState>()(
       removeMember: (id) =>
         set((s) => ({
           members: s.members.filter((m) => m.id !== id),
-          tasks: s.tasks.map((t) => (t.assigneeId === id ? { ...t, assigneeId: null } : t)),
+          tasks: s.tasks.map((t) => (t.assigneeIds.includes(id) ? { ...t, assigneeIds: t.assigneeIds.filter((a) => a !== id) } : t)),
           planningSlots: s.planningSlots.filter((p) => p.memberId !== id),
         })),
 

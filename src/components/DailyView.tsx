@@ -71,7 +71,7 @@ export function DailyView() {
                     const slot = planningSlots.find((s) => s.memberId === m.id && s.date === iso && s.period === period);
                     const task = getTaskById(tasks, slot?.taskId);
                     const memberTasks = tasks.filter(
-                      (t) => t.assigneeId === m.id && eligibleTypes[period].includes(t.type) && t.status !== 'termine'
+                      (t) => t.assigneeIds.includes(m.id) && eligibleTypes[period].includes(t.type) && t.status !== 'termine'
                     );
 
                     return (

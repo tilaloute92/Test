@@ -52,7 +52,7 @@ export function PlanningView() {
   const selectedTask = getTaskById(tasks, selectedSlot?.taskId);
   const eligibleTypes: TaskType[] = selected?.period === 'matin' ? ['MCO', 'Incident'] : ['Projet'];
   const eligibleTasks = selected
-    ? tasks.filter((t) => t.assigneeId === selected.memberId && eligibleTypes.includes(t.type) && t.status !== 'termine')
+    ? tasks.filter((t) => t.assigneeIds.includes(selected.memberId) && eligibleTypes.includes(t.type) && t.status !== 'termine')
     : [];
 
   return (

@@ -15,7 +15,7 @@ export function getCurrentSlot(planningSlots: PlanningSlot[], memberId: string, 
 export function getCurrentTask(planningSlots: PlanningSlot[], tasks: ProjectTask[], memberId: string): ProjectTask | undefined {
   const slot = getCurrentSlot(planningSlots, memberId);
   if (slot?.taskId) return getTaskById(tasks, slot.taskId);
-  return tasks.find((t) => t.assigneeId === memberId && t.status === 'en_cours');
+  return tasks.find((t) => t.assigneeIds.includes(memberId) && t.status === 'en_cours');
 }
 
 export function hoursLoggedToday(timeEntries: TimeEntry[], memberId: string, date = new Date()): number {
@@ -33,7 +33,7 @@ export function hoursLoggedThisWeek(timeEntries: TimeEntry[], memberId: string, 
 }
 
 export function openTasksForMember(tasks: ProjectTask[], memberId: string): ProjectTask[] {
-  return tasks.filter((t) => t.assigneeId === memberId && t.status !== 'termine');
+  return tasks.filter((t) => t.assigneeIds.includes(memberId) && t.status !== 'termine');
 }
 
 export function absencesToday(absences: Absence[], memberId: string, date = new Date()): Absence | undefined {
