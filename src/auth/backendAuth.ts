@@ -27,11 +27,19 @@ export class ApiError extends Error {
   }
 }
 
+// Si le serveur d'authentification n'est pas démarré, le proxy (Vite en développement,
+// IIS en production) peut mettre du temps à signaler l'échec plutôt que de le renvoyer
+// immédiatement — sans limite de temps ici, l'appel resterait "en attente" indéfiniment
+// et bloquerait tout l'écran de connexion (page blanche). Cette limite garantit qu'on
+// bascule toujours en mode "backend indisponible" en quelques secondes.
+const REQUEST_TIMEOUT_MS = 3000;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...init,
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(data.error || `Erreur ${res.status}`, res.status);
@@ -41,7 +49,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 /** Vérifie si le serveur d'authentification est joignable — sinon l'app se rabat sur le SSO client seul. */
 export async function backendAvailable(): Promise<boolean> {
   try {
-    const res = await fetch('/api/health', { credentials: 'include' });
+    const res = await fetch('/api/health', { credentials: 'include', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     return res.ok;
   } catch {
     return false;
