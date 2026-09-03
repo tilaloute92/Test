@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { Avatar, Card, PriorityBadge, PrintButton, PrintHeader, RoadmapDomainBadge, RoadmapStatusBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
-import { exportRoadmapPptx } from '../lib/roadmapPptx';
 import type { Priority, ProjectTask, RoadmapDomain, RoadmapItem, RoadmapQuarter, RoadmapStatus, TeamMember } from '../types';
 
 const DOMAINS: RoadmapDomain[] = ['Infrastructure', 'Réseau', 'Sécurité', 'Cloud', 'Poste de travail', 'Autre'];
@@ -43,8 +42,6 @@ export function RoadmapView() {
   const [ownerFilter, setOwnerFilter] = useState('Tous');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<RoadmapItem | null>(null);
-  const [pptxBusy, setPptxBusy] = useState(false);
-  const [pptxError, setPptxError] = useState<string | null>(null);
 
   const yearItems = roadmapItems.filter((r) => r.year === year);
   const filtered = yearItems
@@ -96,18 +93,6 @@ export function RoadmapView() {
     URL.revokeObjectURL(url);
   };
 
-  const exportPptx = async () => {
-    setPptxError(null);
-    setPptxBusy(true);
-    try {
-      await exportRoadmapPptx({ year, items: filtered, members });
-    } catch (err) {
-      setPptxError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setPptxBusy(false);
-    }
-  };
-
   const doRemove = async (r: RoadmapItem) => {
     if (
       await confirm({
@@ -137,9 +122,6 @@ export function RoadmapView() {
           <button onClick={exportCsv} className="btn-ghost">
             Exporter CSV
           </button>
-          <button onClick={exportPptx} disabled={pptxBusy} className="btn-ghost disabled:opacity-40">
-            {pptxBusy ? 'Génération…' : 'Exporter PowerPoint'}
-          </button>
           <button
             onClick={() => setShowForm(true)}
             className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700"
@@ -148,11 +130,6 @@ export function RoadmapView() {
           </button>
         </div>
       </div>
-      {pptxError && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 print:hidden dark:bg-red-500/10 dark:text-red-300">
-          Échec de la génération du PowerPoint : {pptxError}
-        </p>
-      )}
 
       <div className="flex flex-wrap items-center gap-2 print:hidden">
         <button onClick={() => setYear((y) => y - 1)} className="btn-ghost">

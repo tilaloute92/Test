@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { addDays, formatDateLong, formatWeekRange, getWorkingDaysOfWeek, isToday, startOfWeek } from '../lib/date';
 import { buildMarkdownReport, computeWeeklyReport, weatherMeta } from '../lib/weeklyReport';
+import { exportWeeklyReportPptx } from '../lib/weeklyReportPptx';
 import { Avatar, Card, RoadmapDomainBadge, WorkloadBar, WorkloadPill } from './ui';
 import type { ProjectTask, TeamMember } from '../types';
 
@@ -25,6 +26,8 @@ export function WeeklyReportView() {
   const { members, tasks, timeEntries, absences, planningSlots, roadmapItems } = useStore();
   const [weekOffset, setWeekOffset] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [pptxBusy, setPptxBusy] = useState(false);
+  const [pptxError, setPptxError] = useState<string | null>(null);
 
   const weekStart = startOfWeek(addDays(new Date(), weekOffset * 7));
   const weekDays = getWorkingDaysOfWeek(weekStart);
@@ -49,6 +52,18 @@ export function WeeklyReportView() {
     }
   };
 
+  const exportPptx = async () => {
+    setPptxError(null);
+    setPptxBusy(true);
+    try {
+      await exportWeeklyReportPptx({ report, members, teamLabel: TEAM_LABEL });
+    } catch (err) {
+      setPptxError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPptxBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
@@ -68,13 +83,26 @@ export function WeeklyReportView() {
           <button onClick={() => window.print()} className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700">
             Imprimer / Enregistrer en PDF
           </button>
+          <button
+            onClick={exportPptx}
+            disabled={pptxBusy}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            {pptxBusy ? 'Génération…' : 'Exporter PowerPoint'}
+          </button>
         </div>
       </div>
 
       <p className="text-xs text-slate-400 print:hidden">
         Pensé pour être généré le vendredi, en fin de semaine. L'application n'ayant pas de serveur, l'envoi n'est pas automatique :
-        générez le rapport ici puis partagez-le via "Copier en Markdown" (e-mail, Teams...) ou "Imprimer / Enregistrer en PDF".
+        générez le rapport ici puis partagez-le via "Copier en Markdown" (e-mail, Teams...), "Imprimer / Enregistrer en PDF" ou "Exporter
+        PowerPoint" (fichier .pptx généré dans votre navigateur, sans macro ni image intégrée — voir la section Sécurité du README).
       </p>
+      {pptxError && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 print:hidden dark:bg-red-500/10 dark:text-red-300">
+          Échec de la génération du PowerPoint : {pptxError}
+        </p>
+      )}
 
       {/* En-tête imprimable, masqué à l'écran */}
       <div className="hidden print:block">

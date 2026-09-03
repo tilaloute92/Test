@@ -143,6 +143,17 @@ export function PrintHeader({ title, subtitle }: { title: string; subtitle?: str
   );
 }
 
+const ragLabels: Record<'vert' | 'orange' | 'rouge', string> = { vert: 'Vert', orange: 'Orange', rouge: 'Rouge' };
+const ragStyles: Record<'vert' | 'orange' | 'rouge', string> = {
+  vert: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
+  orange: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
+  rouge: 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300',
+};
+
+export function RagBadge({ rag }: { rag: 'vert' | 'orange' | 'rouge' }) {
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${ragStyles[rag]}`}>{ragLabels[rag]}</span>;
+}
+
 export function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}>
