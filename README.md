@@ -4,8 +4,9 @@ Application de suivi d'activité pour une équipe infrastructures systèmes & r�
 
 ## Fonctionnement métier
 
-- Semaine à 35h, journée coupée en deux : **matin = MCO & incidents**, **après-midi = projets**.
-- Chaque demi-journée (3,5h) est un créneau qu'on affecte à une tâche.
+- Volume hebdomadaire cible de 35h par personne (modifiable individuellement dans l'onglet Équipe), journée coupée en deux : **matin = MCO & incidents**, **après-midi = projets**.
+- Chaque demi-journée (3,5h) est un créneau qu'on affecte à une tâche, **du lundi au dimanche** — l'équipe travaillant aussi le week-end et en horaires décalés, samedi et dimanche sont des jours planifiables comme les autres (repérés par un léger fond ambré dans les grilles).
+- La charge de chacun se compare à son propre volume hebdomadaire, pas au nombre de jours affichés à l'écran : ajouter le week-end à la grille ne gonfle donc la charge de personne. Si quelqu'un est planifié au-delà de son volume (ex. week-end en plus d'une semaine déjà pleine), le dépassement se voit directement : le niveau "Surchargé" (> 105%) devient atteignable, ce qui n'était pas le cas avant.
 
 ## Fonctionnalités
 

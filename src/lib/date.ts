@@ -30,9 +30,14 @@ export function startOfWeek(d: Date): Date {
   return copy;
 }
 
+/**
+ * Les 7 jours de la semaine (lundi à dimanche). L'équipe travaillant aussi le week-end
+ * (astreintes, horaires décalés), le samedi et le dimanche sont des jours planifiables
+ * comme les autres — voir `isWeekend` pour les repérer visuellement dans l'interface.
+ */
 export function getWorkingDaysOfWeek(weekStart: Date): Date[] {
   const days: Date[] = [];
-  for (let i = 0; i < 5; i++) days.push(addDays(weekStart, i));
+  for (let i = 0; i < 7; i++) days.push(addDays(weekStart, i));
   return days;
 }
 

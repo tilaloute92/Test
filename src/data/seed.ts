@@ -1,5 +1,5 @@
 import type { Absence, ApiConnection, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
-import { addDays, startOfWeek, toISODate } from '../lib/date';
+import { addDays, isWeekend, startOfWeek, toISODate } from '../lib/date';
 
 // Deterministic PRNG so the seeded planning looks the same on every load.
 function mulberry32(seed: number) {
@@ -100,14 +100,21 @@ const baseFillByMember: Record<string, number> = {
   m6: 0.8,
 };
 
+// Équipe en horaires décalés : Karim (réseau, astreinte incidents) et Nicolas (déjà
+// d'astreinte dans les données ci-dessous) couvrent aussi le week-end. Les autres
+// suivent un rythme classique du lundi au vendredi (fill quasi nul le week-end).
+const weekendDutyMembers = new Set(['m2', 'm6']);
+
 for (let w = 0; w < 3; w++) {
-  for (let d = 0; d < 5; d++) {
+  for (let d = 0; d < 7; d++) {
     const day = addDays(weekStart, w * 7 + d);
     const dayIso = toISODate(day);
+    const weekend = isWeekend(day);
     for (const member of members) {
       // Fill rate decreases slightly for weeks further away (planning still being firmed up)
       const weekFactor = w === 0 ? 1 : w === 1 ? 0.85 : 0.6;
-      const fillProbability = baseFillByMember[member.id] * weekFactor;
+      const weekendFactor = weekend ? (weekendDutyMembers.has(member.id) ? 0.5 : 0) : 1;
+      const fillProbability = baseFillByMember[member.id] * weekFactor * weekendFactor;
 
       const morningTasks = mcoIncidentTasksByMember[member.id];
       const afternoonTasks = projetTasksByMember[member.id];
@@ -122,8 +129,10 @@ for (let w = 0; w < 3; w++) {
 }
 
 // A couple of overload/underload examples for the dashboard to be meaningful:
-// Karim (m2) overloaded this week: fill every slot.
-for (let d = 0; d < 5; d++) {
+// Karim (m2) overloaded this week: fill every slot, week-end compris — illustre la
+// "surcharge" désormais possible quand quelqu'un est planifié au-delà de son volume
+// hebdomadaire (35h) du fait des horaires décalés.
+for (let d = 0; d < 7; d++) {
   const day = toISODate(addDays(weekStart, d));
   for (const period of ['matin', 'apres_midi'] as const) {
     const slot = planningSlots.find((s) => s.memberId === 'm2' && s.date === day && s.period === period);

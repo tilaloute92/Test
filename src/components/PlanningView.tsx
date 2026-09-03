@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { formatDayLabel, formatWeekRange, getWeeks, isToday, toISODate } from '../lib/date';
+import { formatDayLabel, formatWeekRange, getWeeks, isToday, isWeekend, toISODate } from '../lib/date';
 import { isAbsent } from '../lib/workload';
 import { getTaskById } from '../lib/selectors';
 import { Avatar, Card, TaskTypeBadge } from './ui';
@@ -60,7 +60,8 @@ export function PlanningView() {
       <div>
         <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Planning prévisionnel — 3 semaines</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Matin = MCO / incidents · Après-midi = projets. Cliquez sur un créneau pour l'affecter.
+          Matin = MCO / incidents · Après-midi = projets, du lundi au dimanche (équipe en horaires décalés). Cliquez sur un créneau pour
+          l'affecter — le week-end est repéré par un fond légèrement teinté.
         </p>
       </div>
 
@@ -126,13 +127,17 @@ export function PlanningView() {
       </div>
 
       <Card className="overflow-x-auto p-3">
-        <div className="grid min-w-[900px] grid-cols-[160px_repeat(5,minmax(0,1fr))] gap-2">
+        <div className="grid min-w-[1200px] grid-cols-[160px_repeat(7,minmax(0,1fr))] gap-2">
           <div />
           {currentWeek.map((d) => (
             <div
               key={toISODate(d)}
               className={`rounded-lg px-2 py-1.5 text-center text-xs font-semibold ${
-                isToday(d) ? 'bg-violet-600 text-white' : 'text-slate-500 dark:text-slate-400'
+                isToday(d)
+                  ? 'bg-violet-600 text-white'
+                  : isWeekend(d)
+                    ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300'
+                    : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {formatDayLabel(d)}
@@ -148,18 +153,19 @@ export function PlanningView() {
               {currentWeek.map((d) => {
                 const iso = toISODate(d);
                 const dayAbsent = isAbsent(absences, m.id, d, 'matin') && isAbsent(absences, m.id, d, 'apres_midi');
+                const weekendBg = isWeekend(d) ? 'bg-amber-50/50 dark:bg-amber-500/5 rounded-lg' : '';
                 if (dayAbsent) {
                   return (
                     <div
                       key={iso}
-                      className="flex items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-2 py-3 text-center text-[11px] text-slate-400 dark:border-slate-700 dark:bg-slate-800/40"
+                      className={`flex items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-2 py-3 text-center text-[11px] text-slate-400 dark:border-slate-700 dark:bg-slate-800/40`}
                     >
                       Absent(e)
                     </div>
                   );
                 }
                 return (
-                  <div key={iso} className="min-w-0 space-y-1">
+                  <div key={iso} className={`min-w-0 space-y-1 p-0.5 ${weekendBg}`}>
                     {(['matin', 'apres_midi'] as Period[]).map((period) => {
                       const absentPeriod = isAbsent(absences, m.id, d, period);
                       const slot = planningSlots.find((s) => s.memberId === m.id && s.date === iso && s.period === period);
@@ -188,6 +194,9 @@ export function PlanningView() {
           <span className="inline-flex items-center gap-1.5">📁 Projet</span>
           <span className="inline-flex items-center gap-1.5">
             <span className="h-3 w-3 rounded-sm border border-dashed border-slate-300 dark:border-slate-600" /> Non planifié / Absent(e)
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-3 w-3 rounded-sm bg-amber-50 dark:bg-amber-500/10" /> Week-end
           </span>
         </div>
       </Card>

@@ -9,7 +9,7 @@ import {
   tasks as seedTasks,
   timeEntries as seedTimeEntries,
 } from '../data/seed';
-import { addDays, isWeekend, toISODate } from '../lib/date';
+import { addDays, toISODate } from '../lib/date';
 
 const MAX_REQUEST_HISTORY = 30;
 
@@ -139,8 +139,9 @@ export const useStore = create<StoreState>()(
           const start = new Date(startDate);
           const end = new Date(endDate);
           const created: Absence[] = [];
+          // L'équipe travaillant aussi le week-end (horaires décalés), une absence sur une
+          // plage de dates couvre désormais tous les jours de la plage, samedi/dimanche inclus.
           for (let d = start; d <= end; d = addDays(d, 1)) {
-            if (isWeekend(d)) continue;
             created.push({ ...rest, date: toISODate(d), id: nextId('a') });
           }
           return { absences: [...s.absences, ...created] };

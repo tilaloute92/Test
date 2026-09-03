@@ -1,5 +1,5 @@
 import { PERIOD_HOURS, toISODate } from './date';
-import type { Absence, PlanningSlot } from '../types';
+import type { Absence, PlanningSlot, TeamMember } from '../types';
 
 export interface WorkloadResult {
   capacityHours: number;
@@ -15,28 +15,42 @@ export function isAbsent(absences: Absence[], memberId: string, date: Date, peri
   );
 }
 
+/**
+ * La charge d'une personne se mesure par rapport à son propre volume hebdomadaire
+ * (`member.weeklyHours`, 35h par défaut mais modifiable par personne dans l'onglet
+ * Équipe) — pas en comptant les jours affichés. C'est ce qui permet des horaires
+ * décalés (travail le week-end, jours de repos en semaine) sans fausser le calcul :
+ * ajouter samedi/dimanche à la grille ne change la capacité de personne, seul ce qui
+ * est réellement planifié sur ces jours compte. Si une personne est planifiée au-delà
+ * de son volume hebdomadaire (ex. week-end en plus d'une semaine déjà pleine), le ratio
+ * dépasse 100% — c'est le signal de surcharge.
+ *
+ * `days` doit représenter une semaine complète (7 jours) pour que la comparaison avec
+ * `weeklyHours` ait un sens.
+ */
 export function computeWorkload(
-  memberId: string,
+  member: TeamMember,
   days: Date[],
   planningSlots: PlanningSlot[],
   absences: Absence[]
 ): WorkloadResult {
-  let capacityHours = 0;
+  let absentHours = 0;
   let plannedHours = 0;
 
   for (const day of days) {
     for (const period of ['matin', 'apres_midi'] as const) {
-      const absent = isAbsent(absences, memberId, day, period);
-      if (!absent) capacityHours += PERIOD_HOURS;
+      const absent = isAbsent(absences, member.id, day, period);
+      if (absent) absentHours += PERIOD_HOURS;
 
       const iso = toISODate(day);
       const slot = planningSlots.find(
-        (s) => s.memberId === memberId && s.date === iso && s.period === period
+        (s) => s.memberId === member.id && s.date === iso && s.period === period
       );
       if (slot?.taskId && !absent) plannedHours += PERIOD_HOURS;
     }
   }
 
+  const capacityHours = Math.max(member.weeklyHours - absentHours, 0);
   const freeHours = Math.max(capacityHours - plannedHours, 0);
   const ratio = capacityHours > 0 ? plannedHours / capacityHours : 0;
 

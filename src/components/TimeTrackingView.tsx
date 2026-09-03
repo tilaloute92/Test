@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { addDays, formatDateLong, formatWeekRange, getWorkingDaysOfWeek, startOfWeek, toISODate } from '../lib/date';
+import { addDays, formatDateLong, formatWeekRange, getWorkingDaysOfWeek, isWeekend, startOfWeek, toISODate } from '../lib/date';
 import { getTaskById } from '../lib/selectors';
 import { Avatar, Card } from './ui';
 import { useConfirm } from './ConfirmProvider';
@@ -71,7 +71,7 @@ export function TimeTrackingView() {
             <tr className="text-left text-xs text-slate-400">
               <th className="px-2 py-2 font-medium">Membre</th>
               {days.map((d) => (
-                <th key={toISODate(d)} className="px-2 py-2 text-center font-medium">
+                <th key={toISODate(d)} className={`px-2 py-2 text-center font-medium ${isWeekend(d) ? 'text-amber-600 dark:text-amber-400' : ''}`}>
                   {formatDateLong(d).slice(0, 3)}
                 </th>
               ))}
@@ -92,7 +92,10 @@ export function TimeTrackingView() {
                     </div>
                   </td>
                   {perDay.map((h, i) => (
-                    <td key={i} className="px-2 py-2 text-center tabular-nums text-slate-600 dark:text-slate-300">
+                    <td
+                      key={i}
+                      className={`px-2 py-2 text-center tabular-nums text-slate-600 dark:text-slate-300 ${isWeekend(days[i]) ? 'bg-amber-50/50 dark:bg-amber-500/5' : ''}`}
+                    >
                       {h > 0 ? `${h}h` : '—'}
                     </td>
                   ))}

@@ -17,7 +17,7 @@ export function Dashboard({ onSelectMember }: { onSelectMember: (id: string) => 
 
   const loadThisWeek = useMemo(() => {
     const map: Record<string, ReturnType<typeof computeWorkload>> = {};
-    for (const m of members) map[m.id] = computeWorkload(m.id, weeks[0], planningSlots, absences);
+    for (const m of members) map[m.id] = computeWorkload(m, weeks[0], planningSlots, absences);
     return map;
   }, [members, weeks, planningSlots, absences]);
 
@@ -89,7 +89,7 @@ export function Dashboard({ onSelectMember }: { onSelectMember: (id: string) => 
             const load = loadThisWeek[m.id];
             const level = workloadLevel(load.ratio);
             const openTasks = openTasksForMember(tasks, m.id);
-            const weekRatios = weeks.map((wDays) => computeWorkload(m.id, wDays, planningSlots, absences).ratio);
+            const weekRatios = weeks.map((wDays) => computeWorkload(m, wDays, planningSlots, absences).ratio);
 
             return (
               <Card key={m.id} className="flex flex-col gap-3 p-4">

@@ -55,7 +55,7 @@ export function computeWeeklyReport(opts: {
   const weekEndIso = toISODate(weekDays[weekDays.length - 1]);
 
   const perMember: MemberWeekStats[] = members.map((m) => {
-    const load = computeWorkload(m.id, weekDays, planningSlots, absences);
+    const load = computeWorkload(m, weekDays, planningSlots, absences);
     const hoursLogged = timeEntries.filter((e) => e.memberId === m.id && isoDays.has(e.date)).reduce((s, e) => s + e.hours, 0);
     const tasksCompleted = tasks.filter((t) => t.assigneeIds.includes(m.id) && t.completedAt && isoDays.has(t.completedAt.slice(0, 10)));
     const absenceDays = absences.filter((a) => a.memberId === m.id && isoDays.has(a.date)).length;
