@@ -12,6 +12,7 @@
   "dependencies": {
     "@azure/msal-browser": "^5.18.0",
     "@tailwindcss/vite": "^4.3.3",
+    "pptxgenjs": "^4.0.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3",
