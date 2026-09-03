@@ -30,6 +30,7 @@ export interface BackupPayload {
   apiConnections: StoreState['apiConnections'];
   requestHistory: StoreState['requestHistory'];
   authSettings: StoreState['authSettings'];
+  roadmapItems: StoreState['roadmapItems'];
 }
 
 const DATA_KEYS = [
@@ -41,6 +42,7 @@ const DATA_KEYS = [
   'apiConnections',
   'requestHistory',
   'authSettings',
+  'roadmapItems',
 ] as const;
 
 function extractPayload(state: StoreState): BackupPayload {
@@ -100,7 +102,7 @@ export const useBackupStore = create<BackupHistoryState>()(
 
 function summarize(data: BackupPayload): string {
   const planned = data.planningSlots.filter((s) => s.taskId).length;
-  return `${data.members.length} membres · ${data.tasks.length} tâches · ${planned} créneaux planifiés · ${data.absences.length} absences`;
+  return `${data.members.length} membres · ${data.tasks.length} tâches · ${planned} créneaux planifiés · ${data.absences.length} absences · ${data.roadmapItems.length} initiative(s) FDR`;
 }
 
 function pushSnapshotFromCurrentState(label: string) {

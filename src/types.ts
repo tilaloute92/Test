@@ -96,6 +96,40 @@ export interface ApiRequestLog {
   error?: string;
 }
 
+export type RoadmapDomain = 'Infrastructure' | 'Réseau' | 'Sécurité' | 'Cloud' | 'Poste de travail' | 'Autre';
+
+export type RoadmapStatus = 'idee' | 'planifie' | 'en_cours' | 'termine' | 'reporte' | 'abandonne';
+
+/** "annee" = initiative qui court sur toute l'année plutôt que rattachée à un trimestre précis. */
+export type RoadmapQuarter = 'T1' | 'T2' | 'T3' | 'T4' | 'annee';
+
+/**
+ * Feuille de route (FDR) : initiatives stratégiques à l'échelle de l'année (et des années
+ * suivantes), à distinguer des tâches opérationnelles de l'onglet Tâches (horizon de
+ * quelques semaines). Une initiative peut optionnellement s'appuyer sur des tâches
+ * existantes (`linkedTaskIds`) pour suivre son avancement réel sans dupliquer les données.
+ */
+export interface RoadmapItem {
+  id: string;
+  title: string;
+  description?: string;
+  domain: RoadmapDomain;
+  year: number;
+  quarter: RoadmapQuarter;
+  status: RoadmapStatus;
+  priority: Priority;
+  /** Personne(s) porteuse(s) de l'initiative — optionnel, une FDR peut avoir des lignes non encore attribuées. */
+  ownerIds: string[];
+  /** Avancement saisi à la main (0-100) : une FDR reflète une estimation du pilote, pas un calcul automatique. */
+  progress: number;
+  /** Budget prévisionnel en euros — optionnel, à ne renseigner que si un chiffrage existe réellement. */
+  budgetEstimate?: number;
+  /** Tâches opérationnelles liées (onglet Tâches), pour un lien de traçabilité vers le détail. */
+  linkedTaskIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 /**
  * Entra ID (Azure AD) single sign-on settings for the "public client" OAuth2/OIDC
  * flow (Authorization Code + PKCE) used by @azure/msal-browser.

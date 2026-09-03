@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Absence, ApiConnection, ApiRequestLog, AuthSettings, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
+import type { Absence, ApiConnection, ApiRequestLog, AuthSettings, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
 import {
   absences as seedAbsences,
   apiConnections as seedApiConnections,
   members as seedMembers,
   planningSlots as seedPlanningSlots,
+  roadmapItems as seedRoadmapItems,
   tasks as seedTasks,
   timeEntries as seedTimeEntries,
 } from '../data/seed';
@@ -30,6 +31,7 @@ export interface StoreState {
   apiConnections: ApiConnection[];
   requestHistory: ApiRequestLog[];
   authSettings: AuthSettings;
+  roadmapItems: RoadmapItem[];
 
   addMember: (member: Omit<TeamMember, 'id'>) => void;
   updateMember: (id: string, patch: Partial<TeamMember>) => void;
@@ -57,6 +59,10 @@ export interface StoreState {
 
   updateAuthSettings: (patch: Partial<AuthSettings>) => void;
 
+  addRoadmapItem: (item: Omit<RoadmapItem, 'id' | 'createdAt' | 'updatedAt'>) => string;
+  updateRoadmapItem: (id: string, patch: Partial<RoadmapItem>) => void;
+  removeRoadmapItem: (id: string) => void;
+
   resetToSeed: () => void;
 }
 
@@ -79,6 +85,7 @@ export const useStore = create<StoreState>()(
       apiConnections: seedApiConnections,
       requestHistory: [],
       authSettings: defaultAuthSettings,
+      roadmapItems: seedRoadmapItems,
 
       addMember: (member) =>
         set((s) => ({ members: [...s.members, { ...member, id: nextId('m') }] })),
@@ -89,6 +96,7 @@ export const useStore = create<StoreState>()(
           members: s.members.filter((m) => m.id !== id),
           tasks: s.tasks.map((t) => (t.assigneeIds.includes(id) ? { ...t, assigneeIds: t.assigneeIds.filter((a) => a !== id) } : t)),
           planningSlots: s.planningSlots.filter((p) => p.memberId !== id),
+          roadmapItems: s.roadmapItems.map((r) => (r.ownerIds.includes(id) ? { ...r, ownerIds: r.ownerIds.filter((o) => o !== id) } : r)),
         })),
 
       addTask: (task) => {
@@ -113,6 +121,9 @@ export const useStore = create<StoreState>()(
         set((s) => ({
           tasks: s.tasks.filter((t) => t.id !== id),
           planningSlots: s.planningSlots.map((p) => (p.taskId === id ? { ...p, taskId: null } : p)),
+          roadmapItems: s.roadmapItems.map((r) =>
+            r.linkedTaskIds.includes(id) ? { ...r, linkedTaskIds: r.linkedTaskIds.filter((t) => t !== id) } : r
+          ),
         })),
 
       setPlanningSlot: (memberId, date, period, taskId) =>
@@ -166,6 +177,18 @@ export const useStore = create<StoreState>()(
 
       updateAuthSettings: (patch) => set((s) => ({ authSettings: { ...s.authSettings, ...patch } })),
 
+      addRoadmapItem: (item) => {
+        const id = nextId('r');
+        const now = new Date().toISOString();
+        set((s) => ({ roadmapItems: [...s.roadmapItems, { ...item, id, createdAt: now, updatedAt: now }] }));
+        return id;
+      },
+      updateRoadmapItem: (id, patch) =>
+        set((s) => ({
+          roadmapItems: s.roadmapItems.map((r) => (r.id === id ? { ...r, ...patch, updatedAt: new Date().toISOString() } : r)),
+        })),
+      removeRoadmapItem: (id) => set((s) => ({ roadmapItems: s.roadmapItems.filter((r) => r.id !== id) })),
+
       resetToSeed: () =>
         set({
           members: seedMembers,
@@ -176,6 +199,7 @@ export const useStore = create<StoreState>()(
           apiConnections: seedApiConnections,
           requestHistory: [],
           authSettings: defaultAuthSettings,
+          roadmapItems: seedRoadmapItems,
         }),
     }),
     { name: 'infra-team-tracker' }

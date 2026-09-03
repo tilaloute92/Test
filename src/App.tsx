@@ -8,12 +8,13 @@ import { TeamView } from './components/TeamView';
 import { ApiConsoleView } from './components/ApiConsoleView';
 import { SettingsView } from './components/SettingsView';
 import { WeeklyReportView } from './components/WeeklyReportView';
+import { RoadmapView } from './components/RoadmapView';
 import { useStore } from './store/useStore';
 import { isAuthConfigured, signIn as msalLoginOnly, signInWithIdToken, trySilentAccount, signOut as msalSignOut } from './auth/msalClient';
 import { backendAvailable, backendLogout, finalizeSsoSession, getBackendSession, loginLdap, loginLocal, type BackendUser } from './auth/backendAuth';
 import type { AccountInfo } from '@azure/msal-browser';
 
-type Tab = 'dashboard' | 'daily' | 'planning' | 'tasks' | 'time' | 'team' | 'api' | 'report' | 'settings';
+type Tab = 'dashboard' | 'daily' | 'planning' | 'tasks' | 'time' | 'team' | 'api' | 'report' | 'roadmap' | 'settings';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'dashboard', label: "Vue d'ensemble" },
@@ -24,6 +25,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'team', label: 'Équipe' },
   { id: 'api', label: 'API' },
   { id: 'report', label: 'Rapport' },
+  { id: 'roadmap', label: 'FDR' },
   { id: 'settings', label: 'Paramètres' },
 ];
 
@@ -318,6 +320,7 @@ function App() {
         {tab === 'team' && <TeamView />}
         {tab === 'api' && <ApiConsoleView />}
         {tab === 'report' && <WeeklyReportView />}
+        {tab === 'roadmap' && <RoadmapView />}
         {tab === 'settings' && <SettingsView />}
       </main>
     </div>

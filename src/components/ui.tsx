@@ -1,4 +1,4 @@
-import type { Priority, TaskStatus, TaskType } from '../types';
+import type { Priority, RoadmapDomain, RoadmapStatus, TaskStatus, TaskType } from '../types';
 import type { WorkloadLevel } from '../lib/workload';
 import { workloadColors } from '../lib/workload';
 
@@ -78,6 +78,40 @@ export function WorkloadBar({ ratio, level, compact = false }: { ratio: number; 
 export function WorkloadPill({ level }: { level: WorkloadLevel }) {
   const c = workloadColors[level];
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${c.bg} ${c.text}`}>{c.label}</span>;
+}
+
+const roadmapStatusLabels: Record<RoadmapStatus, string> = {
+  idee: 'Idée',
+  planifie: 'Planifié',
+  en_cours: 'En cours',
+  termine: 'Terminé',
+  reporte: 'Reporté',
+  abandonne: 'Abandonné',
+};
+const roadmapStatusStyles: Record<RoadmapStatus, string> = {
+  idee: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+  planifie: 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300',
+  en_cours: 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300',
+  termine: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
+  reporte: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
+  abandonne: 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-300',
+};
+
+export function RoadmapStatusBadge({ status }: { status: RoadmapStatus }) {
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${roadmapStatusStyles[status]}`}>{roadmapStatusLabels[status]}</span>;
+}
+
+const roadmapDomainStyles: Record<RoadmapDomain, string> = {
+  Infrastructure: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300',
+  Réseau: 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300',
+  Sécurité: 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300',
+  Cloud: 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300',
+  'Poste de travail': 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300',
+  Autre: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+};
+
+export function RoadmapDomainBadge({ domain }: { domain: RoadmapDomain }) {
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${roadmapDomainStyles[domain]}`}>{domain}</span>;
 }
 
 export function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
