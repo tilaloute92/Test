@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { Card } from './ui';
 import { useConfirm } from './ConfirmProvider';
@@ -14,6 +14,15 @@ import {
   saveLdapConfig,
   type LdapConfig,
 } from '../auth/backendAuth';
+import {
+  exportBackupFile,
+  formatTimestamp,
+  importBackupPayload,
+  parseBackupFile,
+  restoreSnapshot,
+  useBackupStore,
+  type Snapshot,
+} from '../lib/backup';
 
 const NOT_LOGGED_IN_HINT =
   "Connectez-vous d'abord avec un compte local ou LDAP existant (celui créé via `npm run create-user` sur le serveur, par exemple) pour gérer ceci depuis l'application.";
@@ -306,6 +315,13 @@ export function SettingsView() {
           de connexion circuleraient en clair sur le réseau.
         </p>
       </Card>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* 5. Sauvegarde & versionnement — historique automatique (dans ce     */}
+      {/*    navigateur) + export/import manuel en fichier (le seul qui       */}
+      {/*    survive à un vidage du stockage local ou un changement de poste).*/}
+      {/* ------------------------------------------------------------------ */}
+      <BackupCard confirm={confirm} />
     </div>
   );
 }
@@ -507,6 +523,145 @@ function LdapConfigCard({ confirm }: { confirm: ConfirmFn }) {
         de connexion.
       </p>
       {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+    </Card>
+  );
+}
+
+function BackupCard({ confirm }: { confirm: ConfirmFn }) {
+  const { snapshots, remove: removeSnapshot, clear: clearHistory } = useBackupStore();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+
+  const handleFileChosen = async (file: File) => {
+    setImportError(null);
+    setImportBusy(true);
+    try {
+      const text = await file.text();
+      const data = parseBackupFile(text);
+      if (
+        await confirm({
+          title: 'Restaurer une sauvegarde',
+          message: `Remplacer toutes les données actuelles (membres, tâches, planning, temps, absences, connexions API, paramètres de connexion) par le contenu du fichier "${file.name}" ? L'état actuel sera d'abord conservé dans l'historique ci-dessous, vous pourrez donc revenir en arrière si besoin.`,
+          confirmLabel: 'Restaurer',
+          danger: true,
+        })
+      ) {
+        importBackupPayload(data);
+      }
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setImportBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const doRestore = async (snap: Snapshot) => {
+    if (
+      await confirm({
+        title: 'Restaurer ce point',
+        message: `Revenir à l'état du ${formatTimestamp(snap.createdAt)} (${snap.label}) ? L'état actuel sera d'abord conservé dans l'historique.`,
+        confirmLabel: 'Restaurer',
+        danger: true,
+      })
+    ) {
+      restoreSnapshot(snap.id);
+    }
+  };
+
+  const doRemoveSnapshot = async (snap: Snapshot) => {
+    if (
+      await confirm({
+        title: 'Supprimer ce point',
+        message: `Supprimer le point du ${formatTimestamp(snap.createdAt)} de l'historique ? Cela ne touche pas vos données actuelles.`,
+        confirmLabel: 'Supprimer',
+        danger: true,
+      })
+    ) {
+      removeSnapshot(snap.id);
+    }
+  };
+
+  const doClearHistory = async () => {
+    if (
+      await confirm({
+        title: "Vider l'historique",
+        message:
+          "Supprimer tous les points de restauration automatiques enregistrés dans ce navigateur ? Cela n'affecte pas les données actuelles, ni les fichiers de sauvegarde déjà téléchargés.",
+        confirmLabel: 'Vider',
+        danger: true,
+      })
+    ) {
+      clearHistory();
+    }
+  };
+
+  return (
+    <Card className="space-y-4 p-4">
+      <div>
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Sauvegarde & historique des versions</h2>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Deux façons de revenir en arrière si une mauvaise modification a été faite. L'<strong>historique automatique</strong> ci-dessous
+          s'enregistre tout seul après chaque changement, dans ce navigateur — pratique, mais perdu si le stockage local est vidé, ou
+          absent sur un autre appareil. La <strong>sauvegarde manuelle</strong> (fichier .json téléchargé) est la seule des deux qui
+          survit à ça : à faire de temps en temps, ou juste avant une manipulation risquée.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <button onClick={exportBackupFile} className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700">
+          Télécharger une sauvegarde (.json)
+        </button>
+        <button onClick={() => fileInputRef.current?.click()} disabled={importBusy} className="btn-ghost text-sm disabled:opacity-40">
+          {importBusy ? 'Lecture du fichier…' : 'Restaurer depuis un fichier…'}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFileChosen(file);
+          }}
+        />
+      </div>
+      {importError && <p className="text-xs text-red-600 dark:text-red-400">{importError}</p>}
+
+      <div className="border-t border-slate-100 pt-3 dark:border-slate-800">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Historique automatique ({snapshots.length} point{snapshots.length > 1 ? 's' : ''})
+          </h3>
+          {snapshots.length > 0 && (
+            <button onClick={doClearHistory} className="text-xs text-slate-300 hover:text-red-500">
+              Vider l'historique
+            </button>
+          )}
+        </div>
+        {snapshots.length === 0 ? (
+          <p className="text-xs text-slate-400">Aucun point enregistré pour l'instant.</p>
+        ) : (
+          <div className="max-h-64 space-y-1 overflow-y-auto">
+            {snapshots.map((snap) => (
+              <div key={snap.id} className="flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                <span className="w-40 shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatTimestamp(snap.createdAt)}</span>
+                <span className="min-w-0 flex-1 truncate text-xs text-slate-600 dark:text-slate-300">{snap.label}</span>
+                <button
+                  onClick={() => doRestore(snap)}
+                  className="shrink-0 text-xs font-medium text-violet-600 hover:underline dark:text-violet-400"
+                >
+                  Restaurer
+                </button>
+                <button onClick={() => doRemoveSnapshot(snap)} className="shrink-0 text-xs text-slate-300 hover:text-red-500">
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </Card>
   );
 }

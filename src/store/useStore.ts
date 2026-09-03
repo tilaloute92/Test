@@ -21,7 +21,7 @@ const defaultAuthSettings: AuthSettings = {
   redirectUri: typeof window !== 'undefined' ? window.location.origin : '',
 };
 
-interface StoreState {
+export interface StoreState {
   members: TeamMember[];
   tasks: ProjectTask[];
   planningSlots: PlanningSlot[];
