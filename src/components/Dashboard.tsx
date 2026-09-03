@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore';
 import { formatDateLong, getWeeks } from '../lib/date';
 import { computeWorkload, workloadLevel, workloadColors } from '../lib/workload';
 import { absencesToday, getCurrentTask, openTasksForMember } from '../lib/selectors';
-import { Avatar, Card, PriorityBadge, StatusBadge, TaskTypeBadge, WorkloadBar, WorkloadPill } from './ui';
+import { Avatar, Card, PriorityBadge, PrintButton, PrintHeader, StatusBadge, TaskTypeBadge, WorkloadBar, WorkloadPill } from './ui';
 
 export function Dashboard({ onSelectMember }: { onSelectMember: (id: string) => void }) {
   const { members, tasks, planningSlots, absences } = useStore();
@@ -29,11 +29,15 @@ export function Dashboard({ onSelectMember }: { onSelectMember: (id: string) => 
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Tableau de bord</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Aujourd'hui, {formatDateLong(today)} — vue d'ensemble de la charge et de l'activité de l'équipe
-        </p>
+      <PrintHeader title="Tableau de bord" subtitle={`Aujourd'hui, ${formatDateLong(today)}`} />
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Tableau de bord</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Aujourd'hui, {formatDateLong(today)} — vue d'ensemble de la charge et de l'activité de l'équipe
+          </p>
+        </div>
+        <PrintButton />
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { addDays, formatDateLong, formatWeekRange, getWorkingDaysOfWeek, isWeekend, startOfWeek, toISODate } from '../lib/date';
 import { getTaskById } from '../lib/selectors';
-import { Avatar, Card } from './ui';
+import { Avatar, Card, PrintButton, PrintHeader } from './ui';
 import { useConfirm } from './ConfirmProvider';
 
 export function TimeTrackingView() {
@@ -50,7 +50,8 @@ export function TimeTrackingView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <PrintHeader title="Suivi du temps" subtitle={`Semaine du ${formatWeekRange(days)}`} />
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Suivi du temps</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">Semaine du {formatWeekRange(days)}</p>
@@ -59,14 +60,15 @@ export function TimeTrackingView() {
           <button onClick={() => setWeekOffset((w) => w - 1)} className="btn-ghost">◀ Semaine préc.</button>
           <button onClick={() => setWeekOffset(0)} className="btn-ghost">Semaine en cours</button>
           <button onClick={() => setWeekOffset((w) => w + 1)} className="btn-ghost">Semaine suiv. ▶</button>
+          <PrintButton />
           <button onClick={exportCsv} className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700">
             Exporter CSV
           </button>
         </div>
       </div>
 
-      <Card className="overflow-x-auto p-3">
-        <table className="w-full min-w-[700px] text-sm">
+      <Card className="overflow-x-auto p-3 print:overflow-visible">
+        <table className="w-full min-w-[700px] text-sm print:min-w-0">
           <thead>
             <tr className="text-left text-xs text-slate-400">
               <th className="px-2 py-2 font-medium">Membre</th>
@@ -122,7 +124,7 @@ export function TimeTrackingView() {
           <select
             value={memberFilter}
             onChange={(e) => setMemberFilter(e.target.value)}
-            className="rounded-md border border-slate-200 px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            className="rounded-md border border-slate-200 px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900 dark:text-white print:hidden"
           >
             <option value="Tous">Tous les membres</option>
             {members.map((m) => (
@@ -151,7 +153,7 @@ export function TimeTrackingView() {
                       removeTimeEntry(e.id);
                     }
                   }}
-                  className="text-xs text-slate-300 hover:text-red-500"
+                  className="text-xs text-slate-300 hover:text-red-500 print:hidden"
                 >
                   ✕
                 </button>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { Card } from './ui';
+import { Card, PrintButton, PrintHeader } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import { isAuthConfigured, signInWithIdToken, signOut, trySilentAccount } from '../auth/msalClient';
 import {
@@ -101,9 +101,13 @@ export function SettingsView() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Paramètres</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Authentification, annuaire et sécurité de l'application.</p>
+      <PrintHeader title="Paramètres" subtitle="Authentification, annuaire et sécurité de l'application" />
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Paramètres</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Authentification, annuaire et sécurité de l'application.</p>
+        </div>
+        <PrintButton />
       </div>
 
       {backendUp === false && (
@@ -132,7 +136,7 @@ export function SettingsView() {
           </p>
         </div>
 
-        <details className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+        <details className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300 print:hidden">
           <summary className="cursor-pointer font-medium">Comment obtenir les identifiants ci-dessous (5 minutes, une seule fois)</summary>
           <ol className="mt-2 list-decimal space-y-1 pl-4">
             <li>
@@ -186,7 +190,7 @@ export function SettingsView() {
           <input value={draft.redirectUri} onChange={(e) => setDraft((d) => ({ ...d, redirectUri: e.target.value.trim() }))} className="input" />
         </label>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 print:hidden">
           <button
             onClick={saveDraft}
             disabled={!dirty}
@@ -220,7 +224,7 @@ export function SettingsView() {
           </p>
         )}
 
-        <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 dark:border-slate-800 print:hidden">
           {account ? (
             <>
               <span className="text-sm text-slate-700 dark:text-slate-200">
@@ -382,7 +386,7 @@ function LocalAccountsCard({ confirm }: { confirm: ConfirmFn }) {
             personnes sans compte Microsoft/AD — pour tout le reste, préférez le SSO ou le LDAP ci-dessus/dessous.
           </p>
         </div>
-        <button onClick={() => setShowForm(true)} className="shrink-0 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700">
+        <button onClick={() => setShowForm(true)} className="shrink-0 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 print:hidden">
           + Compte
         </button>
       </div>
@@ -395,7 +399,7 @@ function LocalAccountsCard({ confirm }: { confirm: ConfirmFn }) {
           <div key={u.username} className="flex items-center gap-3 py-2 text-sm">
             <span className="font-medium text-slate-700 dark:text-slate-200">{u.name}</span>
             <span className="text-xs text-slate-400">{u.username}</span>
-            <button onClick={() => remove(u.username)} className="ml-auto text-xs text-slate-300 hover:text-red-500">
+            <button onClick={() => remove(u.username)} className="ml-auto text-xs text-slate-300 hover:text-red-500 print:hidden">
               Suppr.
             </button>
           </div>
@@ -508,7 +512,7 @@ function LdapConfigCard({ confirm }: { confirm: ConfirmFn }) {
         </span>
       </label>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 print:hidden">
         <button
           onClick={save}
           disabled={!dirty}
@@ -518,7 +522,7 @@ function LdapConfigCard({ confirm }: { confirm: ConfirmFn }) {
         </button>
         {dirty && <span className="text-xs text-amber-600 dark:text-amber-400">Modifications non enregistrées</span>}
       </div>
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-slate-400 print:hidden">
         Pas de bouton "Tester" ici : essayez simplement de vous déconnecter puis de vous reconnecter avec un identifiant LDAP depuis l'écran
         de connexion.
       </p>
@@ -598,7 +602,7 @@ function BackupCard({ confirm }: { confirm: ConfirmFn }) {
   };
 
   return (
-    <Card className="space-y-4 p-4">
+    <Card className="space-y-4 p-4 print:hidden">
       <div>
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Sauvegarde & historique des versions</h2>
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">

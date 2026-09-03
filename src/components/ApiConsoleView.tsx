@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
-import { Card } from './ui';
+import { Card, PrintButton, PrintHeader } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import type { ApiAuthType, ApiConnection, HttpMethod, KeyValue } from '../types';
 
@@ -139,21 +139,25 @@ export function ApiConsoleView() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Requêtes API</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Console pour interroger des applications externes (ticketing, supervision, etc.) directement depuis le navigateur.
-        </p>
-        <p className="mt-1 text-xs text-slate-400">
-          Le navigateur exécute ces appels : l'API distante doit autoriser les requêtes cross-origin (CORS) depuis cette page, sinon la
-          requête sera bloquée par le navigateur.
-        </p>
+      <PrintHeader title="Requêtes API" subtitle="Connexions enregistrées et historique des derniers appels" />
+      <div className="flex flex-wrap items-start justify-between gap-3 print:hidden">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Requêtes API</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Console pour interroger des applications externes (ticketing, supervision, etc.) directement depuis le navigateur.
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            Le navigateur exécute ces appels : l'API distante doit autoriser les requêtes cross-origin (CORS) depuis cette page, sinon la
+            requête sera bloquée par le navigateur.
+          </p>
+        </div>
+        <PrintButton />
       </div>
 
       <Card className="p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Connexions enregistrées</h2>
-          <button onClick={() => setShowConnForm(true)} className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700">
+          <button onClick={() => setShowConnForm(true)} className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 print:hidden">
             + Nouvelle connexion
           </button>
         </div>
@@ -171,7 +175,7 @@ export function ApiConsoleView() {
                   secret non mémorisé
                 </span>
               )}
-              <div className="ml-auto flex items-center gap-1">
+              <div className="ml-auto flex items-center gap-1 print:hidden">
                 <button
                   onClick={() => {
                     setConnectionId(c.id);
@@ -203,7 +207,7 @@ export function ApiConsoleView() {
         </div>
       </Card>
 
-      <Card className="space-y-3 p-4">
+      <Card className="space-y-3 p-4 print:hidden">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Nouvelle requête</h2>
 
         <div className="flex flex-wrap gap-2">
@@ -272,7 +276,7 @@ export function ApiConsoleView() {
       </Card>
 
       {response && (
-        <Card className="space-y-3 p-4">
+        <Card className="space-y-3 p-4 print:hidden">
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Réponse</h2>
             <span className={`text-sm font-semibold tabular-nums ${statusColor(response.status)}`}>
@@ -315,7 +319,7 @@ export function ApiConsoleView() {
                   clearRequestHistory();
                 }
               }}
-              className="text-xs text-slate-400 hover:text-red-500"
+              className="text-xs text-slate-400 hover:text-red-500 print:hidden"
             >
               Vider
             </button>

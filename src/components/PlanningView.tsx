@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore';
 import { formatDayLabel, formatWeekRange, getWeeks, isToday, isWeekend, toISODate } from '../lib/date';
 import { isAbsent } from '../lib/workload';
 import { getTaskById } from '../lib/selectors';
-import { Avatar, Card, TaskTypeBadge } from './ui';
+import { Avatar, Card, PrintButton, PrintHeader, TaskTypeBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import type { Period, ProjectTask, TaskType } from '../types';
 
@@ -57,16 +57,20 @@ export function PlanningView() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Planning prévisionnel — 3 semaines</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Matin = MCO / incidents · Après-midi = projets, du lundi au dimanche (équipe en horaires décalés). Cliquez sur un créneau pour
-          l'affecter — le week-end est repéré par un fond légèrement teinté.
-        </p>
+      <PrintHeader title="Planning prévisionnel — 3 semaines" subtitle={`Semaine ${weekIndex + 1} affichée en détail : ${formatWeekRange(currentWeek)}`} />
+      <div className="flex flex-wrap items-start justify-between gap-3 print:hidden">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Planning prévisionnel — 3 semaines</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Matin = MCO / incidents · Après-midi = projets, du lundi au dimanche (équipe en horaires décalés). Cliquez sur un créneau pour
+            l'affecter — le week-end est repéré par un fond légèrement teinté.
+          </p>
+        </div>
+        <PrintButton />
       </div>
 
       {/* Mini aperçu des 3 semaines — vue d'ensemble compacte, la semaine sélectionnée est encadrée */}
-      <Card className="overflow-x-auto p-3">
+      <Card className="overflow-x-auto p-3 print:hidden">
         <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Aperçu 3 semaines</h2>
         <div className="space-y-1.5">
           {members.map((m) => (
@@ -109,7 +113,7 @@ export function PlanningView() {
       </Card>
 
       {/* Semaine sélectionnée en détail */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 print:hidden">
         {weeks.map((week, wi) => (
           <button
             key={wi}
@@ -126,8 +130,8 @@ export function PlanningView() {
         ))}
       </div>
 
-      <Card className="overflow-x-auto p-3">
-        <div className="grid min-w-[1200px] grid-cols-[160px_repeat(7,minmax(0,1fr))] gap-2">
+      <Card className="overflow-x-auto p-3 print:overflow-visible">
+        <div className="grid min-w-[1200px] grid-cols-[160px_repeat(7,minmax(0,1fr))] gap-2 print:min-w-0">
           <div />
           {currentWeek.map((d) => (
             <div
@@ -202,7 +206,7 @@ export function PlanningView() {
       </Card>
 
       {selected && selectedMember && (
-        <Card className="p-4">
+        <Card className="p-4 print:hidden">
           <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">
             Affecter — {selectedMember.name} · {formatDayLabel(new Date(selected.date))} · {selected.period === 'matin' ? 'Matin' : 'Après-midi'}
           </h3>

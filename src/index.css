@@ -31,6 +31,15 @@ body {
   background: transparent;
 }
 
+@media print {
+  /* Marges raisonnables pour l'impression/export PDF de chaque onglet — le thème sombre
+     est neutralisé côté JS (voir useTheme dans App.tsx) plutôt qu'ici, pour ne pas devoir
+     surcharger individuellement chaque classe `dark:` utilisée dans l'application. */
+  @page {
+    margin: 14mm;
+  }
+}
+
 @layer components {
   .input {
     @apply w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white;

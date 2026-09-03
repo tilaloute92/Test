@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { Avatar, Card, PriorityBadge, RoadmapDomainBadge, RoadmapStatusBadge } from './ui';
+import { Avatar, Card, PriorityBadge, PrintButton, PrintHeader, RoadmapDomainBadge, RoadmapStatusBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import type { Priority, ProjectTask, RoadmapDomain, RoadmapItem, RoadmapQuarter, RoadmapStatus, TeamMember } from '../types';
 
@@ -24,6 +24,13 @@ const statusLabelMap: Record<string, string> = {
 };
 
 type ConfirmFn = ReturnType<typeof useConfirm>;
+
+function csvEscape(v: string) {
+  if (v.includes(';') || v.includes('"') || v.includes('\n')) {
+    return `"${v.replace(/"/g, '""')}"`;
+  }
+  return v;
+}
 
 export function RoadmapView() {
   const { members, tasks, roadmapItems, addRoadmapItem, updateRoadmapItem, removeRoadmapItem } = useStore();
@@ -56,6 +63,36 @@ export function RoadmapView() {
     return { byStatus, budgetTotal, hasBudget };
   }, [yearItems]);
 
+  const exportCsv = () => {
+    const header = ['Titre', 'Domaine', 'Période', 'Statut', 'Priorité', 'Porteur(s)', 'Avancement (%)', 'Budget prévisionnel (€)', 'Description'];
+    const rows = filtered.map((r) => {
+      const owners = r.ownerIds
+        .map((id) => members.find((m) => m.id === id)?.name)
+        .filter((n): n is string => Boolean(n))
+        .join(', ');
+      const quarterLabel = QUARTERS.find((q) => q.id === r.quarter)?.short ?? r.quarter;
+      return [
+        r.title,
+        r.domain,
+        quarterLabel,
+        statusLabelMap[r.status],
+        r.priority,
+        owners,
+        String(r.progress),
+        r.budgetEstimate != null ? String(r.budgetEstimate) : '',
+        r.description ?? '',
+      ];
+    });
+    const csv = [header, ...rows].map((row) => row.map(csvEscape).join(';')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fdr_${year}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const doRemove = async (r: RoadmapItem) => {
     if (
       await confirm({
@@ -71,7 +108,8 @@ export function RoadmapView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <PrintHeader title="Feuille de route (FDR)" subtitle={`Année ${year}${year === currentYear ? ' · en cours' : ''}`} />
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Feuille de route (FDR)</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
@@ -79,15 +117,21 @@ export function RoadmapView() {
             opérationnel (3 semaines).
           </p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700"
-        >
-          + Nouvelle initiative
-        </button>
+        <div className="flex items-center gap-2">
+          <PrintButton />
+          <button onClick={exportCsv} className="btn-ghost">
+            Exporter CSV
+          </button>
+          <button
+            onClick={() => setShowForm(true)}
+            className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700"
+          >
+            + Nouvelle initiative
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 print:hidden">
         <button onClick={() => setYear((y) => y - 1)} className="btn-ghost">
           ◀ {year - 1}
         </button>
@@ -122,7 +166,7 @@ export function RoadmapView() {
         )}
       </Card>
 
-      <Card className="flex flex-wrap gap-2 p-3">
+      <Card className="flex flex-wrap gap-2 p-3 print:hidden">
         <SimpleSelect value={domainFilter} onChange={setDomainFilter} options={['Tous', ...DOMAINS]} />
         <SimpleSelect value={statusFilter} onChange={setStatusFilter} options={['Tous', ...STATUSES]} labels={statusLabelMap} />
         <select
@@ -139,8 +183,8 @@ export function RoadmapView() {
         </select>
       </Card>
 
-      <div className="overflow-x-auto">
-        <div className="grid min-w-[1200px] grid-cols-5 gap-3">
+      <div className="overflow-x-auto print:overflow-visible">
+        <div className="grid min-w-[1200px] grid-cols-5 gap-3 print:min-w-0">
           {QUARTERS.map((q) => {
             const items = filtered.filter((r) => r.quarter === q.id);
             return (
@@ -219,7 +263,7 @@ function RoadmapCard({
     <Card className="space-y-2 p-3">
       <div className="flex items-start justify-between gap-2">
         <RoadmapDomainBadge domain={item.domain} />
-        <div className="flex shrink-0 gap-1">
+        <div className="flex shrink-0 gap-1 print:hidden">
           <button onClick={onEdit} title="Modifier" className="text-xs text-slate-300 hover:text-violet-600 dark:hover:text-violet-400">
             ✎
           </button>

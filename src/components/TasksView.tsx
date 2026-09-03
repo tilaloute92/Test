@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { Avatar, Card, TaskTypeBadge } from './ui';
+import { Avatar, Card, PrintButton, PrintHeader, TaskTypeBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import type { Priority, ProjectTask, TaskStatus, TaskType, TeamMember } from '../types';
 
@@ -38,20 +38,24 @@ export function TasksView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <PrintHeader title="Tâches, incidents & projets" subtitle={`${filtered.length} élément(s)`} />
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Tâches, incidents & projets</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">{filtered.length} élément(s) · plusieurs personnes peuvent être assignées à une même tâche</p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700"
-        >
-          + Nouvelle tâche
-        </button>
+        <div className="flex items-center gap-2">
+          <PrintButton />
+          <button
+            onClick={() => setShowForm(true)}
+            className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700"
+          >
+            + Nouvelle tâche
+          </button>
+        </div>
       </div>
 
-      <Card className="flex flex-wrap gap-2 p-3">
+      <Card className="flex flex-wrap gap-2 p-3 print:hidden">
         <input
           placeholder="Rechercher..."
           value={search}
@@ -74,8 +78,8 @@ export function TasksView() {
         </select>
       </Card>
 
-      <Card className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-sm">
+      <Card className="overflow-x-auto print:overflow-visible">
+        <table className="w-full min-w-[900px] text-sm print:min-w-0">
           <thead>
             <tr className="border-b border-slate-100 text-left text-xs text-slate-400 dark:border-slate-800">
               <th className="px-3 py-2 font-medium">Tâche</th>
@@ -85,7 +89,7 @@ export function TasksView() {
               <th className="px-3 py-2 font-medium">Statut</th>
               <th className="px-3 py-2 font-medium">Temps</th>
               <th className="px-3 py-2 font-medium">Échéance</th>
-              <th className="px-3 py-2" />
+              <th className="px-3 py-2 print:hidden" />
             </tr>
           </thead>
           <tbody>
@@ -181,7 +185,7 @@ export function TasksView() {
                     {spent}h / {t.estimatedHours}h
                   </td>
                   <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{t.dueDate ?? '—'}</td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2 text-right print:hidden">
                     <button
                       onClick={async () => {
                         if (await confirm({ title: 'Supprimer la tâche', message: `Supprimer définitivement "${t.title}" ?`, confirmLabel: 'Supprimer', danger: true })) {

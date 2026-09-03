@@ -2,10 +2,19 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { addDays, formatDateLong, formatWeekRange, getWorkingDaysOfWeek, isToday, startOfWeek } from '../lib/date';
 import { buildMarkdownReport, computeWeeklyReport, weatherMeta } from '../lib/weeklyReport';
-import { Avatar, Card, WorkloadBar, WorkloadPill } from './ui';
+import { Avatar, Card, RoadmapDomainBadge, WorkloadBar, WorkloadPill } from './ui';
 import type { ProjectTask, TeamMember } from '../types';
 
 const TEAM_LABEL = 'Équipe Infrastructure & Réseau';
+
+const roadmapStatusLabels: Record<string, string> = {
+  idee: 'Idée',
+  planifie: 'Planifié',
+  en_cours: 'En cours',
+  termine: 'Terminé',
+  reporte: 'Reporté',
+  abandonne: 'Abandonné',
+};
 
 function assigneeNames(task: ProjectTask, members: TeamMember[]): string {
   const names = task.assigneeIds.map((id) => members.find((m) => m.id === id)?.name).filter((n): n is string => Boolean(n));
@@ -13,7 +22,7 @@ function assigneeNames(task: ProjectTask, members: TeamMember[]): string {
 }
 
 export function WeeklyReportView() {
-  const { members, tasks, timeEntries, absences, planningSlots } = useStore();
+  const { members, tasks, timeEntries, absences, planningSlots, roadmapItems } = useStore();
   const [weekOffset, setWeekOffset] = useState(0);
   const [copied, setCopied] = useState(false);
 
@@ -22,8 +31,8 @@ export function WeeklyReportView() {
   const nextWeekDays = getWorkingDaysOfWeek(addDays(weekStart, 7));
 
   const report = useMemo(
-    () => computeWeeklyReport({ weekDays, nextWeekDays, members, tasks, timeEntries, absences, planningSlots }),
-    [weekDays, nextWeekDays, members, tasks, timeEntries, absences, planningSlots]
+    () => computeWeeklyReport({ weekDays, nextWeekDays, members, tasks, timeEntries, absences, planningSlots, roadmapItems }),
+    [weekDays, nextWeekDays, members, tasks, timeEntries, absences, planningSlots, roadmapItems]
   );
 
   const weather = weatherMeta[report.weather];
@@ -119,6 +128,56 @@ export function WeeklyReportView() {
           ))}
         </div>
       </Card>
+
+      {/* État de la feuille de route (FDR) */}
+      {report.roadmap.total > 0 && (
+        <Card className="p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Feuille de route (FDR) — {report.roadmap.year}</h2>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+              {(['idee', 'planifie', 'en_cours', 'termine', 'reporte', 'abandonne'] as const)
+                .filter((s) => report.roadmap.byStatus[s] > 0)
+                .map((s) => (
+                  <span key={s}>
+                    {roadmapStatusLabels[s]} : <strong className="text-slate-700 dark:text-slate-200">{report.roadmap.byStatus[s]}</strong>
+                  </span>
+                ))}
+            </div>
+          </div>
+
+          {report.roadmap.inProgress.length === 0 ? (
+            <p className="text-xs text-slate-400">Aucune initiative "En cours" pour {report.roadmap.year}.</p>
+          ) : (
+            <div className="space-y-2">
+              {report.roadmap.inProgress.map((r) => (
+                <div key={r.id} className="flex items-center gap-3">
+                  <RoadmapDomainBadge domain={r.domain} />
+                  <span className="min-w-0 flex-1 truncate text-sm text-slate-700 dark:text-slate-200">{r.title}</span>
+                  <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div className="h-full rounded-full bg-violet-500" style={{ width: `${Math.max(0, Math.min(r.progress, 100))}%` }} />
+                  </div>
+                  <span className="w-10 shrink-0 text-right text-xs tabular-nums text-slate-500 dark:text-slate-400">{r.progress}%</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {report.roadmap.notStartedButDue.length > 0 && (
+            <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-500/10">
+              <p className="mb-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+                Pas encore démarrée(s) alors que le trimestre cible est atteint :
+              </p>
+              <ul className="space-y-0.5 text-xs text-amber-700 dark:text-amber-300">
+                {report.roadmap.notStartedButDue.map((r) => (
+                  <li key={r.id}>
+                    {r.title} ({r.domain}, {r.quarter})
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Faits marquants */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

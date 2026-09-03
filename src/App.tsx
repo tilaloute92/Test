@@ -41,6 +41,22 @@ function useTheme() {
     localStorage.setItem('theme', dark ? 'dark' : 'light');
   }, [dark]);
 
+  // Le thème sombre imprime mal (texte clair sur fond sombre devient illisible sur papier
+  // dès que l'imprimante/le navigateur n'imprime pas les couleurs de fond, ce qui est le
+  // réglage par défaut le plus courant) : on bascule temporairement en clair pendant
+  // l'impression, quel que soit l'onglet affiché, puis on restaure l'état choisi ensuite.
+  useEffect(() => {
+    const root = document.documentElement;
+    const before = () => root.classList.remove('dark');
+    const after = () => root.classList.toggle('dark', dark);
+    window.addEventListener('beforeprint', before);
+    window.addEventListener('afterprint', after);
+    return () => {
+      window.removeEventListener('beforeprint', before);
+      window.removeEventListener('afterprint', after);
+    };
+  }, [dark]);
+
   return { dark, setDark };
 }
 

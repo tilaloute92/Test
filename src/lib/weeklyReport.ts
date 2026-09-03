@@ -1,6 +1,6 @@
 import { formatDateLong, formatWeekRange, toISODate } from './date';
 import { computeWorkload, workloadColors, workloadLevel, type WorkloadLevel } from './workload';
-import type { Absence, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
+import type { Absence, PlanningSlot, ProjectTask, RoadmapItem, RoadmapQuarter, RoadmapStatus, TeamMember, TimeEntry } from '../types';
 
 export type WeatherLevel = 'ensoleille' | 'eclaircies' | 'nuageux' | 'orageux';
 
@@ -21,6 +21,38 @@ export interface MemberWeekStats {
   absenceDays: number;
 }
 
+const ROADMAP_STATUSES: RoadmapStatus[] = ['idee', 'planifie', 'en_cours', 'termine', 'reporte', 'abandonne'];
+const QUARTER_ORDER: Record<'T1' | 'T2' | 'T3' | 'T4', number> = { T1: 1, T2: 2, T3: 3, T4: 4 };
+
+export interface RoadmapWeekStats {
+  year: number;
+  total: number;
+  byStatus: Record<RoadmapStatus, number>;
+  /** Initiatives "En cours" de l'année, triées par avancement croissant (les moins avancées d'abord). */
+  inProgress: RoadmapItem[];
+  /** Initiatives dont le trimestre cible est déjà atteint (ou dépassé) mais qui n'ont pas encore démarré. */
+  notStartedButDue: RoadmapItem[];
+}
+
+function computeRoadmapWeekStats(roadmapItems: RoadmapItem[], referenceDate: Date): RoadmapWeekStats {
+  const year = referenceDate.getFullYear();
+  const yearItems = roadmapItems.filter((r) => r.year === year);
+  const byStatus = ROADMAP_STATUSES.reduce((acc, s) => ({ ...acc, [s]: 0 }), {} as Record<RoadmapStatus, number>);
+  for (const r of yearItems) byStatus[r.status]++;
+
+  const inProgress = yearItems.filter((r) => r.status === 'en_cours').sort((a, b) => a.progress - b.progress);
+
+  const currentQuarterOrder = Math.floor(referenceDate.getMonth() / 3) + 1;
+  const notStartedButDue = yearItems.filter(
+    (r) =>
+      (r.status === 'idee' || r.status === 'planifie') &&
+      r.quarter !== 'annee' &&
+      QUARTER_ORDER[r.quarter as Exclude<RoadmapQuarter, 'annee'>] <= currentQuarterOrder
+  );
+
+  return { year, total: yearItems.length, byStatus, inProgress, notStartedButDue };
+}
+
 export interface WeeklyReport {
   weekDays: Date[];
   weather: WeatherLevel;
@@ -39,6 +71,7 @@ export interface WeeklyReport {
   absencesThisWeek: Absence[];
   nextWeekAbsences: Absence[];
   nextWeekFillRatio: number;
+  roadmap: RoadmapWeekStats;
 }
 
 export function computeWeeklyReport(opts: {
@@ -49,8 +82,9 @@ export function computeWeeklyReport(opts: {
   timeEntries: TimeEntry[];
   absences: Absence[];
   planningSlots: PlanningSlot[];
+  roadmapItems: RoadmapItem[];
 }): WeeklyReport {
-  const { weekDays, nextWeekDays, members, tasks, timeEntries, absences, planningSlots } = opts;
+  const { weekDays, nextWeekDays, members, tasks, timeEntries, absences, planningSlots, roadmapItems } = opts;
   const isoDays = new Set(weekDays.map(toISODate));
   const weekEndIso = toISODate(weekDays[weekDays.length - 1]);
 
@@ -107,6 +141,8 @@ export function computeWeeklyReport(opts: {
 
   const weather: WeatherLevel = score <= 15 ? 'ensoleille' : score <= 35 ? 'eclaircies' : score <= 60 ? 'nuageux' : 'orageux';
 
+  const roadmap = computeRoadmapWeekStats(roadmapItems, weekDays[0]);
+
   const weatherFactors = [
     `Charge moyenne équipe : ${Math.round(avgWorkloadRatio * 100)}%`,
     `${overloadedCount} personne(s) en surcharge`,
@@ -132,8 +168,18 @@ export function computeWeeklyReport(opts: {
     absencesThisWeek,
     nextWeekAbsences,
     nextWeekFillRatio,
+    roadmap,
   };
 }
+
+const roadmapStatusLabels: Record<RoadmapStatus, string> = {
+  idee: 'Idée',
+  planifie: 'Planifié',
+  en_cours: 'En cours',
+  termine: 'Terminé',
+  reporte: 'Reporté',
+  abandonne: 'Abandonné',
+};
 
 const absenceTypeLabels: Record<string, string> = {
   conge: 'congés',
@@ -187,6 +233,23 @@ export function buildMarkdownReport(report: WeeklyReport, teamLabel: string, mem
     lines.push('');
     lines.push('## Tâches en retard');
     for (const t of report.overdueTasks) lines.push(`- ${t.title} (échéance ${t.dueDate}) — ${assigneeNames(t, members)}`);
+  }
+  const rm = report.roadmap;
+  if (rm.total > 0) {
+    lines.push('');
+    lines.push(`## Feuille de route (FDR) — ${rm.year}`);
+    const statusSummary = ROADMAP_STATUSES.filter((s) => rm.byStatus[s] > 0)
+      .map((s) => `${roadmapStatusLabels[s]} : ${rm.byStatus[s]}`)
+      .join(' · ');
+    lines.push(`- ${rm.total} initiative(s) — ${statusSummary}`);
+    if (rm.inProgress.length > 0) {
+      lines.push('- En cours :');
+      for (const r of rm.inProgress) lines.push(`  - ${r.title} (${r.domain}) — ${r.progress}%`);
+    }
+    if (rm.notStartedButDue.length > 0) {
+      lines.push('- ⚠️ Pas encore démarrées alors que leur trimestre cible est atteint :');
+      for (const r of rm.notStartedButDue) lines.push(`  - ${r.title} (${r.domain}, ${r.quarter})`);
+    }
   }
   lines.push('');
   lines.push('## Semaine prochaine');

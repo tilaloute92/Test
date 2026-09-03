@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { toISODate } from '../lib/date';
-import { Avatar, Card } from './ui';
+import { Avatar, Card, PrintButton, PrintHeader } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import type { AbsenceType, TeamMember } from '../types';
 
@@ -26,14 +26,18 @@ export function TeamView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <PrintHeader title="Équipe" subtitle={`${members.length} personnes · 35h/semaine, matin MCO/incidents, après-midi projets`} />
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Équipe</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">{members.length} personnes · 35h/semaine, matin MCO/incidents, après-midi projets</p>
         </div>
-        <button onClick={() => setShowMemberForm(true)} className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700">
-          + Ajouter un membre
-        </button>
+        <div className="flex items-center gap-2">
+          <PrintButton />
+          <button onClick={() => setShowMemberForm(true)} className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700">
+            + Ajouter un membre
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -45,7 +49,7 @@ export function TeamView() {
                 <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">{m.name}</div>
                 <div className="truncate text-xs text-slate-500 dark:text-slate-400">{m.role}</div>
               </div>
-              <div className="flex shrink-0 items-center gap-1">
+              <div className="flex shrink-0 items-center gap-1 print:hidden">
                 <button onClick={() => setEditingMember(m)} className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">
                   Modifier
                 </button>
@@ -76,7 +80,10 @@ export function TeamView() {
       <div>
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Absences & indisponibilités</h2>
-          <button onClick={() => setShowAbsenceForm(true)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+          <button
+            onClick={() => setShowAbsenceForm(true)}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 print:hidden"
+          >
             + Déclarer une absence
           </button>
         </div>
@@ -101,7 +108,7 @@ export function TeamView() {
                       removeAbsence(a.id);
                     }
                   }}
-                  className="ml-auto text-xs text-slate-300 hover:text-red-500"
+                  className="ml-auto text-xs text-slate-300 hover:text-red-500 print:hidden"
                 >
                   ✕
                 </button>
@@ -281,7 +288,10 @@ function AbsenceForm({
             ))}
           </select>
           <input placeholder="Précision (optionnel)" value={label} onChange={(e) => setLabel(e.target.value)} className="input" />
-          <p className="text-xs text-slate-400">Les week-ends de la période sont automatiquement exclus.</p>
+          <p className="text-xs text-slate-400">
+            L'équipe travaillant aussi le week-end, les samedis et dimanches de la période sont inclus — choisissez "Matin uniquement" ou
+            "Après-midi uniquement" ci-dessus si l'absence ne couvre qu'une demi-journée par jour.
+          </p>
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onCancel} className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800">

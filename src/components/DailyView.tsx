@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { addDays, formatDateLong, isToday, toISODate } from '../lib/date';
 import { absencesToday, getTaskById, hoursLoggedToday } from '../lib/selectors';
-import { Avatar, Card, PriorityBadge, TaskTypeBadge } from './ui';
+import { Avatar, Card, PriorityBadge, PrintButton, PrintHeader, TaskTypeBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import type { Period, TaskStatus } from '../types';
 
@@ -24,7 +24,8 @@ export function DailyView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <PrintHeader title="Activité du jour" subtitle={formatDateLong(date)} />
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Activité du jour</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">{formatDateLong(date)}</p>
@@ -38,6 +39,7 @@ export function DailyView() {
             Aujourd'hui
           </button>
           <NavButton onClick={() => setDate((d) => addDays(d, 1))}>▶</NavButton>
+          <PrintButton />
         </div>
       </div>
 
@@ -131,7 +133,7 @@ export function DailyView() {
                                     <option value="termine">Terminé</option>
                                   </select>
                                   <button
-                                    className="ml-auto rounded-md bg-violet-600 px-2 py-1 text-xs font-medium text-white hover:bg-violet-700"
+                                    className="ml-auto rounded-md bg-violet-600 px-2 py-1 text-xs font-medium text-white hover:bg-violet-700 print:hidden"
                                     onClick={() => {
                                       setLogging({ memberId: m.id, period, taskId: task.id });
                                       setHours('3.5');

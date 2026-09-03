@@ -114,6 +114,35 @@ export function RoadmapDomainBadge({ domain }: { domain: RoadmapDomain }) {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${roadmapDomainStyles[domain]}`}>{domain}</span>;
 }
 
+/** Bouton d'impression/export PDF, identique sur chaque onglet — masqué lui-même à l'impression. */
+export function PrintButton({ label = 'Imprimer / PDF' }: { label?: string }) {
+  return (
+    <button
+      onClick={() => window.print()}
+      className="btn-ghost print:hidden"
+      title="Ouvre la boîte de dialogue d'impression du navigateur — choisissez « Enregistrer en PDF » pour exporter en fichier"
+    >
+      {label}
+    </button>
+  );
+}
+
+/**
+ * En-tête visible uniquement à l'impression (l'en-tête habituel de l'application, avec le
+ * logo et la navigation, est masqué via `print:hidden` sur le `<header>` — voir App.tsx) :
+ * donne le contexte (nom de l'appli, onglet, date de génération) sur le document imprimé.
+ */
+export function PrintHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="hidden print:block">
+      <div className="text-lg font-bold text-black">Suivi Infra & Réseau — {title}</div>
+      {subtitle && <div className="text-sm text-slate-600">{subtitle}</div>}
+      <div className="text-xs text-slate-500">Généré le {new Date().toLocaleString('fr-FR')}</div>
+      <hr className="my-2 border-slate-300" />
+    </div>
+  );
+}
+
 export function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}>
