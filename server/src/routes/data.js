@@ -85,3 +85,15 @@ dataRouter.delete('/roadmap-items/:id', (req, res) => {
   store.removeRoadmapItem(req.params.id);
   res.json({ ok: true });
 });
+
+// --- COPIL (comités de pilotage) ---
+dataRouter.post('/copils', (req, res) => res.json(store.addCopil(req.body, actorOf(req))));
+dataRouter.patch('/copils/:id', (req, res) => {
+  const updated = store.updateCopil(req.params.id, req.body, actorOf(req));
+  if (!updated) return res.status(404).json({ error: 'COPIL introuvable.' });
+  res.json(updated);
+});
+dataRouter.delete('/copils/:id', (req, res) => {
+  store.removeCopil(req.params.id);
+  res.json({ ok: true });
+});

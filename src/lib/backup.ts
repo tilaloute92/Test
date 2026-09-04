@@ -1,6 +1,6 @@
 /**
  * Versionnement + sauvegarde/restauration des données métier (membres, tâches, planning,
- * temps saisi, absences, connexions API, paramètres de connexion).
+ * temps saisi, absences, feuille de route, COPIL, connexions API, paramètres de connexion).
  *
  * Deux mécanismes complémentaires, l'un ne remplaçant pas l'autre :
  *
@@ -31,6 +31,7 @@ export interface BackupPayload {
   requestHistory: StoreState['requestHistory'];
   authSettings: StoreState['authSettings'];
   roadmapItems: StoreState['roadmapItems'];
+  copils: StoreState['copils'];
 }
 
 const DATA_KEYS = [
@@ -43,6 +44,7 @@ const DATA_KEYS = [
   'requestHistory',
   'authSettings',
   'roadmapItems',
+  'copils',
 ] as const;
 
 function extractPayload(state: StoreState): BackupPayload {
@@ -102,7 +104,7 @@ export const useBackupStore = create<BackupHistoryState>()(
 
 function summarize(data: BackupPayload): string {
   const planned = data.planningSlots.filter((s) => s.taskId).length;
-  return `${data.members.length} membres · ${data.tasks.length} tâches · ${planned} créneaux planifiés · ${data.absences.length} absences · ${data.roadmapItems.length} initiative(s) FDR`;
+  return `${data.members.length} membres · ${data.tasks.length} tâches · ${planned} créneaux planifiés · ${data.absences.length} absences · ${data.roadmapItems.length} initiative(s) FDR · ${data.copils.length} COPIL`;
 }
 
 function pushSnapshotFromCurrentState(label: string) {

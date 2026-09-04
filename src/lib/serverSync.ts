@@ -5,7 +5,7 @@
  * bloquer l'interface si le serveur ne répond pas.
  */
 
-import type { Absence, Period, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
+import type { Absence, Copil, Period, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
 
 export interface ServerSnapshot {
   members: TeamMember[];
@@ -14,6 +14,7 @@ export interface ServerSnapshot {
   timeEntries: TimeEntry[];
   absences: Absence[];
   roadmapItems: RoadmapItem[];
+  copils: Copil[];
   isEmpty: boolean;
 }
 
@@ -68,3 +69,8 @@ export const syncAddRoadmapItem = (item: RoadmapItem) => request<RoadmapItem>('/
 export const syncUpdateRoadmapItem = (id: string, patch: Partial<RoadmapItem>) =>
   request<RoadmapItem>(`/roadmap-items/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) });
 export const syncRemoveRoadmapItem = (id: string) => request<{ ok: boolean }>(`/roadmap-items/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+export const syncAddCopil = (item: Copil) => request<Copil>('/copils', { method: 'POST', body: JSON.stringify(item) });
+export const syncUpdateCopil = (id: string, patch: Partial<Copil>) =>
+  request<Copil>(`/copils/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) });
+export const syncRemoveCopil = (id: string) => request<{ ok: boolean }>(`/copils/${encodeURIComponent(id)}`, { method: 'DELETE' });

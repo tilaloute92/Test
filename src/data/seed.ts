@@ -1,4 +1,4 @@
-import type { Absence, ApiConnection, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
+import type { Absence, ApiConnection, Copil, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
 import { addDays, isWeekend, startOfWeek, toISODate } from '../lib/date';
 
 // Deterministic PRNG so the seeded planning looks the same on every load.
@@ -331,6 +331,91 @@ export const roadmapItems: RoadmapItem[] = [
     progress: 0,
     budgetEstimate: 60000,
     linkedTaskIds: [],
+    createdAt: iso,
+    updatedAt: iso,
+  },
+];
+
+// --- COPIL (comités de pilotage) ---
+// Trois séances qui couvrent le cycle réel d'une instance de gouvernance : une séance tenue
+// (avec décisions et relevé d'actions, dont une en retard), une séance à venir déjà préparée,
+// et une séance suivante encore à préparer (ordre du jour vide) — de quoi voir immédiatement
+// à quoi ressemble l'onglet, y compris les signaux qui remontent en Vue d'ensemble.
+const copilPast = toISODate(addDays(today, -21));
+const copilNext = toISODate(addDays(today, 5));
+const copilFuture = toISODate(addDays(today, 96));
+
+export const copils: Copil[] = [
+  {
+    id: 'cp1',
+    title: 'COPIL Infrastructure & Réseau — T2',
+    date: copilPast,
+    time: '14:00',
+    location: 'Salle Mercure + Teams',
+    status: 'tenu',
+    participantIds: ['m1', 'm2', 'm5'],
+    externalParticipants: ['Direction des systèmes d\'information', 'Responsable métier Logistique'],
+    agenda: [
+      { id: 'cpa1', label: 'Avancement Migration Datacenter Nord', presenterId: 'm1', durationMin: 20 },
+      { id: 'cpa2', label: 'Point SD-WAN agences : Lyon et Nantes', presenterId: 'm2', durationMin: 20 },
+      { id: 'cpa3', label: 'Budget prévisionnel firewalls', presenterId: 'm5', durationMin: 15 },
+      { id: 'cpa4', label: 'Questions diverses', durationMin: 10 },
+    ],
+    decisions: [
+      {
+        id: 'cpd1',
+        label: 'Bascule du stockage SAN validée pour le week-end du 12',
+        detail: 'Fenêtre de maintenance confirmée avec les métiers, retour arrière possible jusqu\'au lundi matin.',
+      },
+      { id: 'cpd2', label: 'Déploiement SD-WAN étendu à 2 agences supplémentaires', detail: 'Sous réserve de la réception des boîtiers commandés.' },
+      { id: 'cpd3', label: 'Budget firewalls arbitré à 35 000 € au lieu de 50 000 €' },
+    ],
+    actions: [
+      { id: 'cpac1', label: 'Communiquer la fenêtre de maintenance SAN aux métiers', ownerIds: ['m1'], dueDate: toISODate(addDays(today, -7)), status: 'en_cours' },
+      { id: 'cpac2', label: 'Relancer le fournisseur sur la livraison des boîtiers SD-WAN', ownerIds: ['m2'], dueDate: toISODate(addDays(today, 10)), status: 'a_faire' },
+      { id: 'cpac3', label: 'Mettre à jour le chiffrage firewalls dans la FDR', ownerIds: ['m5'], dueDate: toISODate(addDays(today, -3)), status: 'a_faire' },
+      { id: 'cpac4', label: 'Diffuser le compte-rendu de séance', ownerIds: ['m1'], dueDate: toISODate(addDays(today, -18)), status: 'termine' },
+    ],
+    roadmapItemIds: ['r1', 'r2'],
+    notes: "Les métiers confirment leur disponibilité pour la bascule SAN. La direction demande un point de suivi mensuel sur le budget.",
+    nextDate: copilNext,
+    createdAt: iso,
+    updatedAt: iso,
+  },
+  {
+    id: 'cp2',
+    title: 'COPIL Infrastructure & Réseau — T3',
+    date: copilNext,
+    time: '14:00',
+    location: 'Salle Mercure + Teams',
+    status: 'planifie',
+    participantIds: ['m1', 'm2', 'm5', 'm6'],
+    externalParticipants: ['Direction des systèmes d\'information'],
+    agenda: [
+      { id: 'cpa5', label: 'Bilan de la bascule SAN', presenterId: 'm1', durationMin: 15 },
+      { id: 'cpa6', label: 'Avancement SD-WAN et couverture Wifi 6', presenterId: 'm2', durationMin: 20 },
+      { id: 'cpa7', label: 'Industrialisation Cloud : point d\'étape Terraform', presenterId: 'm5', durationMin: 20 },
+      { id: 'cpa8', label: 'Revue des actions de la séance précédente', durationMin: 10 },
+    ],
+    decisions: [],
+    actions: [],
+    roadmapItemIds: ['r1', 'r2', 'r3'],
+    nextDate: copilFuture,
+    createdAt: iso,
+    updatedAt: iso,
+  },
+  {
+    id: 'cp3',
+    title: 'COPIL Infrastructure & Réseau — T4',
+    date: copilFuture,
+    time: '14:00',
+    status: 'planifie',
+    participantIds: ['m1', 'm2'],
+    externalParticipants: ['Direction des systèmes d\'information'],
+    agenda: [],
+    decisions: [],
+    actions: [],
+    roadmapItemIds: [],
     createdAt: iso,
     updatedAt: iso,
   },

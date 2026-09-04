@@ -239,7 +239,7 @@ qu'une seule adresse.
 ### B.6 Mode multi-utilisateur (données d'équipe partagées)
 
 Ce même service, une fois B.1 à B.5 en place, sert aussi de source partagée pour les
-données d'équipe (membres, tâches, planning, temps saisi, absences, feuille de route) —
+données d'équipe (membres, tâches, planning, temps saisi, absences, feuille de route, COPIL) —
 voir README, section "Mode multi-utilisateur". Rien de plus à déployer : c'est activé
 automatiquement dès qu'une personne se connecte avec une vraie session serveur (compte
 local, LDAP, ou SSO Microsoft finalisé côté serveur).
@@ -253,7 +253,7 @@ maintenance ci-dessous, elle s'applique maintenant à un contenu bien plus impor
 
 - Le service stocke dans `server/data/` (hors dépôt Git) : les identifiants et sessions,
   **et, si le mode multi-utilisateur est utilisé, les données d'équipe partagées**
-  (`business-*.json` — tâches, planning, temps, absences, feuille de route, membres).
+  (`business-*.json` — tâches, planning, temps, absences, feuille de route, COPIL, membres).
   Sauvegardez ce dossier régulièrement dès que cette fonctionnalité est utilisée : sa perte
   fait perdre les données de toute l'équipe, pas seulement d'une personne.
 - Mise à jour du service : `git pull`, `npm install --omit=dev`, `nssm restart

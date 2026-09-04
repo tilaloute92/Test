@@ -9,6 +9,7 @@ import { ApiConsoleView } from './components/ApiConsoleView';
 import { SettingsView } from './components/SettingsView';
 import { WeeklyReportView } from './components/WeeklyReportView';
 import { RoadmapView } from './components/RoadmapView';
+import { CopilView } from './components/CopilView';
 import { useStore } from './store/useStore';
 import { isAuthConfigured, signIn as msalLoginOnly, signInWithIdToken, trySilentAccount, signOut as msalSignOut } from './auth/msalClient';
 import { backendAvailable, backendLogout, finalizeSsoSession, getBackendSession, loginLdap, loginLocal, type BackendUser } from './auth/backendAuth';
@@ -16,7 +17,7 @@ import { setSyncActive, onSyncError } from './lib/syncState';
 import { useServerSync } from './hooks/useServerSync';
 import type { AccountInfo } from '@azure/msal-browser';
 
-export type Tab = 'dashboard' | 'daily' | 'planning' | 'tasks' | 'time' | 'team' | 'api' | 'report' | 'roadmap' | 'settings';
+export type Tab = 'dashboard' | 'daily' | 'planning' | 'tasks' | 'time' | 'team' | 'api' | 'report' | 'roadmap' | 'copils' | 'settings';
 
 type TabGroup = 'quotidien' | 'pilotage' | 'admin';
 
@@ -31,6 +32,7 @@ const TABS: { id: Tab; label: string; group: TabGroup }[] = [
   { id: 'time', label: 'Temps', group: 'quotidien' },
   { id: 'report', label: 'Rapport', group: 'pilotage' },
   { id: 'roadmap', label: 'FDR', group: 'pilotage' },
+  { id: 'copils', label: 'COPIL', group: 'pilotage' },
   { id: 'team', label: 'Équipe', group: 'admin' },
   { id: 'api', label: 'API', group: 'admin' },
   { id: 'settings', label: 'Paramètres', group: 'admin' },
@@ -390,6 +392,7 @@ function App() {
         {tab === 'api' && <ApiConsoleView />}
         {tab === 'report' && <WeeklyReportView />}
         {tab === 'roadmap' && <RoadmapView />}
+        {tab === 'copils' && <CopilView />}
         {tab === 'settings' && <SettingsView />}
       </main>
     </div>

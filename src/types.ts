@@ -136,6 +136,79 @@ export interface RoadmapItem {
   updatedBy?: string;
 }
 
+export type CopilStatus = 'planifie' | 'tenu' | 'annule';
+
+/** Point de l'ordre du jour d'un COPIL. */
+export interface CopilAgendaItem {
+  id: string;
+  label: string;
+  /** Qui présente ce point — optionnel (un point peut être porté par l'équipe entière). */
+  presenterId?: string;
+  /** Durée prévue en minutes — optionnel, sert à vérifier que l'ordre du jour tient dans la séance. */
+  durationMin?: number;
+}
+
+/** Décision actée en séance : ce qui a été tranché, pas ce qui reste à faire (voir CopilAction). */
+export interface CopilDecision {
+  id: string;
+  label: string;
+  /** Contexte/justification de la décision — optionnel. */
+  detail?: string;
+}
+
+/**
+ * Action décidée en COPIL (relevé de décisions). Volontairement distincte d'une tâche de
+ * l'onglet Tâches : une action de COPIL est un engagement pris devant les parties prenantes,
+ * suivi d'une séance à l'autre, alors qu'une tâche est une unité de travail planifiable sur
+ * un créneau. Les deux vies sont différentes — les mélanger rendrait le relevé de décisions
+ * illisible et polluerait le planning.
+ */
+export interface CopilAction {
+  id: string;
+  label: string;
+  /** Responsable(s) de l'action — plusieurs personnes possibles, comme pour une tâche. */
+  ownerIds: string[];
+  dueDate?: string;
+  status: TaskStatus;
+}
+
+/**
+ * COPIL (comité de pilotage) : séance de gouvernance avec les parties prenantes (direction,
+ * métiers, prestataires) où l'on passe en revue l'avancement, où l'on acte des décisions et
+ * où l'on prend des engagements. À distinguer de la FDR (le *quoi* à l'échelle de l'année)
+ * et du planning (le *qui fait quoi* à l'échelle de la semaine) : le COPIL est l'instance qui
+ * arbitre entre les deux, et son historique doit rester consultable séance après séance.
+ */
+export interface Copil {
+  id: string;
+  title: string;
+  /** Date de la séance (AAAA-MM-JJ). */
+  date: string;
+  /** Heure de début, format libre court (ex. "14:00") — optionnel. */
+  time?: string;
+  /** Lieu ou lien de visio — optionnel. */
+  location?: string;
+  status: CopilStatus;
+  /** Participants membres de l'équipe. */
+  participantIds: string[];
+  /** Participants extérieurs à l'équipe (direction, métiers, prestataires) : texte libre,
+   *  ces personnes n'ont pas de fiche dans l'onglet Équipe. */
+  externalParticipants: string[];
+  agenda: CopilAgendaItem[];
+  decisions: CopilDecision[];
+  actions: CopilAction[];
+  /** Initiatives FDR passées en revue pendant la séance — lien de traçabilité vers l'onglet FDR. */
+  roadmapItemIds: string[];
+  /** Compte-rendu / notes de séance. */
+  notes?: string;
+  /** Date de la séance suivante, si elle est déjà fixée. */
+  nextDate?: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Renseigné uniquement en mode multi-utilisateur (voir server/src/businessData.js). */
+  updatedBy?: string;
+}
+
 /**
  * Entra ID (Azure AD) single sign-on settings for the "public client" OAuth2/OIDC
  * flow (Authorization Code + PKCE) used by @azure/msal-browser.

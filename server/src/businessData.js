@@ -2,7 +2,7 @@ import { readJson, writeJson } from './dataStore.js';
 
 /**
  * Données métier partagées entre les utilisateurs connectés (mode multi-utilisateur) :
- * membres, tâches, planning, temps saisi, absences, feuille de route. Stockage identique
+ * membres, tâches, planning, temps saisi, absences, feuille de route, COPIL. Stockage identique
  * en esprit à celui des comptes locaux (fichiers JSON dans server/data/, voir dataStore.js)
  * — adapté à une équipe de quelques personnes, pas pensé pour une forte concurrence.
  *
@@ -19,7 +19,7 @@ import { readJson, writeJson } from './dataStore.js';
  * cas prévu ici.
  */
 
-const COLLECTIONS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems'];
+const COLLECTIONS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils'];
 
 const cache = {};
 for (const name of COLLECTIONS) {
@@ -44,6 +44,7 @@ export function getSnapshot() {
     timeEntries: cache.timeEntries,
     absences: cache.absences,
     roadmapItems: cache.roadmapItems,
+    copils: cache.copils,
   };
 }
 
@@ -96,10 +97,24 @@ export function removeMember(id) {
   cache.roadmapItems = cache.roadmapItems.map((r) =>
     Array.isArray(r.ownerIds) && r.ownerIds.includes(id) ? { ...r, ownerIds: r.ownerIds.filter((o) => o !== id) } : r
   );
+  // Un membre supprimé disparaît aussi des séances de COPIL : participants, porteurs
+  // d'actions et présentateurs de points — même logique de nettoyage en cascade que
+  // côté client (voir removeMember dans src/store/useStore.ts).
+  cache.copils = cache.copils.map((c) => ({
+    ...c,
+    participantIds: Array.isArray(c.participantIds) ? c.participantIds.filter((p) => p !== id) : [],
+    actions: Array.isArray(c.actions)
+      ? c.actions.map((a) => ({ ...a, ownerIds: Array.isArray(a.ownerIds) ? a.ownerIds.filter((o) => o !== id) : [] }))
+      : [],
+    agenda: Array.isArray(c.agenda)
+      ? c.agenda.map((point) => (point.presenterId === id ? { ...point, presenterId: undefined } : point))
+      : [],
+  }));
   persist('members');
   persist('tasks');
   persist('planningSlots');
   persist('roadmapItems');
+  persist('copils');
 }
 
 // --- Tâches ---
@@ -198,5 +213,35 @@ export function updateRoadmapItem(id, patch, actor) {
 }
 export function removeRoadmapItem(id) {
   cache.roadmapItems = cache.roadmapItems.filter((r) => r.id !== id);
+  cache.copils = cache.copils.map((c) =>
+    Array.isArray(c.roadmapItemIds) && c.roadmapItemIds.includes(id)
+      ? { ...c, roadmapItemIds: c.roadmapItemIds.filter((r) => r !== id) }
+      : c
+  );
   persist('roadmapItems');
+  persist('copils');
+}
+
+// --- COPIL (comités de pilotage) ---
+// L'ordre du jour, les décisions et les actions d'une séance sont stockés dans la séance
+// elle-même (tableaux imbriqués) : les modifier revient à mettre à jour le COPIL avec le
+// tableau complet, comme côté client (voir updateCopil dans src/store/useStore.ts).
+export function addCopil(payload, actor) {
+  const now = new Date().toISOString();
+  const item = { ...payload, id: idOrNext(payload, 'cp'), createdAt: payload.createdAt || now, updatedAt: now, updatedBy: actor };
+  cache.copils.push(item);
+  persist('copils');
+  return item;
+}
+export function updateCopil(id, patch, actor) {
+  const idx = cache.copils.findIndex((c) => c.id === id);
+  if (idx === -1) return null;
+  const next = { ...cache.copils[idx], ...patch, id, updatedAt: new Date().toISOString(), updatedBy: actor };
+  cache.copils[idx] = next;
+  persist('copils');
+  return next;
+}
+export function removeCopil(id) {
+  cache.copils = cache.copils.filter((c) => c.id !== id);
+  persist('copils');
 }

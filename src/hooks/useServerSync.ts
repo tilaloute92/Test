@@ -40,6 +40,7 @@ export function useServerSync() {
           timeEntries: snapshot.timeEntries,
           absences: snapshot.absences,
           roadmapItems: snapshot.roadmapItems,
+          copils: snapshot.copils,
         });
       } catch (err) {
         if (!cancelled) reportSyncError(`Échec de synchronisation (actualisation) : ${err instanceof Error ? err.message : String(err)}`);

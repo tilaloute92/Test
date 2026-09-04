@@ -594,6 +594,7 @@ function MultiUserCard({ confirm }: { confirm: ConfirmFn }) {
         timeEntries: state.timeEntries,
         absences: state.absences,
         roadmapItems: state.roadmapItems,
+        copils: state.copils,
       });
       setPublished(true);
       setServerEmpty(false);

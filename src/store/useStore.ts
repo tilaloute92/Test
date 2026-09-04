@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Absence, ApiConnection, ApiRequestLog, AuthSettings, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
+import type { Absence, ApiConnection, ApiRequestLog, AuthSettings, Copil, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
 import {
   absences as seedAbsences,
   apiConnections as seedApiConnections,
+  copils as seedCopils,
   members as seedMembers,
   planningSlots as seedPlanningSlots,
   roadmapItems as seedRoadmapItems,
@@ -15,16 +16,19 @@ import { isSyncActive, reportSyncError } from '../lib/syncState';
 import {
   syncAddAbsence,
   syncAddAbsencesBulk,
+  syncAddCopil,
   syncAddMember,
   syncAddRoadmapItem,
   syncAddTask,
   syncAddTimeEntry,
   syncRemoveAbsence,
+  syncRemoveCopil,
   syncRemoveMember,
   syncRemoveRoadmapItem,
   syncRemoveTask,
   syncRemoveTimeEntry,
   syncSetPlanningSlot,
+  syncUpdateCopil,
   syncUpdateMember,
   syncUpdateRoadmapItem,
   syncUpdateTask,
@@ -40,7 +44,7 @@ const defaultAuthSettings: AuthSettings = {
   redirectUri: typeof window !== 'undefined' ? window.location.origin : '',
 };
 
-// Type des 6 collections partagées en mode multi-utilisateur (voir src/lib/serverSync.ts et
+// Type des 7 collections partagées en mode multi-utilisateur (voir src/lib/serverSync.ts et
 // server/src/businessData.js) — tout le reste (connexions API, historique de requêtes,
 // paramètres de connexion) reste volontairement local à chaque navigateur.
 export interface SharedSnapshot {
@@ -50,6 +54,7 @@ export interface SharedSnapshot {
   timeEntries: TimeEntry[];
   absences: Absence[];
   roadmapItems: RoadmapItem[];
+  copils: Copil[];
 }
 
 export interface StoreState extends SharedSnapshot {
@@ -87,7 +92,11 @@ export interface StoreState extends SharedSnapshot {
   updateRoadmapItem: (id: string, patch: Partial<RoadmapItem>) => void;
   removeRoadmapItem: (id: string) => void;
 
-  /** Remplace les 6 collections partagées par ce que renvoie le serveur — ne déclenche
+  addCopil: (copil: Omit<Copil, 'id' | 'createdAt' | 'updatedAt'>) => string;
+  updateCopil: (id: string, patch: Partial<Copil>) => void;
+  removeCopil: (id: string) => void;
+
+  /** Remplace les 7 collections partagées par ce que renvoie le serveur — ne déclenche
    *  jamais de synchronisation en retour (voir le hook de sondage périodique dans App.tsx). */
   applyServerSnapshot: (snapshot: SharedSnapshot) => void;
 
@@ -123,6 +132,7 @@ export const useStore = create<StoreState>()(
       requestHistory: [],
       authSettings: defaultAuthSettings,
       roadmapItems: seedRoadmapItems,
+      copils: seedCopils,
 
       addMember: (member) => {
         const item: TeamMember = { ...member, id: nextId('m') };
@@ -139,6 +149,14 @@ export const useStore = create<StoreState>()(
           tasks: s.tasks.map((t) => (t.assigneeIds.includes(id) ? { ...t, assigneeIds: t.assigneeIds.filter((a) => a !== id) } : t)),
           planningSlots: s.planningSlots.filter((p) => p.memberId !== id),
           roadmapItems: s.roadmapItems.map((r) => (r.ownerIds.includes(id) ? { ...r, ownerIds: r.ownerIds.filter((o) => o !== id) } : r)),
+          // Une personne supprimée disparaît aussi des séances de COPIL : participants,
+          // porteurs d'actions et présentateurs de points d'ordre du jour.
+          copils: s.copils.map((c) => ({
+            ...c,
+            participantIds: c.participantIds.filter((p) => p !== id),
+            actions: c.actions.map((a) => ({ ...a, ownerIds: a.ownerIds.filter((o) => o !== id) })),
+            agenda: c.agenda.map((point) => (point.presenterId === id ? { ...point, presenterId: undefined } : point)),
+          })),
         }));
         fireSync('suppression membre', syncRemoveMember(id));
       },
@@ -260,8 +278,36 @@ export const useStore = create<StoreState>()(
         fireSync('modification FDR', syncUpdateRoadmapItem(id, patch));
       },
       removeRoadmapItem: (id) => {
-        set((s) => ({ roadmapItems: s.roadmapItems.filter((r) => r.id !== id) }));
+        set((s) => ({
+          roadmapItems: s.roadmapItems.filter((r) => r.id !== id),
+          copils: s.copils.map((c) =>
+            c.roadmapItemIds.includes(id) ? { ...c, roadmapItemIds: c.roadmapItemIds.filter((r) => r !== id) } : c
+          ),
+        }));
         fireSync('suppression FDR', syncRemoveRoadmapItem(id));
+      },
+
+      // Les sous-éléments d'un COPIL (ordre du jour, décisions, actions) ne sont pas des
+      // collections séparées : ils appartiennent à leur séance et n'ont pas de sens en dehors
+      // d'elle. Les modifier passe donc par updateCopil avec le tableau complet — une seule
+      // route serveur à sécuriser, et jamais d'action orpheline dont la séance aurait disparu.
+      addCopil: (copil) => {
+        const id = nextId('cp');
+        const now = new Date().toISOString();
+        const full: Copil = { ...copil, id, createdAt: now, updatedAt: now };
+        set((s) => ({ copils: [...s.copils, full] }));
+        fireSync('ajout COPIL', syncAddCopil(full));
+        return id;
+      },
+      updateCopil: (id, patch) => {
+        set((s) => ({
+          copils: s.copils.map((c) => (c.id === id ? { ...c, ...patch, updatedAt: new Date().toISOString() } : c)),
+        }));
+        fireSync('modification COPIL', syncUpdateCopil(id, patch));
+      },
+      removeCopil: (id) => {
+        set((s) => ({ copils: s.copils.filter((c) => c.id !== id) }));
+        fireSync('suppression COPIL', syncRemoveCopil(id));
       },
 
       applyServerSnapshot: (snapshot) => set(snapshot),
@@ -277,6 +323,7 @@ export const useStore = create<StoreState>()(
           requestHistory: [],
           authSettings: defaultAuthSettings,
           roadmapItems: seedRoadmapItems,
+          copils: seedCopils,
         }),
     }),
     { name: 'infra-team-tracker' }

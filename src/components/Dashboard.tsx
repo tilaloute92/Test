@@ -4,6 +4,7 @@ import { formatDateLong, formatWeekRange, getWeeks } from '../lib/date';
 import { computeWorkload, workloadLevel, workloadColors } from '../lib/workload';
 import { computeRoadmapWeekStats } from '../lib/weeklyReport';
 import { computeFlashReport, listProjects, type FlashReport } from '../lib/flashReport';
+import { copilsNeedingPrep, daysUntil, formatCopilDate, memberNamesOf, overdueActions, type CopilActionRef } from '../lib/copil';
 import { absencesToday, getCurrentTask, openTasksForMember } from '../lib/selectors';
 import { useViewMode } from '../hooks/useViewMode';
 import {
@@ -19,7 +20,7 @@ import {
   WorkloadBar,
   WorkloadPill,
 } from './ui';
-import type { ProjectTask, RoadmapItem, TeamMember } from '../types';
+import type { Copil, ProjectTask, RoadmapItem, TeamMember } from '../types';
 import type { Tab } from '../App';
 
 const DASHBOARD_VIEW_MODES = ['complet', 'compact', 'charge'] as const;
@@ -48,7 +49,7 @@ function memberNames(task: ProjectTask, members: TeamMember[]): string {
 }
 
 export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id: string) => void; onNavigate: (tab: Tab) => void }) {
-  const { members, tasks, timeEntries, planningSlots, absences, roadmapItems } = useStore();
+  const { members, tasks, timeEntries, planningSlots, absences, roadmapItems, copils } = useStore();
   const today = new Date();
   const weeks = useMemo(() => getWeeks(today, 3), []); // eslint-disable-line react-hooks/exhaustive-deps
   const [mode, setMode] = useViewMode<DashboardViewMode>('vue-ensemble', DASHBOARD_VIEW_MODES, 'complet');
@@ -150,6 +151,32 @@ export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id:
       tab: 'roadmap',
       printLines: roadmapStats.notStartedButDue.map((r) => `${r.title} — ${r.domain}, ${r.quarter}`),
       details: <RoadmapDetails items={roadmapStats.notStartedButDue} />,
+    });
+  }
+  // Engagements pris en COPIL : une action dont l'échéance est passée est un engagement non
+  // tenu devant les parties prenantes — c'est au moins aussi visible qu'une tâche en retard.
+  const lateCopilActions = overdueActions(copils, today);
+  if (lateCopilActions.length > 0) {
+    attentionItems.push({
+      key: 'copil-actions',
+      label: `${lateCopilActions.length} action(s) de COPIL en retard`,
+      tone: 'danger',
+      tab: 'copils',
+      printLines: lateCopilActions.map(
+        ({ copil, action }) => `${action.label} — échéance ${action.dueDate} — ${memberNamesOf(action.ownerIds, members)} (${copil.title})`
+      ),
+      details: <CopilActionDetails refs={lateCopilActions} members={members} />,
+    });
+  }
+  const copilsToPrepare = copilsNeedingPrep(copils, today);
+  if (copilsToPrepare.length > 0) {
+    attentionItems.push({
+      key: 'copil-prep',
+      label: `${copilsToPrepare.length} COPIL à préparer (ordre du jour vide)`,
+      tone: 'warning',
+      tab: 'copils',
+      printLines: copilsToPrepare.map((c) => `${c.title} — ${formatCopilDate(c.date)}`),
+      details: <CopilPrepDetails copils={copilsToPrepare} />,
     });
   }
 
@@ -553,6 +580,38 @@ function OverloadDetails({
               </span>
               <span className="w-10 shrink-0 text-right text-xs tabular-nums">{Math.round(l.ratio * 100)}%</span>
             </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function CopilActionDetails({ refs, members }: { refs: CopilActionRef[]; members: TeamMember[] }) {
+  return (
+    <ul className="space-y-1.5">
+      {refs.map(({ copil, action }) => (
+        <li key={`${copil.id}-${action.id}`} className="flex flex-wrap items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+          <span className="min-w-0 flex-1 truncate font-medium">{action.label}</span>
+          <span className="text-xs text-slate-400">{copil.title}</span>
+          <span className="text-xs font-medium">échéance {action.dueDate}</span>
+          <span className="text-xs text-slate-400">{memberNamesOf(action.ownerIds, members)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function CopilPrepDetails({ copils }: { copils: Copil[] }) {
+  return (
+    <ul className="space-y-1.5">
+      {copils.map((c) => {
+        const days = daysUntil(c.date);
+        return (
+          <li key={c.id} className="flex flex-wrap items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+            <span className="min-w-0 flex-1 truncate font-medium">{c.title}</span>
+            <span className="text-xs text-slate-400">{formatCopilDate(c.date)}</span>
+            <span className="text-xs font-medium">dans {days} jour{days > 1 ? 's' : ''}</span>
           </li>
         );
       })}
