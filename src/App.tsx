@@ -10,6 +10,7 @@ import { SettingsView } from './components/SettingsView';
 import { WeeklyReportView } from './components/WeeklyReportView';
 import { RoadmapView } from './components/RoadmapView';
 import { CopilView } from './components/CopilView';
+import { clearLastRepairReport, getLastRepairReport } from './lib/repairIds';
 import { useStore } from './store/useStore';
 import { isAuthConfigured, signIn as msalLoginOnly, signInWithIdToken, trySilentAccount, signOut as msalSignOut } from './auth/msalClient';
 import { backendAvailable, backendLogout, finalizeSsoSession, getBackendSession, loginLdap, loginLocal, type BackendUser } from './auth/backendAuth';
@@ -283,6 +284,10 @@ function App() {
   useServerSync();
 
   const [syncError, setSyncError] = useState<string | null>(null);
+  // Réparation d'identifiants dupliqués au chargement (voir src/lib/repairIds.ts) : on le
+  // dit à l'utilisateur, parce que les affectations qui visaient un identifiant dupliqué
+  // sont restées sur le premier enregistrement et méritent une relecture de sa part.
+  const [repairReport, setRepairReport] = useState(() => getLastRepairReport());
   useEffect(() => {
     let hideTimer: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = onSyncError((message) => {
@@ -370,6 +375,27 @@ function App() {
           ))}
         </nav>
       </header>
+
+      {repairReport && (
+        <div className="mx-auto mt-3 max-w-7xl px-4 print:hidden">
+          <div className="flex items-start justify-between gap-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+            <span>
+              <strong>{repairReport.total} enregistrement(s) portaient le même identifiant</strong> (anomalie d'une version précédente) et
+              viennent d'être corrigés automatiquement au chargement. Les affectations qui pointaient vers un identifiant dupliqué sont
+              restées sur le premier enregistrement : vérifiez les assignations des membres et tâches concernés.
+            </span>
+            <button
+              onClick={() => {
+                clearLastRepairReport();
+                setRepairReport(null);
+              }}
+              className="shrink-0 hover:underline"
+            >
+              J'ai compris
+            </button>
+          </div>
+        </div>
+      )}
 
       {syncError && (
         <div className="mx-auto mt-3 max-w-7xl px-4 print:hidden">

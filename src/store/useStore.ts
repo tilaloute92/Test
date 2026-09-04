@@ -12,6 +12,8 @@ import {
   timeEntries as seedTimeEntries,
 } from '../data/seed';
 import { addDays, toISODate } from '../lib/date';
+import { makeId } from '../lib/ids';
+import { repairDuplicateIds } from '../lib/repairIds';
 import { isSyncActive, reportSyncError } from '../lib/syncState';
 import {
   syncAddAbsence,
@@ -103,8 +105,9 @@ export interface StoreState extends SharedSnapshot {
   resetToSeed: () => void;
 }
 
-let idCounter = 1000;
-const nextId = (prefix: string) => `${prefix}${idCounter++}`;
+// Voir src/lib/ids.ts : un compteur en mémoire produisait des identifiants en double
+// d'une session à l'autre (et d'un navigateur à l'autre en mode multi-utilisateur).
+const nextId = (prefix: string) => makeId(prefix);
 
 /** Envoie une écriture vers le serveur si le mode multi-utilisateur est actif ; signale un
  *  échec sans jamais bloquer ni annuler la modification déjà appliquée localement. */
@@ -326,6 +329,28 @@ export const useStore = create<StoreState>()(
           copils: seedCopils,
         }),
     }),
-    { name: 'infra-team-tracker' }
+    {
+      name: 'infra-team-tracker',
+      // Réparation des données déjà enregistrées avec l'ancienne génération d'identifiants :
+      // les doublons éventuels reçoivent un identifiant neuf au chargement, sans quoi
+      // l'utilisateur continuerait de voir deux enregistrements se comporter comme un seul
+      // (cocher l'un cochait l'autre). Sans doublon, rien n'est réécrit.
+      //
+      // C'est fait dans `merge` et non dans `onRehydrateStorage` : ce dernier s'exécute
+      // pendant la création du store, donc avant que la constante `useStore` ne soit
+      // initialisée — y appeler `useStore.setState` échoue silencieusement. `merge` reçoit
+      // l'état persisté et renvoie l'état à appliquer, sans rien référencer d'extérieur.
+      merge: (persisted, current) => {
+        const merged = { ...current, ...(persisted as Partial<StoreState>) } as StoreState;
+        const repaired = repairDuplicateIds(merged as unknown as Record<string, unknown>);
+        if (!repaired) return merged;
+        console.warn(
+          `[Suivi Infra] ${repaired.report.total} identifiant(s) en double corrigé(s) au chargement :`,
+          repaired.report.byCollection,
+          "— les affectations qui pointaient vers un identifiant dupliqué sont restées sur le premier enregistrement : vérifiez-les."
+        );
+        return repaired.state as unknown as StoreState;
+      },
+    }
   )
 );

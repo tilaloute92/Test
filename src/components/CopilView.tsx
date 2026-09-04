@@ -17,6 +17,7 @@ import {
   allActions,
 } from '../lib/copil';
 import { exportCopilPptx } from '../lib/copilPptx';
+import { makeId } from '../lib/ids';
 import { Avatar, Card, ModeSwitcher, PrintButton, PrintHeader, RoadmapDomainBadge, StatusBadge } from './ui';
 import type { Copil, CopilAction, CopilStatus, RoadmapItem, TaskStatus, TeamMember } from '../types';
 
@@ -37,8 +38,9 @@ function CopilStatusBadge({ status }: { status: CopilStatus }) {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyles[status]}`}>{COPIL_STATUS_LABELS[status]}</span>;
 }
 
-let localIdCounter = 1;
-const localId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${localIdCounter++}`;
+// Même générateur que le store : un identifiant doit rester unique d'une session et d'un
+// navigateur à l'autre (voir src/lib/ids.ts).
+const localId = (prefix: string) => makeId(prefix);
 
 export function CopilView() {
   const { members, roadmapItems, copils, addCopil, updateCopil, removeCopil } = useStore();
