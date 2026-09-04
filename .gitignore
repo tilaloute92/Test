@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Paquets de déploiement générés (voir packaging/build-package.sh)
+packaging/out/
