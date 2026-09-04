@@ -11,6 +11,24 @@ import {
   timeEntries as seedTimeEntries,
 } from '../data/seed';
 import { addDays, toISODate } from '../lib/date';
+import { isSyncActive, reportSyncError } from '../lib/syncState';
+import {
+  syncAddAbsence,
+  syncAddAbsencesBulk,
+  syncAddMember,
+  syncAddRoadmapItem,
+  syncAddTask,
+  syncAddTimeEntry,
+  syncRemoveAbsence,
+  syncRemoveMember,
+  syncRemoveRoadmapItem,
+  syncRemoveTask,
+  syncRemoveTimeEntry,
+  syncSetPlanningSlot,
+  syncUpdateMember,
+  syncUpdateRoadmapItem,
+  syncUpdateTask,
+} from '../lib/serverSync';
 
 const MAX_REQUEST_HISTORY = 30;
 
@@ -22,16 +40,22 @@ const defaultAuthSettings: AuthSettings = {
   redirectUri: typeof window !== 'undefined' ? window.location.origin : '',
 };
 
-export interface StoreState {
+// Type des 6 collections partagées en mode multi-utilisateur (voir src/lib/serverSync.ts et
+// server/src/businessData.js) — tout le reste (connexions API, historique de requêtes,
+// paramètres de connexion) reste volontairement local à chaque navigateur.
+export interface SharedSnapshot {
   members: TeamMember[];
   tasks: ProjectTask[];
   planningSlots: PlanningSlot[];
   timeEntries: TimeEntry[];
   absences: Absence[];
+  roadmapItems: RoadmapItem[];
+}
+
+export interface StoreState extends SharedSnapshot {
   apiConnections: ApiConnection[];
   requestHistory: ApiRequestLog[];
   authSettings: AuthSettings;
-  roadmapItems: RoadmapItem[];
 
   addMember: (member: Omit<TeamMember, 'id'>) => void;
   updateMember: (id: string, patch: Partial<TeamMember>) => void;
@@ -63,11 +87,24 @@ export interface StoreState {
   updateRoadmapItem: (id: string, patch: Partial<RoadmapItem>) => void;
   removeRoadmapItem: (id: string) => void;
 
+  /** Remplace les 6 collections partagées par ce que renvoie le serveur — ne déclenche
+   *  jamais de synchronisation en retour (voir le hook de sondage périodique dans App.tsx). */
+  applyServerSnapshot: (snapshot: SharedSnapshot) => void;
+
   resetToSeed: () => void;
 }
 
 let idCounter = 1000;
 const nextId = (prefix: string) => `${prefix}${idCounter++}`;
+
+/** Envoie une écriture vers le serveur si le mode multi-utilisateur est actif ; signale un
+ *  échec sans jamais bloquer ni annuler la modification déjà appliquée localement. */
+function fireSync(action: string, promise: Promise<unknown>) {
+  if (!isSyncActive()) return;
+  promise.catch((err) => {
+    reportSyncError(`Échec de synchronisation (${action}) : ${err instanceof Error ? err.message : String(err)}`);
+  });
+}
 
 function sanitizeConnection<T extends Partial<ApiConnection>>(connection: T): T {
   if (connection.rememberSecret) return connection;
@@ -87,46 +124,61 @@ export const useStore = create<StoreState>()(
       authSettings: defaultAuthSettings,
       roadmapItems: seedRoadmapItems,
 
-      addMember: (member) =>
-        set((s) => ({ members: [...s.members, { ...member, id: nextId('m') }] })),
-      updateMember: (id, patch) =>
-        set((s) => ({ members: s.members.map((m) => (m.id === id ? { ...m, ...patch } : m)) })),
-      removeMember: (id) =>
+      addMember: (member) => {
+        const item: TeamMember = { ...member, id: nextId('m') };
+        set((s) => ({ members: [...s.members, item] }));
+        fireSync('ajout membre', syncAddMember(item));
+      },
+      updateMember: (id, patch) => {
+        set((s) => ({ members: s.members.map((m) => (m.id === id ? { ...m, ...patch } : m)) }));
+        fireSync('modification membre', syncUpdateMember(id, patch));
+      },
+      removeMember: (id) => {
         set((s) => ({
           members: s.members.filter((m) => m.id !== id),
           tasks: s.tasks.map((t) => (t.assigneeIds.includes(id) ? { ...t, assigneeIds: t.assigneeIds.filter((a) => a !== id) } : t)),
           planningSlots: s.planningSlots.filter((p) => p.memberId !== id),
           roadmapItems: s.roadmapItems.map((r) => (r.ownerIds.includes(id) ? { ...r, ownerIds: r.ownerIds.filter((o) => o !== id) } : r)),
-        })),
+        }));
+        fireSync('suppression membre', syncRemoveMember(id));
+      },
 
       addTask: (task) => {
         const id = nextId('t');
-        set((s) => ({ tasks: [...s.tasks, { ...task, id, createdAt: new Date().toISOString() }] }));
+        const item: ProjectTask = { ...task, id, createdAt: new Date().toISOString() };
+        set((s) => ({ tasks: [...s.tasks, item] }));
+        fireSync('ajout tâche', syncAddTask(item));
         return id;
       },
-      updateTask: (id, patch) =>
+      updateTask: (id, patch) => {
         set((s) => ({
           tasks: s.tasks.map((t) => {
             if (t.id !== id) return t;
             const next = { ...t, ...patch };
             // Horodate automatiquement le passage à "Terminé" (et l'efface si la tâche est
             // rouverte) — c'est ce qui permet au rapport hebdomadaire de savoir ce qui a été
-            // terminé pendant la semaine, sans champ à remplir à la main.
+            // terminé pendant la semaine, sans champ à remplir à la main. Le serveur applique
+            // exactement la même règle de son côté (voir server/src/businessData.js) à partir
+            // du même `patch`, plutôt que de recevoir cette valeur déjà calculée.
             if (patch.status === 'termine' && t.status !== 'termine') next.completedAt = new Date().toISOString();
             else if (patch.status && patch.status !== 'termine') next.completedAt = undefined;
             return next;
           }),
-        })),
-      removeTask: (id) =>
+        }));
+        fireSync('modification tâche', syncUpdateTask(id, patch));
+      },
+      removeTask: (id) => {
         set((s) => ({
           tasks: s.tasks.filter((t) => t.id !== id),
           planningSlots: s.planningSlots.map((p) => (p.taskId === id ? { ...p, taskId: null } : p)),
           roadmapItems: s.roadmapItems.map((r) =>
             r.linkedTaskIds.includes(id) ? { ...r, linkedTaskIds: r.linkedTaskIds.filter((t) => t !== id) } : r
           ),
-        })),
+        }));
+        fireSync('suppression tâche', syncRemoveTask(id));
+      },
 
-      setPlanningSlot: (memberId, date, period, taskId) =>
+      setPlanningSlot: (memberId, date, period, taskId) => {
         set((s) => {
           const existing = s.planningSlots.find(
             (p) => p.memberId === memberId && p.date === date && p.period === period
@@ -139,25 +191,41 @@ export const useStore = create<StoreState>()(
           return {
             planningSlots: [...s.planningSlots, { id: nextId('s'), memberId, date, period, taskId }],
           };
-        }),
+        });
+        fireSync('planning', syncSetPlanningSlot(memberId, date, period, taskId));
+      },
 
-      addTimeEntry: (entry) => set((s) => ({ timeEntries: [...s.timeEntries, { ...entry, id: nextId('te') }] })),
-      removeTimeEntry: (id) => set((s) => ({ timeEntries: s.timeEntries.filter((e) => e.id !== id) })),
+      addTimeEntry: (entry) => {
+        const item: TimeEntry = { ...entry, id: nextId('te') };
+        set((s) => ({ timeEntries: [...s.timeEntries, item] }));
+        fireSync('ajout temps', syncAddTimeEntry(item));
+      },
+      removeTimeEntry: (id) => {
+        set((s) => ({ timeEntries: s.timeEntries.filter((e) => e.id !== id) }));
+        fireSync('suppression temps', syncRemoveTimeEntry(id));
+      },
 
-      addAbsence: (absence) => set((s) => ({ absences: [...s.absences, { ...absence, id: nextId('a') }] })),
-      addAbsenceRange: ({ startDate, endDate, ...rest }) =>
-        set((s) => {
-          const start = new Date(startDate);
-          const end = new Date(endDate);
-          const created: Absence[] = [];
-          // L'équipe travaillant aussi le week-end (horaires décalés), une absence sur une
-          // plage de dates couvre désormais tous les jours de la plage, samedi/dimanche inclus.
-          for (let d = start; d <= end; d = addDays(d, 1)) {
-            created.push({ ...rest, date: toISODate(d), id: nextId('a') });
-          }
-          return { absences: [...s.absences, ...created] };
-        }),
-      removeAbsence: (id) => set((s) => ({ absences: s.absences.filter((a) => a.id !== id) })),
+      addAbsence: (absence) => {
+        const item: Absence = { ...absence, id: nextId('a') };
+        set((s) => ({ absences: [...s.absences, item] }));
+        fireSync('ajout absence', syncAddAbsence(item));
+      },
+      addAbsenceRange: ({ startDate, endDate, ...rest }) => {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const created: Absence[] = [];
+        // L'équipe travaillant aussi le week-end (horaires décalés), une absence sur une
+        // plage de dates couvre désormais tous les jours de la plage, samedi/dimanche inclus.
+        for (let d = start; d <= end; d = addDays(d, 1)) {
+          created.push({ ...rest, date: toISODate(d), id: nextId('a') });
+        }
+        set((s) => ({ absences: [...s.absences, ...created] }));
+        fireSync('ajout absences', syncAddAbsencesBulk(created));
+      },
+      removeAbsence: (id) => {
+        set((s) => ({ absences: s.absences.filter((a) => a.id !== id) }));
+        fireSync('suppression absence', syncRemoveAbsence(id));
+      },
 
       addApiConnection: (connection) =>
         set((s) => ({
@@ -180,14 +248,23 @@ export const useStore = create<StoreState>()(
       addRoadmapItem: (item) => {
         const id = nextId('r');
         const now = new Date().toISOString();
-        set((s) => ({ roadmapItems: [...s.roadmapItems, { ...item, id, createdAt: now, updatedAt: now }] }));
+        const full: RoadmapItem = { ...item, id, createdAt: now, updatedAt: now };
+        set((s) => ({ roadmapItems: [...s.roadmapItems, full] }));
+        fireSync('ajout FDR', syncAddRoadmapItem(full));
         return id;
       },
-      updateRoadmapItem: (id, patch) =>
+      updateRoadmapItem: (id, patch) => {
         set((s) => ({
           roadmapItems: s.roadmapItems.map((r) => (r.id === id ? { ...r, ...patch, updatedAt: new Date().toISOString() } : r)),
-        })),
-      removeRoadmapItem: (id) => set((s) => ({ roadmapItems: s.roadmapItems.filter((r) => r.id !== id) })),
+        }));
+        fireSync('modification FDR', syncUpdateRoadmapItem(id, patch));
+      },
+      removeRoadmapItem: (id) => {
+        set((s) => ({ roadmapItems: s.roadmapItems.filter((r) => r.id !== id) }));
+        fireSync('suppression FDR', syncRemoveRoadmapItem(id));
+      },
+
+      applyServerSnapshot: (snapshot) => set(snapshot),
 
       resetToSeed: () =>
         set({

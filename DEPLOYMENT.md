@@ -236,10 +236,26 @@ qu'une seule adresse.
   depuis l'écran de connexion.)
 - Testez une connexion avec le compte local `admin`, puis configurez LDAP si besoin.
 
+### B.6 Mode multi-utilisateur (données d'équipe partagées)
+
+Ce même service, une fois B.1 à B.5 en place, sert aussi de source partagée pour les
+données d'équipe (membres, tâches, planning, temps saisi, absences, feuille de route) —
+voir README, section "Mode multi-utilisateur". Rien de plus à déployer : c'est activé
+automatiquement dès qu'une personne se connecte avec une vraie session serveur (compte
+local, LDAP, ou SSO Microsoft finalisé côté serveur).
+
+**Important pour la sauvegarde** : ces données sont désormais stockées dans
+`server/data/business-*.json`, au même titre que les comptes locaux — voir la note de
+maintenance ci-dessous, elle s'applique maintenant à un contenu bien plus important qu'avant
+(le travail de toute l'équipe, pas seulement des identifiants).
+
 ### Maintenance
 
-- Le service ne stocke que des identifiants et sessions (`server/data/`, hors dépôt Git) —
-  pensez à sauvegarder ce dossier si vous avez plusieurs comptes locaux configurés.
+- Le service stocke dans `server/data/` (hors dépôt Git) : les identifiants et sessions,
+  **et, si le mode multi-utilisateur est utilisé, les données d'équipe partagées**
+  (`business-*.json` — tâches, planning, temps, absences, feuille de route, membres).
+  Sauvegardez ce dossier régulièrement dès que cette fonctionnalité est utilisée : sa perte
+  fait perdre les données de toute l'équipe, pas seulement d'une personne.
 - Mise à jour du service : `git pull`, `npm install --omit=dev`, `nssm restart
   SuiviInfraAuth`.
 - `npm audit` (dans `server/`) avant chaque mise à jour des dépendances, comme pour le
@@ -249,10 +265,12 @@ qu'une seule adresse.
 
 ## Ce que ce déploiement ne couvre pas
 
-- **Sauvegarde des données métier** (tâches, planning, temps saisi...) : chaque
-  utilisateur les a dans le stockage local de *son* navigateur (voir README) — la Partie B
-  ne gère que l'authentification, pas ces données. La perte du profil navigateur d'un
-  utilisateur perd ses données locales.
+- **Sauvegarde automatique des données d'équipe** : en mode multi-utilisateur, elles vivent
+  dans `server/data/business-*.json` (voir B.6 ci-dessus) — sans sauvegarde régulière de ce
+  dossier par vos soins, leur perte reste possible (panne disque, erreur de manipulation...).
+  Sans mode multi-utilisateur (ou pour les utilisateurs qui n'y basculent pas), les données
+  restent comme avant dans le stockage local de *chaque* navigateur (voir README) : la perte
+  du profil navigateur d'un utilisateur perd alors seulement ses données locales à lui.
 - **Haute disponibilité / répartition de charge** : un seul serveur IIS (+ un seul service
   d'authentification) suffit pour un usage interne à une équipe de 6 personnes ; non
   traité ici.

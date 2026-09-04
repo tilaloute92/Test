@@ -32,6 +32,10 @@ export interface ProjectTask {
   createdAt: string;
   completedAt?: string;
   description?: string;
+  /** Renseignés uniquement en mode multi-utilisateur (voir server/src/businessData.js) —
+   *  absents si la donnée n'a jamais transité par le serveur partagé. */
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export interface TimeEntry {
@@ -128,6 +132,8 @@ export interface RoadmapItem {
   linkedTaskIds: string[];
   createdAt: string;
   updatedAt: string;
+  /** Renseigné uniquement en mode multi-utilisateur (voir server/src/businessData.js). */
+  updatedBy?: string;
 }
 
 /**

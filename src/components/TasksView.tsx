@@ -371,7 +371,14 @@ function TaskForm({
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
       <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">{initial ? 'Modifier la tâche' : 'Nouvelle tâche'}</h3>
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{initial ? 'Modifier la tâche' : 'Nouvelle tâche'}</h3>
+          {initial?.updatedBy && initial?.updatedAt && (
+            <p className="mt-0.5 text-xs text-slate-400">
+              Dernière modification par {initial.updatedBy}, le {new Date(initial.updatedAt).toLocaleString('fr-FR')}
+            </p>
+          )}
+        </div>
         <div className="space-y-2.5">
           <Field label="Titre">
             <input value={title} onChange={(e) => setTitle(e.target.value)} className="input" />

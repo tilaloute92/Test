@@ -12,6 +12,8 @@ import { RoadmapView } from './components/RoadmapView';
 import { useStore } from './store/useStore';
 import { isAuthConfigured, signIn as msalLoginOnly, signInWithIdToken, trySilentAccount, signOut as msalSignOut } from './auth/msalClient';
 import { backendAvailable, backendLogout, finalizeSsoSession, getBackendSession, loginLdap, loginLocal, type BackendUser } from './auth/backendAuth';
+import { setSyncActive, onSyncError } from './lib/syncState';
+import { useServerSync } from './hooks/useServerSync';
 import type { AccountInfo } from '@azure/msal-browser';
 
 export type Tab = 'dashboard' | 'daily' | 'planning' | 'tasks' | 'time' | 'team' | 'api' | 'report' | 'roadmap' | 'settings';
@@ -152,11 +154,20 @@ function useAuthGate() {
     }
   };
 
+  // Mode multi-utilisateur (voir src/lib/syncState.ts et src/hooks/useServerSync.ts) : les
+  // données d'équipe (tâches, planning, temps, absences, FDR, membres) ne se synchronisent
+  // avec le serveur que si celui-ci est joignable ET qu'une vraie session serveur existe
+  // (local, LDAP ou SSO vérifié côté serveur) — pas juste une session Microsoft gérée par
+  // le seul navigateur (msalAccount), qui n'a pas de cookie de session côté serveur.
+  useEffect(() => {
+    setSyncActive(backendUp && Boolean(session), session ? { username: session.username, name: session.name } : null);
+  }, [backendUp, session]);
+
   const isAuthenticated = backendUp ? Boolean(session) : Boolean(msalAccount);
   const displayName = session?.name ?? msalAccount?.name ?? msalAccount?.username ?? null;
   const locked = authSettings.requireLogin && !checking && !isAuthenticated;
 
-  return { checking, locked, error, backendUp, displayName, loginMicrosoft, loginLocalAccount, loginLdapAccount, logout };
+  return { checking, locked, error, backendUp, session, displayName, loginMicrosoft, loginLocalAccount, loginLdapAccount, logout };
 }
 
 type AuthGate = ReturnType<typeof useAuthGate>;
@@ -267,6 +278,21 @@ function App() {
   const [tab, setTab] = useState<Tab>('dashboard');
   const { dark, setDark } = useTheme();
   const authGate = useAuthGate();
+  useServerSync();
+
+  const [syncError, setSyncError] = useState<string | null>(null);
+  useEffect(() => {
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = onSyncError((message) => {
+      setSyncError(message);
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => setSyncError(null), 8000);
+    });
+    return () => {
+      unsubscribe();
+      if (hideTimer) clearTimeout(hideTimer);
+    };
+  }, []);
 
   const goToMember = () => setTab('planning');
 
@@ -302,7 +328,14 @@ function App() {
             ))}
           </nav>
           {authGate.displayName && (
-            <div className="ml-auto hidden max-w-[160px] items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 md:flex">
+            <div className="ml-auto hidden max-w-[220px] items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 md:flex">
+              {authGate.backendUp && authGate.session && (
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full bg-emerald-500"
+                  title="Mode multi-utilisateur actif : les données d'équipe sont synchronisées avec le serveur."
+                  aria-hidden="true"
+                />
+              )}
               <span className="truncate" title={authGate.displayName}>
                 {authGate.displayName.split(' ')[0]}
               </span>
@@ -335,6 +368,17 @@ function App() {
           ))}
         </nav>
       </header>
+
+      {syncError && (
+        <div className="mx-auto mt-3 max-w-7xl px-4 print:hidden">
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+            <span>{syncError} — la modification reste enregistrée dans ce navigateur, mais n'a pas atteint le serveur partagé.</span>
+            <button onClick={() => setSyncError(null)} className="shrink-0 hover:underline">
+              Fermer
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="mx-auto max-w-7xl px-4 py-6">
         {tab === 'dashboard' && <Dashboard onSelectMember={goToMember} onNavigate={setTab} />}

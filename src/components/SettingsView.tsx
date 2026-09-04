@@ -23,6 +23,8 @@ import {
   useBackupStore,
   type Snapshot,
 } from '../lib/backup';
+import { fetchSnapshot, publishSnapshot } from '../lib/serverSync';
+import { getSyncUser, isSyncActive, onSyncActiveChange, type SyncUser } from '../lib/syncState';
 
 const NOT_LOGGED_IN_HINT =
   "Connectez-vous d'abord avec un compte local ou LDAP existant (celui créé via `npm run create-user` sur le serveur, par exemple) pour gérer ceci depuis l'application.";
@@ -269,6 +271,24 @@ export function SettingsView() {
             Non disponible : un navigateur ne peut pas interroger un annuaire LDAP directement (ce n'est pas un protocole web), il faut le
             serveur d'authentification (<code>server/</code>) pour ça. Démarrez-le (voir <code>server/README.md</code>) pour activer cette
             section.
+          </p>
+        </Card>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* 3bis. Mode multi-utilisateur — partage des données d'équipe (tâches, */}
+      {/*       planning, temps, absences, FDR, membres) via ce même serveur.  */}
+      {/*       Nécessite le serveur ; inactif tant que personne n'est         */}
+      {/*       connecté avec une vraie session serveur (pas juste MSAL seul). */}
+      {/* ------------------------------------------------------------------ */}
+      {backendUp ? (
+        <MultiUserCard confirm={confirm} />
+      ) : (
+        <Card className="space-y-2 p-4">
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Mode multi-utilisateur</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Non disponible : le partage des données d'équipe entre utilisateurs nécessite le serveur (<code>server/</code>). Démarrez-le
+            (voir <code>server/README.md</code>) pour activer cette section.
           </p>
         </Card>
       )}
@@ -527,6 +547,109 @@ function LdapConfigCard({ confirm }: { confirm: ConfirmFn }) {
         de connexion.
       </p>
       {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+    </Card>
+  );
+}
+
+function useSyncStatus() {
+  const [status, setStatus] = useState<{ active: boolean; user: SyncUser | null }>(() => ({ active: isSyncActive(), user: getSyncUser() }));
+  useEffect(() => onSyncActiveChange((active, user) => setStatus({ active, user })), []);
+  return status;
+}
+
+function MultiUserCard({ confirm }: { confirm: ConfirmFn }) {
+  const { active, user } = useSyncStatus();
+  const [serverEmpty, setServerEmpty] = useState<boolean | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [published, setPublished] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!active) return;
+    fetchSnapshot()
+      .then((s) => setServerEmpty(s.isEmpty))
+      .catch(() => setServerEmpty(null));
+  }, [active]);
+
+  const publish = async () => {
+    if (
+      !(await confirm({
+        title: 'Publier les données locales',
+        message:
+          "Envoyer toutes les données de CE navigateur (membres, tâches, planning, temps, absences, feuille de route) vers le serveur partagé, pour que toute l'équipe les voie désormais ? À faire une seule fois, par une seule personne — les autres basculeront dessus automatiquement à leur prochaine actualisation.",
+        confirmLabel: 'Publier',
+        danger: true,
+      }))
+    ) {
+      return;
+    }
+    setPublishing(true);
+    setPublishError(null);
+    try {
+      const state = useStore.getState();
+      await publishSnapshot({
+        members: state.members,
+        tasks: state.tasks,
+        planningSlots: state.planningSlots,
+        timeEntries: state.timeEntries,
+        absences: state.absences,
+        roadmapItems: state.roadmapItems,
+      });
+      setPublished(true);
+      setServerEmpty(false);
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  return (
+    <Card className="space-y-3 p-4">
+      <div>
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Mode multi-utilisateur</h2>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Quand il est actif, les données d'équipe (membres, tâches, planning, temps, absences, feuille de route) sont partagées entre
+          tous les utilisateurs connectés via ce serveur, avec une actualisation automatique toutes les ~8 secondes — au lieu de rester
+          isolées dans le navigateur de chacun. Les connexions API et l'historique de sauvegarde (onglet précédent) restent
+          volontairement locaux à chaque navigateur : ce sont des réglages personnels, pas des données d'équipe.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2 text-sm">
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
+        {active ? (
+          <span className="text-slate-700 dark:text-slate-200">
+            Actif — connecté(e) en tant que <strong>{user?.name}</strong>
+          </span>
+        ) : (
+          <span className="text-slate-500 dark:text-slate-400">
+            Inactif — connectez-vous avec un compte local, LDAP ou Microsoft pour l'activer (voir les sections ci-dessus).
+          </span>
+        )}
+      </div>
+
+      {active && serverEmpty && (
+        <div className="rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-500/10">
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            Le serveur ne contient encore aucune donnée d'équipe. Si celles de CE navigateur sont à prendre comme point de départ
+            commun, publiez-les ci-dessous — sinon, laissez la personne qui a les données de référence le faire depuis son propre poste.
+          </p>
+          <button
+            onClick={publish}
+            disabled={publishing}
+            className="mt-2 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-40"
+          >
+            {publishing ? 'Publication…' : 'Publier les données de ce navigateur vers le serveur'}
+          </button>
+        </div>
+      )}
+      {published && (
+        <p className="text-xs text-emerald-600 dark:text-emerald-400">
+          Données publiées — toute l'équipe les verra à sa prochaine actualisation (~8 secondes).
+        </p>
+      )}
+      {publishError && <p className="text-xs text-red-600 dark:text-red-400">{publishError}</p>}
     </Card>
   );
 }
