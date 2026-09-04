@@ -180,6 +180,37 @@ export function RagBadge({ rag }: { rag: 'vert' | 'orange' | 'rouge' }) {
   return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${ragStyles[rag]}`}>{ragLabels[rag]}</span>;
 }
 
+/** Sélecteur de mode d'affichage (Tableau/Kanban/..., Grille/Liste/...) — même style sur tous les onglets. */
+export function ModeSwitcher<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string; title?: string }[];
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs font-medium dark:border-slate-700 dark:bg-slate-800 print:hidden">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          title={o.title}
+          onClick={() => onChange(o.value)}
+          className={`rounded-md px-2.5 py-1.5 transition-colors ${
+            value === o.value
+              ? 'bg-white text-violet-700 shadow-sm dark:bg-slate-900 dark:text-violet-300'
+              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}>

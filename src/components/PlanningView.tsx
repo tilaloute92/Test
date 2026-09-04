@@ -1,11 +1,15 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { formatDayLabel, formatWeekRange, getWeeks, isToday, isWeekend, toISODate } from '../lib/date';
+import { formatDateLong, formatDayLabel, formatWeekRange, getWeeks, isToday, isWeekend, toISODate } from '../lib/date';
 import { isAbsent } from '../lib/workload';
 import { getTaskById } from '../lib/selectors';
-import { Avatar, Card, PrintButton, PrintHeader, TaskTypeBadge } from './ui';
+import { Avatar, Card, ModeSwitcher, PrintButton, PrintHeader, TaskTypeBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
-import type { Period, ProjectTask, TaskType } from '../types';
+import { useViewMode } from '../hooks/useViewMode';
+import type { Absence, Period, PlanningSlot, ProjectTask, TaskType, TeamMember } from '../types';
+
+const PLANNING_VIEW_MODES = ['grille', 'personne', 'liste'] as const;
+type PlanningViewMode = (typeof PLANNING_VIEW_MODES)[number];
 
 const typeMeta: Record<TaskType, { icon: string; bg: string; border: string; text: string; dot: string }> = {
   MCO: {
@@ -43,6 +47,8 @@ export function PlanningView() {
   const weeks = useMemo(() => getWeeks(new Date(), 3), []);
   const [weekIndex, setWeekIndex] = useState(0);
   const [selected, setSelected] = useState<SelectedCell | null>(null);
+  const [mode, setMode] = useViewMode<PlanningViewMode>('planning', PLANNING_VIEW_MODES, 'grille');
+  const [personId, setPersonId] = useState<string>(members[0]?.id ?? '');
   const currentWeek = weeks[weekIndex];
 
   const selectedMember = selected ? members.find((m) => m.id === selected.memberId) : null;
@@ -66,9 +72,22 @@ export function PlanningView() {
             l'affecter — le week-end est repéré par un fond légèrement teinté.
           </p>
         </div>
-        <PrintButton />
+        <div className="flex items-center gap-2">
+          <ModeSwitcher
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'grille', label: 'Grille hebdo', title: 'Grille par personne et par jour, semaine par semaine' },
+              { value: 'personne', label: 'Vue par personne', title: 'Planning détaillé sur les 3 semaines, une personne à la fois' },
+              { value: 'liste', label: 'Liste chronologique', title: 'Agenda jour par jour de la semaine sélectionnée, dans l’ordre' },
+            ]}
+          />
+          <PrintButton />
+        </div>
       </div>
 
+      {mode === 'grille' && (
+      <>
       {/* Mini aperçu des 3 semaines — vue d'ensemble compacte, la semaine sélectionnée est encadrée */}
       <Card className="overflow-x-auto p-3 print:hidden">
         <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Aperçu 3 semaines</h2>
@@ -247,6 +266,32 @@ export function PlanningView() {
           )}
         </Card>
       )}
+      </>
+      )}
+
+      {mode === 'personne' && (
+        <PlanningByPerson
+          members={members}
+          weeks={weeks}
+          tasks={tasks}
+          planningSlots={planningSlots}
+          absences={absences}
+          personId={personId}
+          setPersonId={setPersonId}
+        />
+      )}
+
+      {mode === 'liste' && (
+        <PlanningTimeline
+          members={members}
+          weeks={weeks}
+          weekIndex={weekIndex}
+          setWeekIndex={setWeekIndex}
+          tasks={tasks}
+          planningSlots={planningSlots}
+          absences={absences}
+        />
+      )}
     </div>
   );
 }
@@ -283,5 +328,184 @@ function PeriodChip({
         <span className="min-w-0 truncate">{task ? task.title : 'Non planifié'}</span>
       </div>
     </button>
+  );
+}
+
+/** Vue par personne : le planning des 3 semaines d'une seule personne à la fois, avec le titre complet de chaque tâche (lecture seule — l'affectation se fait dans la vue Grille hebdo). */
+function PlanningByPerson({
+  members,
+  weeks,
+  tasks,
+  planningSlots,
+  absences,
+  personId,
+  setPersonId,
+}: {
+  members: TeamMember[];
+  weeks: Date[][];
+  tasks: ProjectTask[];
+  planningSlots: PlanningSlot[];
+  absences: Absence[];
+  personId: string;
+  setPersonId: (id: string) => void;
+}) {
+  const person = members.find((m) => m.id === personId) ?? members[0];
+
+  if (!person) {
+    return <Card className="p-6 text-center text-sm text-slate-400 print:hidden">Aucun membre dans l'équipe.</Card>;
+  }
+
+  return (
+    <div className="space-y-3">
+      <Card className="flex flex-wrap gap-1.5 p-2 print:hidden">
+        {members.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => setPersonId(m.id)}
+            className={`flex items-center gap-1.5 rounded-full py-1 pl-1 pr-2.5 text-sm transition-colors ${
+              m.id === person.id
+                ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
+                : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Avatar name={m.name} color={m.color} initials={m.initials} size={22} />
+            {m.name}
+          </button>
+        ))}
+      </Card>
+
+      <PrintHeader title={`Planning — ${person.name}`} subtitle="3 semaines" />
+
+      {weeks.map((week, wi) => (
+        <Card key={wi} className="p-3">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Semaine {wi + 1} · {formatWeekRange(week)}
+          </h3>
+          <div className="divide-y divide-slate-50 dark:divide-slate-800/60">
+            {week.map((d) => {
+              const iso = toISODate(d);
+              return (
+                <div key={iso} className={`flex flex-wrap items-center gap-3 py-2 ${isWeekend(d) ? 'bg-amber-50/40 dark:bg-amber-500/5' : ''}`}>
+                  <span className="w-24 shrink-0 text-xs font-medium text-slate-500 dark:text-slate-400">{formatDayLabel(d)}</span>
+                  {(['matin', 'apres_midi'] as Period[]).map((period) => {
+                    const absentPeriod = isAbsent(absences, person.id, d, period);
+                    const slot = planningSlots.find((s) => s.memberId === person.id && s.date === iso && s.period === period);
+                    const task = getTaskById(tasks, slot?.taskId);
+                    const meta = task ? typeMeta[task.type] : null;
+                    return (
+                      <div key={period} className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
+                        <span className="shrink-0 text-[11px] text-slate-400">{period === 'matin' ? 'Matin' : 'Après-midi'}</span>
+                        {absentPeriod ? (
+                          <span className="text-xs text-slate-400">Absent(e)</span>
+                        ) : task ? (
+                          <span className={`inline-flex min-w-0 items-center gap-1 truncate rounded-md px-1.5 py-0.5 text-xs ${meta!.bg} ${meta!.text}`}>
+                            {meta!.icon} {task.title}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-300 dark:text-slate-600">Non planifié</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+/** Vue Liste chronologique : agenda jour par jour de la semaine sélectionnée, matin puis après-midi, dans l'ordre — pratique pour un point d'équipe. */
+function PlanningTimeline({
+  members,
+  weeks,
+  weekIndex,
+  setWeekIndex,
+  tasks,
+  planningSlots,
+  absences,
+}: {
+  members: TeamMember[];
+  weeks: Date[][];
+  weekIndex: number;
+  setWeekIndex: (i: number) => void;
+  tasks: ProjectTask[];
+  planningSlots: PlanningSlot[];
+  absences: Absence[];
+}) {
+  const currentWeek = weeks[weekIndex];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2 print:hidden">
+        {weeks.map((week, wi) => (
+          <button
+            key={wi}
+            onClick={() => setWeekIndex(wi)}
+            className={`rounded-lg px-3 py-2 text-left text-xs font-medium transition-colors ${
+              wi === weekIndex
+                ? 'bg-violet-600 text-white'
+                : 'bg-white text-slate-500 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800'
+            }`}
+          >
+            <div>Semaine {wi + 1}</div>
+            <div className="opacity-80">{formatWeekRange(week)}</div>
+          </button>
+        ))}
+      </div>
+
+      <PrintHeader title="Planning — Liste chronologique" subtitle={`Semaine ${weekIndex + 1} : ${formatWeekRange(currentWeek)}`} />
+
+      {currentWeek.map((d) => {
+        const iso = toISODate(d);
+        return (
+          <Card key={iso} className={`p-3 ${isWeekend(d) ? 'bg-amber-50/30 dark:bg-amber-500/5' : ''}`}>
+            <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{formatDateLong(d)}</h3>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {(['matin', 'apres_midi'] as Period[]).map((period) => {
+                const rows = members.map((m) => {
+                  const absentPeriod = isAbsent(absences, m.id, d, period);
+                  const slot = planningSlots.find((s) => s.memberId === m.id && s.date === iso && s.period === period);
+                  const task = getTaskById(tasks, slot?.taskId);
+                  return { member: m, absentPeriod, task };
+                });
+                const active = rows.filter((r) => r.absentPeriod || r.task);
+                return (
+                  <div key={period}>
+                    <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                      {period === 'matin' ? 'Matin' : 'Après-midi'}
+                    </h4>
+                    {active.length === 0 ? (
+                      <p className="text-xs text-slate-300 dark:text-slate-600">Rien de planifié.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {active.map(({ member, absentPeriod, task }) => {
+                          const meta = task ? typeMeta[task.type] : null;
+                          return (
+                            <div key={member.id} className="flex min-w-0 items-center gap-1.5 text-sm">
+                              <Avatar name={member.name} color={member.color} initials={member.initials} size={18} />
+                              <span className="shrink-0 truncate text-xs text-slate-500 dark:text-slate-400">{member.name}</span>
+                              {absentPeriod ? (
+                                <span className="text-xs text-slate-400">Absent(e)</span>
+                              ) : (
+                                <span className={`inline-flex min-w-0 items-center gap-1 truncate rounded-md px-1.5 py-0.5 text-xs ${meta!.bg} ${meta!.text}`}>
+                                  {meta!.icon} {task!.title}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        );
+      })}
+    </div>
   );
 }

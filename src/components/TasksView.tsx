@@ -1,12 +1,24 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { Avatar, Card, PrintButton, PrintHeader, RagBadge, TaskTypeBadge } from './ui';
+import { Avatar, Card, ModeSwitcher, PrintButton, PrintHeader, PriorityBadge, RagBadge, StatusBadge, TaskTypeBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import { computeFlashReport, listProjects } from '../lib/flashReport';
 import { FlashReportModal } from './FlashReportModal';
+import { useViewMode } from '../hooks/useViewMode';
+import { bucketTasksByDueDate, KANBAN_STATUSES } from '../lib/taskViews';
 import type { Priority, ProjectTask, TaskStatus, TaskType, TeamMember } from '../types';
 
 type ConfirmFn = ReturnType<typeof useConfirm>;
+
+const TASK_VIEW_MODES = ['tableau', 'kanban', 'echeancier'] as const;
+type TaskViewMode = (typeof TASK_VIEW_MODES)[number];
+
+const statusColumnLabels: Record<TaskStatus, string> = {
+  a_faire: 'À faire',
+  en_cours: 'En cours',
+  en_attente: 'En attente',
+  termine: 'Terminé',
+};
 
 export function TasksView() {
   const { members, tasks, timeEntries, addTask, updateTask, removeTask } = useStore();
@@ -19,6 +31,7 @@ export function TasksView() {
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
   const [openAssigneeMenu, setOpenAssigneeMenu] = useState<string | null>(null);
   const [flashReportProject, setFlashReportProject] = useState<string | null>(null);
+  const [mode, setMode] = useViewMode<TaskViewMode>('taches', TASK_VIEW_MODES, 'tableau');
 
   const spentByTask = useMemo(() => {
     const map: Record<string, number> = {};
@@ -57,6 +70,15 @@ export function TasksView() {
           <p className="text-sm text-slate-500 dark:text-slate-400">{filtered.length} élément(s) · plusieurs personnes peuvent être assignées à une même tâche</p>
         </div>
         <div className="flex items-center gap-2">
+          <ModeSwitcher
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'tableau', label: 'Tableau', title: 'Liste filtrable, une ligne par tâche' },
+              { value: 'kanban', label: 'Kanban', title: 'Colonnes par statut, glisser-déposer pour changer le statut' },
+              { value: 'echeancier', label: 'Échéancier', title: 'Regroupé par échéance : en retard, cette semaine, ce mois-ci...' },
+            ]}
+          />
           <PrintButton />
           <button
             onClick={() => setShowForm(true)}
@@ -117,137 +139,28 @@ export function TasksView() {
         </select>
       </Card>
 
-      <Card className="overflow-x-auto print:overflow-visible">
-        <table className="w-full min-w-[900px] text-sm print:min-w-0">
-          <thead>
-            <tr className="border-b border-slate-100 text-left text-xs text-slate-400 dark:border-slate-800">
-              <th className="px-3 py-2 font-medium">Tâche</th>
-              <th className="px-3 py-2 font-medium">Type</th>
-              <th className="px-3 py-2 font-medium">Assigné(s)</th>
-              <th className="px-3 py-2 font-medium">Priorité</th>
-              <th className="px-3 py-2 font-medium">Statut</th>
-              <th className="px-3 py-2 font-medium">Temps</th>
-              <th className="px-3 py-2 font-medium">Échéance</th>
-              <th className="px-3 py-2 print:hidden" />
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((t) => {
-              const assignees = t.assigneeIds.map((id) => members.find((m) => m.id === id)).filter((m): m is TeamMember => Boolean(m));
-              const spent = spentByTask[t.id] ?? 0;
-              const over = spent > t.estimatedHours;
-              const menuOpen = openAssigneeMenu === t.id;
-              return (
-                <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60 dark:border-slate-800/60 dark:hover:bg-slate-800/30">
-                  <td className="px-3 py-2">
-                    <div className="font-medium text-slate-800 dark:text-slate-100">{t.title}</div>
-                    {t.project && <div className="text-xs text-slate-400">{t.project}</div>}
-                  </td>
-                  <td className="px-3 py-2">
-                    <TaskTypeBadge type={t.type} />
-                  </td>
-                  <td className="relative px-3 py-2">
-                    <button
-                      onClick={() => setOpenAssigneeMenu(menuOpen ? null : t.id)}
-                      className="flex items-center gap-1.5 rounded-md border border-transparent px-1 py-1 hover:border-slate-200 dark:hover:border-slate-700"
-                    >
-                      {assignees.length === 0 ? (
-                        <span className="text-xs text-slate-400">Non assigné</span>
-                      ) : (
-                        <div className="flex -space-x-1.5">
-                          {assignees.slice(0, 3).map((m) => (
-                            <Avatar key={m.id} name={m.name} color={m.color} initials={m.initials} size={20} />
-                          ))}
-                          {assignees.length > 3 && (
-                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                              +{assignees.length - 3}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      <span className="text-xs text-slate-400">▾</span>
-                    </button>
+      {mode === 'tableau' && (
+        <TaskTable
+          tasks={filtered}
+          members={members}
+          spentByTask={spentByTask}
+          confirm={confirm}
+          openAssigneeMenu={openAssigneeMenu}
+          setOpenAssigneeMenu={setOpenAssigneeMenu}
+          toggleAssignee={toggleAssignee}
+          updateTask={updateTask}
+          removeTask={removeTask}
+          setEditingTask={setEditingTask}
+        />
+      )}
 
-                    {menuOpen && (
-                      <>
-                        <div className="fixed inset-0 z-10" onClick={() => setOpenAssigneeMenu(null)} />
-                        <div className="absolute left-3 top-full z-20 mt-1 w-56 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                          {members.map((m) => (
-                            <label
-                              key={m.id}
-                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
-                            >
-                              <input type="checkbox" checked={t.assigneeIds.includes(m.id)} onChange={() => toggleAssignee(t, m)} />
-                              <Avatar name={m.name} color={m.color} initials={m.initials} size={18} />
-                              <span className="truncate text-slate-700 dark:text-slate-200">{m.name}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <select
-                      value={t.priority}
-                      onChange={async (e) => {
-                        const value = e.target.value as Priority;
-                        if (await confirm({ title: 'Confirmer la modification', message: `Changer la priorité de "${t.title}" ?` })) {
-                          updateTask(t.id, { priority: value });
-                        }
-                      }}
-                      className="rounded-md border border-transparent bg-transparent px-1 py-1 text-xs hover:border-slate-200 dark:hover:border-slate-700"
-                    >
-                      <option value="basse">Basse</option>
-                      <option value="normale">Normale</option>
-                      <option value="haute">Haute</option>
-                      <option value="critique">Critique</option>
-                    </select>
-                  </td>
-                  <td className="px-3 py-2">
-                    <select
-                      value={t.status}
-                      onChange={async (e) => {
-                        const value = e.target.value as TaskStatus;
-                        if (await confirm({ title: 'Confirmer la modification', message: `Changer le statut de "${t.title}" ?` })) {
-                          updateTask(t.id, { status: value });
-                        }
-                      }}
-                      className="rounded-md border border-transparent bg-transparent px-1 py-1 text-xs hover:border-slate-200 dark:hover:border-slate-700"
-                    >
-                      <option value="a_faire">À faire</option>
-                      <option value="en_cours">En cours</option>
-                      <option value="en_attente">En attente</option>
-                      <option value="termine">Terminé</option>
-                    </select>
-                  </td>
-                  <td className={`px-3 py-2 tabular-nums ${over ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
-                    {spent}h / {t.estimatedHours}h
-                  </td>
-                  <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{t.dueDate ?? '—'}</td>
-                  <td className="px-3 py-2 text-right print:hidden">
-                    <button
-                      onClick={() => setEditingTask(t)}
-                      className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                    >
-                      Modifier
-                    </button>
-                    <button
-                      onClick={async () => {
-                        if (await confirm({ title: 'Supprimer la tâche', message: `Supprimer définitivement "${t.title}" ?`, confirmLabel: 'Supprimer', danger: true })) {
-                          removeTask(t.id);
-                        }
-                      }}
-                      className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
-                    >
-                      Suppr.
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Card>
+      {mode === 'kanban' && (
+        <TaskKanban tasks={filtered} members={members} spentByTask={spentByTask} confirm={confirm} updateTask={updateTask} setEditingTask={setEditingTask} />
+      )}
+
+      {mode === 'echeancier' && (
+        <TaskEcheancier tasks={filtered} members={members} spentByTask={spentByTask} setEditingTask={setEditingTask} />
+      )}
 
       {(showForm || editingTask) && (
         <TaskForm
@@ -278,6 +191,322 @@ export function TasksView() {
           onClose={() => setFlashReportProject(null)}
         />
       )}
+    </div>
+  );
+}
+
+interface TaskListProps {
+  tasks: ProjectTask[];
+  members: TeamMember[];
+  spentByTask: Record<string, number>;
+  setEditingTask: (t: ProjectTask) => void;
+}
+
+/** Vue Tableau (mode par défaut) : une ligne par tâche, tout modifiable en place. */
+function TaskTable({
+  tasks,
+  members,
+  spentByTask,
+  confirm,
+  openAssigneeMenu,
+  setOpenAssigneeMenu,
+  toggleAssignee,
+  updateTask,
+  removeTask,
+  setEditingTask,
+}: TaskListProps & {
+  confirm: ConfirmFn;
+  openAssigneeMenu: string | null;
+  setOpenAssigneeMenu: (id: string | null) => void;
+  toggleAssignee: (t: ProjectTask, m: TeamMember) => void;
+  updateTask: (id: string, patch: Partial<ProjectTask>) => void;
+  removeTask: (id: string) => void;
+}) {
+  return (
+    <Card className="overflow-x-auto print:overflow-visible">
+      <table className="w-full min-w-[900px] text-sm print:min-w-0">
+        <thead>
+          <tr className="border-b border-slate-100 text-left text-xs text-slate-400 dark:border-slate-800">
+            <th className="px-3 py-2 font-medium">Tâche</th>
+            <th className="px-3 py-2 font-medium">Type</th>
+            <th className="px-3 py-2 font-medium">Assigné(s)</th>
+            <th className="px-3 py-2 font-medium">Priorité</th>
+            <th className="px-3 py-2 font-medium">Statut</th>
+            <th className="px-3 py-2 font-medium">Temps</th>
+            <th className="px-3 py-2 font-medium">Échéance</th>
+            <th className="px-3 py-2 print:hidden" />
+          </tr>
+        </thead>
+        <tbody>
+          {tasks.map((t) => {
+            const assignees = t.assigneeIds.map((id) => members.find((m) => m.id === id)).filter((m): m is TeamMember => Boolean(m));
+            const spent = spentByTask[t.id] ?? 0;
+            const over = spent > t.estimatedHours;
+            const menuOpen = openAssigneeMenu === t.id;
+            return (
+              <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60 dark:border-slate-800/60 dark:hover:bg-slate-800/30">
+                <td className="px-3 py-2">
+                  <div className="font-medium text-slate-800 dark:text-slate-100">{t.title}</div>
+                  {t.project && <div className="text-xs text-slate-400">{t.project}</div>}
+                </td>
+                <td className="px-3 py-2">
+                  <TaskTypeBadge type={t.type} />
+                </td>
+                <td className="relative px-3 py-2">
+                  <button
+                    onClick={() => setOpenAssigneeMenu(menuOpen ? null : t.id)}
+                    className="flex items-center gap-1.5 rounded-md border border-transparent px-1 py-1 hover:border-slate-200 dark:hover:border-slate-700"
+                  >
+                    {assignees.length === 0 ? (
+                      <span className="text-xs text-slate-400">Non assigné</span>
+                    ) : (
+                      <div className="flex -space-x-1.5">
+                        {assignees.slice(0, 3).map((m) => (
+                          <Avatar key={m.id} name={m.name} color={m.color} initials={m.initials} size={20} />
+                        ))}
+                        {assignees.length > 3 && (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                            +{assignees.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    <span className="text-xs text-slate-400">▾</span>
+                  </button>
+
+                  {menuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setOpenAssigneeMenu(null)} />
+                      <div className="absolute left-3 top-full z-20 mt-1 w-56 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                        {members.map((m) => (
+                          <label
+                            key={m.id}
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
+                          >
+                            <input type="checkbox" checked={t.assigneeIds.includes(m.id)} onChange={() => toggleAssignee(t, m)} />
+                            <Avatar name={m.name} color={m.color} initials={m.initials} size={18} />
+                            <span className="truncate text-slate-700 dark:text-slate-200">{m.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  <select
+                    value={t.priority}
+                    onChange={async (e) => {
+                      const value = e.target.value as Priority;
+                      if (await confirm({ title: 'Confirmer la modification', message: `Changer la priorité de "${t.title}" ?` })) {
+                        updateTask(t.id, { priority: value });
+                      }
+                    }}
+                    className="rounded-md border border-transparent bg-transparent px-1 py-1 text-xs hover:border-slate-200 dark:hover:border-slate-700"
+                  >
+                    <option value="basse">Basse</option>
+                    <option value="normale">Normale</option>
+                    <option value="haute">Haute</option>
+                    <option value="critique">Critique</option>
+                  </select>
+                </td>
+                <td className="px-3 py-2">
+                  <select
+                    value={t.status}
+                    onChange={async (e) => {
+                      const value = e.target.value as TaskStatus;
+                      if (await confirm({ title: 'Confirmer la modification', message: `Changer le statut de "${t.title}" ?` })) {
+                        updateTask(t.id, { status: value });
+                      }
+                    }}
+                    className="rounded-md border border-transparent bg-transparent px-1 py-1 text-xs hover:border-slate-200 dark:hover:border-slate-700"
+                  >
+                    <option value="a_faire">À faire</option>
+                    <option value="en_cours">En cours</option>
+                    <option value="en_attente">En attente</option>
+                    <option value="termine">Terminé</option>
+                  </select>
+                </td>
+                <td className={`px-3 py-2 tabular-nums ${over ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                  {spent}h / {t.estimatedHours}h
+                </td>
+                <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{t.dueDate ?? '—'}</td>
+                <td className="px-3 py-2 text-right print:hidden">
+                  <button
+                    onClick={() => setEditingTask(t)}
+                    className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  >
+                    Modifier
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (await confirm({ title: 'Supprimer la tâche', message: `Supprimer définitivement "${t.title}" ?`, confirmLabel: 'Supprimer', danger: true })) {
+                        removeTask(t.id);
+                      }
+                    }}
+                    className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
+                  >
+                    Suppr.
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
+
+/** Vue Kanban : une colonne par statut, glisser-déposer une carte pour changer le statut (confirmation demandée, comme tout changement). */
+function TaskKanban({
+  tasks,
+  members,
+  spentByTask,
+  confirm,
+  updateTask,
+  setEditingTask,
+}: TaskListProps & { confirm: ConfirmFn; updateTask: (id: string, patch: Partial<ProjectTask>) => void }) {
+  const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
+
+  const handleDrop = async (t: ProjectTask, status: TaskStatus) => {
+    setDragOverColumn(null);
+    if (t.status === status) return;
+    if (await confirm({ title: 'Confirmer la modification', message: `Changer le statut de "${t.title}" en "${statusColumnLabels[status]}" ?` })) {
+      updateTask(t.id, { status });
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 print:grid-cols-4 print:gap-2">
+      {KANBAN_STATUSES.map((status) => {
+        const columnTasks = tasks.filter((t) => t.status === status);
+        return (
+          <div
+            key={status}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOverColumn(status);
+            }}
+            onDragLeave={() => setDragOverColumn((c) => (c === status ? null : c))}
+            onDrop={(e) => {
+              e.preventDefault();
+              const taskId = e.dataTransfer.getData('text/task-id');
+              const t = tasks.find((x) => x.id === taskId);
+              if (t) handleDrop(t, status);
+            }}
+            className={`flex flex-col gap-2 rounded-xl border p-2.5 transition-colors ${
+              dragOverColumn === status
+                ? 'border-violet-400 bg-violet-50/60 dark:border-violet-500 dark:bg-violet-500/10'
+                : 'border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40'
+            }`}
+          >
+            <div className="flex items-center justify-between px-1">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{statusColumnLabels[status]}</h3>
+              <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                {columnTasks.length}
+              </span>
+            </div>
+            <div className="flex min-h-16 flex-col gap-2">
+              {columnTasks.map((t) => {
+                const assignees = t.assigneeIds.map((id) => members.find((m) => m.id === id)).filter((m): m is TeamMember => Boolean(m));
+                const spent = spentByTask[t.id] ?? 0;
+                const over = spent > t.estimatedHours;
+                return (
+                  <div
+                    key={t.id}
+                    draggable
+                    onDragStart={(e) => e.dataTransfer.setData('text/task-id', t.id)}
+                    onClick={() => setEditingTask(t)}
+                    className="cursor-grab space-y-1.5 rounded-lg border border-slate-200 bg-white p-2.5 text-left shadow-sm active:cursor-grabbing dark:border-slate-700 dark:bg-slate-900"
+                  >
+                    <div className="flex items-start justify-between gap-1.5">
+                      <span className="text-sm font-medium text-slate-800 dark:text-slate-100">{t.title}</span>
+                      <TaskTypeBadge type={t.type} />
+                    </div>
+                    {t.project && <div className="truncate text-xs text-slate-400">{t.project}</div>}
+                    <div className="flex items-center justify-between gap-2">
+                      <PriorityBadge priority={t.priority} />
+                      {assignees.length > 0 ? (
+                        <div className="flex -space-x-1.5">
+                          {assignees.slice(0, 3).map((m) => (
+                            <Avatar key={m.id} name={m.name} color={m.color} initials={m.initials} size={18} />
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-400">Non assigné</span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span className={over ? 'text-red-600 dark:text-red-400' : ''}>
+                        {spent}h / {t.estimatedHours}h
+                      </span>
+                      {t.dueDate && <span>{t.dueDate}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+              {columnTasks.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 p-3 text-center text-xs text-slate-300 dark:border-slate-700 dark:text-slate-600">—</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Vue Échéancier : regroupée par proximité d'échéance plutôt que par statut — pour voir d'un coup d'œil ce qui presse. */
+function TaskEcheancier({ tasks, members, spentByTask, setEditingTask }: TaskListProps) {
+  const groups = useMemo(() => bucketTasksByDueDate(tasks), [tasks]);
+
+  if (groups.length === 0) {
+    return <Card className="p-6 text-center text-sm text-slate-400">Aucune tâche ne correspond aux filtres actuels.</Card>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map((g) => (
+        <Card key={g.key} className="p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <h3 className={`text-xs font-semibold uppercase tracking-wide ${g.key === 'retard' ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}`}>
+              {g.label}
+            </h3>
+            <span className="text-xs text-slate-300 dark:text-slate-600">({g.tasks.length})</span>
+          </div>
+          <div className="divide-y divide-slate-50 dark:divide-slate-800/60">
+            {g.tasks.map((t) => {
+              const assignees = t.assigneeIds.map((id) => members.find((m) => m.id === id)).filter((m): m is TeamMember => Boolean(m));
+              const spent = spentByTask[t.id] ?? 0;
+              const over = spent > t.estimatedHours;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setEditingTask(t)}
+                  className="flex w-full flex-wrap items-center gap-2.5 py-2 text-left hover:bg-slate-50/60 dark:hover:bg-slate-800/30"
+                >
+                  <TaskTypeBadge type={t.type} />
+                  <span className={`min-w-0 flex-1 truncate text-sm font-medium ${t.status === 'termine' ? 'text-slate-400 line-through' : 'text-slate-800 dark:text-slate-100'}`}>
+                    {t.title}
+                  </span>
+                  {t.project && <span className="text-xs text-slate-400">{t.project}</span>}
+                  <StatusBadge status={t.status} />
+                  <PriorityBadge priority={t.priority} />
+                  {assignees.length > 0 && (
+                    <div className="flex -space-x-1.5">
+                      {assignees.slice(0, 3).map((m) => (
+                        <Avatar key={m.id} name={m.name} color={m.color} initials={m.initials} size={18} />
+                      ))}
+                    </div>
+                  )}
+                  <span className={`text-xs tabular-nums ${over ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}`}>
+                    {spent}h / {t.estimatedHours}h
+                  </span>
+                  <span className="text-xs text-slate-400">{t.dueDate ?? '—'}</span>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      ))}
     </div>
   );
 }

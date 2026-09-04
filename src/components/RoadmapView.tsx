@@ -1,8 +1,23 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { Avatar, Card, PriorityBadge, PrintButton, PrintHeader, RoadmapDomainBadge, RoadmapStatusBadge } from './ui';
+import { Avatar, Card, ModeSwitcher, PriorityBadge, PrintButton, PrintHeader, RoadmapDomainBadge, RoadmapStatusBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
+import { useViewMode } from '../hooks/useViewMode';
 import type { Priority, ProjectTask, RoadmapDomain, RoadmapItem, RoadmapQuarter, RoadmapStatus, TeamMember } from '../types';
+
+const FDR_VIEW_MODES = ['trimestres', 'liste', 'timeline'] as const;
+type FdrViewMode = (typeof FDR_VIEW_MODES)[number];
+
+type SortKey = 'title' | 'domain' | 'quarter' | 'status' | 'priority' | 'progress' | 'budget';
+const QUARTER_ORDER: Record<RoadmapQuarter, number> = { T1: 1, T2: 2, T3: 3, T4: 4, annee: 0 };
+const statusRagBg: Record<RoadmapStatus, string> = {
+  idee: 'bg-slate-300 dark:bg-slate-600',
+  planifie: 'bg-sky-400 dark:bg-sky-500',
+  en_cours: 'bg-blue-500',
+  termine: 'bg-emerald-500',
+  reporte: 'bg-amber-500',
+  abandonne: 'bg-slate-400 dark:bg-slate-500',
+};
 
 const DOMAINS: RoadmapDomain[] = ['Infrastructure', 'Réseau', 'Sécurité', 'Cloud', 'Poste de travail', 'Autre'];
 const STATUSES: RoadmapStatus[] = ['idee', 'planifie', 'en_cours', 'termine', 'reporte', 'abandonne'];
@@ -42,6 +57,9 @@ export function RoadmapView() {
   const [ownerFilter, setOwnerFilter] = useState('Tous');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<RoadmapItem | null>(null);
+  const [mode, setMode] = useViewMode<FdrViewMode>('fdr', FDR_VIEW_MODES, 'trimestres');
+  const [sortKey, setSortKey] = useState<SortKey>('quarter');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const yearItems = roadmapItems.filter((r) => r.year === year);
   const filtered = yearItems
@@ -118,6 +136,15 @@ export function RoadmapView() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <ModeSwitcher
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'trimestres', label: 'Trimestres', title: 'Tableau par trimestre (vue par défaut)' },
+              { value: 'liste', label: 'Liste triable', title: 'Liste plate, colonnes triables en cliquant sur l’en-tête' },
+              { value: 'timeline', label: 'Timeline annuelle', title: "Vue chronologique de l'année, une ligne par initiative" },
+            ]}
+          />
           <PrintButton />
           <button onClick={exportCsv} className="btn-ghost">
             Exporter CSV
@@ -183,40 +210,62 @@ export function RoadmapView() {
         </select>
       </Card>
 
-      <div className="overflow-x-auto print:overflow-visible">
-        <div className="grid min-w-[1200px] grid-cols-5 gap-3 print:min-w-0">
-          {QUARTERS.map((q) => {
-            const items = filtered.filter((r) => r.quarter === q.id);
-            return (
-              <div key={q.id} className="space-y-2">
-                <div className="flex items-center justify-between px-1">
-                  <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400" title={q.label}>
-                    {q.short}
-                  </h2>
-                  <span className="text-xs text-slate-300">{items.length}</span>
+      {mode === 'trimestres' && (
+        <div className="overflow-x-auto print:overflow-visible">
+          <div className="grid min-w-[1200px] grid-cols-5 gap-3 print:min-w-0">
+            {QUARTERS.map((q) => {
+              const items = filtered.filter((r) => r.quarter === q.id);
+              return (
+                <div key={q.id} className="space-y-2">
+                  <div className="flex items-center justify-between px-1">
+                    <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400" title={q.label}>
+                      {q.short}
+                    </h2>
+                    <span className="text-xs text-slate-300">{items.length}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {items.length === 0 && (
+                      <div className="rounded-lg border border-dashed border-slate-200 p-3 text-center text-xs text-slate-300 dark:border-slate-700">
+                        —
+                      </div>
+                    )}
+                    {items.map((r) => (
+                      <RoadmapCard
+                        key={r.id}
+                        item={r}
+                        members={members}
+                        tasks={tasks}
+                        onEdit={() => setEditing(r)}
+                        onDelete={() => doRemove(r)}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  {items.length === 0 && (
-                    <div className="rounded-lg border border-dashed border-slate-200 p-3 text-center text-xs text-slate-300 dark:border-slate-700">
-                      —
-                    </div>
-                  )}
-                  {items.map((r) => (
-                    <RoadmapCard
-                      key={r.id}
-                      item={r}
-                      members={members}
-                      tasks={tasks}
-                      onEdit={() => setEditing(r)}
-                      onDelete={() => doRemove(r)}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
+
+      {mode === 'liste' && (
+        <RoadmapListView
+          items={filtered}
+          members={members}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          setSort={(key) => {
+            if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+            else {
+              setSortKey(key);
+              setSortDir('asc');
+            }
+          }}
+          onEdit={setEditing}
+          onDelete={doRemove}
+        />
+      )}
+
+      {mode === 'timeline' && <RoadmapTimeline items={filtered} members={members} onEdit={setEditing} />}
 
       {(showForm || editing) && (
         <RoadmapForm
@@ -303,6 +352,202 @@ function RoadmapCard({
         {item.budgetEstimate != null && (
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{item.budgetEstimate.toLocaleString('fr-FR')} €</span>
         )}
+      </div>
+    </Card>
+  );
+}
+
+/** Vue Liste triable : toutes les initiatives filtrées, un tableau plat dont on peut trier chaque colonne en cliquant sur son en-tête. */
+function RoadmapListView({
+  items,
+  members,
+  sortKey,
+  sortDir,
+  setSort,
+  onEdit,
+  onDelete,
+}: {
+  items: RoadmapItem[];
+  members: TeamMember[];
+  sortKey: SortKey;
+  sortDir: 'asc' | 'desc';
+  setSort: (key: SortKey) => void;
+  onEdit: (r: RoadmapItem) => void;
+  onDelete: (r: RoadmapItem) => void;
+}) {
+  const sorted = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...items].sort((a, b) => {
+      switch (sortKey) {
+        case 'title':
+          return a.title.localeCompare(b.title) * dir;
+        case 'domain':
+          return a.domain.localeCompare(b.domain) * dir;
+        case 'quarter':
+          return (QUARTER_ORDER[a.quarter] - QUARTER_ORDER[b.quarter] || a.title.localeCompare(b.title)) * dir;
+        case 'status':
+          return statusLabelMap[a.status].localeCompare(statusLabelMap[b.status]) * dir;
+        case 'priority':
+          return a.priority.localeCompare(b.priority) * dir;
+        case 'progress':
+          return (a.progress - b.progress) * dir;
+        case 'budget':
+          return ((a.budgetEstimate ?? -1) - (b.budgetEstimate ?? -1)) * dir;
+        default:
+          return 0;
+      }
+    });
+  }, [items, sortKey, sortDir]);
+
+  const columns: { key: SortKey; label: string }[] = [
+    { key: 'title', label: 'Titre' },
+    { key: 'domain', label: 'Domaine' },
+    { key: 'quarter', label: 'Période' },
+    { key: 'status', label: 'Statut' },
+    { key: 'priority', label: 'Priorité' },
+    { key: 'progress', label: 'Avancement' },
+    { key: 'budget', label: 'Budget' },
+  ];
+
+  return (
+    <Card className="overflow-x-auto print:overflow-visible">
+      <table className="w-full min-w-[900px] text-sm print:min-w-0">
+        <thead>
+          <tr className="border-b border-slate-100 text-left text-xs text-slate-400 dark:border-slate-800">
+            {columns.map((c) => (
+              <th key={c.key} className="px-3 py-2 font-medium">
+                <button onClick={() => setSort(c.key)} className="inline-flex items-center gap-1 hover:text-slate-600 dark:hover:text-slate-200">
+                  {c.label}
+                  {sortKey === c.key && <span>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                </button>
+              </th>
+            ))}
+            <th className="px-3 py-2 font-medium">Porteur(s)</th>
+            <th className="px-3 py-2 print:hidden" />
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((r) => {
+            const owners = r.ownerIds.map((id) => members.find((m) => m.id === id)).filter((m): m is TeamMember => Boolean(m));
+            const quarterLabel = QUARTERS.find((q) => q.id === r.quarter)?.short ?? r.quarter;
+            return (
+              <tr key={r.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60 dark:border-slate-800/60 dark:hover:bg-slate-800/30">
+                <td className="px-3 py-2">
+                  <button onClick={() => onEdit(r)} className="text-left font-medium text-slate-800 hover:underline dark:text-slate-100">
+                    {r.title}
+                  </button>
+                </td>
+                <td className="px-3 py-2">
+                  <RoadmapDomainBadge domain={r.domain} />
+                </td>
+                <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{quarterLabel}</td>
+                <td className="px-3 py-2">
+                  <RoadmapStatusBadge status={r.status} />
+                </td>
+                <td className="px-3 py-2">
+                  <PriorityBadge priority={r.priority} />
+                </td>
+                <td className="px-3 py-2 tabular-nums text-slate-500 dark:text-slate-400">{r.progress}%</td>
+                <td className="px-3 py-2 tabular-nums text-slate-500 dark:text-slate-400">
+                  {r.budgetEstimate != null ? `${r.budgetEstimate.toLocaleString('fr-FR')} €` : '—'}
+                </td>
+                <td className="px-3 py-2">
+                  {owners.length === 0 ? (
+                    <span className="text-xs text-slate-400">Non attribué</span>
+                  ) : (
+                    <div className="flex -space-x-1.5">
+                      {owners.map((m) => (
+                        <Avatar key={m.id} name={m.name} color={m.color} initials={m.initials} size={20} />
+                      ))}
+                    </div>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right print:hidden">
+                  <button
+                    onClick={() => onEdit(r)}
+                    className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  >
+                    Modifier
+                  </button>
+                  <button
+                    onClick={() => onDelete(r)}
+                    className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
+                  >
+                    Suppr.
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+          {sorted.length === 0 && (
+            <tr>
+              <td colSpan={9} className="px-3 py-6 text-center text-sm text-slate-400">
+                Aucune initiative ne correspond aux filtres actuels.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
+
+/** Vue Timeline annuelle : une ligne par initiative, positionnée sur l'axe T1→T4 (les initiatives "Toute l'année" couvrent les 4 colonnes). */
+function RoadmapTimeline({ items, members, onEdit }: { items: RoadmapItem[]; members: TeamMember[]; onEdit: (r: RoadmapItem) => void }) {
+  const sorted = useMemo(
+    () => [...items].sort((a, b) => QUARTER_ORDER[a.quarter] - QUARTER_ORDER[b.quarter] || a.title.localeCompare(b.title)),
+    [items]
+  );
+
+  if (sorted.length === 0) {
+    return <Card className="p-6 text-center text-sm text-slate-400">Aucune initiative ne correspond aux filtres actuels.</Card>;
+  }
+
+  return (
+    <Card className="overflow-x-auto p-3 print:overflow-visible">
+      <div className="grid min-w-[800px] grid-cols-[200px_repeat(4,1fr)] items-center gap-y-1.5 print:min-w-0">
+        <div />
+        {QUARTERS.slice(0, 4).map((q) => (
+          <div key={q.id} className="px-1 pb-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-400" title={q.label}>
+            {q.short}
+          </div>
+        ))}
+
+        {sorted.map((r) => {
+          const owners = r.ownerIds.map((id) => members.find((m) => m.id === id)).filter((m): m is TeamMember => Boolean(m));
+          const quarterIndex = r.quarter === 'annee' ? 0 : QUARTER_ORDER[r.quarter] - 1;
+          const span = r.quarter === 'annee' ? 4 : 1;
+          return (
+            <div key={r.id} className="contents">
+              <div
+                style={{ gridColumn: '1' }}
+                className="flex min-w-0 items-center gap-1.5 truncate py-1 pr-2 text-xs text-slate-600 dark:text-slate-300"
+              >
+                {owners.slice(0, 2).map((m) => (
+                  <Avatar key={m.id} name={m.name} color={m.color} initials={m.initials} size={16} />
+                ))}
+                <span className="truncate">{r.title}</span>
+              </div>
+              <button
+                onClick={() => onEdit(r)}
+                style={{ gridColumn: `${2 + quarterIndex} / span ${span}` }}
+                title={`${r.title} — ${statusLabelMap[r.status]} · ${r.progress}%`}
+                className={`mx-0.5 flex items-center gap-1.5 truncate rounded-md px-2 py-1 text-left text-[11px] font-medium text-white hover:opacity-90 ${statusRagBg[r.status]}`}
+              >
+                <span className="truncate">
+                  {r.title} · {r.progress}%
+                </span>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400 print:hidden">
+        {STATUSES.map((s) => (
+          <span key={s} className="inline-flex items-center gap-1.5">
+            <span className={`h-2.5 w-2.5 rounded-sm ${statusRagBg[s]}`} /> {statusLabelMap[s]}
+          </span>
+        ))}
       </div>
     </Card>
   );
