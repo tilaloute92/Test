@@ -6,7 +6,7 @@ aucun abonnement, aucune donnée envoyée à un service tiers (hors publication 
 
 ```
 Google News ─┐
-             ├─> Ollama (script) ─> XTTSv2 (voix) ─> Stable Diffusion (images)
+             ├─> LLM au choix (script) ─> XTTSv2 (voix) ─> Stable Diffusion (images)
              │                            │
              │                            └─> Whisper (sous-titres animés)
              │                                          │
@@ -23,12 +23,42 @@ Google News ─┐
 | Brique | Où | Commande / action |
 |---|---|---|
 | **FFmpeg** | [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) | ajoutez-le au PATH **ou** copiez `ffmpeg.exe` + `ffprobe.exe` dans `.\bin` |
-| **Ollama** | [ollama.com](https://ollama.com) | `ollama pull mistral` |
+| **Ollama** *(ou un autre fournisseur, voir plus bas)* | [ollama.com](https://ollama.com) | `ollama pull mistral` |
 | **Musiques / bruitages** | vos fichiers | déposez-les dans `assets\music` et `assets\sfx` |
 
 Puis lancez **`lancer_studio.bat`** : le navigateur s'ouvre sur `localhost:8501`.
 
 > Vérifiez votre installation à tout moment : `venv\Scripts\python worker.py --doctor`
+
+## Choisir le modele qui ecrit les scripts
+
+L'onglet **✨ Studio IA & Actus** expose deux listes deroulantes : le
+**fournisseur**, puis le **modele**. La liste des modeles est interrogee en
+direct (Ollama, LM Studio, OpenAI, Mistral, Groq, Gemini) ; si le service est
+eteint ou la cle absente, le champ devient une saisie libre.
+
+| Fournisseur | Cle requise | Ou la trouver |
+|---|---|---|
+| 🖥️ Ollama (local) | non | `ollama pull mistral` |
+| 🖥️ LM Studio / serveur compatible OpenAI (local) | non | adresse modifiable (llama.cpp, vLLM, Jan...) |
+| ☁️ Anthropic (Claude) | `ANTHROPIC_API_KEY` | console.anthropic.com |
+| ☁️ OpenAI | `OPENAI_API_KEY` | platform.openai.com |
+| ☁️ Mistral AI | `MISTRAL_API_KEY` | console.mistral.ai |
+| ☁️ Groq | `GROQ_API_KEY` | console.groq.com |
+| ☁️ Google Gemini | `GEMINI_API_KEY` | aistudio.google.com |
+| 🔌 Autre API compatible OpenAI | `LLM_API_KEY` | OpenRouter, Together, DeepSeek... |
+
+Seule l'ecriture du script change de moteur : la voix, les images et les
+sous-titres restent 100 % locaux.
+
+**Ou vont les cles ?** Une cle saisie dans l'interface est ecrite dans
+`data/llm_keys.json` (ignore par Git). Une variable d'environnement du meme nom
+est toujours prioritaire. Les cles ne sont **jamais** recopiees dans les
+fichiers de job — un test le verifie.
+
+**Ajouter un fournisseur** revient a ajouter une entree dans le dictionnaire
+`LLM_PROVIDERS` de `worker.py`. Si son API est compatible OpenAI (`kind:
+"openai"`), il n'y a pas une ligne de code supplementaire a ecrire.
 
 ## Configuration YouTube (optionnelle)
 
@@ -57,7 +87,7 @@ ensuite mémorisé dans `data/youtube_token.json`.
 | Fichier | Rôle |
 |---|---|
 | `news_fetcher.py` | flux RSS Google News, nettoyage et déduplication des 5 tendances |
-| `worker.py` | moteur backend : script → voix → images → sous-titres → mixage → rendu |
+| `worker.py` | moteur backend : fournisseurs LLM, script → voix → images → sous-titres → mixage → rendu |
 | `app.py` | interface Streamlit (design system « Apple ») |
 | `tests/test_units.py` | tests des fonctions pures (sans GPU ni FFmpeg) |
 
@@ -98,7 +128,7 @@ facilement 30 à 60 minutes de rendu.
 | Symptôme | Cause probable |
 |---|---|
 | `FFmpeg est introuvable` | FFmpeg absent du PATH → copiez-le dans `.\bin` |
-| `Ollama injoignable` | le service n'est pas démarré → `ollama serve` |
+| `Ollama injoignable` | le service n'est pas démarré → `ollama serve`, ou basculez sur un fournisseur cloud |
 | `CUDA out of memory` | baissez les étapes de diffusion, ou passez sur SD 1.5 |
 | Sous-titres absents | Whisper n'a rien détecté → vérifiez la langue choisie |
 | Voix robotique | échantillon trop court ou bruité → WAV mono 16 kHz, 6 à 20 s |

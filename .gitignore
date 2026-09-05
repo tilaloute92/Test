@@ -9,6 +9,7 @@ bin/
 # Secrets et jetons
 client_secret.json
 data/youtube_token.json
+data/llm_keys.json
 
 # Donnees generees
 data/jobs/*.json

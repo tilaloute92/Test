@@ -8,13 +8,17 @@ sans FFmpeg et sans modele IA.
 
 from __future__ import annotations
 
+import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import worker  # noqa: E402
 from worker import (  # noqa: E402
+    LLM_PROVIDERS,
     JobSettings,
     _ass_time,
     _extract_json,
@@ -94,6 +98,81 @@ def test_job_lifecycle(tmp_path: Path | None = None) -> None:
     finally:
         worker.delete_job(job["id"])
     assert worker.load_job(job["id"]) is None
+
+
+def test_every_provider_has_a_backend_and_an_identity() -> None:
+    for key, provider in LLM_PROVIDERS.items():
+        assert provider.key == key
+        assert provider.kind in worker._LLM_DISPATCH, f"{key}: backend inconnu"
+        assert provider.base_url or provider.kind == "anthropic"
+        # Un fournisseur distant doit dire quelle variable d'environnement lire.
+        assert provider.local or provider.env_var, f"{key}: env_var manquante"
+
+
+def test_payloads_request_json_from_each_backend() -> None:
+    settings = JobSettings(llm_model="m", llm_temperature=0.7)
+    assert worker.build_ollama_payload(settings, "S", "P")["format"] == "json"
+    openai = worker.build_openai_payload(settings, "S", "P")
+    assert openai["response_format"] == {"type": "json_object"}
+    assert [m["role"] for m in openai["messages"]] == ["system", "user"]
+    gemini = worker.build_gemini_payload(settings, "S", "P")
+    assert gemini["generationConfig"]["responseMimeType"] == "application/json"
+    assert gemini["systemInstruction"]["parts"][0]["text"] == "S"
+
+
+def test_default_model_resolution_and_legacy_migration() -> None:
+    assert JobSettings().llm_model == "mistral"
+    # Un job ecrit avant l'ajout des fournisseurs ne reference qu'ollama_model.
+    assert JobSettings.from_dict({"ollama_model": "llama3:8b"}).llm_model == "llama3:8b"
+    assert JobSettings(llm_provider="anthropic").llm_model == "claude-opus-5"
+    # Un fournisseur inconnu retombe sur le defaut au lieu de faire planter le job.
+    assert JobSettings(llm_provider="inexistant").llm_provider == worker.DEFAULT_PROVIDER
+
+
+def test_api_key_precedence_and_storage() -> None:
+    original_file, original_env = worker.KEYS_FILE, os.environ.get("OPENAI_API_KEY")
+    worker.KEYS_FILE = Path(tempfile.mkdtemp()) / "keys.json"
+    os.environ.pop("OPENAI_API_KEY", None)
+    try:
+        assert worker.get_api_key("openai") == ""
+        worker.set_api_key("openai", "sk-depuis-le-fichier")
+        assert worker.get_api_key("openai") == "sk-depuis-le-fichier"
+        # L'environnement l'emporte sur la saisie de l'interface.
+        os.environ["OPENAI_API_KEY"] = "sk-depuis-l-environnement"
+        assert worker.get_api_key("openai") == "sk-depuis-l-environnement"
+        os.environ.pop("OPENAI_API_KEY")
+        worker.set_api_key("openai", "")
+        assert worker.get_api_key("openai") == ""
+        # Un fournisseur local n'a jamais de cle.
+        assert worker.get_api_key("ollama") == ""
+    finally:
+        shutil.rmtree(worker.KEYS_FILE.parent, ignore_errors=True)
+        worker.KEYS_FILE = original_file
+        if original_env is not None:
+            os.environ["OPENAI_API_KEY"] = original_env
+
+
+def test_job_files_never_contain_an_api_key() -> None:
+    original_file = worker.KEYS_FILE
+    worker.KEYS_FILE = Path(tempfile.mkdtemp()) / "keys.json"
+    try:
+        worker.set_api_key("openai", "sk-secret-a-ne-pas-ecrire")
+        job = worker.create_job(JobSettings(llm_provider="openai", llm_model="gpt-x"))
+        try:
+            written = worker.job_path(job["id"]).read_text(encoding="utf-8")
+            assert "sk-secret-a-ne-pas-ecrire" not in written
+            assert "gpt-x" in written  # le modele, lui, est bien enregistre
+        finally:
+            worker.delete_job(job["id"])
+    finally:
+        shutil.rmtree(worker.KEYS_FILE.parent, ignore_errors=True)
+        worker.KEYS_FILE = original_file
+
+
+def test_base_url_override_wins_over_the_registry() -> None:
+    assert worker.provider_base_url(JobSettings()) == LLM_PROVIDERS["ollama"].base_url
+    custom = JobSettings(llm_provider="lmstudio", llm_base_url="http://192.168.1.20:1234/v1/")
+    assert worker.provider_base_url(custom) == "http://192.168.1.20:1234/v1"
 
 
 def test_revenue_estimation() -> None:

@@ -13,6 +13,8 @@ Lancement :  streamlit run app.py   (ou double-clic sur lancer_studio.bat)
 
 from __future__ import annotations
 
+import hashlib
+import os
 import time
 from contextlib import contextmanager
 from datetime import datetime
@@ -23,6 +25,8 @@ import streamlit as st
 import worker
 from news_fetcher import TIME_WINDOWS, TOPIC_PRESETS, fetch_trends
 from worker import (
+    DEFAULT_PROVIDER,
+    LLM_PROVIDERS,
     JobSettings,
     STATUS_APPROVED,
     STATUS_FAILED,
@@ -230,6 +234,23 @@ def human_date(iso: str) -> str:
         return "?"
 
 
+@st.cache_data(ttl=120, show_spinner=False)
+def cached_models(provider_key: str, base_url: str, key_fingerprint: str) -> list[str]:
+    """
+    Modeles d'un fournisseur, avec cache court.
+
+    Streamlit rejoue le script a chaque interaction : sans cache, chaque clic
+    declencherait un appel reseau. `key_fingerprint` ne sert qu'a invalider le
+    cache quand la cle change — la cle elle-meme n'est jamais passee ici.
+    """
+    return worker.list_llm_models(provider_key, base_url)
+
+
+def key_fingerprint(provider_key: str) -> str:
+    key = worker.get_api_key(provider_key)
+    return hashlib.sha256(key.encode()).hexdigest()[:12] if key else ""
+
+
 def asset_choices(directory: Path, label_none: str = "Aucune") -> list[str]:
     files = sorted(
         p.name for p in directory.glob("*")
@@ -270,11 +291,14 @@ with st.sidebar:
                 st.write("FFmpeg :", worker.ffmpeg_bin())
             except RuntimeError as exc:
                 st.error(str(exc))
-            models = worker.list_ollama_models()
-            if models:
-                st.success(f"Ollama : {', '.join(models)}")
-            else:
-                st.error(f"Ollama injoignable ({worker.OLLAMA_URL})")
+            for provider in LLM_PROVIDERS.values():
+                ok, detail = worker.llm_status(provider.key)
+                if ok:
+                    st.success(f"{provider.label} : {detail}")
+                elif provider.needs_key and not worker.get_api_key(provider.key):
+                    st.caption(f"{provider.label} : non configure")
+                else:
+                    st.warning(f"{provider.label} : {detail}")
             st.write("YouTube API :", "configuree" if worker.youtube_configured() else "absente")
 
 
@@ -503,9 +527,74 @@ def page_studio() -> None:
             height=90,
         )
 
-        col1, col2, col3 = st.columns(3)
-        models = worker.list_ollama_models() or ["mistral", "llama3"]
-        ollama_model = col1.selectbox("Modele Ollama", models)
+        # --- Choix du moteur d'ecriture -------------------------------------
+        col_prov, col_model = st.columns([1, 1])
+        provider_key = col_prov.selectbox(
+            "Fournisseur du script",
+            options=list(LLM_PROVIDERS),
+            index=list(LLM_PROVIDERS).index(
+                st.session_state.get("llm_provider", DEFAULT_PROVIDER)
+            ),
+            format_func=lambda k: LLM_PROVIDERS[k].label,
+            key="llm_provider",
+        )
+        provider = worker.get_provider(provider_key)
+
+        base_url = provider.base_url
+        if provider.editable_url:
+            base_url = st.text_input(
+                "Adresse du serveur", value=provider.base_url,
+                key=f"base_url_{provider_key}",
+            )
+
+        if provider.needs_key:
+            stored = worker.get_api_key(provider_key)
+            from_env = bool(provider.env_var and os.environ.get(provider.env_var))
+            label = "🔑 Cle API — " + (
+                f"fournie par {provider.env_var}" if from_env
+                else "enregistree" if stored else "requise"
+            )
+            with st.expander(label, expanded=not stored):
+                if from_env:
+                    st.caption(
+                        f"La variable d'environnement {provider.env_var} est "
+                        "prioritaire sur toute saisie ici."
+                    )
+                entered = st.text_input(
+                    "Cle", value="", type="password",
+                    placeholder="collez la cle puis enregistrez",
+                    key=f"key_{provider_key}",
+                    help="Stockee en clair dans data/llm_keys.json, hors du "
+                         "depot Git et jamais copiee dans les jobs.",
+                )
+                col_save, col_clear = st.columns(2)
+                if col_save.button("Enregistrer", key=f"save_{provider_key}",
+                                   type="primary", use_container_width=True):
+                    worker.set_api_key(provider_key, entered)
+                    cached_models.clear()
+                    st.rerun()
+                if stored and col_clear.button("Oublier", key=f"clear_{provider_key}",
+                                               use_container_width=True):
+                    worker.set_api_key(provider_key, "")
+                    cached_models.clear()
+                    st.rerun()
+
+        available = cached_models(provider_key, base_url, key_fingerprint(provider_key))
+        if available:
+            default_model = st.session_state.get(f"model_{provider_key}")
+            index = available.index(default_model) if default_model in available else 0
+            llm_model = col_model.selectbox(
+                "Modele", available, index=index, key=f"model_{provider_key}"
+            )
+        else:
+            # Service eteint ou cle absente : saisie libre plutot qu'un blocage.
+            llm_model = col_model.text_input(
+                "Modele", value="", placeholder="identifiant du modele",
+                key=f"model_txt_{provider_key}",
+            )
+            st.caption(f"ℹ️ Liste indisponible. {provider.hint}")
+
+        col2, col3 = st.columns(2)
         n_scenes = col2.slider("Nombre de scenes", 3, 12, 6)
         language = col3.selectbox("Langue", ["fr", "en", "es", "de", "it"], index=0)
 
@@ -568,6 +657,9 @@ def page_studio() -> None:
         if not topic.strip():
             st.error("Indiquez un sujet (ou choisissez une actualite ci-dessus).")
             return
+        if not llm_model.strip():
+            st.error(f"Choisissez un modele pour {provider.label}.")
+            return
 
         settings = JobSettings(
             topic=topic.strip(),
@@ -576,7 +668,9 @@ def page_studio() -> None:
             language=language,
             tone=tone,
             n_scenes=n_scenes,
-            ollama_model=ollama_model,
+            llm_provider=provider_key,
+            llm_model=llm_model,
+            llm_base_url=base_url if provider.editable_url else "",
             voice_sample="" if voice_sample.startswith("Voix par defaut") else voice_sample,
             tts_speed=tts_speed,
             sd_model=sd_model,

@@ -64,6 +64,7 @@ FPS = 30
 # FFmpeg pioche dedans pour l'effet Ken Burns sans crenelage.
 RENDER_W, RENDER_H = VIDEO_W * 2, VIDEO_H * 2
 
+# Conserve pour compatibilite ; l'adresse fait foi dans LLM_PROVIDERS["ollama"].
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 
 STATUS_QUEUED = "queued"
@@ -96,9 +97,13 @@ class JobSettings:
     n_scenes: int = 6
     words_per_scene: int = 22
 
-    # --- Ollama ---
-    ollama_model: str = "mistral"
-    ollama_temperature: float = 0.85
+    # --- Modele de langage (voir LLM_PROVIDERS) ---
+    llm_provider: str = "ollama"
+    llm_model: str = ""          # vide => premier modele connu du fournisseur
+    llm_base_url: str = ""       # vide => adresse par defaut du fournisseur
+    llm_temperature: float = 0.85
+    # Conserve pour relire les jobs crees avant l'ajout des autres fournisseurs.
+    ollama_model: str = ""
 
     # --- XTTSv2 ---
     tts_model: str = "tts_models/multilingual/multi-dataset/xtts_v2"
@@ -137,6 +142,15 @@ class JobSettings:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    def __post_init__(self) -> None:
+        if self.llm_provider not in LLM_PROVIDERS:
+            self.llm_provider = DEFAULT_PROVIDER
+        if not self.llm_model:
+            # Migration des anciens jobs (ollama_model faisait office de
+            # llm_model), puis repli sur le premier modele connu.
+            fallbacks = LLM_PROVIDERS[self.llm_provider].fallback_models
+            self.llm_model = self.ollama_model or (fallbacks[0] if fallbacks else "")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "JobSettings":
@@ -299,7 +313,352 @@ def media_duration(path: str | Path) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Etape 1 — Script via Ollama
+# Fournisseurs de LLM
+#
+# Le Studio n'est pas lie a Ollama : chaque fournisseur ci-dessous expose la
+# meme operation, "rends-moi un objet JSON". Un fournisseur = une entree du
+# registre LLM_PROVIDERS, ce qui rend l'ajout d'un nouveau moteur trivial.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class LLMProvider:
+    """Description d'un moteur de generation de texte."""
+
+    key: str
+    label: str
+    kind: str                    # ollama | openai | anthropic | gemini
+    base_url: str = ""
+    env_var: str = ""            # variable d'environnement portant la cle
+    local: bool = False          # tourne sur la machine, aucune cle requise
+    editable_url: bool = False   # l'utilisateur peut changer l'adresse
+    fallback_models: tuple[str, ...] = ()
+    hint: str = ""
+
+    @property
+    def needs_key(self) -> bool:
+        return not self.local
+
+
+# L'ordre du dictionnaire est celui de la liste deroulante.
+LLM_PROVIDERS: dict[str, LLMProvider] = {
+    "ollama": LLMProvider(
+        key="ollama", label="🖥️ Ollama (local)", kind="ollama",
+        base_url=OLLAMA_URL,
+        local=True, editable_url=True,
+        fallback_models=("mistral", "llama3"),
+        hint="Demarrez 'ollama serve' puis installez un modele : ollama pull mistral",
+    ),
+    "lmstudio": LLMProvider(
+        key="lmstudio", label="🖥️ LM Studio / serveur compatible OpenAI (local)",
+        kind="openai", base_url="http://127.0.0.1:1234/v1",
+        local=True, editable_url=True,
+        hint="Fonctionne avec LM Studio, llama.cpp, vLLM, Jan... "
+             "Adaptez l'adresse si besoin.",
+    ),
+    "anthropic": LLMProvider(
+        key="anthropic", label="☁️ Anthropic (Claude)", kind="anthropic",
+        env_var="ANTHROPIC_API_KEY",
+        fallback_models=("claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5",
+                         "claude-fable-5-1"),
+        hint="Cle sur console.anthropic.com. Claude Opus 5 pour la qualite, "
+             "Haiku 4.5 pour le volume.",
+    ),
+    "openai": LLMProvider(
+        key="openai", label="☁️ OpenAI", kind="openai",
+        base_url="https://api.openai.com/v1", env_var="OPENAI_API_KEY",
+        hint="Cle sur platform.openai.com.",
+    ),
+    "mistral": LLMProvider(
+        key="mistral", label="☁️ Mistral AI", kind="openai",
+        base_url="https://api.mistral.ai/v1", env_var="MISTRAL_API_KEY",
+        hint="Cle sur console.mistral.ai.",
+    ),
+    "groq": LLMProvider(
+        key="groq", label="☁️ Groq (tres rapide)", kind="openai",
+        base_url="https://api.groq.com/openai/v1", env_var="GROQ_API_KEY",
+        hint="Cle sur console.groq.com.",
+    ),
+    "gemini": LLMProvider(
+        key="gemini", label="☁️ Google Gemini", kind="gemini",
+        base_url="https://generativelanguage.googleapis.com/v1beta",
+        env_var="GEMINI_API_KEY",
+        hint="Cle sur aistudio.google.com.",
+    ),
+    "openai_compatible": LLMProvider(
+        key="openai_compatible", label="🔌 Autre API compatible OpenAI",
+        kind="openai", base_url="https://openrouter.ai/api/v1",
+        env_var="LLM_API_KEY", editable_url=True,
+        hint="OpenRouter, Together, DeepSeek, Fireworks... : indiquez l'adresse "
+             "de base et la cle.",
+    ),
+}
+
+DEFAULT_PROVIDER = "ollama"
+LLM_TIMEOUT_LOCAL = 900    # un modele local sur CPU peut etre tres lent
+LLM_TIMEOUT_CLOUD = 180
+
+# Les cles API ne transitent JAMAIS par le JSON d'un job : ce fichier reste le
+# seul endroit ou elles sont ecrites, en plus des variables d'environnement.
+KEYS_FILE = DATA_DIR / "llm_keys.json"
+
+
+def get_provider(key: str) -> LLMProvider:
+    return LLM_PROVIDERS.get(key) or LLM_PROVIDERS[DEFAULT_PROVIDER]
+
+
+def _read_keys() -> dict[str, str]:
+    if not KEYS_FILE.exists():
+        return {}
+    try:
+        return json.loads(KEYS_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def get_api_key(provider_key: str) -> str:
+    """
+    Cle du fournisseur : variable d'environnement d'abord, fichier ensuite.
+
+    L'environnement est prioritaire pour qu'une cle d'entreprise definie au
+    niveau du systeme ne soit jamais masquee par une saisie dans l'interface.
+    """
+    provider = get_provider(provider_key)
+    if provider.local:
+        return ""
+    if provider.env_var and os.environ.get(provider.env_var):
+        return os.environ[provider.env_var].strip()
+    return str(_read_keys().get(provider.key, "")).strip()
+
+
+def set_api_key(provider_key: str, value: str) -> None:
+    """Enregistre (ou efface, si vide) la cle d'un fournisseur."""
+    keys = _read_keys()
+    value = (value or "").strip()
+    if value:
+        keys[provider_key] = value
+    else:
+        keys.pop(provider_key, None)
+    KEYS_FILE.write_text(json.dumps(keys, indent=2), encoding="utf-8")
+    try:
+        os.chmod(KEYS_FILE, 0o600)  # sans effet sous Windows, utile ailleurs
+    except OSError:
+        pass
+
+
+def provider_base_url(settings: "JobSettings") -> str:
+    """Adresse a interroger : celle du job si renseignee, sinon celle du registre."""
+    provider = get_provider(settings.llm_provider)
+    return (settings.llm_base_url or provider.base_url).rstrip("/")
+
+
+# --- Listing des modeles ----------------------------------------------------
+
+
+def list_llm_models(provider_key: str, base_url: str = "") -> list[str]:
+    """
+    Modeles disponibles chez un fournisseur, pour alimenter la liste deroulante.
+
+    Retourne une liste vide si le service est injoignable ou la cle absente :
+    l'interface bascule alors sur une saisie libre plutot que d'echouer.
+    """
+    provider = get_provider(provider_key)
+    url = (base_url or provider.base_url).rstrip("/")
+    key = get_api_key(provider.key)
+
+    try:
+        if provider.kind == "ollama":
+            response = requests.get(f"{url}/api/tags", timeout=5)
+            response.raise_for_status()
+            return sorted(m["name"] for m in response.json().get("models", []))
+
+        if provider.kind == "anthropic":
+            if not key:
+                return list(provider.fallback_models)
+            import anthropic
+
+            client = anthropic.Anthropic(api_key=key)
+            return [model.id for model in client.models.list()]
+
+        if provider.kind == "openai":
+            headers = {"Authorization": f"Bearer {key}"} if key else {}
+            response = requests.get(f"{url}/models", headers=headers, timeout=10)
+            response.raise_for_status()
+            return sorted(m["id"] for m in response.json().get("data", []))
+
+        if provider.kind == "gemini":
+            if not key:
+                return []
+            response = requests.get(f"{url}/models", params={"key": key}, timeout=10)
+            response.raise_for_status()
+            return sorted(
+                m["name"].removeprefix("models/")
+                for m in response.json().get("models", [])
+                if "generateContent" in m.get("supportedGenerationMethods", [])
+            )
+    except Exception:  # service eteint, cle invalide, reseau coupe...
+        return list(provider.fallback_models)
+
+    return list(provider.fallback_models)
+
+
+# --- Construction des requetes (fonctions pures, donc testables) ------------
+
+
+def build_ollama_payload(settings: "JobSettings", system: str, prompt: str) -> dict[str, Any]:
+    return {
+        "model": settings.llm_model,
+        "system": system,
+        "prompt": prompt,
+        "stream": False,
+        "format": "json",  # Ollama contraint alors la sortie a du JSON valide
+        "options": {"temperature": settings.llm_temperature, "num_predict": 1600},
+    }
+
+
+def build_openai_payload(settings: "JobSettings", system: str, prompt: str) -> dict[str, Any]:
+    return {
+        "model": settings.llm_model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": settings.llm_temperature,
+        "response_format": {"type": "json_object"},
+    }
+
+
+def build_gemini_payload(settings: "JobSettings", system: str, prompt: str) -> dict[str, Any]:
+    return {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": settings.llm_temperature,
+            "responseMimeType": "application/json",
+        },
+    }
+
+
+# --- Appels ----------------------------------------------------------------
+
+
+def _call_ollama(settings: "JobSettings", system: str, prompt: str) -> str:
+    url = provider_base_url(settings)
+    response = requests.post(
+        f"{url}/api/generate", json=build_ollama_payload(settings, system, prompt),
+        timeout=LLM_TIMEOUT_LOCAL,
+    )
+    response.raise_for_status()
+    return response.json().get("response", "")
+
+
+def _call_openai(settings: "JobSettings", system: str, prompt: str) -> str:
+    provider = get_provider(settings.llm_provider)
+    url = provider_base_url(settings)
+    key = get_api_key(provider.key)
+    if provider.needs_key and not key:
+        raise RuntimeError(_missing_key_message(provider))
+
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    payload = build_openai_payload(settings, system, prompt)
+    timeout = LLM_TIMEOUT_LOCAL if provider.local else LLM_TIMEOUT_CLOUD
+
+    response = requests.post(f"{url}/chat/completions", json=payload,
+                             headers=headers, timeout=timeout)
+    if response.status_code == 400 and "response_format" in response.text:
+        # Beaucoup de serveurs locaux ignorent le mode JSON : on reessaie sans,
+        # le prompt systeme et l'extracteur tolerant prennent le relais.
+        payload.pop("response_format", None)
+        response = requests.post(f"{url}/chat/completions", json=payload,
+                                 headers=headers, timeout=timeout)
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"]
+
+
+def _call_anthropic(settings: "JobSettings", system: str, prompt: str) -> str:
+    import anthropic
+
+    provider = get_provider(settings.llm_provider)
+    key = get_api_key(provider.key)
+    if not key:
+        raise RuntimeError(_missing_key_message(provider))
+
+    client = anthropic.Anthropic(api_key=key, timeout=float(LLM_TIMEOUT_CLOUD))
+    # Ni temperature ni thinking : les modeles Claude actuels refusent les
+    # parametres d'echantillonnage, et le format JSON est impose par le prompt
+    # systeme (le prefill de reponse n'est plus accepte non plus).
+    message = client.messages.create(
+        model=settings.llm_model,
+        max_tokens=16000,
+        system=system,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    if message.stop_reason == "refusal":
+        raise RuntimeError(
+            "Claude a refuse de traiter ce sujet. Reformulez l'angle de la video "
+            "ou choisissez un autre modele."
+        )
+    return "".join(block.text for block in message.content if block.type == "text")
+
+
+def _call_gemini(settings: "JobSettings", system: str, prompt: str) -> str:
+    provider = get_provider(settings.llm_provider)
+    key = get_api_key(provider.key)
+    if not key:
+        raise RuntimeError(_missing_key_message(provider))
+
+    url = f"{provider_base_url(settings)}/models/{settings.llm_model}:generateContent"
+    response = requests.post(
+        url, params={"key": key}, json=build_gemini_payload(settings, system, prompt),
+        timeout=LLM_TIMEOUT_CLOUD,
+    )
+    response.raise_for_status()
+    candidates = response.json().get("candidates", [])
+    if not candidates:
+        raise RuntimeError("Gemini n'a retourne aucune reponse (filtre de securite ?).")
+    parts = candidates[0].get("content", {}).get("parts", [])
+    return "".join(part.get("text", "") for part in parts)
+
+
+_LLM_DISPATCH: dict[str, Callable[["JobSettings", str, str], str]] = {
+    "ollama": _call_ollama,
+    "openai": _call_openai,
+    "anthropic": _call_anthropic,
+    "gemini": _call_gemini,
+}
+
+
+def _missing_key_message(provider: LLMProvider) -> str:
+    return (
+        f"Aucune cle API pour {provider.label}. Renseignez-la dans "
+        f"l'onglet Studio IA (section Fournisseur) ou definissez la variable "
+        f"d'environnement {provider.env_var}."
+    )
+
+
+def llm_complete(settings: "JobSettings", system: str, prompt: str) -> str:
+    """Interroge le fournisseur choisi et retourne le texte brut produit."""
+    provider = get_provider(settings.llm_provider)
+    if not settings.llm_model:
+        raise RuntimeError(f"Aucun modele selectionne pour {provider.label}.")
+    return _LLM_DISPATCH[provider.kind](settings, system, prompt)
+
+
+def llm_status(provider_key: str, base_url: str = "") -> tuple[bool, str]:
+    """(disponible, message) — utilise par le diagnostic et par l'interface."""
+    provider = get_provider(provider_key)
+    if provider.needs_key and not get_api_key(provider.key):
+        return False, f"cle absente ({provider.env_var})"
+    models = list_llm_models(provider_key, base_url)
+    if not models:
+        return False, "injoignable ou aucun modele disponible"
+    return True, f"{len(models)} modele(s) disponible(s)"
+
+
+# ---------------------------------------------------------------------------
+# Etape 1 — Script (LLM)
 # ---------------------------------------------------------------------------
 
 SCRIPT_SYSTEM_PROMPT = """Tu es un scenariste expert en videos courtes virales (YouTube Shorts, TikTok, Reels).
@@ -368,24 +727,22 @@ def _extract_json(raw: str) -> dict[str, Any]:
 
 
 def ollama_available() -> bool:
-    try:
-        return requests.get(f"{OLLAMA_URL}/api/tags", timeout=3).ok
-    except requests.RequestException:
-        return False
+    """Raccourci historique : Ollama repond-il ?"""
+    return llm_status("ollama")[0]
 
 
 def list_ollama_models() -> list[str]:
-    """Liste les modeles installes localement (pour le selecteur Streamlit)."""
-    try:
-        response = requests.get(f"{OLLAMA_URL}/api/tags", timeout=5)
-        response.raise_for_status()
-        return sorted(m["name"] for m in response.json().get("models", []))
-    except (requests.RequestException, KeyError, ValueError):
-        return []
+    """Raccourci historique : modeles installes dans Ollama."""
+    return list_llm_models("ollama")
 
 
 def generate_script(settings: JobSettings, retries: int = 2) -> dict[str, Any]:
-    """Appelle Ollama et retourne un script normalise (title / scenes / ...)."""
+    """
+    Demande un script au fournisseur choisi et retourne un script normalise.
+
+    Le prompt et le post-traitement sont identiques quel que soit le moteur :
+    seul l'appel reseau change (voir llm_complete).
+    """
     context_block = ""
     if settings.context:
         context_block = (
@@ -402,35 +759,27 @@ def generate_script(settings: JobSettings, retries: int = 2) -> dict[str, Any]:
         words=settings.words_per_scene,
     )
 
+    provider = get_provider(settings.llm_provider)
     last_error: Exception | None = None
+
     for attempt in range(retries + 1):
         try:
-            response = requests.post(
-                f"{OLLAMA_URL}/api/generate",
-                json={
-                    "model": settings.ollama_model,
-                    "system": SCRIPT_SYSTEM_PROMPT,
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": "json",  # force Ollama a emettre du JSON valide
-                    "options": {
-                        "temperature": settings.ollama_temperature + attempt * 0.05,
-                        "num_predict": 1400,
-                    },
-                },
-                timeout=600,
-            )
-            response.raise_for_status()
-            data = _extract_json(response.json().get("response", ""))
-            return _normalize_script(data, settings)
-        except (requests.RequestException, ValueError, KeyError) as exc:
+            raw = llm_complete(settings, SCRIPT_SYSTEM_PROMPT, prompt)
+            return _normalize_script(_extract_json(raw), settings)
+        except RuntimeError:
+            # Cle manquante, refus du modele... : reessayer n'y changera rien.
+            raise
+        except (requests.RequestException, ValueError, KeyError, IndexError) as exc:
             last_error = exc
-            time.sleep(1.5)
+            time.sleep(1.5 * (attempt + 1))
+        except Exception as exc:  # erreurs propres au SDK d'un fournisseur
+            last_error = exc
+            time.sleep(1.5 * (attempt + 1))
 
     raise RuntimeError(
-        f"Ollama n'a pas produit de script exploitable apres {retries + 1} tentatives "
-        f"({last_error}). Verifiez que 'ollama serve' tourne et que le modele "
-        f"'{settings.ollama_model}' est installe (ollama pull {settings.ollama_model})."
+        f"{provider.label} n'a pas produit de script exploitable apres "
+        f"{retries + 1} tentatives ({last_error}). Modele demande : "
+        f"'{settings.llm_model}'. {provider.hint}"
     )
 
 
@@ -954,7 +1303,8 @@ def run_job(job_id: str, keep_workdir: bool = False,
 
     try:
         # 1. Script -----------------------------------------------------------
-        progress("Ecriture du script (Ollama)", 5, settings.ollama_model)
+        provider = get_provider(settings.llm_provider)
+        progress("Ecriture du script", 5, f"{provider.label} · {settings.llm_model}")
         script = generate_script(settings)
         update_job(job_id, script=script)
         progress("Script pret", 18, f"{len(script['scenes'])} scenes")
@@ -1208,11 +1558,13 @@ def doctor() -> int:
     except RuntimeError as exc:
         checks.append(("FFmpeg", False, str(exc)))
 
-    models = list_ollama_models()
-    checks.append((
-        "Ollama", bool(models),
-        ", ".join(models) if models else f"injoignable sur {OLLAMA_URL}",
-    ))
+    for provider in LLM_PROVIDERS.values():
+        ok, detail = llm_status(provider.key)
+        # Un fournisseur cloud non configure est normal : on ne l'affiche pas
+        # comme une erreur tant qu'aucune cle n'a ete renseignee.
+        if not ok and provider.needs_key and not get_api_key(provider.key):
+            detail = "non configure (optionnel)"
+        checks.append((provider.label, ok, detail))
 
     try:
         import torch
