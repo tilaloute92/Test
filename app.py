@@ -539,6 +539,11 @@ def page_studio() -> None:
             key="llm_provider",
         )
         provider = worker.get_provider(provider_key)
+        st.caption(
+            f"💚 {provider.free_tier}"
+            + (f" · [obtenir une cle gratuite]({provider.signup_url})"
+               if provider.signup_url and provider.needs_key else "")
+        )
 
         base_url = provider.base_url
         if provider.editable_url:
@@ -592,7 +597,7 @@ def page_studio() -> None:
                 "Modele", value="", placeholder="identifiant du modele",
                 key=f"model_txt_{provider_key}",
             )
-            st.caption(f"ℹ️ Liste indisponible. {provider.hint}")
+            st.caption(f"ℹ️ Liste des modeles indisponible. {provider.hint}")
 
         col2, col3 = st.columns(2)
         n_scenes = col2.slider("Nombre de scenes", 3, 12, 6)

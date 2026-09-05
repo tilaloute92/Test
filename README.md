@@ -30,26 +30,42 @@ Puis lancez **`lancer_studio.bat`** : le navigateur s'ouvre sur `localhost:8501`
 
 > Vérifiez votre installation à tout moment : `venv\Scripts\python worker.py --doctor`
 
-## Choisir le modele qui ecrit les scripts
+## Choisir le modele qui ecrit les scripts (que du gratuit)
 
 L'onglet **✨ Studio IA & Actus** expose deux listes deroulantes : le
 **fournisseur**, puis le **modele**. La liste des modeles est interrogee en
-direct (Ollama, LM Studio, OpenAI, Mistral, Groq, Gemini) ; si le service est
-eteint ou la cle absente, le champ devient une saisie libre.
+direct ; si le service est eteint ou la cle absente, le champ devient une
+saisie libre.
 
-| Fournisseur | Cle requise | Ou la trouver |
+**Aucun fournisseur payant n'est propose.** OpenAI et Anthropic n'ayant pas de
+palier gratuit, ils ne figurent pas dans la liste.
+
+| Fournisseur | Cle | Ce que donne le gratuit |
 |---|---|---|
-| 🖥️ Ollama (local) | non | `ollama pull mistral` |
-| 🖥️ LM Studio / serveur compatible OpenAI (local) | non | adresse modifiable (llama.cpp, vLLM, Jan...) |
-| ☁️ Anthropic (Claude) | `ANTHROPIC_API_KEY` | console.anthropic.com |
-| ☁️ OpenAI | `OPENAI_API_KEY` | platform.openai.com |
-| ☁️ Mistral AI | `MISTRAL_API_KEY` | console.mistral.ai |
-| ☁️ Groq | `GROQ_API_KEY` | console.groq.com |
-| ☁️ Google Gemini | `GEMINI_API_KEY` | aistudio.google.com |
-| 🔌 Autre API compatible OpenAI | `LLM_API_KEY` | OpenRouter, Together, DeepSeek... |
+| 🖥️ **Ollama** (local) | aucune | **Illimite**, tourne sur votre machine |
+| 🖥️ **LM Studio / serveur compatible OpenAI** (local) | aucune | **Illimite**, tourne sur votre machine |
+| ☁️ [Google Gemini](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` | Palier gratuit sans carte bancaire, quotas /min et /jour |
+| ☁️ [Groq](https://console.groq.com/keys) | `GROQ_API_KEY` | Palier gratuit sans carte, tres rapide |
+| ☁️ [Cerebras](https://cloud.cerebras.ai) | `CEREBRAS_API_KEY` | Palier gratuit sans carte, quota de jetons /jour |
+| ☁️ [Mistral AI](https://console.mistral.ai/api-keys) | `MISTRAL_API_KEY` | Palier gratuit (« Experiment »), bon francais |
+| ☁️ [OpenRouter](https://openrouter.ai/keys) | `OPENROUTER_API_KEY` | **Seuls les modeles `:free` sont affiches** |
+| ☁️ [GitHub Models](https://github.com/settings/personal-access-tokens) | `GITHUB_TOKEN` | Gratuit avec un compte GitHub (permission `models:read`) |
+| 🔌 Autre API compatible OpenAI | `LLM_API_KEY` | A vous de verifier ses tarifs |
 
-Seule l'ecriture du script change de moteur : la voix, les images et les
-sous-titres restent 100 % locaux.
+Pour OpenRouter, le filtrage est fait dans `worker.py`, pas dans l'interface :
+un modele payant ne peut donc pas etre selectionne, meme depuis la ligne de
+commande.
+
+### Trois choses a savoir sur ces paliers gratuits
+
+1. **Ils sont limites en debit**, pas en duree : quelques dizaines de requetes
+   par minute ou par jour selon le service. Pour de gros volumes, revenez a
+   Ollama en local.
+2. **Vos donnees servent souvent a entrainer les modeles.** C'est la
+   contrepartie habituelle du gratuit. Si le sujet de vos videos est sensible,
+   restez en local.
+3. **Les quotas changent.** Ceux indiques ici sont donnes a titre indicatif :
+   l'application n'en depend pas et affiche simplement ce que le service repond.
 
 **Ou vont les cles ?** Une cle saisie dans l'interface est ecrite dans
 `data/llm_keys.json` (ignore par Git). Une variable d'environnement du meme nom

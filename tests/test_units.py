@@ -104,9 +104,35 @@ def test_every_provider_has_a_backend_and_an_identity() -> None:
     for key, provider in LLM_PROVIDERS.items():
         assert provider.key == key
         assert provider.kind in worker._LLM_DISPATCH, f"{key}: backend inconnu"
-        assert provider.base_url or provider.kind == "anthropic"
+        # Seule l'entree generique part sans adresse : l'utilisateur la saisit.
+        assert provider.base_url or provider.editable_url, f"{key}: adresse manquante"
         # Un fournisseur distant doit dire quelle variable d'environnement lire.
         assert provider.local or provider.env_var, f"{key}: env_var manquante"
+        # Chaque fournisseur annonce son offre gratuite et ou obtenir la cle.
+        assert provider.free_tier, f"{key}: palier gratuit non documente"
+        assert provider.local or provider.signup_url or provider.editable_url
+
+
+def test_no_paid_only_provider_is_offered() -> None:
+    """Le registre ne doit proposer que du gratuit (local ou a quota)."""
+    # OpenAI et Anthropic n'ont aucun palier gratuit : ils ont ete retires.
+    assert "openai" not in LLM_PROVIDERS
+    assert "anthropic" not in LLM_PROVIDERS
+    assert "anthropic" not in worker._LLM_DISPATCH
+
+
+def test_openrouter_only_exposes_free_models() -> None:
+    catalogue = [
+        "deepseek/deepseek-r1:free",
+        "openai/gpt-4o",            # payant : doit disparaitre
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "anthropic/claude-sonnet-5",  # payant : doit disparaitre
+    ]
+    kept = worker.keep_free_models(LLM_PROVIDERS["openrouter"], catalogue)
+    assert kept == ["deepseek/deepseek-r1:free",
+                    "meta-llama/llama-3.3-70b-instruct:free"]
+    # Un fournisseur entierement gratuit n'est pas filtre.
+    assert worker.keep_free_models(LLM_PROVIDERS["groq"], ["a", "b"]) == ["a", "b"]
 
 
 def test_payloads_request_json_from_each_backend() -> None:
@@ -124,44 +150,44 @@ def test_default_model_resolution_and_legacy_migration() -> None:
     assert JobSettings().llm_model == "mistral"
     # Un job ecrit avant l'ajout des fournisseurs ne reference qu'ollama_model.
     assert JobSettings.from_dict({"ollama_model": "llama3:8b"}).llm_model == "llama3:8b"
-    assert JobSettings(llm_provider="anthropic").llm_model == "claude-opus-5"
+    assert JobSettings(llm_provider="ollama").llm_model == "mistral"
     # Un fournisseur inconnu retombe sur le defaut au lieu de faire planter le job.
     assert JobSettings(llm_provider="inexistant").llm_provider == worker.DEFAULT_PROVIDER
 
 
 def test_api_key_precedence_and_storage() -> None:
-    original_file, original_env = worker.KEYS_FILE, os.environ.get("OPENAI_API_KEY")
+    original_file, original_env = worker.KEYS_FILE, os.environ.get("GROQ_API_KEY")
     worker.KEYS_FILE = Path(tempfile.mkdtemp()) / "keys.json"
-    os.environ.pop("OPENAI_API_KEY", None)
+    os.environ.pop("GROQ_API_KEY", None)
     try:
-        assert worker.get_api_key("openai") == ""
-        worker.set_api_key("openai", "sk-depuis-le-fichier")
-        assert worker.get_api_key("openai") == "sk-depuis-le-fichier"
+        assert worker.get_api_key("groq") == ""
+        worker.set_api_key("groq", "sk-depuis-le-fichier")
+        assert worker.get_api_key("groq") == "sk-depuis-le-fichier"
         # L'environnement l'emporte sur la saisie de l'interface.
-        os.environ["OPENAI_API_KEY"] = "sk-depuis-l-environnement"
-        assert worker.get_api_key("openai") == "sk-depuis-l-environnement"
-        os.environ.pop("OPENAI_API_KEY")
-        worker.set_api_key("openai", "")
-        assert worker.get_api_key("openai") == ""
+        os.environ["GROQ_API_KEY"] = "sk-depuis-l-environnement"
+        assert worker.get_api_key("groq") == "sk-depuis-l-environnement"
+        os.environ.pop("GROQ_API_KEY")
+        worker.set_api_key("groq", "")
+        assert worker.get_api_key("groq") == ""
         # Un fournisseur local n'a jamais de cle.
         assert worker.get_api_key("ollama") == ""
     finally:
         shutil.rmtree(worker.KEYS_FILE.parent, ignore_errors=True)
         worker.KEYS_FILE = original_file
         if original_env is not None:
-            os.environ["OPENAI_API_KEY"] = original_env
+            os.environ["GROQ_API_KEY"] = original_env
 
 
 def test_job_files_never_contain_an_api_key() -> None:
     original_file = worker.KEYS_FILE
     worker.KEYS_FILE = Path(tempfile.mkdtemp()) / "keys.json"
     try:
-        worker.set_api_key("openai", "sk-secret-a-ne-pas-ecrire")
-        job = worker.create_job(JobSettings(llm_provider="openai", llm_model="gpt-x"))
+        worker.set_api_key("groq", "sk-secret-a-ne-pas-ecrire")
+        job = worker.create_job(JobSettings(llm_provider="groq", llm_model="modele-test"))
         try:
             written = worker.job_path(job["id"]).read_text(encoding="utf-8")
             assert "sk-secret-a-ne-pas-ecrire" not in written
-            assert "gpt-x" in written  # le modele, lui, est bien enregistre
+            assert "modele-test" in written  # le modele, lui, est bien enregistre
         finally:
             worker.delete_job(job["id"])
     finally:

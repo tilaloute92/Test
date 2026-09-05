@@ -10,9 +10,9 @@
 streamlit>=1.36.0
 
 # --- Modeles de langage ---
-# Claude passe par le SDK officiel ; les autres fournisseurs (Ollama, OpenAI,
-# Mistral, Groq, Gemini, serveurs compatibles OpenAI) parlent REST via requests.
-anthropic>=1.4.0
+# Aucune dependance : tous les fournisseurs proposes (Ollama, LM Studio,
+# Gemini, Groq, Cerebras, Mistral, OpenRouter, GitHub Models) sont interroges
+# en REST via `requests`, deja liste plus bas.
 
 # --- Veille d'actualite ---
 feedparser>=6.0.11

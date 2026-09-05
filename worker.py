@@ -334,63 +334,94 @@ class LLMProvider:
     editable_url: bool = False   # l'utilisateur peut changer l'adresse
     fallback_models: tuple[str, ...] = ()
     hint: str = ""
+    free_tier: str = ""          # ce que le palier gratuit autorise
+    signup_url: str = ""         # ou obtenir la cle, gratuitement
+    models_url: str = ""         # si le listing n'est pas a {base}/models
+    free_only_marker: str = ""   # ne garder que les modeles contenant ce texte
 
     @property
     def needs_key(self) -> bool:
         return not self.local
 
 
-# L'ordre du dictionnaire est celui de la liste deroulante.
+# L'ordre du dictionnaire est celui de la liste deroulante : d'abord ce qui
+# tourne chez vous sans limite, ensuite les services a quota gratuit.
+#
+# Regle de ce registre : aucun fournisseur payant. OpenAI et Anthropic n'ont
+# pas de palier gratuit, ils n'y figurent donc pas. Les quotas ci-dessous
+# changent regulierement : ils sont indicatifs, l'app n'en depend pas.
 LLM_PROVIDERS: dict[str, LLMProvider] = {
     "ollama": LLMProvider(
         key="ollama", label="🖥️ Ollama (local)", kind="ollama",
-        base_url=OLLAMA_URL,
-        local=True, editable_url=True,
+        base_url=OLLAMA_URL, local=True, editable_url=True,
         fallback_models=("mistral", "llama3"),
+        free_tier="Gratuit et illimite — tourne sur votre machine",
+        signup_url="https://ollama.com",
         hint="Demarrez 'ollama serve' puis installez un modele : ollama pull mistral",
     ),
     "lmstudio": LLMProvider(
         key="lmstudio", label="🖥️ LM Studio / serveur compatible OpenAI (local)",
         kind="openai", base_url="http://127.0.0.1:1234/v1",
         local=True, editable_url=True,
+        free_tier="Gratuit et illimite — tourne sur votre machine",
+        signup_url="https://lmstudio.ai",
         hint="Fonctionne avec LM Studio, llama.cpp, vLLM, Jan... "
              "Adaptez l'adresse si besoin.",
     ),
-    "anthropic": LLMProvider(
-        key="anthropic", label="☁️ Anthropic (Claude)", kind="anthropic",
-        env_var="ANTHROPIC_API_KEY",
-        fallback_models=("claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5",
-                         "claude-fable-5-1"),
-        hint="Cle sur console.anthropic.com. Claude Opus 5 pour la qualite, "
-             "Haiku 4.5 pour le volume.",
-    ),
-    "openai": LLMProvider(
-        key="openai", label="☁️ OpenAI", kind="openai",
-        base_url="https://api.openai.com/v1", env_var="OPENAI_API_KEY",
-        hint="Cle sur platform.openai.com.",
-    ),
-    "mistral": LLMProvider(
-        key="mistral", label="☁️ Mistral AI", kind="openai",
-        base_url="https://api.mistral.ai/v1", env_var="MISTRAL_API_KEY",
-        hint="Cle sur console.mistral.ai.",
-    ),
-    "groq": LLMProvider(
-        key="groq", label="☁️ Groq (tres rapide)", kind="openai",
-        base_url="https://api.groq.com/openai/v1", env_var="GROQ_API_KEY",
-        hint="Cle sur console.groq.com.",
-    ),
-    "gemini": LLMProvider(
-        key="gemini", label="☁️ Google Gemini", kind="gemini",
+    "google": LLMProvider(
+        key="google", label="☁️ Google Gemini (gratuit)", kind="gemini",
         base_url="https://generativelanguage.googleapis.com/v1beta",
         env_var="GEMINI_API_KEY",
-        hint="Cle sur aistudio.google.com.",
+        free_tier="Palier gratuit sans carte bancaire, quotas par minute et par jour",
+        signup_url="https://aistudio.google.com/apikey",
+        hint="Cle gratuite sur aistudio.google.com (Google AI Studio).",
+    ),
+    "groq": LLMProvider(
+        key="groq", label="☁️ Groq (gratuit, tres rapide)", kind="openai",
+        base_url="https://api.groq.com/openai/v1", env_var="GROQ_API_KEY",
+        free_tier="Palier gratuit sans carte bancaire, limite en requetes par minute",
+        signup_url="https://console.groq.com/keys",
+        hint="Cle gratuite sur console.groq.com. Modeles ouverts, debit tres eleve.",
+    ),
+    "cerebras": LLMProvider(
+        key="cerebras", label="☁️ Cerebras (gratuit)", kind="openai",
+        base_url="https://api.cerebras.ai/v1", env_var="CEREBRAS_API_KEY",
+        free_tier="Palier gratuit sans carte bancaire, quota de jetons par jour",
+        signup_url="https://cloud.cerebras.ai",
+        hint="Cle gratuite sur cloud.cerebras.ai.",
+    ),
+    "mistral": LLMProvider(
+        key="mistral", label="☁️ Mistral AI (gratuit)", kind="openai",
+        base_url="https://api.mistral.ai/v1", env_var="MISTRAL_API_KEY",
+        free_tier="Palier gratuit (offre 'Experiment'), quotas par minute",
+        signup_url="https://console.mistral.ai/api-keys",
+        hint="Cle gratuite sur console.mistral.ai. Bon francais.",
+    ),
+    "openrouter": LLMProvider(
+        key="openrouter", label="☁️ OpenRouter — modeles gratuits uniquement",
+        kind="openai", base_url="https://openrouter.ai/api/v1",
+        env_var="OPENROUTER_API_KEY", free_only_marker=":free",
+        free_tier="Seuls les modeles suffixes ':free' sont proposes : "
+                  "facturation impossible",
+        signup_url="https://openrouter.ai/keys",
+        hint="Cle gratuite sur openrouter.ai. La liste est filtree sur les "
+             "modeles gratuits, les modeles payants du catalogue sont masques.",
+    ),
+    "github": LLMProvider(
+        key="github", label="☁️ GitHub Models (gratuit)", kind="openai",
+        base_url="https://models.github.ai/inference",
+        models_url="https://models.github.ai/catalog/models",
+        env_var="GITHUB_TOKEN",
+        free_tier="Gratuit pour tout compte GitHub, quotas par minute et par jour",
+        signup_url="https://github.com/settings/personal-access-tokens",
+        hint="Jeton d'acces personnel GitHub avec la permission 'models:read'.",
     ),
     "openai_compatible": LLMProvider(
         key="openai_compatible", label="🔌 Autre API compatible OpenAI",
-        kind="openai", base_url="https://openrouter.ai/api/v1",
-        env_var="LLM_API_KEY", editable_url=True,
-        hint="OpenRouter, Together, DeepSeek, Fireworks... : indiquez l'adresse "
-             "de base et la cle.",
+        kind="openai", base_url="", env_var="LLM_API_KEY", editable_url=True,
+        free_tier="Depend du service que vous indiquez",
+        hint="Pour brancher un autre service : indiquez son adresse de base "
+             "et sa cle. Verifiez vous-meme ses conditions tarifaires.",
     ),
 }
 
@@ -455,6 +486,20 @@ def provider_base_url(settings: "JobSettings") -> str:
 # --- Listing des modeles ----------------------------------------------------
 
 
+def keep_free_models(provider: LLMProvider, models: list[str]) -> list[str]:
+    """
+    Restreint la liste aux modeles gratuits quand le fournisseur en melange.
+
+    OpenRouter, par exemple, expose un catalogue mixte : seuls les
+    identifiants suffixes ':free' sont sans facturation possible. Filtrer ici
+    plutot que dans l'interface garantit qu'aucun modele payant ne peut etre
+    selectionne, meme par un job cree en ligne de commande.
+    """
+    if not provider.free_only_marker:
+        return models
+    return [m for m in models if provider.free_only_marker in m]
+
+
 def list_llm_models(provider_key: str, base_url: str = "") -> list[str]:
     """
     Modeles disponibles chez un fournisseur, pour alimenter la liste deroulante.
@@ -472,19 +517,16 @@ def list_llm_models(provider_key: str, base_url: str = "") -> list[str]:
             response.raise_for_status()
             return sorted(m["name"] for m in response.json().get("models", []))
 
-        if provider.kind == "anthropic":
-            if not key:
-                return list(provider.fallback_models)
-            import anthropic
-
-            client = anthropic.Anthropic(api_key=key)
-            return [model.id for model in client.models.list()]
-
         if provider.kind == "openai":
             headers = {"Authorization": f"Bearer {key}"} if key else {}
-            response = requests.get(f"{url}/models", headers=headers, timeout=10)
+            response = requests.get(provider.models_url or f"{url}/models",
+                                    headers=headers, timeout=10)
             response.raise_for_status()
-            return sorted(m["id"] for m in response.json().get("data", []))
+            body = response.json()
+            # {"data": [...]} chez la plupart, tableau nu chez GitHub Models.
+            entries = body.get("data", body) if isinstance(body, dict) else body
+            ids = [m["id"] for m in entries if isinstance(m, dict) and m.get("id")]
+            return keep_free_models(provider, sorted(ids))
 
         if provider.kind == "gemini":
             if not key:
@@ -577,32 +619,6 @@ def _call_openai(settings: "JobSettings", system: str, prompt: str) -> str:
     return response.json()["choices"][0]["message"]["content"]
 
 
-def _call_anthropic(settings: "JobSettings", system: str, prompt: str) -> str:
-    import anthropic
-
-    provider = get_provider(settings.llm_provider)
-    key = get_api_key(provider.key)
-    if not key:
-        raise RuntimeError(_missing_key_message(provider))
-
-    client = anthropic.Anthropic(api_key=key, timeout=float(LLM_TIMEOUT_CLOUD))
-    # Ni temperature ni thinking : les modeles Claude actuels refusent les
-    # parametres d'echantillonnage, et le format JSON est impose par le prompt
-    # systeme (le prefill de reponse n'est plus accepte non plus).
-    message = client.messages.create(
-        model=settings.llm_model,
-        max_tokens=16000,
-        system=system,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    if message.stop_reason == "refusal":
-        raise RuntimeError(
-            "Claude a refuse de traiter ce sujet. Reformulez l'angle de la video "
-            "ou choisissez un autre modele."
-        )
-    return "".join(block.text for block in message.content if block.type == "text")
-
-
 def _call_gemini(settings: "JobSettings", system: str, prompt: str) -> str:
     provider = get_provider(settings.llm_provider)
     key = get_api_key(provider.key)
@@ -625,7 +641,6 @@ def _call_gemini(settings: "JobSettings", system: str, prompt: str) -> str:
 _LLM_DISPATCH: dict[str, Callable[["JobSettings", str, str], str]] = {
     "ollama": _call_ollama,
     "openai": _call_openai,
-    "anthropic": _call_anthropic,
     "gemini": _call_gemini,
 }
 
