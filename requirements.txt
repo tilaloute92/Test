@@ -1,0 +1,36 @@
+# ---------------------------------------------------------------------------
+# SaaS Video Studio — dependances Python
+#
+# ATTENTION : PyTorch n'est PAS liste ici. install.bat l'installe d'abord
+# depuis l'index CUDA de PyTorch, sinon pip poserait la version CPU (10x
+# plus lente pour Stable Diffusion et XTTSv2).
+# ---------------------------------------------------------------------------
+
+# --- Interface ---
+streamlit>=1.36.0
+
+# --- Veille d'actualite ---
+feedparser>=6.0.11
+requests>=2.31.0
+
+# --- Voix : XTTSv2 (fork maintenu de Coqui TTS, compatible Python 3.11/3.12) ---
+coqui-tts>=0.25.1
+
+# --- Images : Stable Diffusion ---
+diffusers>=0.27.0
+transformers>=4.40.0
+accelerate>=0.30.0
+safetensors>=0.4.2
+peft>=0.10.0
+Pillow>=10.2.0
+
+# --- Sous-titres : Whisper local ---
+openai-whisper>=20231117
+
+# --- YouTube Data API v3 ---
+google-api-python-client>=2.120.0
+google-auth-oauthlib>=1.2.0
+google-auth-httplib2>=0.2.0
+
+# --- Utilitaires ---
+numpy>=1.24,<2.0

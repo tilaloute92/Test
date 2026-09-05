@@ -1,0 +1,26 @@
+# Environnement
+venv/
+__pycache__/
+*.pyc
+
+# Binaires portables (FFmpeg)
+bin/
+
+# Secrets et jetons
+client_secret.json
+data/youtube_token.json
+
+# Donnees generees
+data/jobs/*.json
+data/work/
+output/*.mp4
+
+# Assets utilisateur (musiques, bruitages, voix)
+assets/music/*
+assets/sfx/*
+assets/voices/*
+!assets/**/.gitkeep
+
+# Modeles telecharges
+*.safetensors
+*.ckpt
