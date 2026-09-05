@@ -66,7 +66,7 @@ echo.
 echo  Il reste 3 elements EXTERNES a installer si ce n'est pas fait :
 echo    1. FFmpeg      -^> https://www.gyan.dev/ffmpeg/builds/
 echo                      (ou copiez ffmpeg.exe et ffprobe.exe dans .\bin)
-echo    2. Ollama      -^> https://ollama.com  puis : ollama pull mistral
+echo    2. Ollama      -^> https://ollama.com  puis : ollama pull qwen3:8b
 echo    3. Musiques et bruitages dans .\assets\music et .\assets\sfx
 echo.
 echo  Lancez ensuite : lancer_studio.bat

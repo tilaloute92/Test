@@ -586,11 +586,31 @@ def page_studio() -> None:
 
         available = cached_models(provider_key, base_url, key_fingerprint(provider_key))
         if available:
-            default_model = st.session_state.get(f"model_{provider_key}")
-            index = available.index(default_model) if default_model in available else 0
-            llm_model = col_model.selectbox(
-                "Modele", available, index=index, key=f"model_{provider_key}"
+            # Au-dela d'une dizaine de modeles (OpenRouter en propose beaucoup),
+            # un champ de recherche evite de derouler la liste entiere.
+            shown = available
+            if len(available) > 8:
+                query = col_model.text_input(
+                    "Filtrer les modeles", placeholder="ex : qwen, kimi, llama",
+                    key=f"filter_{provider_key}",
+                )
+                shown = worker.filter_models(query, available) or available
+                if query and not worker.filter_models(query, available):
+                    col_model.caption(f"Aucun modele ne contient « {query} ».")
+
+            # Pas de `key` sur le selectbox : la liste change quand on filtre,
+            # et Streamlit refuse une valeur memorisee absente des options. On
+            # garde donc le choix precedent dans notre propre etat.
+            previous = st.session_state.get(f"chosen_{provider_key}")
+            default_model = (
+                previous if previous in shown
+                else worker.preferred_model(provider, shown)
             )
+            llm_model = col_model.selectbox(
+                "Modele", shown, index=shown.index(default_model),
+                help=f"{len(available)} modele(s) disponible(s) chez ce fournisseur.",
+            )
+            st.session_state[f"chosen_{provider_key}"] = llm_model
         else:
             # Service eteint ou cle absente : saisie libre plutot qu'un blocage.
             llm_model = col_model.text_input(

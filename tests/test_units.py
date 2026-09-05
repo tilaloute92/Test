@@ -147,10 +147,10 @@ def test_payloads_request_json_from_each_backend() -> None:
 
 
 def test_default_model_resolution_and_legacy_migration() -> None:
-    assert JobSettings().llm_model == "mistral"
+    assert JobSettings().llm_model == "qwen3:8b"
     # Un job ecrit avant l'ajout des fournisseurs ne reference qu'ollama_model.
     assert JobSettings.from_dict({"ollama_model": "llama3:8b"}).llm_model == "llama3:8b"
-    assert JobSettings(llm_provider="ollama").llm_model == "mistral"
+    assert JobSettings(llm_provider="ollama").llm_model == "qwen3:8b"
     # Un fournisseur inconnu retombe sur le defaut au lieu de faire planter le job.
     assert JobSettings(llm_provider="inexistant").llm_provider == worker.DEFAULT_PROVIDER
 
@@ -199,6 +199,30 @@ def test_base_url_override_wins_over_the_registry() -> None:
     assert worker.provider_base_url(JobSettings()) == LLM_PROVIDERS["ollama"].base_url
     custom = JobSettings(llm_provider="lmstudio", llm_base_url="http://192.168.1.20:1234/v1/")
     assert worker.provider_base_url(custom) == "http://192.168.1.20:1234/v1"
+
+
+def test_model_filtering_finds_a_family_across_naming_schemes() -> None:
+    catalogue = [
+        "meta-llama/llama-3.3-70b:free",
+        "qwen/qwen3-30b-a3b:free",
+        "moonshotai/kimi-k2:free",
+    ]
+    assert worker.filter_models("qwen", catalogue) == ["qwen/qwen3-30b-a3b:free"]
+    assert worker.filter_models("KIMI", catalogue) == ["moonshotai/kimi-k2:free"]
+    assert worker.filter_models("", catalogue) == catalogue
+    assert worker.filter_models("inexistant", catalogue) == []
+
+
+def test_preferred_model_prefers_recommended_families() -> None:
+    ollama = LLM_PROVIDERS["ollama"]
+    # Qwen est recommande avant Mistral et Llama chez Ollama.
+    assert worker.preferred_model(ollama, ["llama3:8b", "qwen3:14b", "mistral"]) == "qwen3:14b"
+    # A defaut, on retombe sur le suivant de la liste de preference.
+    assert worker.preferred_model(ollama, ["llama3:8b", "mistral"]) == "mistral"
+    # Aucun recommande present : premier modele disponible.
+    assert worker.preferred_model(ollama, ["phi4"]) == "phi4"
+    # Liste vide : chaine vide, l'interface bascule en saisie libre.
+    assert worker.preferred_model(ollama, []) == ""
 
 
 def test_revenue_estimation() -> None:

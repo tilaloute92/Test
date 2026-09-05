@@ -23,7 +23,7 @@ Google News ─┐
 | Brique | Où | Commande / action |
 |---|---|---|
 | **FFmpeg** | [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) | ajoutez-le au PATH **ou** copiez `ffmpeg.exe` + `ffprobe.exe` dans `.\bin` |
-| **Ollama** *(ou un autre fournisseur, voir plus bas)* | [ollama.com](https://ollama.com) | `ollama pull mistral` |
+| **Ollama** *(ou un autre fournisseur, voir plus bas)* | [ollama.com](https://ollama.com) | `ollama pull qwen3:8b` |
 | **Musiques / bruitages** | vos fichiers | déposez-les dans `assets\music` et `assets\sfx` |
 
 Puis lancez **`lancer_studio.bat`** : le navigateur s'ouvre sur `localhost:8501`.
@@ -42,7 +42,7 @@ palier gratuit, ils ne figurent pas dans la liste.
 
 | Fournisseur | Cle | Ce que donne le gratuit |
 |---|---|---|
-| 🖥️ **Ollama** (local) | aucune | **Illimite**, tourne sur votre machine |
+| 🖥️ **Ollama** (local) | aucune | **Illimite**, tourne sur votre machine (Qwen3, Mistral, Llama...) |
 | 🖥️ **LM Studio / serveur compatible OpenAI** (local) | aucune | **Illimite**, tourne sur votre machine |
 | ☁️ [Google Gemini](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` | Palier gratuit sans carte bancaire, quotas /min et /jour |
 | ☁️ [Groq](https://console.groq.com/keys) | `GROQ_API_KEY` | Palier gratuit sans carte, tres rapide |
@@ -55,6 +55,33 @@ palier gratuit, ils ne figurent pas dans la liste.
 Pour OpenRouter, le filtrage est fait dans `worker.py`, pas dans l'interface :
 un modele payant ne peut donc pas etre selectionne, meme depuis la ligne de
 commande.
+
+### Ou trouver Qwen, Kimi et les autres familles
+
+Au-dela de huit modeles, un champ **« Filtrer les modeles »** apparait sous la
+liste : tapez `qwen`, `kimi` ou `llama` pour la reduire. Le filtre porte sur
+l'identifiant, ce qui marche quel que soit l'hebergeur (`qwen3:8b` chez Ollama,
+`qwen/qwen3-30b-a3b:free` chez OpenRouter).
+
+**Qwen est accessible gratuitement par plusieurs chemins**, et c'est le modele
+preselectionne par defaut :
+
+| Voie | Comment |
+|---|---|
+| En local | `ollama pull qwen3:8b` (8 Go de VRAM) ou `qwen3:14b` (16 Go) — Apache 2.0 |
+| Groq, Cerebras | Qwen figure dans leur catalogue gratuit, la liste le remonte |
+| OpenRouter | les variantes `qwen/...:free` apparaissent automatiquement |
+
+**Kimi K3, en revanche, n'a aucune voie gratuite par API.** Le modele est sorti
+en juillet 2026 en poids ouverts, mais :
+
+- son API officielle est **payante** (~3 $ / 15 $ par million de jetons) ;
+- ses 2,8 **milliers de milliards** de parametres le rendent inexecutable sur un
+  PC, meme tres bien equipe — les poids ouverts ne servent qu'a des serveurs ;
+- il est gratuit sur kimi.com, mais uniquement via l'interface web, sans API.
+
+Si une variante gratuite de Kimi apparait chez OpenRouter, **elle s'affichera
+d'elle-meme** dans la liste filtree : rien n'est code en dur cote modeles.
 
 ### Trois choses a savoir sur ces paliers gratuits
 

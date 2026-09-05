@@ -338,6 +338,10 @@ class LLMProvider:
     signup_url: str = ""         # ou obtenir la cle, gratuitement
     models_url: str = ""         # si le listing n'est pas a {base}/models
     free_only_marker: str = ""   # ne garder que les modeles contenant ce texte
+    # Familles a preselectionner, par ordre de preference. Ce sont des
+    # fragments, pas des identifiants exacts : les noms varient d'un hebergeur
+    # a l'autre (qwen3:8b, qwen/qwen3-...:free, qwen-3-32b...).
+    recommended_models: tuple[str, ...] = ()
 
     @property
     def needs_key(self) -> bool:
@@ -354,10 +358,12 @@ LLM_PROVIDERS: dict[str, LLMProvider] = {
     "ollama": LLMProvider(
         key="ollama", label="🖥️ Ollama (local)", kind="ollama",
         base_url=OLLAMA_URL, local=True, editable_url=True,
-        fallback_models=("mistral", "llama3"),
+        fallback_models=("qwen3:8b", "qwen3:14b", "mistral", "llama3"),
+        recommended_models=("qwen3", "mistral", "llama3"),
         free_tier="Gratuit et illimite — tourne sur votre machine",
         signup_url="https://ollama.com",
-        hint="Demarrez 'ollama serve' puis installez un modele : ollama pull mistral",
+        hint="Demarrez 'ollama serve' puis installez un modele : "
+             "ollama pull qwen3:8b (8 Go de VRAM) ou qwen3:14b (16 Go).",
     ),
     "lmstudio": LLMProvider(
         key="lmstudio", label="🖥️ LM Studio / serveur compatible OpenAI (local)",
@@ -382,6 +388,7 @@ LLM_PROVIDERS: dict[str, LLMProvider] = {
         free_tier="Palier gratuit sans carte bancaire, limite en requetes par minute",
         signup_url="https://console.groq.com/keys",
         hint="Cle gratuite sur console.groq.com. Modeles ouverts, debit tres eleve.",
+        recommended_models=("qwen", "llama", "gpt-oss"),
     ),
     "cerebras": LLMProvider(
         key="cerebras", label="☁️ Cerebras (gratuit)", kind="openai",
@@ -389,6 +396,7 @@ LLM_PROVIDERS: dict[str, LLMProvider] = {
         free_tier="Palier gratuit sans carte bancaire, quota de jetons par jour",
         signup_url="https://cloud.cerebras.ai",
         hint="Cle gratuite sur cloud.cerebras.ai.",
+        recommended_models=("qwen", "llama"),
     ),
     "mistral": LLMProvider(
         key="mistral", label="☁️ Mistral AI (gratuit)", kind="openai",
@@ -406,6 +414,7 @@ LLM_PROVIDERS: dict[str, LLMProvider] = {
         signup_url="https://openrouter.ai/keys",
         hint="Cle gratuite sur openrouter.ai. La liste est filtree sur les "
              "modeles gratuits, les modeles payants du catalogue sont masques.",
+        recommended_models=("qwen", "kimi", "deepseek", "llama"),
     ),
     "github": LLMProvider(
         key="github", label="☁️ GitHub Models (gratuit)", kind="openai",
@@ -415,6 +424,7 @@ LLM_PROVIDERS: dict[str, LLMProvider] = {
         free_tier="Gratuit pour tout compte GitHub, quotas par minute et par jour",
         signup_url="https://github.com/settings/personal-access-tokens",
         hint="Jeton d'acces personnel GitHub avec la permission 'models:read'.",
+        recommended_models=("qwen", "llama", "phi"),
     ),
     "openai_compatible": LLMProvider(
         key="openai_compatible", label="🔌 Autre API compatible OpenAI",
@@ -498,6 +508,28 @@ def keep_free_models(provider: LLMProvider, models: list[str]) -> list[str]:
     if not provider.free_only_marker:
         return models
     return [m for m in models if provider.free_only_marker in m]
+
+
+def filter_models(query: str, models: list[str]) -> list[str]:
+    """Filtre la liste sur un fragment saisi par l'utilisateur (ex : "qwen")."""
+    query = (query or "").strip().lower()
+    if not query:
+        return models
+    return [m for m in models if query in m.lower()]
+
+
+def preferred_model(provider: LLMProvider, models: list[str]) -> str:
+    """
+    Modele a preselectionner parmi ceux reellement disponibles.
+
+    On compare par fragment : le meme modele s'appelle "qwen3:8b" chez Ollama
+    et "qwen/qwen3-30b-a3b:free" chez OpenRouter.
+    """
+    for wanted in provider.recommended_models:
+        for model in models:
+            if wanted in model.lower():
+                return model
+    return models[0] if models else ""
 
 
 def list_llm_models(provider_key: str, base_url: str = "") -> list[str]:
