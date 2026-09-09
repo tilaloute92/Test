@@ -540,10 +540,25 @@ effacée au sondage suivant. Elle *aurait l'air* d'avoir fonctionné, ce qui est
 qu'on s'interdit. L'export manuel, lui, reste disponible dans les deux modes : c'est une
 extraction sans effet de bord.
 
-La sauvegarde du mode client/serveur se fait donc côté serveur, sur
-`server/data/business-*.json` — **à faire par vos soins**, rien ne le fait automatiquement.
-C'est la seule copie du travail de l'équipe. Restauration : arrêter le service, remettre les
-fichiers, redémarrer.
+La sauvegarde du mode client/serveur se fait côté serveur, sur
+`server/data/business-*.json` — c'est la seule copie du travail de l'équipe. Elle est fournie
+sous forme de tâche planifiée Windows (`packaging/scripts/Backup-SuiviInfra.ps1` +
+`Register-SuiviInfraBackup.ps1`), avec quatre exigences qu'une simple copie ne satisfait pas :
+
+1. **Cohérence** : le compteur `version` est relevé avant et après la copie ; s'il a bougé,
+   la copie recommence (jusqu'à 3 fois). Sans cela, un instantané peut mélanger des fichiers
+   d'avant et d'après une écriture.
+2. **Vérification** : chaque fichier copié est relu et analysé. Une sauvegarde illisible est
+   inutile — le service refuse justement de démarrer dessus.
+3. **Rotation après succès seulement**, et fondée sur le **nom** du dossier (`AAAA-MM-JJ_hhmm`)
+   et non sa date de création, qui se perd si l'arborescence est déplacée.
+4. **Code de sortie non nul en cas d'échec**, pour que le Planificateur de tâches le signale
+   au lieu d'échouer en silence. Le script d'enregistrement exécute d'ailleurs la tâche une
+   fois et vérifie le résultat : une tâche jamais exécutée n'est pas une sauvegarde.
+
+Le `.env` (secret de session) est **exclu par défaut** : il partirait en clair sur le partage.
+Restauration : arrêter le service, remettre les fichiers, redémarrer — la marche à suivre est
+déposée dans chaque sauvegarde (`RESTAURATION.txt`).
 
 Cas particulier — **données conservées avant la bascule** : un poste qui passe d'autonome à
 client/serveur voit ses données mises de côté sous une clé distincte. Elles restent

@@ -1,7 +1,7 @@
 {
   "name": "suivi-infra-server",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Backend d'authentification (local, LDAP, SSO) pour Suivi Infra & Réseau — voir README.md",
   "type": "module",
   "main": "src/index.js",
@@ -19,5 +19,8 @@
     "jose": "^5.6.3",
     "jsonwebtoken": "^9.0.2",
     "ldapts": "^9.0.0"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   }
 }

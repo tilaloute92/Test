@@ -11,6 +11,8 @@ installation complète.
 > | `service\` | Le service optionnel (Node.js), **dépendances déjà installées** |
 > | `Install-SuiviInfra.ps1` | Installation automatisée |
 > | `Test-SuiviInfra.ps1` | Vérification de l'installation |
+> | `Backup-SuiviInfra.ps1` | Sauvegarde des données (vérifiée et cohérente) |
+> | `Register-SuiviInfraBackup.ps1` | Met la sauvegarde en tâche planifiée quotidienne |
 > | `Uninstall-SuiviInfra.ps1` | Désinstallation |
 > | `SHA256SUMS.txt` | Empreintes, pour vérifier l'intégrité après transfert |
 > | `DEPLOYMENT-reference.md` | La procédure manuelle détaillée (référence) |
@@ -200,13 +202,48 @@ C:\services\suivi-infra\data\
 ```
 
 (comptes locaux, tâches, planning, temps saisi, absences, FDR, COPIL). Rien ne le
-sauvegarde automatiquement. Exemple de tâche planifiée quotidienne :
+sauvegarde automatiquement. **Une seule commande met tout en place**, à lancer en
+administrateur depuis le dossier décompressé :
 
 ```powershell
-$dest = "\\serveur-sauvegarde\suivi-infra\$(Get-Date -Format yyyy-MM-dd)"
-New-Item -ItemType Directory -Path $dest -Force | Out-Null
-Copy-Item C:\services\suivi-infra\data\*.json $dest
+.\Register-SuiviInfraBackup.ps1 -Destination \\serveur-sauvegarde\suivi-infra
 ```
+
+Elle installe le script de sauvegarde, crée la tâche planifiée quotidienne (21h00 par
+défaut), **puis l'exécute une fois et vérifie qu'elle a réussi** — une tâche planifiée qui
+n'a jamais tourné n'est pas une sauvegarde, c'est une intention.
+
+Options utiles : `-At 22:30`, `-RetentionDays 90`, `-RunAsUser DOMAINE\svc-sauvegarde`,
+`-ExportXml tache.xml` (pour réimporter la même tâche ailleurs avec
+`schtasks /Create /TN "Suivi Infra - Sauvegarde" /XML tache.xml`).
+
+> **Destination réseau : le piège classique.** Par défaut la tâche s'exécute sous `SYSTEM`,
+> qui n'a pas d'identité réseau propre — il se présente au partage sous le **compte
+> ordinateur** du serveur (`DOMAINE\NOMSERVEUR$`). Soit vous autorisez ce compte en écriture
+> sur le partage, soit vous passez `-RunAsUser` avec un compte de service. Sans cela, la
+> sauvegarde échouerait tous les soirs sans que personne ne s'en aperçoive : c'est
+> précisément pour cela que le script fait une exécution de contrôle et vous dit laquelle
+> des deux situations vous êtes.
+
+Ce que le script fait qu'une simple copie ne fait pas :
+
+- **il vérifie la cohérence** de l'instantané (si l'équipe écrit pendant la copie, il
+  recommence — le compteur de version des données sert de témoin) ;
+- **il relit chaque fichier copié** : un JSON invalide fait échouer la sauvegarde plutôt que
+  de la laisser passer pour bonne, car le service refuse justement de démarrer dessus ;
+- **il ne purge les anciennes sauvegardes qu'après un succès**, pour ne jamais se retrouver
+  sans aucune copie valide ;
+- **il dépose une note `RESTAURATION.txt`** dans chaque sauvegarde, avec la marche à suivre —
+  le jour d'un incident, c'est ce dossier qu'on ouvre, rarement la documentation ;
+- **il renvoie un code d'erreur** que le Planificateur de tâches affiche, au lieu d'échouer
+  en silence.
+
+Le fichier `.env` (secret de session, configuration LDAP) n'est **pas** sauvegardé par
+défaut : il partirait sur le partage avec un secret en clair. `-IncludeEnv` l'ajoute si votre
+destination est protégée comme le serveur. Sans lui, une restauration reste possible : il
+suffit de regénérer un secret (tout le monde se reconnecte) et de ressaisir LDAP.
+
+Vérifiez le journal de temps en temps : `\\serveur-sauvegarde\suivi-infra\sauvegarde.log`.
 
 C'est la **seule** copie : en mode client/serveur, la restauration depuis le navigateur est
 désactivée dans l'application (elle ne changerait rien côté serveur et serait effacée à
@@ -257,6 +294,8 @@ comparaison, plutôt qu'appliquée en écrasant la vôtre.
 | « Modifié entre-temps par X — votre modification n'a pas été enregistrée » | Un collègue a modifié la même tâche/FDR/COPIL pendant votre saisie. Le serveur refuse d'écraser son travail. Rouvrez l'élément : il affiche la version du serveur, refaites votre modification dessus. |
 | Un poste ne voit pas ses anciennes données après la bascule | Normal : le serveur fait référence. Ses données d'avant sont conservées à part — *Paramètres → Données conservées avant la bascule* permet de les télécharger. |
 | Le service ne démarre pas | Port déjà utilisé (changez `PORT` dans `.env` **et** relancez le script avec `-ServicePort`), ou `.env` invalide. Journaux : `service.err.log`. |
+| La tâche de sauvegarde échoue tous les soirs (destination réseau) | Le compte d'exécution n'a pas le droit d'écrire sur le partage. Autorisez le compte ordinateur `DOMAINE\NOMSERVEUR$`, ou relancez `Register-SuiviInfraBackup.ps1` avec `-RunAsUser`. |
+| Sauvegarde : « copie cohérente impossible après 3 tentatives » | Le serveur est modifié en continu à cette heure-là. Décalez la tâche : `Register-SuiviInfraBackup.ps1 -At 04:00 …`. |
 
 Pour la procédure manuelle équivalente, étape par étape (utile pour comprendre ce que
 fait le script ou pour l'adapter), voir `DEPLOYMENT-reference.md`.

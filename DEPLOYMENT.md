@@ -281,9 +281,11 @@ le navigateur y est désactivée, précisément parce qu'elle serait sans effet.
 
 ## Ce que ce déploiement ne couvre pas
 
-- **Sauvegarde automatique des données d'équipe** : en mode client/serveur, elles vivent
-  dans `server/data/business-*.json` (voir B.6 ci-dessus) — sans sauvegarde régulière de ce
-  dossier par vos soins, leur perte reste possible (panne disque, erreur de manipulation...).
+- **Sauvegarde hors site** : la sauvegarde quotidienne fournie
+  (`Register-SuiviInfraBackup.ps1`, voir `packaging/INSTALL.md`) copie `data\` vers la
+  destination que vous indiquez, mais ne gère ni réplication hors site, ni archivage long
+  terme, ni chiffrement de la destination : c'est à votre politique de sauvegarde
+  d'entreprise de les assurer.
   En mode autonome (pas de service déployé), les données
   restent comme avant dans le stockage local de *chaque* navigateur (voir README) : la perte
   du profil navigateur d'un utilisateur perd alors seulement ses données locales à lui.
