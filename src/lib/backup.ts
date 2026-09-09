@@ -13,12 +13,19 @@
  *    stockage local ou à un changement d'appareil. À déclencher soi-même : rien n'est
  *    envoyé ni sauvegardé automatiquement quelque part.
  *
- * Comme pour le reste de l'application, rien n'est centralisé sur un serveur : tout reste
- * dans le navigateur de la personne qui l'utilise, jusqu'à export manuel du fichier.
+ * Ce module ne concerne QUE le mode autonome. En mode client/serveur, les données
+ * appartiennent au serveur : l'historique automatique y est désactivé (il ne ferait que
+ * recopier dans le navigateur des données dont il n'est pas responsable) et la restauration
+ * y est refusée — elle réécrirait l'affichage local sans rien changer côté serveur, et le
+ * sondage suivant l'effacerait, donnant l'illusion d'une restauration qui n'a pas eu lieu.
+ * La sauvegarde du mode client/serveur se fait côté serveur, sur les fichiers de
+ * C:\services\suivi-infra\data (voir packaging/INSTALL.md). L'export manuel, lui, reste
+ * disponible dans les deux modes : c'est une simple extraction, sans effet de bord.
  */
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { isServerMode } from './serverMode';
 import { useStore, type StoreState } from '../store/useStore';
 
 export interface BackupPayload {
@@ -125,6 +132,7 @@ function pushSnapshotFromCurrentState(label: string) {
 // ---------------------------------------------------------------------------------------
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleAutoSnapshot() {
+  if (isServerMode()) return;
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
@@ -133,6 +141,7 @@ function scheduleAutoSnapshot() {
 }
 
 function seedInitialSnapshotIfNeeded() {
+  if (isServerMode()) return;
   if (useBackupStore.getState().snapshots.length === 0) {
     pushSnapshotFromCurrentState(`État initial — ${summarize(extractPayload(useStore.getState()))}`);
   }
@@ -154,11 +163,15 @@ export function formatTimestamp(iso: string): string {
 // enregistre d'abord un point "avant restauration" : annuler une restauration reste donc
 // toujours possible, exactement comme n'importe quelle autre modification.
 // ---------------------------------------------------------------------------------------
-export function restoreSnapshot(id: string) {
+/** Renvoie false si la restauration est refusée (mode client/serveur) — l'interface
+ *  désactive alors le bouton et l'explique ; ce garde-fou est la seconde barrière. */
+export function restoreSnapshot(id: string): boolean {
+  if (isServerMode()) return false;
   const snapshot = useBackupStore.getState().snapshots.find((s) => s.id === id);
-  if (!snapshot) return;
+  if (!snapshot) return false;
   pushSnapshotFromCurrentState(`Avant restauration du ${formatTimestamp(snapshot.createdAt)}`);
   useStore.setState(snapshot.data);
+  return true;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -196,7 +209,10 @@ export function parseBackupFile(text: string): BackupPayload {
   return data;
 }
 
-export function importBackupPayload(data: BackupPayload) {
+/** Voir restoreSnapshot : refusé en mode client/serveur, pour la même raison. */
+export function importBackupPayload(data: BackupPayload): boolean {
+  if (isServerMode()) return false;
   pushSnapshotFromCurrentState(`Avant import du ${formatTimestamp(new Date().toISOString())}`);
   useStore.setState(data);
+  return true;
 }

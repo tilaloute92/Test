@@ -36,7 +36,7 @@ Application de suivi d'activité pour une équipe infrastructures systèmes & r�
 
 Le rapport hebdomadaire se génère à la demande, pas automatiquement : rien ne peut se déclencher tout seul le vendredi ni envoyer un e-mail à votre place — il faut ouvrir l'onglet Rapport et utiliser "Copier en Markdown" ou "Imprimer / Enregistrer en PDF" pour le partager.
 
-Les données métier (tâches, planning, temps saisi...) sont stockées dans le navigateur (`localStorage`) de chaque utilisateur. Sans le serveur d'authentification, ou tant que personne ne s'est connecté avec une vraie session serveur, chacun a sa propre copie locale. **Avec** le serveur (`server/`) et une session serveur active, ces mêmes données deviennent partagées entre tous les membres de l'équipe — voir la section "Mode multi-utilisateur" ci-dessous. Les appels API de l'onglet Requêtes API sont exécutés directement par le navigateur : l'application distante doit autoriser le CORS depuis cette page, sinon la requête est bloquée. Par défaut les secrets d'authentification de cet onglet ne sont pas mémorisés (à ressaisir à chaque session) ; l'option "mémoriser" les enregistre en clair dans le stockage local du navigateur.
+Les données métier (tâches, planning, temps saisi...) résident **soit sur le serveur** (mode client/serveur — le cas d'un déploiement d'équipe), **soit dans le navigateur** de chaque utilisateur (mode autonome, sans le service `server/`). Le mode est détecté au démarrage, mémorisé, et toujours affiché — voir la section "Mode client/serveur" ci-dessous. Les appels API de l'onglet Requêtes API sont exécutés directement par le navigateur : l'application distante doit autoriser le CORS depuis cette page, sinon la requête est bloquée. Par défaut les secrets d'authentification de cet onglet ne sont pas mémorisés (à ressaisir à chaque session) ; l'option "mémoriser" les enregistre en clair dans le stockage local du navigateur.
 
 ## Authentification, annuaire et HTTPS
 
@@ -56,19 +56,87 @@ Onglet **Paramètres**, section "Sauvegarde & historique des versions". Deux mé
 
 Comme pour le reste des données métier, rien n'est envoyé à un serveur : l'historique automatique reste dans `localStorage`, et le fichier de sauvegarde n'existe que là où vous le téléchargez.
 
-## Mode multi-utilisateur (données d'équipe partagées)
+## Mode client/serveur (données d'équipe sur le serveur)
 
-Par défaut, chaque personne a sa propre copie locale des données (voir plus haut). En déployant le serveur optionnel (`server/`, déjà utilisé pour l'authentification locale/LDAP/SSO — voir [`server/README.md`](./server/README.md)), les **tâches, membres, planning, temps saisi, absences, feuille de route (FDR) et séances de COPIL** deviennent partagés en temps quasi-réel entre tous les membres connectés :
+L'application fonctionne selon **deux modes**, et ce mode n'est jamais une devinette : il
+est affiché dans *Paramètres → Mode de fonctionnement*, et un point vert dans l'en-tête
+signale le mode client/serveur.
 
-- **Activation automatique** : dès qu'une personne ouvre une session vérifiée par le serveur (compte local, LDAP, ou SSO Entra ID dont le jeton a été validé côté serveur), un point vert apparaît à côté de son nom dans l'en-tête — "Mode multi-utilisateur actif". Le SSO utilisé sans le serveur (session gérée uniquement par le navigateur) n'active pas le partage, faute de session serveur à synchroniser : c'est une distinction volontaire, pas un oubli.
-- **Synchronisation par sondage (polling), pas de flux temps réel** : le navigateur récupère l'état partagé toutes les ~8 secondes, plutôt que d'ouvrir une connexion permanente (WebSocket/SSE). Choix délibéré pour la robustesse derrière un reverse proxy IIS/ARR, où ce type de connexion longue durée est une source connue de coupures et de configuration délicate. Chaque modification (créer/éditer/supprimer une tâche, affecter un créneau, poser une absence...) part immédiatement vers le serveur dès qu'elle est faite localement — inutile d'attendre le prochain sondage pour que sa propre action soit prise en compte ; c'est la vue des **autres** utilisateurs qui se met à jour au sondage suivant.
-- **Rien ne bloque en cas de coupure réseau** : une écriture qui échoue affiche un bandeau orange discret et se referme tout seul après quelques secondes, mais la modification reste appliquée localement — elle n'est jamais annulée automatiquement. Le prochain sondage réussi réconcilie l'état.
-- **Traçabilité** : chaque tâche, initiative FDR et séance de COPIL modifiée via le serveur affiche "Dernière modification par *Prénom Nom*, le *date*" dans son formulaire d'édition — utile en équipe pour savoir qui a touché quoi en dernier, sans avoir à demander.
-- **Démarrage ("Publier")** : le serveur démarre vide. La première personne qui se connecte peut, depuis Paramètres → "Mode multi-utilisateur", publier les données actuellement dans son navigateur pour amorcer le jeu de données partagé (avec confirmation, comme toute action qui remplace des données existantes). Une fois le serveur non vide, le bouton disparaît pour tout le monde — impossible d'écraser accidentellement les données de l'équipe par une seconde publication ; le serveur refuse la requête (erreur 409) si on essaie.
-- **Ce qui reste local, volontairement** : les connexions/historique de l'onglet Requêtes API (identifiants personnels de test), l'historique de versions et la configuration d'authentification ne sont pas synchronisés — ce sont des réglages ou des secrets propres à chaque poste, pas des données d'équipe.
-- **Sans le serveur**, ou avant la première connexion avec une session serveur active, l'application continue de fonctionner exactement comme avant (données locales uniquement) : le mode multi-utilisateur est une amélioration, jamais une dépendance obligatoire au démarrage.
+| | Autonome | Client / serveur |
+| --- | --- | --- |
+| Source de vérité | le navigateur (`localStorage`) | **le serveur** |
+| Partage entre collègues | non | oui, en ~8 secondes |
+| Connexion | selon l'interrupteur « exiger la connexion » | **toujours obligatoire** |
+| Prérequis | aucun | le service `server/` |
 
-Détails d'architecture et de déploiement (routes API, fichiers `server/data/business-*.json`, sauvegarde côté serveur) : voir [`DEPLOYMENT.md`](./DEPLOYMENT.md#b6-mode-multi-utilisateur-données-déquipe-partagées).
+### Comment le mode est déterminé
+
+Au démarrage, le navigateur interroge `/api/health`. S'il obtient une réponse, l'installation
+est en client/serveur, et **il s'en souvient**. Ce point est essentiel : la première version se
+contentait de regarder si le serveur répondait *à cet instant*, si bien que l'arrêt du service
+faisait silencieusement retomber chacun sur sa copie locale — tout le monde continuait de
+travailler, personne ne voyait le travail des autres, et les modifications étaient perdues au
+redémarrage. Désormais, un serveur injoignable produit un **écran « Serveur indisponible »**
+explicite, et l'application refuse de laisser saisir quoi que ce soit. Elle redevient utilisable
+d'elle-même dès que le serveur répond, sans rechargement. Un bouton permet de basculer
+volontairement en autonome, après confirmation, pour le cas où le serveur ne reviendrait pas.
+
+### Ce que « le serveur est la source de vérité » implique concrètement
+
+- **Aucune donnée d'équipe dans le navigateur.** En mode client/serveur, les 7 collections
+  partagées ne sont pas enregistrées en `localStorage`. Sans cela, un rechargement
+  réafficherait une copie périmée — y compris des enregistrements supprimés par l'équipe —
+  le temps que le serveur réponde.
+- **Une écriture refusée est une écriture annulée.** Si le serveur n'enregistre pas la
+  modification, l'affichage est resynchronisé sur l'état réel du serveur et un bandeau le dit
+  franchement. (La version précédente affichait « la modification reste enregistrée dans ce
+  navigateur » : c'était faux — le sondage suivant l'effaçait 8 secondes plus tard.)
+- **Rien n'est affiché tant que rien n'est reçu.** Le jeu d'exemple n'apparaît jamais en mode
+  client/serveur : un écran de chargement précède la première réponse.
+
+### Concurrence entre collègues
+
+Le sondage est **incrémental** : le navigateur envoie la version qu'il détient, et le serveur
+ne renvoie les données que s'il a changé. L'affichage n'est donc plus réécrit toutes les
+8 secondes pendant qu'une personne saisit.
+
+Pour les enregistrements à **contenu rédigé** (tâches, FDR, COPIL), le navigateur transmet la
+date de dernière modification sur laquelle il s'est basé. Si un collègue est passé entre-temps,
+le serveur **refuse** la modification (HTTP 409) au lieu de l'appliquer par-dessus, et
+l'utilisateur en est informé. Les collections à valeur unique (créneau de planning, saisie de
+temps, absence, membre) restent en « dernière écriture gagne » : ce sont des valeurs
+immédiatement visibles à l'écran, dont l'écrasement ne détruit pas de texte rédigé.
+
+### Mise en service et migration
+
+Le serveur démarre vide. La première personne connectée voit un écran de **mise en service**
+avec deux départs possibles, une seule fois pour toute l'équipe :
+
+1. **démarrer à vide** — l'équipe se saisit dans l'application ;
+2. **reprendre les données de ce poste** — proposé seulement si ce navigateur utilisait
+   l'application en autonome ; ses données sont alors mises de côté au moment de la bascule
+   (voir *Paramètres → Données conservées avant la bascule*, exportables puis écartables) et
+   peuvent servir de point de départ commun.
+
+Une fois le serveur mis en service, toute nouvelle initialisation est refusée (409) : le contenu
+d'un seul navigateur ne peut plus écraser le travail de l'équipe.
+
+### Ce qui reste local, volontairement
+
+Les connexions et l'historique de l'onglet Requêtes API (identifiants personnels de test), la
+configuration d'authentification et l'historique de versions ne sont pas partagés : ce sont des
+réglages ou des secrets propres à chaque poste. En mode client/serveur, l'historique
+automatique est d'ailleurs désactivé et la restauration locale refusée — elle ne changerait rien
+côté serveur et serait effacée à l'actualisation suivante. La restauration se fait alors côté
+serveur, depuis les fichiers `server/data/business-*.json`.
+
+### Traçabilité
+
+Chaque tâche, initiative FDR et séance de COPIL modifiée via le serveur affiche « Dernière
+modification par *Prénom Nom*, le *date* » dans son formulaire d'édition.
+
+Détails d'architecture et de déploiement : voir [`DEPLOYMENT.md`](./DEPLOYMENT.md#b6-mode-clientserveur-données-déquipe-sur-le-serveur)
+et [`packaging/INSTALL.md`](./packaging/INSTALL.md).
 
 ## Sécurité
 
@@ -95,7 +163,7 @@ Exception documentée (`npm audit`) : `pptxgenjs` dépend de `image-size`, dont 
 Limites à connaître :
 
 - **Sans le serveur d'authentification (`server/`), le verrou de connexion est un contrôle d'interface, pas une barrière de sécurité serveur.** Il masque l'application tant qu'on n'est pas connecté, mais les données restent dans le stockage local du navigateur : quelqu'un avec un accès physique/technique à l'appareil (outils de développement du navigateur) pourrait les consulter directement. **Avec** le serveur d'authentification, la connexion devient une vraie barrière (session vérifiée côté serveur à chaque appel, mots de passe locaux hachés, mots de passe LDAP jamais stockés) — mais les données métier de l'application (tâches, planning...) continuent, elles, de résider uniquement dans le navigateur de chaque utilisateur : le serveur ne protège l'accès à l'application, pas ces données une fois qu'on y est.
-- **Sans mode multi-utilisateur actif** (pas de serveur, ou personne n'a encore ouvert de session serveur), aucune donnée métier n'est centralisée : chaque utilisateur a sa propre copie locale (planning, tâches, temps saisi), rien n'est partagé entre collègues ni sauvegardé côté serveur. **Avec** le mode multi-utilisateur (voir section dédiée ci-dessus), les données d'équipe (tâches, planning, temps, absences, FDR, COPIL) résident aussi dans `server/data/business-*.json` sur le serveur — ce fichier n'est, à ce jour, pas sauvegardé automatiquement par l'application (voir [`DEPLOYMENT.md`](./DEPLOYMENT.md) pour la marche à suivre côté infrastructure). L'historique de versions (voir section dédiée ci-dessus) reste, lui, un filet de sécurité local au navigateur, pas une sauvegarde centralisée : pensez à exporter régulièrement un fichier de sauvegarde si vous voulez une copie qui survive à cet ordinateur ou à ce serveur.
+- **En mode autonome** (pas de service `server/`), aucune donnée métier n'est centralisée : chaque utilisateur a sa propre copie locale (planning, tâches, temps saisi), rien n'est partagé entre collègues ni sauvegardé côté serveur. **En mode client/serveur** (voir section dédiée ci-dessus), les données d'équipe (tâches, planning, temps, absences, FDR, COPIL) résident aussi dans `server/data/business-*.json` sur le serveur — ce fichier n'est, à ce jour, pas sauvegardé automatiquement par l'application (voir [`DEPLOYMENT.md`](./DEPLOYMENT.md) pour la marche à suivre côté infrastructure). L'historique de versions (voir section dédiée ci-dessus) reste, lui, un filet de sécurité local au navigateur, pas une sauvegarde centralisée : pensez à exporter régulièrement un fichier de sauvegarde si vous voulez une copie qui survive à cet ordinateur ou à ce serveur.
 - Je peux vérifier le code et les pratiques (c'est ce qui précède), mais je ne peux pas **certifier** une conformité formelle (ISO 27001, référentiel ANSSI, audit RGPD...) : ces démarches impliquent des processus organisationnels (gestion des accès physiques, politique de mots de passe, registre de traitement des données, etc.) qui dépassent le code de l'application.
 
 ## Déploiement

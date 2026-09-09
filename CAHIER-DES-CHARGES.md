@@ -71,6 +71,8 @@ Les demandes ont été faites successivement ; chacune est un commit du dépôt.
 | 20 | **Onglet COPIL**, placé juste après FDR | Onglet COPIL |
 | 21 | Binaires + procédure d'installation Windows Server 2022 | Paquet `.zip` + scripts PowerShell |
 | 22 | Correction : l'affectation d'une tâche cochait un autre utilisateur | Correctif identifiants + réparation |
+| 23 | Compte rendu de tout ce qui a été demandé, resoumettable pour reconstruire l'application | Ce document |
+| 24 | **Mode client/serveur** avec un serveur Windows Server 2022 | Serveur = source de vérité, mode mémorisé, conflits détectés |
 
 ---
 
@@ -168,7 +170,7 @@ interface ProjectTask {
   assigneeIds: string[];                    // plusieurs personnes possibles
   status; priority; estimatedHours; dueDate?;
   createdAt; completedAt?; description?;
-  updatedAt?; updatedBy?;                   // renseignés seulement en multi-utilisateur
+  updatedAt?; updatedBy?;                   // renseignés par le serveur (mode client/serveur)
 }
 
 interface TimeEntry    { id; taskId; memberId; date; period; hours; note?; }
@@ -222,7 +224,7 @@ interface AuthSettings  { enabled; requireLogin; tenantId; clientId; redirectUri
 > ⚠️ **Ne jamais utiliser un compteur en mémoire.** La première version utilisait
 > `let idCounter = 1000`, remis à zéro à chaque chargement de page alors que les données sont
 > persistées : deux enregistrements créés dans deux sessions différentes recevaient le **même
-> identifiant**, et cocher une personne en cochait une autre. En multi-utilisateur c'est pire
+> identifiant**, et cocher une personne en cochait une autre. En client/serveur c'est pire
 > encore : c'est le navigateur qui fixe l'identifiant enregistré par le serveur, donc deux
 > collègues entraient en collision.
 >
@@ -398,7 +400,7 @@ Les secrets ne sont mémorisés que si l'utilisateur coche explicitement « mém
 ### 5.11 Paramètres
 
 Authentification (SSO / comptes locaux / LDAP), statut HTTPS en direct, guide de déploiement,
-**sauvegarde & historique des versions**, **mode multi-utilisateur**.
+**sauvegarde & historique des versions**, **mode de fonctionnement** (client/serveur ou autonome), **données conservées avant la bascule**.
 
 ---
 
@@ -426,38 +428,95 @@ connexion** pour éviter tout blocage en cas de mauvaise configuration.
 
 ---
 
-## 7. Mode multi-utilisateur
+## 7. Mode client/serveur
 
-Sans serveur : chaque personne a sa copie locale (`localStorage`). Avec le serveur et une
-**vraie session serveur**, **7 collections** deviennent partagées :
+L'application a **deux modes**, et le mode n'est jamais implicite : il est détecté au
+démarrage, **mémorisé**, et affiché (point vert dans l'en-tête, carte dédiée dans Paramètres).
 
-`members`, `tasks`, `planningSlots`, `timeEntries`, `absences`, `roadmapItems`, `copils`
+| | Autonome | Client / serveur |
+| --- | --- | --- |
+| Source de vérité | le navigateur (`localStorage`) | **le serveur** |
+| Partage | non | oui, ~8 s |
+| Connexion | selon l'interrupteur | **toujours obligatoire** |
 
-**Restent volontairement locales** : connexions et historique API (secrets personnels de
-test), historique de versions, paramètres d'authentification.
+**7 collections partagées** : `members`, `tasks`, `planningSlots`, `timeEntries`, `absences`,
+`roadmapItems`, `copils`.
+**Restent locales** : connexions/historique API (secrets personnels), historique de versions,
+paramètres d'authentification.
 
-Principes :
+### 7.1 Détermination du mode — `src/lib/serverMode.ts`
 
-- **Activation** : uniquement si le backend répond **et** qu'une session serveur existe. Le
-  SSO utilisé sans le serveur n'active pas le partage (pas de session serveur à synchroniser)
-  — distinction volontaire. Un point vert dans l'en-tête signale le mode actif.
-- **Sondage toutes les 8 s**, pas de WebSocket/SSE : choix délibéré pour la robustesse
-  derrière un reverse proxy IIS/ARR, où les connexions longues sont une source connue de
-  pannes.
-- **Écritures optimistes** : la modification est appliquée localement tout de suite et
-  envoyée au serveur en tâche de fond. Un échec affiche un bandeau ambré et **n'annule
-  jamais** la modification locale.
-- **Le navigateur génère l'identifiant**, le serveur l'accepte comme faisant autorité
-  (`idOrNext`) — sinon le client aurait deux versions du même enregistrement à réconcilier.
-- **Attribution** : le serveur horodate `updatedAt`/`updatedBy` sur tâches, FDR et COPIL ;
-  affiché dans les formulaires (« Dernière modification par X, le … »).
-- **Publication initiale** : le serveur démarre vide ; la première personne publie les données
-  de son navigateur depuis Paramètres. **Le serveur refuse (409) toute publication ultérieure**
-  pour ne jamais écraser le travail de l'équipe — le bouton disparaît alors.
-- **Garde-fou** : un instantané serveur **vide ne doit jamais écraser** des données locales
-  (`if (snapshot.isEmpty) return;`). Sans ce garde-fou, activer la synchronisation efface les
-  données locales avant que l'utilisateur ait pu les publier — c'était un vrai bug rencontré.
-- **Suppressions en cascade**, identiques côté client et serveur : supprimer un membre le
+`/api/health` répond `{ ok, mode: 'client-serveur' }`. Le navigateur interroge cette sonde au
+démarrage et **enregistre le résultat** (`localStorage: infra-team-tracker:mode`).
+
+> **À ne surtout pas refaire** : la première version se contentait de tester si le serveur
+> répondait *à cet instant*. À l'arrêt du service, chacun retombait silencieusement sur sa
+> copie locale, continuait de travailler, et perdait tout au redémarrage. Le mode DOIT être
+> mémorisé : un serveur injoignable est une **panne**, pas un changement d'architecture.
+
+Trois états de liaison (`LinkState`) : `demarrage`, `connecte`, `indisponible`. Passage en
+`indisponible` après **deux** sondages ratés consécutifs (un échec isolé ne doit pas sortir
+l'utilisateur de son écran), ou dès le premier si rien n'a jamais été reçu.
+
+### 7.2 Écrans qui précèdent l'application
+
+Dans cet ordre : `Démarrage…` → `Serveur indisponible` (si mode serveur et liaison coupée) →
+écran de connexion → `Chargement des données de l'équipe…` → `Mise en service du serveur`
+(si jamais initialisé) → l'application.
+
+- **Serveur indisponible** : l'application refuse d'afficher et de laisser saisir. Le sondage
+  continue en arrière-plan et l'écran disparaît **de lui-même** au retour du serveur.
+  Deux boutons : *Réessayer*, et *Travailler en mode autonome sur ce poste* (avec confirmation
+  — c'est un changement de source de vérité, pas un réglage d'affichage).
+- **Mise en service** : deux départs, une seule fois pour l'équipe — *serveur vide*, ou
+  *reprendre les N enregistrement(s) de ce poste* (proposé uniquement si le poste a un usage
+  autonome antérieur). Toute mise en service ultérieure est refusée (409).
+
+### 7.3 Le serveur est la source de vérité — conséquences obligatoires
+
+- **Aucune collection partagée en `localStorage`** en mode serveur (`partialize` les exclut,
+  `merge` ignore celles déjà stockées). Sinon un rechargement réaffiche une copie périmée —
+  y compris des enregistrements supprimés par l'équipe.
+- **Collections vides au démarrage** en mode serveur (jamais le jeu d'exemple), et rien n'est
+  affiché avant la première réponse : afficher des données de démonstration ferait croire à
+  une équipe qui n'existe pas.
+- **Une écriture refusée est annulée** : `syncWrite` signale franchement l'échec et appelle
+  `requestResync()`, qui force une **relecture complète** (et non `?since=`, puisqu'un refus
+  ne fait pas bouger la version du serveur — un sondage normal répondrait « rien de neuf » et
+  laisserait la modification fantôme à l'écran).
+- **Les enregistrements renvoyés par le serveur sont réappliqués** (`syncWriteRecord`) :
+  `updatedAt`/`updatedBy` sont décidés côté serveur, et un horodatage inventé localement
+  serait pris pour un conflit à la modification suivante.
+- **Archive de bascule** (`src/lib/localArchive.ts`) : au passage autonome → serveur, les
+  données du poste sont mises de côté sous une clé distincte, jamais détruites. Elles
+  alimentent l'option « reprendre » et restent exportables (Paramètres). L'archivage se fait
+  **au moment où le mode change**, pas dans `merge` : le mode n'est connu qu'après la réponse
+  du serveur, donc après la réhydratation du store. Archiver depuis le stockage persisté (et
+  non l'état courant) évite de proposer de « reprendre » le jeu d'exemple sur un poste neuf.
+
+### 7.4 Concurrence
+
+- **Sondage incrémental** : `GET /api/data?since=N` → `{ unchanged: true }` si la version
+  serveur est inchangée. Sans cela, l'affichage était réécrit toutes les 8 secondes, y compris
+  pendant une saisie.
+- **Compteur `version`** incrémenté à chaque écriture, dans `business-meta.json`. Suppose un
+  **seul processus** Node (cas prévu).
+- **Détection de conflit** sur tâches / FDR / COPIL : le client envoie l'en-tête
+  `X-Base-Updated-At` ; si la valeur a changé, le serveur **refuse** (409) au lieu d'écraser.
+  Les collections à valeur unique (planning, temps, absences, membres) restent en « dernière
+  écriture gagne » : leur écrasement ne détruit pas de texte rédigé.
+- **Sondage 8 s, pas de WebSocket/SSE** : choix délibéré pour la robustesse derrière IIS/ARR,
+  où les connexions longues sont une source connue de pannes.
+- **Le navigateur génère l'identifiant**, le serveur l'accepte (`idOrNext`).
+
+### 7.5 Robustesse du stockage serveur
+
+- **Écriture atomique** : fichier temporaire dans le même dossier → `fsync` → `rename`. Un
+  `writeFileSync` direct laisse une collection tronquée en cas de coupure.
+- **Refus de démarrer sur fichier illisible**, avec le nom du fichier et la marche à suivre.
+  Repartir d'une valeur par défaut donnerait un service qui *a l'air* de fonctionner pendant
+  que l'équipe travaille par-dessus le vide.
+- **Suppressions en cascade** identiques côté client et serveur : supprimer un membre le
   retire des `assigneeIds`, des créneaux, des porteurs FDR, des participants/porteurs/
   présentateurs COPIL ; supprimer une tâche la délie des créneaux et des FDR ; supprimer une
   initiative FDR la délie des COPIL.
@@ -474,8 +533,21 @@ Deux mécanismes complémentaires :
 2. **Sauvegarde manuelle `.json`** — export/import de fichier. **Seule méthode qui survit** à
    un vidage du stockage local ou à un changement de poste.
 
-En multi-utilisateur, les données d'équipe vivent aussi dans `server/data/business-*.json` :
-**à sauvegarder par vos soins**, rien ne le fait automatiquement.
+**En mode client/serveur, ces deux mécanismes sont désactivés** — et c'est délibéré :
+l'historique automatique ne ferait que recopier dans le navigateur des données dont il n'est
+pas responsable, et une restauration locale ne changerait rien côté serveur avant d'être
+effacée au sondage suivant. Elle *aurait l'air* d'avoir fonctionné, ce qui est précisément ce
+qu'on s'interdit. L'export manuel, lui, reste disponible dans les deux modes : c'est une
+extraction sans effet de bord.
+
+La sauvegarde du mode client/serveur se fait donc côté serveur, sur
+`server/data/business-*.json` — **à faire par vos soins**, rien ne le fait automatiquement.
+C'est la seule copie du travail de l'équipe. Restauration : arrêter le service, remettre les
+fichiers, redémarrer.
+
+Cas particulier — **données conservées avant la bascule** : un poste qui passe d'autonome à
+client/serveur voit ses données mises de côté sous une clé distincte. Elles restent
+téléchargeables depuis Paramètres, puis écartables explicitement (avec confirmation).
 
 ---
 
@@ -631,6 +703,11 @@ plus : Node.js LTS, NSSM, modules IIS URL Rewrite + ARR.
 |---|---|---|
 | Cocher un utilisateur en cochait un autre | Compteur d'identifiants en mémoire remis à zéro à chaque chargement ⇒ identifiants dupliqués | `makeId()` horodatage + aléatoire, plus `repairDuplicateIds()` au chargement + bandeau |
 | Activer le multi-utilisateur effaçait les données locales | Le sondage appliquait un instantané serveur vide avant que l'utilisateur ait pu publier | Garde `if (snapshot.isEmpty) return;` |
+| « La modification reste enregistrée dans ce navigateur » était **faux** | Écriture en « tire et oublie » : le sondage suivant écrasait la modification 8 s plus tard | Écriture serveur-d'abord + resynchronisation forcée + message honnête |
+| Panne du serveur = repli silencieux en autonome | Le mode était redétecté à chaud à chaque chargement | Mode **mémorisé** ; écran « Serveur indisponible » ; lecture et saisie bloquées |
+| `npx tsc --noEmit` ne vérifiait rien | `tsconfig.json` a `"files": []` + `references` : la commande sort à 0 sans rien compiler | Utiliser `tsc -b` |
+| L'en-tête annonçait « 6 personnes » en dur | Valeur écrite en dur, visible dès qu'un serveur neuf est vide | Compteur réel issu du store |
+| L'archivage à la bascule ne se déclenchait jamais | Il était fait dans `merge`, qui s'exécute AVANT que le mode soit connu | Archiver sur l'événement de changement de mode |
 | Réparation d'identifiants sans effet | Branchée sur `onRehydrateStorage`, exécuté avant l'initialisation de `useStore` | Branchée sur `merge` |
 | Impression vide sur certains modes | `print:hidden` posé sur le conteneur de contenu | Ne masquer que les éléments d'interface |
 | Timers de bandeau jamais nettoyés | Fonction de nettoyage retournée depuis un écouteur pub-sub qui ignore les retours | Variable hissée dans le `useEffect` |
@@ -642,17 +719,30 @@ plus : Node.js LTS, NSSM, modules IIS URL Rewrite + ARR.
 
 Avant de déclarer une fonctionnalité terminée :
 
-1. `npx tsc --noEmit`, `npx oxlint src/`, `npm run build` — tous propres.
+1. `npx tsc -b`, `npx oxlint src/`, `npm run build` — tous propres.
+   **Attention** : `npx tsc --noEmit` ne vérifie RIEN dans ce projet. `tsconfig.json` a
+   `"files": []` et ne fait que référencer `tsconfig.app.json` / `tsconfig.node.json` : la
+   commande sort à 0 sans avoir compilé une seule ligne. Utilisez `tsc -b` (ce que fait
+   `npm run build`).
 2. **Test dans un vrai navigateur** de chaque fonctionnalité (les captures d'écran ont servi
    de preuve tout au long du développement).
 3. Pour les écritures : vérifier que la confirmation apparaît, que **Confirmer** applique et
    **persiste**, et que **Annuler** laisse la donnée **strictement inchangée**.
-4. Pour le multi-utilisateur : deux navigateurs simultanés, propagation vérifiée dans les deux
-   sens avec attribution.
-5. `npm audit` avant chaque build.
-6. Nettoyer tous les artefacts de test avant livraison (scripts, dépendances temporaires,
+4. Pour le mode client/serveur, quatre scénarios à vérifier en navigateur, pas seulement le
+   cas nominal :
+   - **nominal** : deux navigateurs simultanés, propagation dans les deux sens ;
+   - **écriture refusée** (forcer une erreur serveur) : message honnête + la modification
+     disparaît de l'écran ;
+   - **serveur arrêté** : écran d'indisponibilité, aucun basculement silencieux en autonome,
+     retour automatique à la reprise du service ;
+   - **migration** : un poste autonome avec des données, serveur démarré ensuite → l'option
+     « reprendre les N enregistrements » est proposée et fonctionne.
+5. Le mode autonome doit rester intact : sans serveur et sans historique, l'application démarre
+   sur le jeu d'exemple et persiste en `localStorage`.
+6. `npm audit` avant chaque build.
+7. Nettoyer tous les artefacts de test avant livraison (scripts, dépendances temporaires,
    données de test, processus).
 
 ---
 
-*Fin du cahier des charges — Suivi Infra & Réseau 1.0.1.*
+*Fin du cahier des charges — Suivi Infra & Réseau 1.1.0.*

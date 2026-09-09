@@ -32,7 +32,7 @@ export interface ProjectTask {
   createdAt: string;
   completedAt?: string;
   description?: string;
-  /** Renseignés uniquement en mode multi-utilisateur (voir server/src/businessData.js) —
+  /** Renseignés uniquement en mode client/serveur (voir server/src/businessData.js) —
    *  absents si la donnée n'a jamais transité par le serveur partagé. */
   updatedAt?: string;
   updatedBy?: string;
@@ -132,7 +132,7 @@ export interface RoadmapItem {
   linkedTaskIds: string[];
   createdAt: string;
   updatedAt: string;
-  /** Renseigné uniquement en mode multi-utilisateur (voir server/src/businessData.js). */
+  /** Renseigné uniquement en mode client/serveur (voir server/src/businessData.js). */
   updatedBy?: string;
 }
 
@@ -205,7 +205,7 @@ export interface Copil {
   nextDate?: string;
   createdAt: string;
   updatedAt: string;
-  /** Renseigné uniquement en mode multi-utilisateur (voir server/src/businessData.js). */
+  /** Renseigné uniquement en mode client/serveur (voir server/src/businessData.js). */
   updatedBy?: string;
 }
 

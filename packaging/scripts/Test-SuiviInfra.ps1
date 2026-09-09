@@ -94,6 +94,13 @@ if ($WithService) {
         (Invoke-RestMethod "https://$HostName/api/health" -TimeoutSec 10).ok -eq $true
     } "Modules URL Rewrite/ARR manquants, proxy ARR désactivé, ou règle absente — voir INSTALL.md §5."
 
+    # C'est cette réponse qui fait basculer les navigateurs en mode client/serveur : sans le
+    # champ 'mode', ils se croiraient sur une installation autonome et travailleraient chacun
+    # sur leur propre copie sans que personne ne s'en aperçoive.
+    Test-Item 'Le service se déclare bien en mode client/serveur' {
+        (Invoke-RestMethod "https://$HostName/api/health" -TimeoutSec 10).mode -eq 'client-serveur'
+    } "La sonde /api/health ne déclare pas le mode : version du service trop ancienne, ou réponse altérée par un proxy intermédiaire."
+
     Test-Item 'Accès aux données refusé sans session' {
         try {
             Invoke-WebRequest "https://$HostName/api/data" -UseBasicParsing -TimeoutSec 10 | Out-Null

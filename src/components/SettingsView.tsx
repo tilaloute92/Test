@@ -23,8 +23,10 @@ import {
   useBackupStore,
   type Snapshot,
 } from '../lib/backup';
-import { fetchSnapshot, publishSnapshot } from '../lib/serverSync';
+import { fetchStatus, type ServerStatus } from '../lib/serverSync';
 import { getSyncUser, isSyncActive, onSyncActiveChange, type SyncUser } from '../lib/syncState';
+import { useAppMode, useLinkState } from '../hooks/useAppStatus';
+import { clearLocalArchive, countArchived, readLocalArchive } from '../lib/localArchive';
 
 const NOT_LOGGED_IN_HINT =
   "Connectez-vous d'abord avec un compte local ou LDAP existant (celui créé via `npm run create-user` sur le serveur, par exemple) pour gérer ceci depuis l'application.";
@@ -276,22 +278,11 @@ export function SettingsView() {
       )}
 
       {/* ------------------------------------------------------------------ */}
-      {/* 3bis. Mode multi-utilisateur — partage des données d'équipe (tâches, */}
-      {/*       planning, temps, absences, FDR, membres) via ce même serveur.  */}
-      {/*       Nécessite le serveur ; inactif tant que personne n'est         */}
-      {/*       connecté avec une vraie session serveur (pas juste MSAL seul). */}
+      {/* 3bis. Mode de fonctionnement — d'où viennent les données affichées et  */}
+      {/*       où vont les modifications. Toujours affiché, dans les deux      */}
+      {/*       modes : le mode ne doit jamais être une devinette.              */}
       {/* ------------------------------------------------------------------ */}
-      {backendUp ? (
-        <MultiUserCard confirm={confirm} />
-      ) : (
-        <Card className="space-y-2 p-4">
-          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Mode multi-utilisateur</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Non disponible : le partage des données d'équipe entre utilisateurs nécessite le serveur (<code>server/</code>). Démarrez-le
-            (voir <code>server/README.md</code>) pour activer cette section.
-          </p>
-        </Card>
-      )}
+      <ModeCard />
 
       {/* ------------------------------------------------------------------ */}
       {/* 4. Sécurité / HTTPS — le certificat TLS se configure toujours côté */}
@@ -346,6 +337,7 @@ export function SettingsView() {
       {/*    survive à un vidage du stockage local ou un changement de poste).*/}
       {/* ------------------------------------------------------------------ */}
       <BackupCard confirm={confirm} />
+      <ArchivedDataCard confirm={confirm} />
     </div>
   );
 }
@@ -557,106 +549,152 @@ function useSyncStatus() {
   return status;
 }
 
-function MultiUserCard({ confirm }: { confirm: ConfirmFn }) {
+function ModeCard() {
   const { active, user } = useSyncStatus();
-  const [serverEmpty, setServerEmpty] = useState<boolean | null>(null);
-  const [publishing, setPublishing] = useState(false);
-  const [published, setPublished] = useState(false);
-  const [publishError, setPublishError] = useState<string | null>(null);
+  const mode = useAppMode();
+  const link = useLinkState();
+  const [status, setStatus] = useState<ServerStatus | null>(null);
 
   useEffect(() => {
     if (!active) return;
-    fetchSnapshot()
-      .then((s) => setServerEmpty(s.isEmpty))
-      .catch(() => setServerEmpty(null));
-  }, [active]);
+    fetchStatus().then(setStatus, () => setStatus(null));
+  }, [active, link]);
 
-  const publish = async () => {
-    if (
-      !(await confirm({
-        title: 'Publier les données locales',
-        message:
-          "Envoyer toutes les données de CE navigateur (membres, tâches, planning, temps, absences, feuille de route) vers le serveur partagé, pour que toute l'équipe les voie désormais ? À faire une seule fois, par une seule personne — les autres basculeront dessus automatiquement à leur prochaine actualisation.",
-        confirmLabel: 'Publier',
-        danger: true,
-      }))
-    ) {
-      return;
-    }
-    setPublishing(true);
-    setPublishError(null);
-    try {
-      const state = useStore.getState();
-      await publishSnapshot({
-        members: state.members,
-        tasks: state.tasks,
-        planningSlots: state.planningSlots,
-        timeEntries: state.timeEntries,
-        absences: state.absences,
-        roadmapItems: state.roadmapItems,
-        copils: state.copils,
-      });
-      setPublished(true);
-      setServerEmpty(false);
-    } catch (err) {
-      setPublishError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setPublishing(false);
-    }
-  };
+  const archive = readLocalArchive();
 
   return (
     <Card className="space-y-3 p-4">
       <div>
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Mode multi-utilisateur</h2>
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Mode de fonctionnement</h2>
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          Quand il est actif, les données d'équipe (membres, tâches, planning, temps, absences, feuille de route) sont partagées entre
-          tous les utilisateurs connectés via ce serveur, avec une actualisation automatique toutes les ~8 secondes — au lieu de rester
-          isolées dans le navigateur de chacun. Les connexions API et l'historique de sauvegarde (onglet précédent) restent
-          volontairement locaux à chaque navigateur : ce sont des réglages personnels, pas des données d'équipe.
+          Où vivent les données de l'équipe (membres, tâches, planning, temps, absences, FDR, COPIL). Les connexions API et l'historique de
+          requêtes restent dans tous les cas propres à ce navigateur : ce sont des réglages personnels, pas des données d'équipe.
         </p>
       </div>
 
-      <div className="flex items-center gap-2 text-sm">
-        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
-        {active ? (
-          <span className="text-slate-700 dark:text-slate-200">
-            Actif — connecté(e) en tant que <strong>{user?.name}</strong>
-          </span>
-        ) : (
-          <span className="text-slate-500 dark:text-slate-400">
-            Inactif — connectez-vous avec un compte local, LDAP ou Microsoft pour l'activer (voir les sections ci-dessus).
-          </span>
-        )}
-      </div>
-
-      {active && serverEmpty && (
-        <div className="rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-500/10">
-          <p className="text-xs text-amber-700 dark:text-amber-300">
-            Le serveur ne contient encore aucune donnée d'équipe. Si celles de CE navigateur sont à prendre comme point de départ
-            commun, publiez-les ci-dessous — sinon, laissez la personne qui a les données de référence le faire depuis son propre poste.
+      {mode === 'serveur' ? (
+        <div className="space-y-2 rounded-lg bg-emerald-50 px-3 py-2 dark:bg-emerald-500/10">
+          <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">Client / serveur</p>
+          <p className="text-xs text-emerald-700 dark:text-emerald-200">
+            Les données sont <strong>sur le serveur</strong>, qui en est la seule référence. Chaque modification y est enregistrée
+            immédiatement ; si elle n'y parvient pas, elle est annulée et l'affichage resynchronisé — rien ne reste « en attente » dans ce
+            navigateur. Les autres postes voient vos modifications sous ~8 secondes.
           </p>
-          <button
-            onClick={publish}
-            disabled={publishing}
-            className="mt-2 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-40"
-          >
-            {publishing ? 'Publication…' : 'Publier les données de ce navigateur vers le serveur'}
-          </button>
+        </div>
+      ) : (
+        <div className="space-y-2 rounded-lg bg-slate-100 px-3 py-2 dark:bg-slate-800">
+          <p className="text-sm font-medium text-slate-800 dark:text-slate-200">Autonome</p>
+          <p className="text-xs text-slate-600 dark:text-slate-300">
+            Les données sont dans <strong>ce navigateur uniquement</strong>. Personne d'autre ne les voit, et elles disparaissent si le
+            stockage local est vidé — pensez à l'export manuel ci-dessous. Pour passer en client/serveur, installez le service
+            (scénario B de la procédure d'installation) : la bascule est automatique au prochain chargement.
+          </p>
         </div>
       )}
-      {published && (
-        <p className="text-xs text-emerald-600 dark:text-emerald-400">
-          Données publiées — toute l'équipe les verra à sa prochaine actualisation (~8 secondes).
+
+      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-xs">
+        <dt className="text-slate-500 dark:text-slate-400">Liaison</dt>
+        <dd className="text-slate-800 dark:text-slate-200">
+          {mode !== 'serveur' ? 'sans objet' : link === 'connecte' ? 'serveur joignable' : link === 'indisponible' ? 'serveur injoignable' : 'en cours'}
+        </dd>
+        <dt className="text-slate-500 dark:text-slate-400">Session</dt>
+        <dd className="text-slate-800 dark:text-slate-200">{active && user ? user.name : 'non connecté'}</dd>
+        {mode === 'serveur' && status && (
+          <>
+            <dt className="text-slate-500 dark:text-slate-400">Mis en service</dt>
+            <dd className="text-slate-800 dark:text-slate-200">{status.initialized ? 'oui' : 'non'}</dd>
+            <dt className="text-slate-500 dark:text-slate-400" title="Compteur incrémenté à chaque modification enregistrée par le serveur.">
+              Version des données
+            </dt>
+            <dd className="text-slate-800 dark:text-slate-200">{status.version}</dd>
+          </>
+        )}
+      </dl>
+
+      {mode === 'serveur' && (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Dans ce mode, la connexion est obligatoire quelle que soit la position de l'interrupteur « exiger la connexion » ci-dessus : les
+          données sont derrière une API qui exige une session, sans laquelle l'application n'aurait rien à afficher.
         </p>
       )}
-      {publishError && <p className="text-xs text-red-600 dark:text-red-400">{publishError}</p>}
+
+      {mode === 'serveur' && archive && (
+        <div className="rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-500/10">
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            Ce poste utilisait l'application en autonome avant la bascule. Ses {countArchived(archive)} enregistrement(s) d'alors ont été
+            conservés à part et ne sont plus affichés (le serveur fait référence). Ils restent récupérables : voir « Données conservées
+            avant la bascule » plus bas.
+          </p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Données qu'un poste détenait avant de basculer en client/serveur (voir
+ * src/lib/localArchive.ts). Elles ne sont plus affichées par l'application — le serveur fait
+ * référence — mais les supprimer sans les proposer reviendrait à effacer du travail sans le
+ * dire. Elles restent donc exportables tant que l'utilisateur ne les a pas écartées lui-même.
+ */
+function ArchivedDataCard({ confirm }: { confirm: ConfirmFn }) {
+  const [archive, setArchive] = useState(() => readLocalArchive());
+  if (!archive) return null;
+
+  const download = () => {
+    const wrapper = { app: 'suivi-infra-reseau', version: 1, exportedAt: new Date().toISOString(), data: archive.data };
+    const blob = new Blob([JSON.stringify(wrapper, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `donnees-avant-bascule_suivi-infra_${archive.archivedAt.slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const discard = async () => {
+    if (
+      await confirm({
+        title: 'Écarter ces données',
+        message:
+          "Supprimer définitivement les données conservées avant la bascule en mode client/serveur ? Téléchargez-les d'abord si vous n'êtes pas certain qu'elles ont bien été reprises sur le serveur — cette suppression est irréversible.",
+        confirmLabel: 'Supprimer définitivement',
+        danger: true,
+      })
+    ) {
+      clearLocalArchive();
+      setArchive(null);
+    }
+  };
+
+  return (
+    <Card className="space-y-3 p-4 print:hidden">
+      <div>
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Données conservées avant la bascule</h2>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Ce poste a utilisé l'application en mode autonome jusqu'au {formatTimestamp(archive.archivedAt)}. Ses{' '}
+          <strong>{countArchived(archive)} enregistrement(s)</strong> d'alors ont été mis de côté au moment de la bascule : ils ne sont plus
+          affichés (le serveur fait référence), mais ils n'ont pas été détruits. Vérifiez que tout ce qui comptait se trouve bien sur le
+          serveur, puis écartez-les.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button onClick={download} className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700">
+          Télécharger ces données (.json)
+        </button>
+        <button onClick={discard} className="text-xs text-slate-400 hover:text-red-500">
+          Les écarter définitivement
+        </button>
+      </div>
     </Card>
   );
 }
 
 function BackupCard({ confirm }: { confirm: ConfirmFn }) {
   const { snapshots, remove: removeSnapshot, clear: clearHistory } = useBackupStore();
+  // En mode client/serveur, restaurer localement ne changerait rien côté serveur et serait
+  // effacé au sondage suivant : on désactive plutôt que de simuler une action sans effet.
+  const serverMode = useAppMode() === 'serveur';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importBusy, setImportBusy] = useState(false);
@@ -737,11 +775,26 @@ function BackupCard({ confirm }: { confirm: ConfirmFn }) {
         </p>
       </div>
 
+      {serverMode && (
+        <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+          <strong>Mode client/serveur :</strong> la restauration est désactivée ici. Elle ne modifierait que l'affichage de ce navigateur,
+          sans rien changer sur le serveur, et serait effacée à la première actualisation — elle donnerait donc l'illusion d'avoir
+          fonctionné. La restauration se fait côté serveur, en remettant les fichiers de <code>data\</code> depuis la sauvegarde
+          quotidienne, puis en redémarrant le service (voir la procédure d'installation). Le téléchargement ci-dessous, lui, reste
+          disponible : c'est une simple extraction de ce qui est affiché.
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
         <button onClick={exportBackupFile} className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700">
           Télécharger une sauvegarde (.json)
         </button>
-        <button onClick={() => fileInputRef.current?.click()} disabled={importBusy} className="btn-ghost text-sm disabled:opacity-40">
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={importBusy || serverMode}
+          title={serverMode ? 'Indisponible en mode client/serveur — voir ci-dessus.' : undefined}
+          className="btn-ghost text-sm disabled:opacity-40"
+        >
           {importBusy ? 'Lecture du fichier…' : 'Restaurer depuis un fichier…'}
         </button>
         <input
@@ -778,7 +831,9 @@ function BackupCard({ confirm }: { confirm: ConfirmFn }) {
                 <span className="min-w-0 flex-1 truncate text-xs text-slate-600 dark:text-slate-300">{snap.label}</span>
                 <button
                   onClick={() => doRestore(snap)}
-                  className="shrink-0 text-xs font-medium text-violet-600 hover:underline dark:text-violet-400"
+                  disabled={serverMode}
+                  title={serverMode ? 'Indisponible en mode client/serveur — voir ci-dessus.' : undefined}
+                  className="shrink-0 text-xs font-medium text-violet-600 hover:underline disabled:no-underline disabled:opacity-40 dark:text-violet-400"
                 >
                   Restaurer
                 </button>

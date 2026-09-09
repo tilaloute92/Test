@@ -236,23 +236,39 @@ qu'une seule adresse.
   depuis l'écran de connexion.)
 - Testez une connexion avec le compte local `admin`, puis configurez LDAP si besoin.
 
-### B.6 Mode multi-utilisateur (données d'équipe partagées)
+### B.6 Mode client/serveur (données d'équipe sur le serveur)
 
-Ce même service, une fois B.1 à B.5 en place, sert aussi de source partagée pour les
-données d'équipe (membres, tâches, planning, temps saisi, absences, feuille de route, COPIL) —
-voir README, section "Mode multi-utilisateur". Rien de plus à déployer : c'est activé
-automatiquement dès qu'une personne se connecte avec une vraie session serveur (compte
-local, LDAP, ou SSO Microsoft finalisé côté serveur).
+Ce même service, une fois B.1 à B.5 en place, **est** la source de vérité des données d'équipe
+(membres, tâches, planning, temps saisi, absences, feuille de route, COPIL) — voir README,
+section « Mode client/serveur ». Rien de plus à déployer : dès qu'un navigateur obtient une
+réponse de `/api/health`, il se met en mode client/serveur et s'en souvient.
 
-**Important pour la sauvegarde** : ces données sont désormais stockées dans
-`server/data/business-*.json`, au même titre que les comptes locaux — voir la note de
-maintenance ci-dessous, elle s'applique maintenant à un contenu bien plus important qu'avant
-(le travail de toute l'équipe, pas seulement des identifiants).
+Conséquences d'exploitation à connaître :
+
+- **Le service arrêté rend l'application inutilisable, volontairement.** Les postes affichent
+  « Serveur indisponible » et refusent toute saisie, plutôt que de laisser chacun accumuler des
+  modifications que personne ne reverra. L'application redevient utilisable d'elle-même au
+  retour du service, sans intervention sur les postes.
+- **Le service refuse de démarrer si un fichier de `data/` est illisible** (corruption,
+  édition manuelle). Le message nomme le fichier fautif. C'est délibéré : un service qui
+  démarrerait sur une base vide ressemblerait à un service qui fonctionne, et l'équipe
+  travaillerait par-dessus le vide. Restaurez le fichier depuis la sauvegarde, puis redémarrez.
+- **Écritures atomiques.** Chaque fichier est écrit dans un temporaire puis renommé : une
+  coupure d'alimentation en cours d'écriture laisse l'ancienne version complète, jamais un
+  fichier tronqué.
+- **Mise en service unique.** Le premier utilisateur connecté choisit le point de départ
+  (serveur vide, ou reprise des données de son poste). Ensuite, toute réinitialisation est
+  refusée (HTTP 409).
+
+**Important pour la sauvegarde** : ces données sont stockées dans `server/data/business-*.json`,
+au même titre que les comptes locaux — voir la note de maintenance ci-dessous. En mode
+client/serveur, c'est la **seule** copie du travail de l'équipe : la restauration locale depuis
+le navigateur y est désactivée, précisément parce qu'elle serait sans effet.
 
 ### Maintenance
 
 - Le service stocke dans `server/data/` (hors dépôt Git) : les identifiants et sessions,
-  **et, si le mode multi-utilisateur est utilisé, les données d'équipe partagées**
+  **et, en mode client/serveur, les données d'équipe**
   (`business-*.json` — tâches, planning, temps, absences, feuille de route, COPIL, membres).
   Sauvegardez ce dossier régulièrement dès que cette fonctionnalité est utilisée : sa perte
   fait perdre les données de toute l'équipe, pas seulement d'une personne.
@@ -265,10 +281,10 @@ maintenance ci-dessous, elle s'applique maintenant à un contenu bien plus impor
 
 ## Ce que ce déploiement ne couvre pas
 
-- **Sauvegarde automatique des données d'équipe** : en mode multi-utilisateur, elles vivent
+- **Sauvegarde automatique des données d'équipe** : en mode client/serveur, elles vivent
   dans `server/data/business-*.json` (voir B.6 ci-dessus) — sans sauvegarde régulière de ce
   dossier par vos soins, leur perte reste possible (panne disque, erreur de manipulation...).
-  Sans mode multi-utilisateur (ou pour les utilisateurs qui n'y basculent pas), les données
+  En mode autonome (pas de service déployé), les données
   restent comme avant dans le stockage local de *chaque* navigateur (voir README) : la perte
   du profil navigateur d'un utilisateur perd alors seulement ses données locales à lui.
 - **Haute disponibilité / répartition de charge** : un seul serveur IIS (+ un seul service

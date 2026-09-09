@@ -1,22 +1,25 @@
 import { readJson, writeJson } from './dataStore.js';
 
 /**
- * Données métier partagées entre les utilisateurs connectés (mode multi-utilisateur) :
- * membres, tâches, planning, temps saisi, absences, feuille de route, COPIL. Stockage identique
- * en esprit à celui des comptes locaux (fichiers JSON dans server/data/, voir dataStore.js)
- * — adapté à une équipe de quelques personnes, pas pensé pour une forte concurrence.
+ * Données métier de l'équipe : membres, tâches, planning, temps saisi, absences, feuille de
+ * route, COPIL.
+ *
+ * En mode client/serveur, ce module est la SOURCE DE VÉRITÉ de l'application. Les
+ * navigateurs n'en détiennent qu'un affichage : ils lisent ici au démarrage, écrivent ici à
+ * chaque modification, et se resynchronisent ici quand une écriture échoue. Rien
+ * d'important ne survit dans un navigateur.
  *
  * Ce module ne gère PAS les connexions API (`ApiConnection`) ni l'historique de requêtes :
  * ce sont des identifiants/secrets de test personnels à chaque utilisateur, pas une donnée
- * d'équipe à partager automatiquement. Il ne gère pas non plus `authSettings` (paramètres de
- * connexion SSO), déjà gérés séparément par ce même serveur (voir routes/auth.js) — ni
- * l'historique de versions/sauvegarde de src/lib/backup.ts, qui reste un filet de sécurité
- * local au navigateur de chacun.
+ * d'équipe à partager. Il ne gère pas non plus `authSettings` (paramètres de connexion SSO,
+ * voir routes/auth.js), ni l'historique de sauvegarde de src/lib/backup.ts, qui reste un
+ * filet de sécurité local au navigateur de chacun.
  *
- * Un seul processus Node sert toute l'équipe : le cache mémoire ci-dessous est donc
- * toujours à jour sans coordination inter-processus. Voir DEPLOYMENT.md si un jour
- * plusieurs instances doivent tourner derrière un répartiteur de charge — ce n'est pas le
- * cas prévu ici.
+ * Un seul processus Node sert toute l'équipe : le cache mémoire ci-dessous est donc toujours
+ * cohérent sans coordination inter-processus, et les mutations ci-dessous étant toutes
+ * synchrones, aucune ne peut s'intercaler dans une autre. Voir DEPLOYMENT.md si plusieurs
+ * instances devaient un jour tourner derrière un répartiteur de charge — ce n'est pas le cas
+ * prévu ici, et le compteur de version ci-dessous suppose explicitement un seul processus.
  */
 
 const COLLECTIONS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils'];
@@ -26,14 +29,37 @@ for (const name of COLLECTIONS) {
   cache[name] = readJson(`business-${name}.json`, []);
 }
 
-let idSeed = Date.now();
-function nextId(prefix) {
-  idSeed += 1;
-  return `${prefix}${idSeed.toString(36)}`;
+/**
+ * `version` : compteur incrémenté à CHAQUE modification, quelle qu'elle soit. Il permet aux
+ * navigateurs de demander « as-tu changé depuis la version N ? » et de ne recevoir les
+ * données que si la réponse est oui — au lieu de retélécharger et de réappliquer tout l'état
+ * toutes les 8 secondes, ce qui écrasait sans cesse l'affichage en cours.
+ *
+ * `initialized` : le serveur a-t-il été mis en service ? Un serveur vide et un serveur vidé
+ * volontairement se ressemblent ; ce drapeau les distingue, pour ne proposer l'écran de
+ * première utilisation qu'une seule fois et ne jamais reproposer d'écraser des données que
+ * l'équipe aurait délibérément supprimées.
+ */
+const META_FILE = 'business-meta.json';
+let meta = readJson(META_FILE, { version: 0, initialized: false, initializedAt: null, initializedBy: null });
+
+function persist(...names) {
+  for (const name of names) writeJson(`business-${name}.json`, cache[name]);
+  meta = { ...meta, version: meta.version + 1 };
+  writeJson(META_FILE, meta);
 }
 
-function persist(name) {
-  writeJson(`business-${name}.json`, cache[name]);
+export function getVersion() {
+  return meta.version;
+}
+
+/** true si le serveur n'a aucune donnée métier — distinct de `initialized` (voir plus haut). */
+export function isEmpty() {
+  return COLLECTIONS.every((name) => cache[name].length === 0);
+}
+
+export function getStatus() {
+  return { version: meta.version, initialized: Boolean(meta.initialized), isEmpty: isEmpty() };
 }
 
 export function getSnapshot() {
@@ -45,33 +71,64 @@ export function getSnapshot() {
     absences: cache.absences,
     roadmapItems: cache.roadmapItems,
     copils: cache.copils,
+    ...getStatus(),
   };
 }
 
-/** true si le serveur n'a encore aucune donnée métier — sert à proposer une première publication. */
-export function isEmpty() {
-  return COLLECTIONS.every((name) => cache[name].length === 0);
-}
-
-/** Remplace intégralement les collections partagées — utilisé une seule fois, pour la
- *  publication initiale des données locales de la personne qui active le mode multi-utilisateur. */
-export function replaceAll(payload) {
+/**
+ * Marque le serveur comme mis en service, avec ou sans données de départ.
+ *
+ * - `payload` fourni : reprise des données du navigateur de la personne qui met en service
+ *   (migration depuis un poste où l'application tournait déjà en autonome).
+ * - `payload` absent : mise en service à vide, l'équipe se saisit depuis l'onglet Équipe.
+ *
+ * Refusé si le serveur a déjà été mis en service : c'est la protection contre l'écrasement
+ * du travail de toute l'équipe par le navigateur d'une seule personne.
+ */
+export function initialize(payload, actor) {
+  if (meta.initialized) return { status: 'already' };
+  const touched = [];
   for (const name of COLLECTIONS) {
     if (Array.isArray(payload?.[name])) {
       cache[name] = payload[name];
-      persist(name);
+      touched.push(name);
     }
   }
-  return getSnapshot();
+  meta = { ...meta, initialized: true, initializedAt: new Date().toISOString(), initializedBy: actor };
+  // `persist` incrémente la version et réécrit meta, y compris quand aucune collection n'est
+  // touchée (mise en service à vide) : les autres navigateurs doivent voir le changement.
+  persist(...touched);
+  return { status: 'ok', snapshot: getSnapshot() };
 }
 
-// Pour chaque création, le navigateur qui l'initie a déjà généré un identifiant local (pour
-// mettre à jour son propre affichage tout de suite, sans attendre la réponse du serveur) —
-// on le réutilise tel quel plutôt que d'en fabriquer un autre ici, sinon le client se
-// retrouverait avec deux versions du même enregistrement (l'une locale, l'autre "officielle")
-// à réconcilier. Un identifiant n'est généré côté serveur que si vraiment aucun n'est fourni.
+let idSeed = Date.now();
+function nextId(prefix) {
+  idSeed += 1;
+  return `${prefix}${idSeed.toString(36)}`;
+}
+
+// Pour chaque création, le navigateur qui l'initie a déjà généré un identifiant (pour mettre
+// à jour son propre affichage sans attendre la réponse) — on le réutilise tel quel plutôt
+// que d'en fabriquer un autre ici, sinon le client se retrouverait avec deux versions du
+// même enregistrement à réconcilier. Un identifiant n'est généré ici que si aucun n'est
+// fourni (appel direct à l'API, hors application).
 function idOrNext(payload, prefix) {
   return payload.id || nextId(prefix);
+}
+
+/**
+ * Contrôle de concurrence pour les enregistrements à contenu rédigé (tâches, FDR, COPIL) :
+ * le navigateur envoie la date de dernière modification sur laquelle il s'est basé. Si elle
+ * ne correspond plus, quelqu'un d'autre a modifié l'enregistrement entre-temps et la
+ * modification est REFUSÉE plutôt qu'appliquée par-dessus — sans quoi le travail du collègue
+ * disparaîtrait sans que personne ne le sache.
+ *
+ * Les collections sans contenu rédigé (planning, temps, absences, membres) restent en
+ * « dernière écriture gagne » : un créneau ou une saisie de temps est une valeur unique,
+ * immédiatement visible à l'écran, dont l'écrasement ne détruit pas de travail rédigé.
+ */
+function conflicts(current, baseUpdatedAt) {
+  return Boolean(baseUpdatedAt) && Boolean(current.updatedAt) && current.updatedAt !== baseUpdatedAt;
 }
 
 // --- Membres ---
@@ -110,11 +167,7 @@ export function removeMember(id) {
       ? c.agenda.map((point) => (point.presenterId === id ? { ...point, presenterId: undefined } : point))
       : [],
   }));
-  persist('members');
-  persist('tasks');
-  persist('planningSlots');
-  persist('roadmapItems');
-  persist('copils');
+  persist('members', 'tasks', 'planningSlots', 'roadmapItems', 'copils');
 }
 
 // --- Tâches ---
@@ -125,10 +178,11 @@ export function addTask(payload, actor) {
   persist('tasks');
   return item;
 }
-export function updateTask(id, patch, actor) {
+export function updateTask(id, patch, actor, baseUpdatedAt) {
   const idx = cache.tasks.findIndex((t) => t.id === id);
-  if (idx === -1) return null;
+  if (idx === -1) return { status: 'notfound' };
   const current = cache.tasks[idx];
+  if (conflicts(current, baseUpdatedAt)) return { status: 'conflict', item: current };
   const next = { ...current, ...patch, id };
   if (patch.status === 'termine' && current.status !== 'termine') next.completedAt = new Date().toISOString();
   else if (patch.status && patch.status !== 'termine') next.completedAt = undefined;
@@ -136,7 +190,7 @@ export function updateTask(id, patch, actor) {
   next.updatedBy = actor;
   cache.tasks[idx] = next;
   persist('tasks');
-  return next;
+  return { status: 'ok', item: next };
 }
 export function removeTask(id) {
   cache.tasks = cache.tasks.filter((t) => t.id !== id);
@@ -144,9 +198,7 @@ export function removeTask(id) {
   cache.roadmapItems = cache.roadmapItems.map((r) =>
     Array.isArray(r.linkedTaskIds) && r.linkedTaskIds.includes(id) ? { ...r, linkedTaskIds: r.linkedTaskIds.filter((t) => t !== id) } : r
   );
-  persist('tasks');
-  persist('planningSlots');
-  persist('roadmapItems');
+  persist('tasks', 'planningSlots', 'roadmapItems');
 }
 
 // --- Planning (upsert par memberId+date+period, comme setPlanningSlot côté client) ---
@@ -203,13 +255,15 @@ export function addRoadmapItem(payload, actor) {
   persist('roadmapItems');
   return item;
 }
-export function updateRoadmapItem(id, patch, actor) {
+export function updateRoadmapItem(id, patch, actor, baseUpdatedAt) {
   const idx = cache.roadmapItems.findIndex((r) => r.id === id);
-  if (idx === -1) return null;
-  const next = { ...cache.roadmapItems[idx], ...patch, id, updatedAt: new Date().toISOString(), updatedBy: actor };
+  if (idx === -1) return { status: 'notfound' };
+  const current = cache.roadmapItems[idx];
+  if (conflicts(current, baseUpdatedAt)) return { status: 'conflict', item: current };
+  const next = { ...current, ...patch, id, updatedAt: new Date().toISOString(), updatedBy: actor };
   cache.roadmapItems[idx] = next;
   persist('roadmapItems');
-  return next;
+  return { status: 'ok', item: next };
 }
 export function removeRoadmapItem(id) {
   cache.roadmapItems = cache.roadmapItems.filter((r) => r.id !== id);
@@ -218,8 +272,7 @@ export function removeRoadmapItem(id) {
       ? { ...c, roadmapItemIds: c.roadmapItemIds.filter((r) => r !== id) }
       : c
   );
-  persist('roadmapItems');
-  persist('copils');
+  persist('roadmapItems', 'copils');
 }
 
 // --- COPIL (comités de pilotage) ---
@@ -233,13 +286,15 @@ export function addCopil(payload, actor) {
   persist('copils');
   return item;
 }
-export function updateCopil(id, patch, actor) {
+export function updateCopil(id, patch, actor, baseUpdatedAt) {
   const idx = cache.copils.findIndex((c) => c.id === id);
-  if (idx === -1) return null;
-  const next = { ...cache.copils[idx], ...patch, id, updatedAt: new Date().toISOString(), updatedBy: actor };
+  if (idx === -1) return { status: 'notfound' };
+  const current = cache.copils[idx];
+  if (conflicts(current, baseUpdatedAt)) return { status: 'conflict', item: current };
+  const next = { ...current, ...patch, id, updatedAt: new Date().toISOString(), updatedBy: actor };
   cache.copils[idx] = next;
   persist('copils');
-  return next;
+  return { status: 'ok', item: next };
 }
 export function removeCopil(id) {
   cache.copils = cache.copils.filter((c) => c.id !== id);

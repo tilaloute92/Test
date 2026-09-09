@@ -16,7 +16,14 @@ app.use(cors({ origin: config.corsOrigins, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
-app.get('/api/health', (_req, res) => res.json({ ok: true }));
+/**
+ * Sonde de disponibilité, volontairement accessible sans session : c'est par elle que le
+ * navigateur découvre, avant même l'écran de connexion, qu'il parle à une installation
+ * client/serveur — et donc qu'il ne doit pas se comporter comme une installation autonome.
+ * Elle ne révèle rien d'autre que l'existence du service (aucune donnée d'équipe, aucun
+ * état d'avancement) : tout le reste passe par /api/data, qui exige une session.
+ */
+app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'client-serveur', app: 'suivi-infra' }));
 app.use('/api/auth', authRouter);
 app.use('/api/data', dataRouter);
 

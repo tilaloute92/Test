@@ -14,8 +14,13 @@ import { clearLastRepairReport, getLastRepairReport } from './lib/repairIds';
 import { useStore } from './store/useStore';
 import { isAuthConfigured, signIn as msalLoginOnly, signInWithIdToken, trySilentAccount, signOut as msalSignOut } from './auth/msalClient';
 import { backendAvailable, backendLogout, finalizeSsoSession, getBackendSession, loginLdap, loginLocal, type BackendUser } from './auth/backendAuth';
-import { setSyncActive, onSyncError } from './lib/syncState';
+import { setSyncActive, onSyncError, setLinkState } from './lib/syncState';
+import { getMode, recordProbe, switchToLocalMode } from './lib/serverMode';
+import { useAppMode, useLinkState } from './hooks/useAppStatus';
+import { initializeServer } from './lib/serverSync';
 import { useServerSync } from './hooks/useServerSync';
+import { useConfirm } from './components/ConfirmProvider';
+import { countArchived, readLocalArchive } from './lib/localArchive';
 import type { AccountInfo } from '@azure/msal-browser';
 
 export type Tab = 'dashboard' | 'daily' | 'planning' | 'tasks' | 'time' | 'team' | 'api' | 'report' | 'roadmap' | 'copils' | 'settings';
@@ -93,6 +98,10 @@ function useAuthGate() {
   const [msalAccount, setMsalAccount] = useState<AccountInfo | null>(null);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Incrémenté par « Réessayer » sur l'écran d'indisponibilité, pour relancer la détection
+  // sans recharger la page (et donc sans perdre la session en cours).
+  const [probeTick, setProbeTick] = useState(0);
+  const retryProbe = () => setProbeTick((n) => n + 1);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +109,11 @@ function useAuthGate() {
       setChecking(true);
       const up = await backendAvailable();
       if (cancelled) return;
+      // Mémorise l'architecture détectée : une fois qu'un navigateur a vu une installation
+      // client/serveur, une panne du service ne le fait plus retomber en autonome — il
+      // l'annonce et passe en lecture seule. Voir src/lib/serverMode.ts.
+      const mode = recordProbe(up);
+      setLinkState(mode === 'local' ? 'connecte' : up ? 'connecte' : 'indisponible');
       setBackendUp(up);
       if (up) {
         const me = await getBackendSession();
@@ -113,7 +127,7 @@ function useAuthGate() {
     return () => {
       cancelled = true;
     };
-  }, [authSettings]);
+  }, [authSettings, probeTick]);
 
   const loginMicrosoft = async () => {
     setError(null);
@@ -157,20 +171,23 @@ function useAuthGate() {
     }
   };
 
-  // Mode multi-utilisateur (voir src/lib/syncState.ts et src/hooks/useServerSync.ts) : les
-  // données d'équipe (tâches, planning, temps, absences, FDR, membres) ne se synchronisent
-  // avec le serveur que si celui-ci est joignable ET qu'une vraie session serveur existe
-  // (local, LDAP ou SSO vérifié côté serveur) — pas juste une session Microsoft gérée par
-  // le seul navigateur (msalAccount), qui n'a pas de cookie de session côté serveur.
+  // Échanges de données actifs (voir src/lib/syncState.ts et src/hooks/useServerSync.ts) :
+  // les données d'équipe ne circulent que si le serveur est joignable ET qu'une vraie session
+  // serveur existe (compte local, LDAP ou SSO vérifié côté serveur) — pas juste une session
+  // Microsoft gérée par le seul navigateur (msalAccount), qui n'a pas de cookie de session
+  // côté serveur et à qui l'API refuserait donc tout (401).
   useEffect(() => {
     setSyncActive(backendUp && Boolean(session), session ? { username: session.username, name: session.name } : null);
   }, [backendUp, session]);
 
   const isAuthenticated = backendUp ? Boolean(session) : Boolean(msalAccount);
   const displayName = session?.name ?? msalAccount?.name ?? msalAccount?.username ?? null;
-  const locked = authSettings.requireLogin && !checking && !isAuthenticated;
+  // En mode client/serveur, la connexion n'est pas une option : les données vivent derrière
+  // une API qui exige une session, et sans elle l'application n'aurait rien à afficher.
+  // L'interrupteur « exiger la connexion » ne concerne donc que le mode autonome.
+  const locked = (getMode() === 'serveur' || authSettings.requireLogin) && !checking && !isAuthenticated;
 
-  return { checking, locked, error, backendUp, session, displayName, loginMicrosoft, loginLocalAccount, loginLdapAccount, logout };
+  return { checking, locked, error, backendUp, session, displayName, retryProbe, loginMicrosoft, loginLocalAccount, loginLdapAccount, logout };
 }
 
 type AuthGate = ReturnType<typeof useAuthGate>;
@@ -277,11 +294,144 @@ function LockScreen({ authGate }: { authGate: AuthGate }) {
   );
 }
 
+/** Cadre commun aux écrans qui précèdent l'application (démarrage, panne, mise en service). */
+function Gateway({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4 dark:bg-slate-950">
+      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-violet-600 text-sm font-bold text-white">IT</div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function LoadingScreen({ message }: { message: string }) {
+  return (
+    <Gateway>
+      <p className="text-center text-sm text-slate-500 dark:text-slate-400" role="status">
+        {message}
+      </p>
+    </Gateway>
+  );
+}
+
+/**
+ * Serveur injoignable alors que ce navigateur sait qu'il s'agit d'une installation
+ * client/serveur. On refuse d'afficher et de laisser saisir : les données sont sur le
+ * serveur, et laisser travailler hors ligne produirait des modifications que personne ne
+ * reverra. On propose donc de réessayer, et — explicitement, avec confirmation — de
+ * basculer en autonome pour qui saurait que le serveur ne reviendra pas.
+ */
+function ServerUnavailableScreen({ onRetry, onSwitchLocal }: { onRetry: () => void; onSwitchLocal: () => void }) {
+  return (
+    <Gateway>
+      <h1 className="text-center text-base font-semibold text-slate-900 dark:text-white">Serveur indisponible</h1>
+      <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+        Cette installation fonctionne en <strong>mode client/serveur</strong> : les données de l'équipe sont sur le serveur, pas dans ce
+        navigateur. Tant qu'il ne répond pas, l'application ne peut ni les afficher ni enregistrer de modification.
+      </p>
+      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+        Causes les plus fréquentes : le service <code>SuiviInfraAuth</code> est arrêté sur le serveur, ou le relais <code>/api</code> d'IIS
+        ne répond plus. Prévenez l'administrateur si cela persiste.
+      </p>
+      <button onClick={onRetry} className="mt-4 w-full rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700">
+        Réessayer
+      </button>
+      <button onClick={onSwitchLocal} className="mt-3 w-full text-center text-xs text-slate-400 hover:text-violet-600 dark:hover:text-violet-400">
+        Travailler en mode autonome sur ce poste
+      </button>
+    </Gateway>
+  );
+}
+
+/**
+ * Première utilisation : le serveur n'a jamais été mis en service. Deux départs possibles,
+ * présentés côte à côte parce que le bon choix dépend de l'historique de l'équipe — et non
+ * d'un défaut de l'un ou de l'autre.
+ */
+function FirstRunScreen({ onInitialized }: { onInitialized: () => void }) {
+  const archive = readLocalArchive();
+  const [busy, setBusy] = useState<'vide' | 'reprise' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
+
+  const run = async (kind: 'vide' | 'reprise') => {
+    if (
+      !(await confirm({
+        title: kind === 'vide' ? 'Démarrer avec un serveur vide' : 'Reprendre les données de ce poste',
+        message:
+          kind === 'vide'
+            ? "Le serveur démarrera sans aucune donnée : vous créerez l'équipe depuis l'onglet Équipe. Cette mise en service n'a lieu qu'une fois — ensuite, le serveur refusera toute nouvelle initialisation pour protéger le travail de l'équipe."
+            : `Les ${archive ? countArchived(archive) : 0} enregistrement(s) conservés sur ce poste deviendront les données de référence de toute l'équipe. À ne faire que depuis le poste qui détient les bonnes données. Cette mise en service n'a lieu qu'une fois.`,
+        confirmLabel: kind === 'vide' ? 'Démarrer à vide' : 'Reprendre ces données',
+        danger: true,
+      }))
+    ) {
+      return;
+    }
+    setBusy(kind);
+    setError(null);
+    try {
+      await initializeServer(kind === 'reprise' && archive ? archive.data : undefined);
+      onInitialized();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Gateway>
+      <h1 className="text-center text-base font-semibold text-slate-900 dark:text-white">Mise en service du serveur</h1>
+      <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+        Le serveur ne contient encore aucune donnée d'équipe. Choisissez son point de départ — <strong>une seule fois, par une seule
+        personne</strong> : les autres postes basculeront dessus automatiquement.
+      </p>
+
+      <button
+        onClick={() => run('vide')}
+        disabled={busy !== null}
+        className="mt-4 w-full rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
+      >
+        {busy === 'vide' ? 'Mise en service…' : 'Démarrer avec un serveur vide'}
+      </button>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">L'équipe et les tâches se saisissent ensuite dans l'application.</p>
+
+      {archive && (
+        <>
+          <div className="my-4 flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-300 dark:text-slate-600">
+            <hr className="flex-1 border-slate-200 dark:border-slate-700" /> ou <hr className="flex-1 border-slate-200 dark:border-slate-700" />
+          </div>
+          <button
+            onClick={() => run('reprise')}
+            disabled={busy !== null}
+            className="w-full rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-900 disabled:opacity-40 dark:bg-slate-200 dark:text-slate-900"
+          >
+            {busy === 'reprise' ? 'Mise en service…' : `Reprendre les ${countArchived(archive)} enregistrement(s) de ce poste`}
+          </button>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            Ce poste utilisait l'application en autonome jusqu'au {new Date(archive.archivedAt).toLocaleDateString('fr-FR')}. Ses données
+            ont été conservées et peuvent servir de point de départ commun.
+          </p>
+        </>
+      )}
+
+      {error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>}
+    </Gateway>
+  );
+}
+
 function App() {
   const [tab, setTab] = useState<Tab>('dashboard');
   const { dark, setDark } = useTheme();
   const authGate = useAuthGate();
-  useServerSync();
+  const sync = useServerSync();
+  const mode = useAppMode();
+  const link = useLinkState();
+  const confirm = useConfirm();
+  const memberCount = useStore((s) => s.members.length);
 
   const [syncError, setSyncError] = useState<string | null>(null);
   // Réparation d'identifiants dupliqués au chargement (voir src/lib/repairIds.ts) : on le
@@ -303,8 +453,46 @@ function App() {
 
   const goToMember = () => setTab('planning');
 
-  if (authGate.checking) return null;
+  /**
+   * Sortie volontaire du mode client/serveur. Confirmation obligatoire : ce n'est pas un
+   * réglage d'affichage, c'est un changement de source de vérité, et la personne doit savoir
+   * que ce qu'elle saisira ensuite ne rejoindra pas le serveur.
+   */
+  const switchLocal = async () => {
+    if (
+      await confirm({
+        title: 'Passer en mode autonome sur ce poste',
+        message:
+          "L'application cessera de dialoguer avec le serveur et travaillera sur les données de CE navigateur uniquement. Ce que vous saisirez ensuite ne sera pas visible par l'équipe et ne rejoindra pas le serveur, même à son retour. À ne faire que si vous savez que le serveur ne reviendra pas.",
+        confirmLabel: 'Passer en autonome',
+        danger: true,
+      })
+    ) {
+      switchToLocalMode();
+      window.location.reload();
+    }
+  };
+
+  // ------------------------------------------------------------------------------------
+  // Écrans qui précèdent l'application, dans l'ordre où les questions se posent :
+  // sait-on où sont les données ? le serveur répond-il ? qui êtes-vous ? les données
+  // sont-elles arrivées ? le serveur a-t-il déjà été mis en service ?
+  // ------------------------------------------------------------------------------------
+  if (authGate.checking) return <LoadingScreen message="Démarrage…" />;
+
+  if (mode === 'serveur' && (!authGate.backendUp || link === 'indisponible')) {
+    // On refuse d'afficher l'application plutôt que de la laisser en lecture avec des
+    // écritures qui échoueraient : une saisie perdue coûte plus cher qu'un écran d'attente.
+    // Le sondage continue en arrière-plan, l'écran disparaît de lui-même au retour du serveur.
+    return <ServerUnavailableScreen onRetry={authGate.retryProbe} onSwitchLocal={switchLocal} />;
+  }
+
   if (authGate.locked) return <LockScreen authGate={authGate} />;
+
+  if (mode === 'serveur') {
+    if (!sync.hydrated) return <LoadingScreen message="Chargement des données de l'équipe…" />;
+    if (sync.initialized === false) return <FirstRunScreen onInitialized={sync.refresh} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -314,7 +502,11 @@ function App() {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-sm font-bold text-white">IT</div>
             <div>
               <div className="text-sm font-semibold leading-tight">Suivi Infra & Réseau</div>
-              <div className="text-[11px] leading-tight text-slate-400">Activité d'équipe · 6 personnes</div>
+              {/* L'effectif était écrit en dur (« 6 personnes ») : sur un serveur fraîchement
+                  mis en service, l'en-tête annonçait donc une équipe qui n'existait pas encore. */}
+              <div className="text-[11px] leading-tight text-slate-400">
+                Activité d'équipe · {memberCount} personne{memberCount > 1 ? 's' : ''}
+              </div>
             </div>
           </div>
           <nav className="ml-4 hidden flex-1 items-center gap-0.5 overflow-x-auto md:flex">
@@ -336,10 +528,12 @@ function App() {
           </nav>
           {authGate.displayName && (
             <div className="ml-auto hidden max-w-[220px] items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 md:flex">
-              {authGate.backendUp && authGate.session && (
+              {/* Le mode n'est jamais implicite : un point vert = les données viennent du
+                  serveur et y retournent ; pas de point = ce poste travaille seul. */}
+              {mode === 'serveur' && authGate.session && (
                 <span
                   className="h-2 w-2 shrink-0 rounded-full bg-emerald-500"
-                  title="Mode multi-utilisateur actif : les données d'équipe sont synchronisées avec le serveur."
+                  title="Mode client/serveur : les données de l'équipe sont sur le serveur, et vos modifications y sont enregistrées."
                   aria-hidden="true"
                 />
               )}
@@ -400,7 +594,7 @@ function App() {
       {syncError && (
         <div className="mx-auto mt-3 max-w-7xl px-4 print:hidden">
           <div className="flex items-center justify-between gap-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-            <span>{syncError} — la modification reste enregistrée dans ce navigateur, mais n'a pas atteint le serveur partagé.</span>
+            <span>{syncError}</span>
             <button onClick={() => setSyncError(null)} className="shrink-0 hover:underline">
               Fermer
             </button>

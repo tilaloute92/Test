@@ -13,9 +13,12 @@ import {
 } from '../data/seed';
 import { addDays, toISODate } from '../lib/date';
 import { makeId } from '../lib/ids';
+import { archiveLocalCollections, archivePersistedCollections } from '../lib/localArchive';
 import { repairDuplicateIds } from '../lib/repairIds';
-import { isSyncActive, reportSyncError } from '../lib/syncState';
+import { isServerMode, onModeChange } from '../lib/serverMode';
+import { isSyncActive, reportSyncError, requestResync } from '../lib/syncState';
 import {
+  SyncError,
   syncAddAbsence,
   syncAddAbsencesBulk,
   syncAddCopil,
@@ -46,7 +49,7 @@ const defaultAuthSettings: AuthSettings = {
   redirectUri: typeof window !== 'undefined' ? window.location.origin : '',
 };
 
-// Type des 7 collections partagées en mode multi-utilisateur (voir src/lib/serverSync.ts et
+// Type des 7 collections partagées en mode client/serveur (voir src/lib/serverSync.ts et
 // server/src/businessData.js) — tout le reste (connexions API, historique de requêtes,
 // paramètres de connexion) reste volontairement local à chaque navigateur.
 export interface SharedSnapshot {
@@ -106,16 +109,100 @@ export interface StoreState extends SharedSnapshot {
 }
 
 // Voir src/lib/ids.ts : un compteur en mémoire produisait des identifiants en double
-// d'une session à l'autre (et d'un navigateur à l'autre en mode multi-utilisateur).
+// d'une session à l'autre (et d'un navigateur à l'autre en mode client/serveur).
 const nextId = (prefix: string) => makeId(prefix);
 
-/** Envoie une écriture vers le serveur si le mode multi-utilisateur est actif ; signale un
- *  échec sans jamais bloquer ni annuler la modification déjà appliquée localement. */
-function fireSync(action: string, promise: Promise<unknown>) {
+/** Les 7 collections partagées, dans l'ordre de SharedSnapshot — utilisé par la persistance. */
+const SHARED_KEYS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils'] as const;
+
+const emptyCollections = (): SharedSnapshot => ({
+  members: [],
+  tasks: [],
+  planningSlots: [],
+  timeEntries: [],
+  absences: [],
+  roadmapItems: [],
+  copils: [],
+});
+
+const seedCollections = (): SharedSnapshot => ({
+  members: seedMembers,
+  tasks: seedTasks,
+  planningSlots: seedPlanningSlots,
+  timeEntries: seedTimeEntries,
+  absences: seedAbsences,
+  roadmapItems: seedRoadmapItems,
+  copils: seedCopils,
+});
+
+/**
+ * État de départ des collections partagées.
+ *
+ * En mode client/serveur, elles démarrent VIDES : les données appartiennent au serveur, et
+ * afficher un jeu d'exemple en attendant sa réponse ferait croire à une équipe qui n'existe
+ * pas. L'interface n'affiche d'ailleurs rien tant que la première réponse n'est pas arrivée
+ * (voir l'écran de démarrage dans src/App.tsx).
+ *
+ * En mode autonome, elles démarrent sur le jeu d'exemple, comme avant : c'est la seule
+ * source de données disponible, et une application vide au premier lancement serait
+ * inutilisable pour découvrir l'outil.
+ */
+const initialCollections = (): SharedSnapshot => (isServerMode() ? emptyCollections() : seedCollections());
+
+/**
+ * Écriture en mode client/serveur.
+ *
+ * Le serveur n'est pas un miroir : il EST l'enregistrement. La modification est appliquée
+ * localement d'abord (pour que l'interface réponde immédiatement), mais si le serveur la
+ * refuse, elle n'a pas eu lieu — on redemande donc l'état réel du serveur et on le dit
+ * franchement à l'utilisateur.
+ *
+ * C'est le point qui a changé par rapport à la première version, qui affichait « la
+ * modification reste enregistrée dans ce navigateur » : c'était faux, puisque le sondage
+ * suivant (8 secondes plus tard) réécrasait l'affichage avec l'état du serveur. La personne
+ * croyait son travail sauvé et le voyait disparaître sans explication.
+ */
+function syncWrite(action: string, promise: Promise<unknown>) {
   if (!isSyncActive()) return;
   promise.catch((err) => {
-    reportSyncError(`Échec de synchronisation (${action}) : ${err instanceof Error ? err.message : String(err)}`);
+    const conflict = err instanceof SyncError && err.conflict;
+    reportSyncError(
+      conflict
+        ? `${err.message} Rouvrez l'élément : il affiche maintenant la version du serveur.`
+        : `${action} : la modification n'a PAS été enregistrée sur le serveur (${err instanceof Error ? err.message : String(err)}). L'affichage vient d'être resynchronisé.`
+    );
+    requestResync();
   });
+}
+
+/**
+ * Comme `syncWrite`, mais réapplique l'enregistrement renvoyé par le serveur en cas de
+ * succès. Les horodatages (`updatedAt`) et l'auteur (`updatedBy`) sont décidés côté serveur :
+ * les reprendre tout de suite évite que l'affichage porte une valeur inventée localement —
+ * et surtout que la modification suivante s'appuie sur cet horodatage inventé, ce que le
+ * serveur prendrait à tort pour un conflit.
+ */
+function syncWriteRecord<K extends 'tasks' | 'roadmapItems' | 'copils'>(
+  action: string,
+  key: K,
+  promise: Promise<StoreState[K][number]>,
+  set: (fn: (s: StoreState) => Partial<StoreState>) => void
+) {
+  if (!isSyncActive()) return;
+  promise.then(
+    (item) => {
+      set((s) => ({ [key]: s[key].map((x) => (x.id === item.id ? item : x)) }) as Partial<StoreState>);
+    },
+    (err) => {
+      const conflict = err instanceof SyncError && err.conflict;
+      reportSyncError(
+        conflict
+          ? `${err.message} Rouvrez l'élément : il affiche maintenant la version du serveur.`
+          : `${action} : la modification n'a PAS été enregistrée sur le serveur (${err instanceof Error ? err.message : String(err)}). L'affichage vient d'être resynchronisé.`
+      );
+      requestResync();
+    }
+  );
 }
 
 function sanitizeConnection<T extends Partial<ApiConnection>>(connection: T): T {
@@ -125,26 +212,20 @@ function sanitizeConnection<T extends Partial<ApiConnection>>(connection: T): T 
 
 export const useStore = create<StoreState>()(
   persist(
-    (set) => ({
-      members: seedMembers,
-      tasks: seedTasks,
-      planningSlots: seedPlanningSlots,
-      timeEntries: seedTimeEntries,
-      absences: seedAbsences,
+    (set, get) => ({
+      ...initialCollections(),
       apiConnections: seedApiConnections,
       requestHistory: [],
       authSettings: defaultAuthSettings,
-      roadmapItems: seedRoadmapItems,
-      copils: seedCopils,
 
       addMember: (member) => {
         const item: TeamMember = { ...member, id: nextId('m') };
         set((s) => ({ members: [...s.members, item] }));
-        fireSync('ajout membre', syncAddMember(item));
+        syncWrite('ajout membre', syncAddMember(item));
       },
       updateMember: (id, patch) => {
         set((s) => ({ members: s.members.map((m) => (m.id === id ? { ...m, ...patch } : m)) }));
-        fireSync('modification membre', syncUpdateMember(id, patch));
+        syncWrite('modification membre', syncUpdateMember(id, patch));
       },
       removeMember: (id) => {
         set((s) => ({
@@ -161,17 +242,21 @@ export const useStore = create<StoreState>()(
             agenda: c.agenda.map((point) => (point.presenterId === id ? { ...point, presenterId: undefined } : point)),
           })),
         }));
-        fireSync('suppression membre', syncRemoveMember(id));
+        syncWrite('suppression membre', syncRemoveMember(id));
       },
 
       addTask: (task) => {
         const id = nextId('t');
         const item: ProjectTask = { ...task, id, createdAt: new Date().toISOString() };
         set((s) => ({ tasks: [...s.tasks, item] }));
-        fireSync('ajout tâche', syncAddTask(item));
+        syncWrite('ajout tâche', syncAddTask(item));
         return id;
       },
       updateTask: (id, patch) => {
+        // Relevé AVANT la modification locale : c'est la version sur laquelle l'utilisateur
+        // s'est basé, celle que le serveur compare pour détecter qu'un collègue est passé
+        // entre-temps (voir `conflicts()` dans server/src/businessData.js).
+        const base = get().tasks.find((t) => t.id === id)?.updatedAt;
         set((s) => ({
           tasks: s.tasks.map((t) => {
             if (t.id !== id) return t;
@@ -186,7 +271,7 @@ export const useStore = create<StoreState>()(
             return next;
           }),
         }));
-        fireSync('modification tâche', syncUpdateTask(id, patch));
+        syncWriteRecord('modification tâche', 'tasks', syncUpdateTask(id, patch, base), set);
       },
       removeTask: (id) => {
         set((s) => ({
@@ -196,7 +281,7 @@ export const useStore = create<StoreState>()(
             r.linkedTaskIds.includes(id) ? { ...r, linkedTaskIds: r.linkedTaskIds.filter((t) => t !== id) } : r
           ),
         }));
-        fireSync('suppression tâche', syncRemoveTask(id));
+        syncWrite('suppression tâche', syncRemoveTask(id));
       },
 
       setPlanningSlot: (memberId, date, period, taskId) => {
@@ -213,23 +298,23 @@ export const useStore = create<StoreState>()(
             planningSlots: [...s.planningSlots, { id: nextId('s'), memberId, date, period, taskId }],
           };
         });
-        fireSync('planning', syncSetPlanningSlot(memberId, date, period, taskId));
+        syncWrite('planning', syncSetPlanningSlot(memberId, date, period, taskId));
       },
 
       addTimeEntry: (entry) => {
         const item: TimeEntry = { ...entry, id: nextId('te') };
         set((s) => ({ timeEntries: [...s.timeEntries, item] }));
-        fireSync('ajout temps', syncAddTimeEntry(item));
+        syncWrite('ajout temps', syncAddTimeEntry(item));
       },
       removeTimeEntry: (id) => {
         set((s) => ({ timeEntries: s.timeEntries.filter((e) => e.id !== id) }));
-        fireSync('suppression temps', syncRemoveTimeEntry(id));
+        syncWrite('suppression temps', syncRemoveTimeEntry(id));
       },
 
       addAbsence: (absence) => {
         const item: Absence = { ...absence, id: nextId('a') };
         set((s) => ({ absences: [...s.absences, item] }));
-        fireSync('ajout absence', syncAddAbsence(item));
+        syncWrite('ajout absence', syncAddAbsence(item));
       },
       addAbsenceRange: ({ startDate, endDate, ...rest }) => {
         const start = new Date(startDate);
@@ -241,11 +326,11 @@ export const useStore = create<StoreState>()(
           created.push({ ...rest, date: toISODate(d), id: nextId('a') });
         }
         set((s) => ({ absences: [...s.absences, ...created] }));
-        fireSync('ajout absences', syncAddAbsencesBulk(created));
+        syncWrite('ajout absences', syncAddAbsencesBulk(created));
       },
       removeAbsence: (id) => {
         set((s) => ({ absences: s.absences.filter((a) => a.id !== id) }));
-        fireSync('suppression absence', syncRemoveAbsence(id));
+        syncWrite('suppression absence', syncRemoveAbsence(id));
       },
 
       addApiConnection: (connection) =>
@@ -271,14 +356,15 @@ export const useStore = create<StoreState>()(
         const now = new Date().toISOString();
         const full: RoadmapItem = { ...item, id, createdAt: now, updatedAt: now };
         set((s) => ({ roadmapItems: [...s.roadmapItems, full] }));
-        fireSync('ajout FDR', syncAddRoadmapItem(full));
+        syncWrite('ajout FDR', syncAddRoadmapItem(full));
         return id;
       },
       updateRoadmapItem: (id, patch) => {
+        const base = get().roadmapItems.find((r) => r.id === id)?.updatedAt;
         set((s) => ({
           roadmapItems: s.roadmapItems.map((r) => (r.id === id ? { ...r, ...patch, updatedAt: new Date().toISOString() } : r)),
         }));
-        fireSync('modification FDR', syncUpdateRoadmapItem(id, patch));
+        syncWriteRecord('modification FDR', 'roadmapItems', syncUpdateRoadmapItem(id, patch, base), set);
       },
       removeRoadmapItem: (id) => {
         set((s) => ({
@@ -287,7 +373,7 @@ export const useStore = create<StoreState>()(
             c.roadmapItemIds.includes(id) ? { ...c, roadmapItemIds: c.roadmapItemIds.filter((r) => r !== id) } : c
           ),
         }));
-        fireSync('suppression FDR', syncRemoveRoadmapItem(id));
+        syncWrite('suppression FDR', syncRemoveRoadmapItem(id));
       },
 
       // Les sous-éléments d'un COPIL (ordre du jour, décisions, actions) ne sont pas des
@@ -299,38 +385,67 @@ export const useStore = create<StoreState>()(
         const now = new Date().toISOString();
         const full: Copil = { ...copil, id, createdAt: now, updatedAt: now };
         set((s) => ({ copils: [...s.copils, full] }));
-        fireSync('ajout COPIL', syncAddCopil(full));
+        syncWrite('ajout COPIL', syncAddCopil(full));
         return id;
       },
       updateCopil: (id, patch) => {
+        const base = get().copils.find((c) => c.id === id)?.updatedAt;
         set((s) => ({
           copils: s.copils.map((c) => (c.id === id ? { ...c, ...patch, updatedAt: new Date().toISOString() } : c)),
         }));
-        fireSync('modification COPIL', syncUpdateCopil(id, patch));
+        syncWriteRecord('modification COPIL', 'copils', syncUpdateCopil(id, patch, base), set);
       },
       removeCopil: (id) => {
         set((s) => ({ copils: s.copils.filter((c) => c.id !== id) }));
-        fireSync('suppression COPIL', syncRemoveCopil(id));
+        syncWrite('suppression COPIL', syncRemoveCopil(id));
       },
 
       applyServerSnapshot: (snapshot) => set(snapshot),
 
-      resetToSeed: () =>
+      // Réinitialisation au jeu d'exemple : réservée au mode autonome. En mode
+      // client/serveur, elle n'aurait aucun sens — les données appartiennent au serveur, et
+      // les remplacer ici serait annulé au sondage suivant tout en donnant l'illusion d'avoir
+      // agi. L'interface ne propose donc pas cette action dans ce mode (voir SettingsView).
+      resetToSeed: () => {
+        if (isServerMode()) return;
         set({
-          members: seedMembers,
-          tasks: seedTasks,
-          planningSlots: seedPlanningSlots,
-          timeEntries: seedTimeEntries,
-          absences: seedAbsences,
+          ...seedCollections(),
           apiConnections: seedApiConnections,
           requestHistory: [],
           authSettings: defaultAuthSettings,
-          roadmapItems: seedRoadmapItems,
-          copils: seedCopils,
-        }),
+        });
+      },
     }),
     {
       name: 'infra-team-tracker',
+      /**
+       * Ce qui est enregistré dans le navigateur.
+       *
+       * En mode client/serveur, les 7 collections partagées en sont EXCLUES. Les y laisser
+       * créerait une deuxième source de vérité : au rechargement, le navigateur réafficherait
+       * sa copie — y compris des enregistrements que l'équipe a supprimés entre-temps — avant
+       * que le serveur ait répondu. Restent enregistrés localement les seuls réglages
+       * réellement personnels : connexions API, historique de requêtes, paramètres de
+       * connexion.
+       */
+      partialize: (state) => {
+        const local = {
+          apiConnections: state.apiConnections,
+          requestHistory: state.requestHistory,
+          authSettings: state.authSettings,
+        };
+        if (isServerMode()) return local as unknown as StoreState;
+        return {
+          ...local,
+          members: state.members,
+          tasks: state.tasks,
+          planningSlots: state.planningSlots,
+          timeEntries: state.timeEntries,
+          absences: state.absences,
+          roadmapItems: state.roadmapItems,
+          copils: state.copils,
+        } as unknown as StoreState;
+      },
       // Réparation des données déjà enregistrées avec l'ancienne génération d'identifiants :
       // les doublons éventuels reçoivent un identifiant neuf au chargement, sans quoi
       // l'utilisateur continuerait de voir deux enregistrements se comporter comme un seul
@@ -341,7 +456,19 @@ export const useStore = create<StoreState>()(
       // initialisée — y appeler `useStore.setState` échoue silencieusement. `merge` reçoit
       // l'état persisté et renvoie l'état à appliquer, sans rien référencer d'extérieur.
       merge: (persisted, current) => {
-        const merged = { ...current, ...(persisted as Partial<StoreState>) } as StoreState;
+        const saved = { ...(persisted as Partial<StoreState>) };
+        // Un navigateur qui a d'abord servi en autonome garde d'anciennes collections dans
+        // son stockage local. En mode client/serveur, on les ignore explicitement plutôt que
+        // de les fusionner : elles feraient réapparaître, le temps d'une réponse serveur, des
+        // données périmées — dont des enregistrements supprimés par l'équipe.
+        if (isServerMode()) {
+          // Avant de les ignorer, on les met de côté : sur un poste qui utilisait
+          // l'application en autonome, ce sont de vraies données, et elles doivent rester
+          // récupérables (voir src/lib/localArchive.ts).
+          archiveLocalCollections(saved as Record<string, unknown>);
+          for (const key of SHARED_KEYS) delete saved[key];
+        }
+        const merged = { ...current, ...saved } as StoreState;
         const repaired = repairDuplicateIds(merged as unknown as Record<string, unknown>);
         if (!repaired) return merged;
         console.warn(
@@ -354,3 +481,19 @@ export const useStore = create<StoreState>()(
     }
   )
 );
+
+/**
+ * Bascule d'un poste autonome vers une installation client/serveur.
+ *
+ * Le mode n'est connu qu'APRÈS la première réponse du serveur, donc après que le store a
+ * déjà réhydraté les données locales : le filtrage fait dans `merge` arrive trop tard pour
+ * ce chargement-là. On traite donc la bascule ici, au moment exact où elle est détectée —
+ * on met les données du poste de côté (elles restent proposables et exportables, voir
+ * src/lib/localArchive.ts), puis on vide les collections partagées pour que rien de local ne
+ * soit pris pour la référence de l'équipe. Le serveur les remplira au premier sondage.
+ */
+onModeChange((mode) => {
+  if (mode !== 'serveur') return;
+  archivePersistedCollections();
+  useStore.setState(emptyCollections());
+});

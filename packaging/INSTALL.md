@@ -24,16 +24,32 @@ installation complète.
 
 ## 1. Choisir votre scénario
 
-| | Scénario A — site seul | Scénario B — site + service |
+| | Scénario A — site seul (autonome) | Scénario B — site + service (**client/serveur**) |
 | --- | --- | --- |
-| **Connexion** | SSO Microsoft uniquement (ou aucune) | SSO **+ comptes locaux + LDAP/AD** |
-| **Données** | Locales à chaque navigateur | **Partagées entre toute l'équipe** |
+| **Connexion** | SSO Microsoft uniquement (ou aucune) | SSO **+ comptes locaux + LDAP/AD**, toujours obligatoire |
+| **Où vivent les données** | Dans le navigateur de chacun | **Sur le serveur**, qui en est la seule référence |
+| **Partage** | Aucun | Toute l'équipe, en ~8 secondes |
 | **Node.js sur le serveur** | Non | Oui (LTS) |
 | **Modules IIS** | Aucun | URL Rewrite + ARR |
 
-Le scénario A suffit si chacun travaille sur ses propres données. Prenez le scénario B
-si l'équipe doit voir le même planning, les mêmes tâches et les mêmes COPIL — c'est le
-cas le plus courant.
+Le scénario A suffit si chacun travaille sur ses propres données. **Prenez le scénario B** si
+l'équipe doit voir le même planning, les mêmes tâches et les mêmes COPIL — c'est le cas le
+plus courant, et c'est le vrai mode client/serveur.
+
+> **Ce que le scénario B implique en exploitation**
+>
+> Le serveur devient la seule copie du travail de l'équipe. Trois conséquences à connaître
+> avant de vous lancer :
+>
+> - **Si le service est arrêté, l'application est inutilisable** — volontairement. Les postes
+>   affichent « Serveur indisponible » et refusent toute saisie, au lieu de laisser chacun
+>   accumuler dans son coin des modifications que personne ne reverra. Tout redevient normal
+>   au redémarrage du service, sans rien faire sur les postes.
+> - **La sauvegarde du dossier `data\` n'est plus une précaution, c'est une obligation** —
+>   voir la section Sauvegarde plus bas.
+> - **Le service refuse de démarrer si un fichier de données est illisible**, en nommant le
+>   fichier. C'est voulu : mieux vaut un service arrêté et un message clair qu'un service
+>   qui démarre en affichant une équipe vide.
 
 Vous pouvez commencer en A et passer en B plus tard sans rien perdre : relancez
 simplement le script avec `-WithService`.
@@ -158,20 +174,26 @@ doit être déployée sur les postes par GPO).
 1. **SSO Microsoft** (si utilisé) : onglet *Paramètres* → renseignez `tenantId`,
    `clientId` et l'URI de redirection `https://suivi-infra.monentreprise.local`, et
    déclarez cette même URI côté Entra ID (type *Application monopage / SPA*).
-2. **Mode multi-utilisateur** (scénario B) : connectez-vous avec le compte `admin`,
-   allez dans *Paramètres → Mode multi-utilisateur* et cliquez sur **« Publier les
-   données de ce navigateur »** pour initialiser le jeu de données partagé de l'équipe.
-   Ce bouton n'apparaît qu'une seule fois, tant que le serveur est vide : ensuite, le
-   serveur refuse toute nouvelle publication pour ne jamais écraser le travail de
-   l'équipe.
-3. **Exiger la connexion** : toujours dans *Paramètres*, activez l'interrupteur une fois
-   que la connexion fonctionne.
+2. **Mise en service** (scénario B) : connectez-vous avec le compte `admin`. L'application
+   affiche un écran **« Mise en service du serveur »** proposant deux départs, **une seule
+   fois pour toute l'équipe** :
+   - *Démarrer avec un serveur vide* — vous créez l'équipe depuis l'onglet Équipe. C'est le
+     choix normal pour une nouvelle installation.
+   - *Reprendre les N enregistrement(s) de ce poste* — proposé uniquement si ce navigateur
+     utilisait déjà l'application en autonome. Ses données deviennent alors la référence de
+     l'équipe. **À faire depuis le poste qui détient les bonnes données**, et depuis lui seul.
+
+   Une fois ce choix confirmé, le serveur refuse toute nouvelle mise en service : le contenu
+   d'un seul navigateur ne peut plus écraser le travail de l'équipe.
+3. **Exiger la connexion** : en scénario B, la connexion est **de toute façon obligatoire**
+   (les données sont derrière une API qui exige une session) — l'interrupteur ne concerne que
+   le scénario A. Activez-le là si vous voulez verrouiller le site autonome.
 
 ---
 
 ## Sauvegarde — à mettre en place tout de suite (scénario B)
 
-En mode multi-utilisateur, **tout le travail de l'équipe** vit dans :
+En mode client/serveur, **tout le travail de l'équipe** vit dans :
 
 ```
 C:\services\suivi-infra\data\
@@ -185,6 +207,11 @@ $dest = "\\serveur-sauvegarde\suivi-infra\$(Get-Date -Format yyyy-MM-dd)"
 New-Item -ItemType Directory -Path $dest -Force | Out-Null
 Copy-Item C:\services\suivi-infra\data\*.json $dest
 ```
+
+C'est la **seule** copie : en mode client/serveur, la restauration depuis le navigateur est
+désactivée dans l'application (elle ne changerait rien côté serveur et serait effacée à
+l'actualisation suivante — elle donnerait donc l'illusion d'avoir fonctionné). Pour restaurer :
+arrêtez le service, remettez les fichiers `business-*.json` depuis la sauvegarde, redémarrez.
 
 En scénario A, il n'y a rien à sauvegarder côté serveur : les données sont dans le
 navigateur de chaque utilisateur, qui peut les exporter depuis *Paramètres →
@@ -224,8 +251,11 @@ comparaison, plutôt qu'appliquée en écrasant la vôtre.
 | Avertissement de certificat dans le navigateur | AC interne non déployée sur les postes (GPO), ou nom du certificat ≠ URL utilisée. |
 | Onglet *Paramètres* : « Non authentifié » | Normal tant que vous n'êtes pas connecté. Connectez-vous avec le compte local créé au §5. |
 | `/api/health` ne répond pas (scénario B) | Service arrêté → `C:\services\suivi-infra\service.err.log` ; ou modules URL Rewrite/ARR absents ; ou proxy ARR désactivé (Gestionnaire IIS → niveau serveur → *Application Request Routing Cache* → *Server Proxy Settings* → *Enable proxy*). |
-| Le mode multi-utilisateur ne s'active pas | Il exige une **vraie session serveur** : connectez-vous avec un compte local/LDAP (ou SSO validé côté serveur). Le SSO seul, sans le service, ne l'active pas — c'est voulu. |
-| Le bouton « Publier » n'apparaît pas | Le serveur contient déjà des données : c'est la protection contre l'écrasement du travail de l'équipe. |
+| Écran « Serveur indisponible » sur les postes | Le service est arrêté, ou le relais `/api` d'IIS ne répond plus. Comportement voulu : l'application refuse de laisser saisir hors ligne. Elle redevient utilisable seule au retour du service. |
+| L'écran de mise en service ne s'affiche pas | Le serveur a déjà été mis en service — c'est la protection contre l'écrasement du travail de l'équipe. |
+| Le service ne démarre pas : « fichier de données illisible » | Un `business-*.json` est corrompu. Restaurez-le depuis la sauvegarde, puis redémarrez. Le refus de démarrer est volontaire (voir §1). |
+| « Modifié entre-temps par X — votre modification n'a pas été enregistrée » | Un collègue a modifié la même tâche/FDR/COPIL pendant votre saisie. Le serveur refuse d'écraser son travail. Rouvrez l'élément : il affiche la version du serveur, refaites votre modification dessus. |
+| Un poste ne voit pas ses anciennes données après la bascule | Normal : le serveur fait référence. Ses données d'avant sont conservées à part — *Paramètres → Données conservées avant la bascule* permet de les télécharger. |
 | Le service ne démarre pas | Port déjà utilisé (changez `PORT` dans `.env` **et** relancez le script avec `-ServicePort`), ou `.env` invalide. Journaux : `service.err.log`. |
 
 Pour la procédure manuelle équivalente, étape par étape (utile pour comprendre ce que

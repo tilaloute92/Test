@@ -4,14 +4,14 @@
  * Historique — pourquoi ce n'est pas un simple compteur : la première version utilisait
  * un compteur en mémoire (`m1000`, `m1001`...). Ce compteur repartait de zéro à chaque
  * chargement de page alors que les données, elles, sont conservées (localStorage, ou le
- * serveur en mode multi-utilisateur) : deux enregistrements créés dans deux sessions
+ * serveur en mode client/serveur) : deux enregistrements créés dans deux sessions
  * différentes recevaient donc le *même* identifiant. Symptôme observé : cocher une
  * personne dans la liste des assignés en cochait une autre, les deux partageant le même id.
  *
  * Un identifiant doit donc être unique :
  * - d'un chargement de page à l'autre (d'où l'horodatage, et non un compteur) ;
  * - d'un navigateur à l'autre (d'où la partie aléatoire) — indispensable en mode
- *   multi-utilisateur, où deux collègues créent des données chacun de leur côté et où
+ *   client/serveur, où deux collègues créent des données chacun de leur côté et où
  *   c'est le navigateur qui fixe l'identifiant (voir server/src/businessData.js).
  */
 
