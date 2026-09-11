@@ -15,7 +15,8 @@ const eligibleTypes: Record<Period, ('MCO' | 'Incident' | 'Projet')[]> = {
 };
 
 /** Profondeur de l'historique "Dernières saisies" : les 10 derniers temps saisis PAR PERSONNE
- *  sur la journée affichée — chacun voit ses propres saisies sans être noyé par celles des autres. */
+ *  et par créneau, affichés sous le bouton de saisie du créneau concerné. Chacun voit donc ses
+ *  propres saisies, là où il vient de les enregistrer. */
 const RECENT_ENTRIES_DEPTH = 10;
 
 const DAILY_VIEW_MODES = ['personne', 'creneau', 'tableau'] as const;
@@ -36,17 +37,14 @@ export function DailyView() {
   const iso = toISODate(date);
 
   // `timeEntries` est une liste d'ajouts : la dernière saisie est donc la dernière du tableau.
-  // On la relit à l'envers pour montrer ce qui vient d'être saisi en premier, et on applique la
-  // profondeur personne par personne — une personne qui saisit beaucoup ne masque pas les autres.
-  const recentByMember = members
-    .map((member) => ({
-      member,
-      entries: timeEntries
-        .filter((e) => e.date === iso && e.memberId === member.id)
-        .slice(-RECENT_ENTRIES_DEPTH)
-        .reverse(),
-    }))
-    .filter((group) => group.entries.length > 0);
+  // On la relit à l'envers pour montrer ce qui vient d'être saisi en premier. La profondeur
+  // s'applique à chaque couple personne/créneau, si bien qu'une personne qui saisit beaucoup ne
+  // masque jamais les saisies de ses collègues.
+  const recentEntriesFor = (memberId: string, period: Period) =>
+    timeEntries
+      .filter((e) => e.date === iso && e.memberId === memberId && e.period === period)
+      .slice(-RECENT_ENTRIES_DEPTH)
+      .reverse();
 
   const openLogging = (target: LoggingTarget) => {
     setLogging(target);
@@ -55,7 +53,18 @@ export function DailyView() {
   };
 
   /** Tout ce dont un créneau a besoin pour être affiché *et* modifié, quel que soit le mode. */
-  const slotContext = { iso, date, tasks, planningSlots, confirm, setPlanningSlot, updateTask, onLogTime: openLogging };
+  const slotContext = {
+    iso,
+    date,
+    tasks,
+    planningSlots,
+    confirm,
+    setPlanningSlot,
+    updateTask,
+    onLogTime: openLogging,
+    recentEntriesFor,
+    onRemoveEntry: removeTimeEntry,
+  };
 
   return (
     <div className="space-y-4">
@@ -195,8 +204,6 @@ export function DailyView() {
         </Card>
       )}
 
-      <RecentEntries groups={recentByMember} tasks={tasks} confirm={confirm} onRemove={removeTimeEntry} />
-
       {logging && (
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={() => setLogging(null)}>
           <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
@@ -264,6 +271,8 @@ function SlotEditor({
   setPlanningSlot,
   updateTask,
   onLogTime,
+  recentEntriesFor,
+  onRemoveEntry,
   compact = false,
 }: {
   member: TeamMember;
@@ -277,6 +286,8 @@ function SlotEditor({
   setPlanningSlot: (memberId: string, date: string, period: Period, taskId: string | null) => void;
   updateTask: (id: string, patch: Partial<ProjectTask>) => void;
   onLogTime: (target: LoggingTarget) => void;
+  recentEntriesFor: (memberId: string, period: Period) => TimeEntry[];
+  onRemoveEntry: (id: string) => void;
   compact?: boolean;
 }) {
   const isAbsentPeriod = absence && (absence.period === 'jour' || absence.period === period);
@@ -285,9 +296,20 @@ function SlotEditor({
   const memberTasks = tasks.filter(
     (t) => t.assigneeIds.includes(member.id) && eligibleTypes[period].includes(t.type) && t.status !== 'termine'
   );
+  const entries = recentEntriesFor(member.id, period);
 
+  const history = (
+    <SlotEntries entries={entries} tasks={tasks} memberName={member.name} confirm={confirm} onRemove={onRemoveEntry} />
+  );
+
+  // Une absence déclarée après coup n'efface pas le temps déjà saisi : on continue de le montrer.
   if (isAbsentPeriod) {
-    return <div className="text-sm text-slate-400">Absent(e) — {absence?.label ?? absence?.type}</div>;
+    return (
+      <>
+        <div className="text-sm text-slate-400">Absent(e) — {absence?.label ?? absence?.type}</div>
+        {history}
+      </>
+    );
   }
 
   return (
@@ -344,92 +366,73 @@ function SlotEditor({
           </div>
         </div>
       )}
+
+      {history}
     </>
   );
 }
 
 /**
- * Les 10 derniers temps saisis PAR PERSONNE sur la journée affichée, le plus récent en haut —
- * pour vérifier d'un coup d'œil ce qu'on vient d'enregistrer avec "+ Saisir temps" (et le
- * corriger en le supprimant si on s'est trompé). La profondeur RECENT_ENTRIES_DEPTH s'applique
- * à chaque personne séparément : quelqu'un qui saisit beaucoup ne fait pas disparaître les
- * saisies de ses collègues. Les personnes sans saisie du jour ne sont pas listées.
+ * Les dernières saisies de temps du créneau, juste sous le bouton "+ Saisir temps" qui vient de
+ * les créer — le plus récent en haut, supprimable d'un clic en cas d'erreur. Limité à
+ * RECENT_ENTRIES_DEPTH par personne et par créneau ; rien n'est affiché tant qu'aucun temps n'a
+ * été saisi, pour ne pas alourdir un créneau vide.
  */
-function RecentEntries({
-  groups,
+function SlotEntries({
+  entries,
   tasks,
+  memberName,
   confirm,
   onRemove,
 }: {
-  groups: { member: TeamMember; entries: TimeEntry[] }[];
+  entries: TimeEntry[];
   tasks: ProjectTask[];
+  memberName: string;
   confirm: ConfirmFn;
   onRemove: (id: string) => void;
 }) {
+  if (entries.length === 0) return null;
+  const total = entries.reduce((sum, e) => sum + e.hours, 0);
+
   return (
-    <Card className="p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Dernières saisies</h2>
-        <span className="text-xs text-slate-400">
-          Les {RECENT_ENTRIES_DEPTH} plus récentes par personne, sur la journée affichée
+    <div className="mt-2 border-t border-slate-100 pt-2 dark:border-slate-800">
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Dernières saisies</span>
+        <span className="text-[10px] tabular-nums text-slate-400">
+          {entries.length} · {total}h
         </span>
       </div>
-
-      {groups.length === 0 ? (
-        <p className="text-xs text-slate-400">
-          Aucun temps saisi sur cette journée. Utilisez « + Saisir temps » sur un créneau : la saisie apparaîtra ici aussitôt.
-        </p>
-      ) : (
-        <div className="space-y-4">
-          {groups.map(({ member, entries }) => {
-            const total = entries.reduce((sum, e) => sum + e.hours, 0);
-            return (
-              <div key={member.id}>
-                <div className="mb-1 flex items-center gap-2 border-b border-slate-100 pb-1 dark:border-slate-800">
-                  <Avatar name={member.name} color={member.color} initials={member.initials} size={22} />
-                  <span className="text-sm font-medium text-slate-800 dark:text-slate-100">{member.name}</span>
-                  <span className="ml-auto text-xs text-slate-400">
-                    {entries.length} saisie(s) · {total}h
-                  </span>
-                </div>
-                <ul className="divide-y divide-slate-50 dark:divide-slate-800/60">
-                  {entries.map((e) => {
-                    const task = getTaskById(tasks, e.taskId);
-                    return (
-                      <li key={e.id} className="flex flex-wrap items-center gap-2 py-1.5 pl-7 text-sm">
-                        {task && <TaskTypeBadge type={task.type} />}
-                        <span className="min-w-0 flex-1 truncate text-slate-800 dark:text-slate-100">{task?.title ?? 'Tâche supprimée'}</span>
-                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                          {PERIOD_SHORT[e.period]}
-                        </span>
-                        <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{e.hours}h</span>
-                        {e.note && <span className="w-full truncate text-xs text-slate-400 sm:w-auto sm:max-w-[16rem]">« {e.note} »</span>}
-                        <button
-                          onClick={async () => {
-                            if (
-                              await confirm({
-                                title: 'Supprimer la saisie',
-                                message: `Supprimer les ${e.hours}h saisies par ${member.name} sur "${task?.title ?? 'cette tâche'}" ?`,
-                              })
-                            ) {
-                              onRemove(e.id);
-                            }
-                          }}
-                          className="shrink-0 rounded-md px-2 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 print:hidden"
-                          title="Supprimer cette saisie"
-                        >
-                          Supprimer
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </Card>
+      <ul className="space-y-0.5">
+        {entries.map((e) => {
+          const task = getTaskById(tasks, e.taskId);
+          return (
+            <li key={e.id} className="flex items-baseline gap-1.5 text-xs">
+              <span className="shrink-0 font-semibold tabular-nums text-slate-700 dark:text-slate-200">{e.hours}h</span>
+              <span className="min-w-0 flex-1 truncate text-slate-500 dark:text-slate-400">
+                {task?.title ?? 'Tâche supprimée'}
+                {e.note && <span className="text-slate-400 dark:text-slate-500"> — « {e.note} »</span>}
+              </span>
+              <button
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: 'Supprimer la saisie',
+                      message: `Supprimer les ${e.hours}h saisies par ${memberName} sur "${task?.title ?? 'cette tâche'}" ?`,
+                    })
+                  ) {
+                    onRemove(e.id);
+                  }
+                }}
+                title="Supprimer cette saisie"
+                className="shrink-0 rounded px-1 text-slate-300 hover:bg-red-50 hover:text-red-600 dark:text-slate-600 dark:hover:bg-red-500/10 print:hidden"
+              >
+                ✕
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
