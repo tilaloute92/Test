@@ -4,6 +4,7 @@ import { Avatar, Card, ModeSwitcher, PrintButton, PrintHeader, PriorityBadge, Ra
 import { useConfirm } from './ConfirmProvider';
 import { computeFlashReport, listProjects } from '../lib/flashReport';
 import { FlashReportModal } from './FlashReportModal';
+import { PlannerImportModal } from './PlannerImportModal';
 import { useViewMode } from '../hooks/useViewMode';
 import { bucketTasksByDueDate, KANBAN_STATUSES } from '../lib/taskViews';
 import type { Priority, ProjectTask, TaskStatus, TaskType, TeamMember } from '../types';
@@ -31,6 +32,7 @@ export function TasksView() {
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
   const [openAssigneeMenu, setOpenAssigneeMenu] = useState<string | null>(null);
   const [flashReportProject, setFlashReportProject] = useState<string | null>(null);
+  const [showPlannerImport, setShowPlannerImport] = useState(false);
   const [mode, setMode] = useViewMode<TaskViewMode>('taches', TASK_VIEW_MODES, 'tableau');
 
   const spentByTask = useMemo(() => {
@@ -80,6 +82,13 @@ export function TasksView() {
             ]}
           />
           <PrintButton />
+          <button
+            onClick={() => setShowPlannerImport(true)}
+            title="Récupérer les tâches récurrentes d'un plan Microsoft Planner (Teams)"
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            Importer depuis Planner
+          </button>
           <button
             onClick={() => setShowForm(true)}
             className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700"
@@ -181,6 +190,8 @@ export function TasksView() {
           }}
         />
       )}
+
+      {showPlannerImport && <PlannerImportModal onClose={() => setShowPlannerImport(false)} />}
 
       {flashReportProject && (
         <FlashReportModal

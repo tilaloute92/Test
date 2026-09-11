@@ -5,7 +5,7 @@ import { absencesToday, getTaskById, hoursLoggedToday } from '../lib/selectors';
 import { useViewMode } from '../hooks/useViewMode';
 import { Avatar, Card, ModeSwitcher, PriorityBadge, PrintButton, PrintHeader, TaskTypeBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
-import type { Absence, Period, PlanningSlot, ProjectTask, TaskStatus, TeamMember } from '../types';
+import type { Absence, Period, PlanningSlot, ProjectTask, TaskStatus, TeamMember, TimeEntry } from '../types';
 
 const PERIOD_LABEL: Record<Period, string> = { matin: 'Matin — MCO & incidents', apres_midi: 'Après-midi — Projets' };
 const PERIOD_SHORT: Record<Period, string> = { matin: 'Matin', apres_midi: 'Après-midi' };
@@ -14,6 +14,9 @@ const eligibleTypes: Record<Period, ('MCO' | 'Incident' | 'Projet')[]> = {
   apres_midi: ['Projet'],
 };
 
+/** Profondeur de l'historique "Dernières saisies" : les 10 derniers temps saisis sur la journée affichée. */
+const RECENT_ENTRIES_DEPTH = 10;
+
 const DAILY_VIEW_MODES = ['personne', 'creneau', 'tableau'] as const;
 type DailyViewMode = (typeof DAILY_VIEW_MODES)[number];
 
@@ -21,7 +24,7 @@ type ConfirmFn = ReturnType<typeof useConfirm>;
 type LoggingTarget = { memberId: string; period: Period; taskId: string };
 
 export function DailyView() {
-  const { members, tasks, planningSlots, timeEntries, absences, setPlanningSlot, updateTask, addTimeEntry } = useStore();
+  const { members, tasks, planningSlots, timeEntries, absences, setPlanningSlot, updateTask, addTimeEntry, removeTimeEntry } = useStore();
   const confirm = useConfirm();
   const [date, setDate] = useState(new Date());
   const [mode, setMode] = useViewMode<DailyViewMode>('activite-jour', DAILY_VIEW_MODES, 'personne');
@@ -30,6 +33,13 @@ export function DailyView() {
   const [note, setNote] = useState('');
 
   const iso = toISODate(date);
+
+  // `timeEntries` est une liste d'ajouts : la dernière saisie est donc la dernière du tableau.
+  // On la relit à l'envers pour montrer ce qui vient d'être saisi en premier.
+  const recentEntries = timeEntries
+    .filter((e) => e.date === iso)
+    .slice(-RECENT_ENTRIES_DEPTH)
+    .reverse();
 
   const openLogging = (target: LoggingTarget) => {
     setLogging(target);
@@ -177,6 +187,14 @@ export function DailyView() {
           </table>
         </Card>
       )}
+
+      <RecentEntries
+        entries={recentEntries}
+        members={members}
+        tasks={tasks}
+        confirm={confirm}
+        onRemove={removeTimeEntry}
+      />
 
       {logging && (
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={() => setLogging(null)}>
@@ -326,6 +344,82 @@ function SlotEditor({
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * Les 10 derniers temps saisis sur la journée affichée, le plus récent en haut — pour vérifier
+ * d'un coup d'œil ce qu'on vient d'enregistrer avec "+ Saisir temps" (et le corriger en le
+ * supprimant si on s'est trompé). La profondeur est fixée par RECENT_ENTRIES_DEPTH.
+ */
+function RecentEntries({
+  entries,
+  members,
+  tasks,
+  confirm,
+  onRemove,
+}: {
+  entries: TimeEntry[];
+  members: TeamMember[];
+  tasks: ProjectTask[];
+  confirm: ConfirmFn;
+  onRemove: (id: string) => void;
+}) {
+  const total = entries.reduce((sum, e) => sum + e.hours, 0);
+
+  return (
+    <Card className="p-4">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Dernières saisies</h2>
+        <span className="text-xs text-slate-400">
+          {entries.length === 0
+            ? `${RECENT_ENTRIES_DEPTH} plus récentes de la journée`
+            : `${entries.length} affichée(s) sur les ${RECENT_ENTRIES_DEPTH} plus récentes · ${total}h au total`}
+        </span>
+      </div>
+
+      {entries.length === 0 ? (
+        <p className="text-xs text-slate-400">
+          Aucun temps saisi sur cette journée. Utilisez « + Saisir temps » sur un créneau : la saisie apparaîtra ici aussitôt.
+        </p>
+      ) : (
+        <ul className="divide-y divide-slate-50 dark:divide-slate-800/60">
+          {entries.map((e) => {
+            const member = members.find((m) => m.id === e.memberId);
+            const task = getTaskById(tasks, e.taskId);
+            return (
+              <li key={e.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
+                {member && <Avatar name={member.name} color={member.color} initials={member.initials} size={22} />}
+                <span className="shrink-0 text-xs font-medium text-slate-600 dark:text-slate-300">{member?.name ?? 'Inconnu'}</span>
+                {task && <TaskTypeBadge type={task.type} />}
+                <span className="min-w-0 flex-1 truncate text-slate-800 dark:text-slate-100">{task?.title ?? 'Tâche supprimée'}</span>
+                <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                  {PERIOD_SHORT[e.period]}
+                </span>
+                <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{e.hours}h</span>
+                {e.note && <span className="w-full truncate text-xs text-slate-400 sm:w-auto sm:max-w-[16rem]">« {e.note} »</span>}
+                <button
+                  onClick={async () => {
+                    if (
+                      await confirm({
+                        title: 'Supprimer la saisie',
+                        message: `Supprimer les ${e.hours}h saisies sur "${task?.title ?? 'cette tâche'}" ?`,
+                      })
+                    ) {
+                      onRemove(e.id);
+                    }
+                  }}
+                  className="shrink-0 rounded-md px-2 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 print:hidden"
+                  title="Supprimer cette saisie"
+                >
+                  Supprimer
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
   );
 }
 

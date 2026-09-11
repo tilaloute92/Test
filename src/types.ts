@@ -32,6 +32,12 @@ export interface ProjectTask {
   createdAt: string;
   completedAt?: string;
   description?: string;
+  /** Identifiant de la tâche Microsoft Planner d'origine, si la tâche a été importée depuis
+   *  Teams (voir src/lib/msPlanner.ts). Sert à ne pas ré-importer deux fois la même tâche. */
+  plannerTaskId?: string;
+  /** Récurrence Planner en clair ("Toutes les semaines"...), informative — l'appli ne recrée
+   *  pas les occurrences elle-même, c'est Planner qui le fait. */
+  recurrence?: string;
   /** Renseignés uniquement en mode client/serveur (voir server/src/businessData.js) —
    *  absents si la donnée n'a jamais transité par le serveur partagé. */
   updatedAt?: string;

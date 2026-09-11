@@ -84,6 +84,32 @@ export async function signInWithIdToken(settings: AuthSettings): Promise<{ accou
   return { account: result.account, idToken: result.idToken };
 }
 
+/**
+ * Jeton d'accès Microsoft Graph pour les `scopes` demandés (voir src/lib/msPlanner.ts pour
+ * l'import Planner). Tente d'abord en silence sur le compte déjà connecté, puis ouvre une
+ * popup de consentement si Entra ID l'exige — c'est le cas au premier appel, les scopes
+ * Planner n'étant pas couverts par le `User.Read` de la connexion initiale.
+ */
+export async function acquireGraphToken(settings: AuthSettings, scopes: string[]): Promise<string> {
+  const instance = await getMsalInstance(settings);
+  let account = instance.getActiveAccount() ?? instance.getAllAccounts()[0] ?? null;
+
+  if (!account) {
+    const result = await instance.loginPopup({ scopes });
+    instance.setActiveAccount(result.account);
+    account = result.account;
+  }
+
+  try {
+    const silent = await instance.acquireTokenSilent({ account, scopes });
+    return silent.accessToken;
+  } catch {
+    // Consentement manquant ou jeton expiré sans refresh utilisable : on repasse par l'utilisateur.
+    const interactive = await instance.acquireTokenPopup({ account, scopes });
+    return interactive.accessToken;
+  }
+}
+
 export async function signOut(settings: AuthSettings): Promise<void> {
   const instance = await getMsalInstance(settings);
   const account = instance.getActiveAccount();

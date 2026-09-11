@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { formatDateLong, formatDayLabel, formatWeekRange, getWeeks, isToday, isWeekend, toISODate } from '../lib/date';
+import { addDays, formatDateLong, formatDayLabel, formatWeekRange, getWeeks, isToday, isWeekend, toISODate } from '../lib/date';
+import { DAY_END_HOUR, PERIOD_LABELS, PERIOD_RANGES, formatHour, getHourSlots, periodRangeLabel } from '../lib/hours';
 import { isAbsent } from '../lib/workload';
 import { getTaskById } from '../lib/selectors';
 import { Avatar, Card, ModeSwitcher, PrintButton, PrintHeader, TaskTypeBadge } from './ui';
@@ -8,7 +9,7 @@ import { useConfirm } from './ConfirmProvider';
 import { useViewMode } from '../hooks/useViewMode';
 import type { Absence, Period, PlanningSlot, ProjectTask, TaskType, TeamMember } from '../types';
 
-const PLANNING_VIEW_MODES = ['grille', 'personne', 'liste'] as const;
+const PLANNING_VIEW_MODES = ['grille', 'heures', 'personne', 'liste'] as const;
 type PlanningViewMode = (typeof PLANNING_VIEW_MODES)[number];
 
 const typeMeta: Record<TaskType, { icon: string; bg: string; border: string; text: string; dot: string }> = {
@@ -49,6 +50,9 @@ export function PlanningView() {
   const [selected, setSelected] = useState<SelectedCell | null>(null);
   const [mode, setMode] = useViewMode<PlanningViewMode>('planning', PLANNING_VIEW_MODES, 'grille');
   const [personId, setPersonId] = useState<string>(members[0]?.id ?? '');
+  // La vue Heures raisonne sur une seule journée : elle a sa propre navigation, indépendante
+  // du sélecteur de semaine utilisé par les autres modes.
+  const [hoursDate, setHoursDate] = useState(() => new Date());
   const currentWeek = weeks[weekIndex];
 
   const selectedMember = selected ? members.find((m) => m.id === selected.memberId) : null;
@@ -78,6 +82,7 @@ export function PlanningView() {
             onChange={setMode}
             options={[
               { value: 'grille', label: 'Grille hebdo', title: 'Grille par personne et par jour, semaine par semaine' },
+              { value: 'heures', label: 'Heures', title: "Une journée détaillée par tranches d'une heure, de 06:00 à 19:00" },
               { value: 'personne', label: 'Vue par personne', title: 'Planning détaillé sur les 3 semaines, une personne à la fois' },
               { value: 'liste', label: 'Liste chronologique', title: 'Agenda jour par jour de la semaine sélectionnée, dans l’ordre' },
             ]}
@@ -224,10 +229,26 @@ export function PlanningView() {
         </div>
       </Card>
 
-      {selected && selectedMember && (
+      </>
+      )}
+
+      {mode === 'heures' && (
+        <PlanningHours
+          members={members}
+          tasks={tasks}
+          planningSlots={planningSlots}
+          absences={absences}
+          date={hoursDate}
+          setDate={setHoursDate}
+          selected={selected}
+          onSelect={setSelected}
+        />
+      )}
+
+      {(mode === 'grille' || mode === 'heures') && selected && selectedMember && (
         <Card className="p-4 print:hidden">
           <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">
-            Affecter — {selectedMember.name} · {formatDayLabel(new Date(selected.date))} · {selected.period === 'matin' ? 'Matin' : 'Après-midi'}
+            Affecter — {selectedMember.name} · {formatDayLabel(new Date(selected.date))} · {PERIOD_LABELS[selected.period]} ({periodRangeLabel(selected.period)})
           </h3>
           <div className="flex flex-wrap items-center gap-2">
             <select
@@ -265,8 +286,6 @@ export function PlanningView() {
             </p>
           )}
         </Card>
-      )}
-      </>
       )}
 
       {mode === 'personne' && (
@@ -507,5 +526,215 @@ function PlanningTimeline({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Vue Heures : une seule journée, détaillée par tranches d'une heure de 06:00 à 19:00.
+ *
+ * Le découpage horaire est un découpage d'AFFICHAGE (voir src/lib/hours.ts) : une tâche est
+ * toujours affectée à une demi-journée entière, et chaque tranche affiche la tâche du créneau
+ * qui la contient — d'où le "chapeau" sur la première heure et le simple trait de continuation
+ * sur les suivantes, comme un bloc d'agenda de 4 heures. Cliquer sur n'importe quelle tranche
+ * ouvre l'affectation de sa demi-journée.
+ */
+function PlanningHours({
+  members,
+  tasks,
+  planningSlots,
+  absences,
+  date,
+  setDate,
+  selected,
+  onSelect,
+}: {
+  members: TeamMember[];
+  tasks: ProjectTask[];
+  planningSlots: PlanningSlot[];
+  absences: Absence[];
+  date: Date;
+  setDate: (d: Date) => void;
+  selected: SelectedCell | null;
+  onSelect: (cell: SelectedCell) => void;
+}) {
+  const iso = toISODate(date);
+  const hourSlots = useMemo(() => getHourSlots(), []);
+  const template = `72px repeat(${Math.max(members.length, 1)}, minmax(0, 1fr))`;
+
+  if (members.length === 0) {
+    return <Card className="p-6 text-center text-sm text-slate-400 print:hidden">Aucun membre dans l'équipe.</Card>;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setDate(addDays(date, -1))}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            ◀
+          </button>
+          <button
+            onClick={() => setDate(new Date())}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            Aujourd'hui
+          </button>
+          <button
+            onClick={() => setDate(addDays(date, 1))}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            ▶
+          </button>
+          <span className="ml-1 text-sm font-medium text-slate-700 dark:text-slate-200">{formatDateLong(date)}</span>
+          {isToday(date) && <span className="rounded-full bg-violet-600 px-2 py-0.5 text-[10px] font-medium text-white">aujourd'hui</span>}
+        </div>
+        <p className="text-xs text-slate-400">
+          Matin {periodRangeLabel('matin')} · Après-midi {periodRangeLabel('apres_midi')} — journée affichée de {formatHour(hourSlots[0].hour)} à{' '}
+          {formatHour(DAY_END_HOUR)}
+        </p>
+      </div>
+
+      <PrintHeader title={`Planning à l'heure — ${formatDateLong(date)}`} subtitle={`Matin ${periodRangeLabel('matin')} · Après-midi ${periodRangeLabel('apres_midi')}`} />
+
+      <Card className="overflow-x-auto p-3 print:overflow-visible">
+        <div className="min-w-[640px] print:min-w-0">
+          {/* En-tête : une colonne par personne */}
+          <div className="grid gap-1 border-b border-slate-100 pb-2 dark:border-slate-800" style={{ gridTemplateColumns: template }}>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Heure</div>
+            {members.map((m) => (
+              <div key={m.id} className="flex min-w-0 items-center gap-1.5">
+                <Avatar name={m.name} color={m.color} initials={m.initials} size={22} />
+                <span className="min-w-0 truncate text-xs font-medium text-slate-700 dark:text-slate-200">{m.name}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Une ligne par tranche d'une heure */}
+          {hourSlots.map((hourSlot) => {
+            const periodStartsHere = hourSlot.period !== null && PERIOD_RANGES[hourSlot.period].start === hourSlot.hour;
+            return (
+              <div key={hourSlot.hour}>
+                {periodStartsHere && (
+                  <div className="mt-2 mb-1 flex items-center gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
+                      {PERIOD_LABELS[hourSlot.period!]}
+                    </span>
+                    <span className="text-[10px] text-slate-400">{periodRangeLabel(hourSlot.period!)}</span>
+                    <span className="h-px flex-1 bg-slate-100 dark:bg-slate-800" />
+                  </div>
+                )}
+                <div
+                  className={`grid items-stretch gap-1 py-0.5 ${hourSlot.period === null ? 'opacity-60' : ''}`}
+                  style={{ gridTemplateColumns: template }}
+                >
+                  <div
+                    className={`flex items-center text-[11px] tabular-nums ${
+                      hourSlot.period === null ? 'text-slate-300 dark:text-slate-600' : 'font-medium text-slate-500 dark:text-slate-400'
+                    }`}
+                    title={hourSlot.rangeLabel}
+                  >
+                    {hourSlot.label}
+                  </div>
+                  {members.map((m) => {
+                    if (hourSlot.period === null) {
+                      return (
+                        <div
+                          key={m.id}
+                          title={`${hourSlot.rangeLabel} — hors horaires ouvrés`}
+                          className="h-6 rounded bg-[repeating-linear-gradient(45deg,transparent,transparent_4px,rgb(148_163_184_/_0.12)_4px,rgb(148_163_184_/_0.12)_8px)]"
+                        />
+                      );
+                    }
+                    const period = hourSlot.period;
+                    const absentPeriod = isAbsent(absences, m.id, date, period);
+                    const slot = planningSlots.find((s) => s.memberId === m.id && s.date === iso && s.period === period);
+                    const task = getTaskById(tasks, slot?.taskId);
+                    const isFirstHour = PERIOD_RANGES[period].start === hourSlot.hour;
+                    const isSelected = selected?.memberId === m.id && selected.date === iso && selected.period === period;
+                    return (
+                      <HourCell
+                        key={m.id}
+                        task={task}
+                        absentPeriod={absentPeriod}
+                        isFirstHour={isFirstHour}
+                        isSelected={isSelected}
+                        title={`${m.name} · ${hourSlot.rangeLabel} · ${PERIOD_LABELS[period]}${task ? ` — ${task.title}` : ''}`}
+                        onClick={() => onSelect({ memberId: m.id, date: iso, period })}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+          <span className="inline-flex items-center gap-1.5">🔧 MCO</span>
+          <span className="inline-flex items-center gap-1.5">🔥 Incident</span>
+          <span className="inline-flex items-center gap-1.5">📁 Projet</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-3 w-3 rounded-sm border border-dashed border-slate-300 dark:border-slate-600" /> Non planifié / Absent(e)
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-3 w-3 rounded-sm bg-[repeating-linear-gradient(45deg,transparent,transparent_3px,rgb(148_163_184_/_0.3)_3px,rgb(148_163_184_/_0.3)_6px)]" />
+            Hors horaires
+          </span>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/** Une tranche d'une heure. La première heure d'une demi-journée porte le titre, les suivantes prolongent le bloc. */
+function HourCell({
+  task,
+  absentPeriod,
+  isFirstHour,
+  isSelected,
+  title,
+  onClick,
+}: {
+  task: ProjectTask | undefined;
+  absentPeriod: boolean;
+  isFirstHour: boolean;
+  isSelected: boolean;
+  title: string;
+  onClick: () => void;
+}) {
+  const ring = isSelected ? 'ring-2 ring-violet-500 ring-offset-1 dark:ring-offset-slate-900' : '';
+
+  if (absentPeriod) {
+    return (
+      <div
+        title={`${title} — absent(e)`}
+        className={`flex h-6 items-center justify-center rounded border border-dashed border-slate-200 bg-slate-50 text-[10px] text-slate-400 dark:border-slate-700 dark:bg-slate-800/40 ${ring}`}
+      >
+        {isFirstHour ? 'Absent(e)' : ''}
+      </div>
+    );
+  }
+
+  const meta = task ? typeMeta[task.type] : null;
+
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`block h-6 w-full min-w-0 rounded border px-1.5 text-left text-[10px] transition-colors ${
+        meta
+          ? `${meta.bg} ${meta.border} ${meta.text}`
+          : 'border-dashed border-slate-200 text-slate-400 hover:border-violet-300 dark:border-slate-700 dark:hover:border-violet-500/50'
+      } ${ring}`}
+    >
+      {isFirstHour ? (
+        <span className="flex min-w-0 items-center gap-1">
+          {meta && <span className="shrink-0">{meta.icon}</span>}
+          <span className="min-w-0 truncate">{task ? task.title : 'Non planifié'}</span>
+        </span>
+      ) : null}
+    </button>
   );
 }
