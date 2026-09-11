@@ -7,7 +7,7 @@ aucun abonnement, aucune donnée envoyée à un service tiers (hors publication 
 ```
 Google News ─┐
              ├─> LLM au choix (script) ─> XTTSv2 (voix) ─> Stable Diffusion (images)
-             │                            │
+             │                            │                ou Wan 2.2 (clips animés)
              │                            └─> Whisper (sous-titres animés)
              │                                          │
              └──────────────> FFmpeg (Ken Burns + ducking + SFX) ─> Short 1080x1920
@@ -102,6 +102,36 @@ fichiers de job — un test le verifie.
 **Ajouter un fournisseur** revient a ajouter une entree dans le dictionnaire
 `LLM_PROVIDERS` de `worker.py`. Si son API est compatible OpenAI (`kind:
 "openai"`), il n'y a pas une ligne de code supplementaire a ecrire.
+
+## Moteur visuel : images fixes ou video generee
+
+Par defaut, chaque scene est une image Stable Diffusion animee d'un zoom
+lent (Ken Burns) — rapide, tourne sur n'importe quelle machine.
+
+Un second moteur est disponible dans **✨ Studio IA & Actus** › *Parametres
+avances* › onglet **🎬 Video** : **[Wan 2.2](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers)**
+(Alibaba, licence Apache 2.0), qui genere de vrais clips animes en local —
+mouvement de camera et de sujet, pas un simple zoom sur une image figee.
+
+**Ce que Wan est, et ce qu'il n'est pas :** c'est l'equivalent local et
+gratuit le plus proche de services comme Veo 3 ou Kling. Ces deux-la ne sont
+**pas proposes** dans le Studio : leurs API sont payantes des la premiere
+seconde (~0,40 $/s pour Veo, forfait prepaye pour Kling), sans aucun palier
+gratuit — meme leur abonnement grand public ne donne pas acces a l'API. Wan
+tourne entierement sur votre machine, gratuitement et sans limite, mais le
+cout se paie en **temps de calcul** :
+
+| | Ken Burns (defaut) | Wan 2.2 |
+|---|---|---|
+| Cout | Gratuit, instantane | Gratuit, mais lent |
+| VRAM recommandee | celle de Stable Diffusion | 8 Go minimum (repli CPU sinon) |
+| Par scene animee | — | ≈ 4-5 minutes sur une carte recente |
+| Rendu | zoom/travelling sur une image | vrai mouvement genere |
+
+Le curseur **« Scenes animees par Wan »** limite le cout en temps : `1`
+(par defaut) n'anime que le hook — la scene qui decide vraiment de la
+retention — le reste garde une image fixe ; `0` anime toutes les scenes,
+au prix de plusieurs dizaines de minutes de rendu supplementaire.
 
 ## Configuration YouTube (optionnelle)
 

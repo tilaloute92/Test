@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import worker  # noqa: E402
 from worker import (  # noqa: E402
     LLM_PROVIDERS,
+    VIDEO_ENGINES,
     JobSettings,
     _ass_time,
     _extract_json,
@@ -223,6 +224,37 @@ def test_preferred_model_prefers_recommended_families() -> None:
     assert worker.preferred_model(ollama, ["phi4"]) == "phi4"
     # Liste vide : chaine vide, l'interface bascule en saisie libre.
     assert worker.preferred_model(ollama, []) == ""
+
+
+def test_video_engines_are_free_and_local() -> None:
+    """Aucun moteur video payant : Veo/Kling n'ont pas de palier gratuit."""
+    for key, engine in VIDEO_ENGINES.items():
+        assert engine.key == key
+        assert engine.kind in ("stills", "wan")
+        assert engine.hint, f"{key}: aucune explication fournie"
+    assert "veo" not in VIDEO_ENGINES
+    assert "kling" not in VIDEO_ENGINES
+    # Le moteur par defaut reste le plus rapide, pas Wan (qui est lent).
+    assert VIDEO_ENGINES[worker.DEFAULT_VIDEO_ENGINE].kind == "stills"
+    assert JobSettings().video_engine == "stills"
+
+
+def test_animated_scene_selection() -> None:
+    assert worker.scenes_to_animate(JobSettings(), 6) == []  # moteur "stills"
+    wan = JobSettings(video_engine="wan", animated_scenes=2)
+    assert worker.scenes_to_animate(wan, 6) == [0, 1]
+    assert worker.scenes_to_animate(wan, 1) == [0]            # borne au nombre reel
+    assert worker.scenes_to_animate(
+        JobSettings(video_engine="wan", animated_scenes=0), 3) == [0, 1, 2]
+
+
+def test_render_time_estimate_only_applies_to_wan() -> None:
+    assert worker.estimate_video_render_minutes(JobSettings(), 6) == 0.0
+    hook_only = JobSettings(video_engine="wan", animated_scenes=1)
+    all_scenes = JobSettings(video_engine="wan", animated_scenes=0)
+    assert worker.estimate_video_render_minutes(hook_only, 6) > 0
+    assert (worker.estimate_video_render_minutes(all_scenes, 6)
+           > worker.estimate_video_render_minutes(hook_only, 6))
 
 
 def test_revenue_estimation() -> None:

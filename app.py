@@ -27,6 +27,7 @@ from news_fetcher import TIME_WINDOWS, TOPIC_PRESETS, fetch_trends
 from worker import (
     DEFAULT_PROVIDER,
     LLM_PROVIDERS,
+    VIDEO_ENGINES,
     JobSettings,
     STATUS_APPROVED,
     STATUS_FAILED,
@@ -624,8 +625,8 @@ def page_studio() -> None:
         language = col3.selectbox("Langue", ["fr", "en", "es", "de", "it"], index=0)
 
         with st.expander("⚙️ Parametres avances"):
-            tab_voice, tab_image, tab_audio, tab_subs = st.tabs(
-                ["🎙️ Voix", "🖼️ Images", "🎵 Audio", "💬 Sous-titres"]
+            tab_voice, tab_image, tab_video, tab_audio, tab_subs = st.tabs(
+                ["🎙️ Voix", "🖼️ Images", "🎬 Video", "🎵 Audio", "💬 Sous-titres"]
             )
 
             with tab_voice:
@@ -648,6 +649,39 @@ def page_studio() -> None:
                     value="cinematic, dramatic lighting, ultra detailed, 8k, depth of field",
                 )
                 seed = st.number_input("Seed (-1 = aleatoire)", value=-1, step=1)
+
+            with tab_video:
+                engine_key = st.selectbox(
+                    "Moteur visuel", options=list(VIDEO_ENGINES),
+                    format_func=lambda k: VIDEO_ENGINES[k].label,
+                    key="video_engine_choice",
+                )
+                engine = worker.get_video_engine(engine_key)
+                st.caption(f"💚 {engine.hint}")
+
+                animated_scenes, wan_steps, wan_guidance = 1, 30, 5.0
+                if engine.kind == "wan":
+                    if engine.min_vram_gb:
+                        st.caption(
+                            f"Recommande : au moins {engine.min_vram_gb} Go de "
+                            "VRAM (repli CPU automatique sinon, tres lent)."
+                        )
+                    animated_scenes = st.slider(
+                        "Scenes animees par Wan (0 = toutes)", 0, 12, 1,
+                        help="Le hook decide de la retention : animer la "
+                             "premiere scene suffit souvent. Chaque scene "
+                             "animee ajoute plusieurs minutes de rendu.",
+                    )
+                    minutes = worker.estimate_video_render_minutes(
+                        JobSettings(video_engine=engine_key,
+                                    animated_scenes=animated_scenes),
+                        n_scenes,
+                    )
+                    if minutes:
+                        st.caption(f"⏱️ Temps de rendu supplementaire estime : "
+                                  f"≈ {minutes:.0f} min.")
+                    wan_steps = st.slider("Etapes de diffusion (Wan)", 10, 50, 30)
+                    wan_guidance = st.slider("Fidelite au prompt (Wan)", 1.0, 10.0, 5.0, 0.5)
 
             with tab_audio:
                 music_track = st.selectbox(
@@ -712,6 +746,10 @@ def page_studio() -> None:
             ducking_ratio=duck_ratio,
             sfx_enabled=sfx_enabled,
             sfx_volume_db=sfx_volume,
+            video_engine=engine_key,
+            animated_scenes=animated_scenes,
+            wan_steps=wan_steps,
+            wan_guidance=wan_guidance,
         )
         job = worker.create_job(settings, title_hint=topic.strip())
         worker.launch_job_subprocess(job["id"])

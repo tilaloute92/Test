@@ -21,8 +21,10 @@ requests>=2.31.0
 # --- Voix : XTTSv2 (fork maintenu de Coqui TTS, compatible Python 3.11/3.12) ---
 coqui-tts>=0.25.1
 
-# --- Images : Stable Diffusion ---
-diffusers>=0.27.0
+# --- Images (Stable Diffusion) et video generee (Wan 2.2, optionnelle) ---
+# WanPipeline n'existe qu'a partir de diffusers 0.33 ; en dessous, seul
+# le moteur Ken Burns (par defaut) fonctionnera.
+diffusers>=0.33.0
 transformers>=4.40.0
 accelerate>=0.30.0
 safetensors>=0.4.2

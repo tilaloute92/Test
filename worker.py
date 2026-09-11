@@ -120,6 +120,13 @@ class JobSettings:
     sd_negative: str = "text, watermark, logo, blurry, lowres, deformed, extra limbs"
     seed: int = -1               # -1 => aleatoire
 
+    # --- Moteur visuel (voir VIDEO_ENGINES) ---
+    video_engine: str = "stills"
+    video_model: str = ""        # vide => modele par defaut du moteur
+    animated_scenes: int = 1     # 0 = toutes ; 1 = le hook seulement (Wan est lent)
+    wan_steps: int = 30
+    wan_guidance: float = 5.0
+
     # --- Whisper / sous-titres ---
     whisper_model: str = "small"
     subtitles: bool = True
@@ -146,6 +153,8 @@ class JobSettings:
     def __post_init__(self) -> None:
         if self.llm_provider not in LLM_PROVIDERS:
             self.llm_provider = DEFAULT_PROVIDER
+        if self.video_engine not in VIDEO_ENGINES:
+            self.video_engine = DEFAULT_VIDEO_ENGINE
         if not self.llm_model:
             # Migration des anciens jobs (ollama_model faisait office de
             # llm_model), puis repli sur le premier modele connu.
@@ -705,6 +714,91 @@ def llm_status(provider_key: str, base_url: str = "") -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# Moteurs visuels
+#
+# Par defaut, une image fixe par scene animee par un zoom lent (Ken Burns) :
+# c'est rapide et tourne sur n'importe quelle machine. Wan 2.2 (Alibaba,
+# Apache 2.0) genere de vrais clips animes en local — l'equivalent libre le
+# plus proche de Veo 3 / Kling, qui restent des API payantes sans palier
+# gratuit et n'ont donc pas leur place ici. Le cout de Wan se paie en temps
+# de calcul, pas en dollars : quelques minutes par clip sur une carte recente.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class VideoEngine:
+    """Moteur produisant les visuels de chaque scene."""
+
+    key: str
+    label: str
+    kind: str                       # stills | wan
+    model_id: str = ""
+    min_vram_gb: int = 0
+    seconds_per_clip: int = 4
+    hint: str = ""
+
+
+VIDEO_ENGINES: dict[str, VideoEngine] = {
+    "stills": VideoEngine(
+        key="stills",
+        label="🖼️ Images Stable Diffusion + Ken Burns (rapide)",
+        kind="stills",
+        hint="Une image fixe par scene, animee par un zoom lent. "
+             "Le plus rapide, tourne sur n'importe quelle machine.",
+    ),
+    "wan": VideoEngine(
+        key="wan",
+        label="🎬 Wan 2.2 — video generee en local (gratuit, lent)",
+        kind="wan",
+        model_id="Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        min_vram_gb=8,
+        seconds_per_clip=4,
+        hint="Genere de vrais clips animes (mouvement de camera et de "
+             "sujet), pas un simple zoom sur une image fixe. Gratuit et "
+             "illimite — le cout se paie en temps de calcul : quelques "
+             "minutes par scene sur une carte recente, avec repli CPU sur "
+             "8 Go de VRAM. C'est l'equivalent local le plus proche de "
+             "services comme Veo ou Kling, qui restent payants sans palier "
+             "gratuit et ne sont donc pas proposes ici.",
+    ),
+}
+
+DEFAULT_VIDEO_ENGINE = "stills"
+
+
+def get_video_engine(key: str) -> VideoEngine:
+    return VIDEO_ENGINES.get(key) or VIDEO_ENGINES[DEFAULT_VIDEO_ENGINE]
+
+
+def scenes_to_animate(settings: "JobSettings", n_scenes: int) -> list[int]:
+    """
+    Index des scenes confiees au moteur video genere.
+
+    `animated_scenes = 0` anime tout ; une valeur N n'anime que les N
+    premieres. Wan etant lent (plusieurs minutes par clip), c'est le levier
+    principal pour garder un temps de rendu raisonnable : le hook est la
+    seule scene qui decide vraiment de la retention, animer la suite coute
+    du temps de calcul pour un gain marginal.
+    """
+    engine = get_video_engine(settings.video_engine)
+    if engine.kind == "stills":
+        return []
+    if settings.animated_scenes <= 0:
+        return list(range(n_scenes))
+    return list(range(min(settings.animated_scenes, n_scenes)))
+
+
+def estimate_video_render_minutes(settings: "JobSettings", n_scenes: int) -> float:
+    """Estimation grossiere du temps de rendu supplementaire, pour l'UI."""
+    engine = get_video_engine(settings.video_engine)
+    if engine.kind != "wan":
+        return 0.0
+    # Tres approximatif : quelques minutes par clip sur une carte recente.
+    minutes_per_clip = 4.5
+    return round(len(scenes_to_animate(settings, n_scenes)) * minutes_per_clip, 1)
+
+
+# ---------------------------------------------------------------------------
 # Etape 1 — Script (LLM)
 # ---------------------------------------------------------------------------
 
@@ -1008,6 +1102,104 @@ def _load_sd(settings: JobSettings):
     return pipe
 
 
+def _load_wan(settings: "JobSettings"):
+    """
+    Charge le pipeline Wan 2.2 (diffusers), avec offload CPU sur VRAM limitee.
+
+    Meme logique que _load_sd : le modele est lourd (5 milliards de
+    parametres), on le garde en cache process-local et on decharge entre les
+    sous-modules pour tenir sur une carte a 8 Go.
+    """
+    model_id = settings.video_model or get_video_engine("wan").model_id
+    key = f"wan::{model_id}"
+    if key in _MODEL_CACHE:
+        return _MODEL_CACHE[key]
+
+    import torch
+    from diffusers import AutoencoderKLWan, WanPipeline
+    from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
+
+    use_cuda = torch.cuda.is_available()
+    vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae",
+                                           torch_dtype=torch.float32)
+    pipe = WanPipeline.from_pretrained(
+        model_id, vae=vae, torch_dtype=torch.bfloat16 if use_cuda else torch.float32
+    )
+    pipe.scheduler = UniPCMultistepScheduler.from_config(
+        pipe.scheduler.config, flow_shift=5.0
+    )
+    if use_cuda:
+        pipe.enable_model_cpu_offload()
+    else:
+        pipe = pipe.to("cpu")
+    pipe.set_progress_bar_config(disable=True)
+    _MODEL_CACHE[key] = pipe
+    return pipe
+
+
+def generate_wan_clip(prompt: str, destination: Path, settings: "JobSettings",
+                      seconds: int = 4) -> Path:
+    """Genere un clip anime avec Wan 2.2 et l'ecrit dans `destination`."""
+    import torch
+    from diffusers.utils import export_to_video
+
+    pipe = _load_wan(settings)
+    # 24 fps, 4n+1 images : contrainte du VAE video de Wan (compression temporelle).
+    num_frames = max(9, int(round(seconds * 24 / 4)) * 4 + 1)
+    generator = torch.Generator(device="cpu").manual_seed(random.randint(0, 2**31 - 1))
+
+    with torch.inference_mode():
+        frames = pipe(
+            prompt=prompt,
+            negative_prompt=settings.sd_negative,
+            width=832, height=480,          # format large ; recadre au montage
+            num_frames=num_frames,
+            guidance_scale=settings.wan_guidance,
+            num_inference_steps=settings.wan_steps,
+            generator=generator,
+        ).frames[0]
+
+    export_to_video(frames, str(destination), fps=24)
+    return destination
+
+
+def generate_scene_clips(
+    scenes: list[dict[str, Any]], timings: list[tuple[float, float]],
+    workdir: Path, settings: "JobSettings", progress: "_Progress | None" = None,
+) -> dict[int, Path]:
+    """
+    Genere un clip anime pour les scenes selectionnees (moteur "wan").
+
+    Les scenes non animees gardent leur image fixe. En cas d'echec sur une
+    scene (VRAM insuffisante, timeout...), on retombe sur l'image plutot que
+    de faire echouer toute la video.
+    """
+    engine = get_video_engine(settings.video_engine)
+    wanted = scenes_to_animate(settings, len(scenes))
+    if not wanted or engine.kind != "wan":
+        return {}
+
+    clips_dir = workdir / "generated"
+    clips_dir.mkdir(parents=True, exist_ok=True)
+    produced: dict[int, Path] = {}
+
+    for position, index in enumerate(wanted, start=1):
+        destination = clips_dir / f"scene_{index:02d}.mp4"
+        prompt = scenes[index]["image_prompt"]
+        duration = timings[index][1]
+        if progress:
+            progress("Clips video (Wan 2.2)", 36 + int(20 * position / len(wanted)),
+                     f"scene {index + 1}/{len(scenes)} — peut prendre plusieurs minutes")
+        try:
+            produced[index] = generate_wan_clip(prompt, destination, settings,
+                                                seconds=duration)
+        except Exception as exc:
+            if progress:
+                progress("Clips video (Wan 2.2)", 36,
+                         f"scene {index + 1} en echec, image fixe conservee : {exc}")
+    return produced
+
+
 def generate_images(
     scenes: list[dict[str, Any]], workdir: Path, settings: JobSettings,
     progress: _Progress | None = None,
@@ -1146,18 +1338,43 @@ def write_ass(words: list[dict[str, Any]], path: Path, settings: JobSettings) ->
 # ---------------------------------------------------------------------------
 
 
-def build_slideshow(
-    images: list[Path], timings: list[tuple[float, float]], workdir: Path
+def build_visual_track(
+    images: list[Path], timings: list[tuple[float, float]], workdir: Path,
+    generated: dict[int, Path] | None = None,
 ) -> Path:
     """
-    Construit le diaporama vertical : un clip par image avec un zoom lent
-    (Ken Burns), alternativement avant / arriere, puis concatenation.
+    Construit la piste video verticale, scene par scene, puis la concatene.
+
+    Une scene disposant d'un clip Wan genere l'utilise ; les autres retombent
+    sur leur image fixe animee d'un zoom lent (Ken Burns). Tous les segments
+    sont reencodes aux memes parametres, condition pour que la concatenation
+    par demuxer fonctionne.
     """
+    generated = generated or {}
     clips_dir = workdir / "clips"
     clips_dir.mkdir(parents=True, exist_ok=True)
     clips: list[Path] = []
 
     for index, (image, (_, duration)) in enumerate(zip(images, timings)):
+        clip = clips_dir / f"clip_{index:02d}.mp4"
+
+        source = generated.get(index)
+        if source and Path(source).exists():
+            # -stream_loop -1 : si le clip genere est plus court que la
+            # narration de la scene, il boucle au lieu de laisser un trou.
+            run_ffmpeg([
+                "-stream_loop", "-1", "-i", str(source),
+                "-t", f"{duration:.3f}",
+                "-vf", (
+                    f"scale={VIDEO_W}:{VIDEO_H}:force_original_aspect_ratio=increase,"
+                    f"crop={VIDEO_W}:{VIDEO_H},fps={FPS},format=yuv420p"
+                ),
+                "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+                "-pix_fmt", "yuv420p", "-an", str(clip),
+            ])
+            clips.append(clip)
+            continue
+
         frames = max(2, int(round(duration * FPS)))
         zoom_in = index % 2 == 0
         # zoompan travaille image par image : z depend de "on" (frame courante).
@@ -1174,7 +1391,6 @@ def build_slideshow(
             f"format=yuv420p"
         )
 
-        clip = clips_dir / f"clip_{index:02d}.mp4"
         run_ffmpeg([
             "-loop", "1", "-framerate", str(FPS), "-i", str(image),
             "-t", f"{duration:.3f}", "-vf", vf,
@@ -1187,12 +1403,12 @@ def build_slideshow(
     concat_list.write_text(
         "\n".join(f"file '{c.name}'" for c in clips), encoding="utf-8"
     )
-    slideshow = workdir / "slideshow.mp4"
+    track = workdir / "visual_track.mp4"
     run_ffmpeg(
-        ["-f", "concat", "-safe", "0", "-i", concat_list.name, "-c", "copy", str(slideshow)],
+        ["-f", "concat", "-safe", "0", "-i", concat_list.name, "-c", "copy", str(track)],
         cwd=clips_dir,
     )
-    return slideshow
+    return track
 
 
 def pick_sfx(keyword: str) -> Path | None:
@@ -1373,9 +1589,18 @@ def run_job(job_id: str, keep_workdir: bool = False,
                 subtitles_path = workdir / "subs.ass"
                 write_ass(words, subtitles_path, settings)
 
-        # 5. Diaporama --------------------------------------------------------
-        progress("Montage des images", 72, "effet Ken Burns")
-        slideshow = build_slideshow(images, timings, workdir)
+        # 4 bis. Clips video generes (Wan 2.2) ---------------------------------
+        generated: dict[int, Path] = {}
+        if get_video_engine(settings.video_engine).kind == "wan":
+            generated = generate_scene_clips(
+                script["scenes"], timings, workdir, settings, progress
+            )
+            update_job(job_id, animated_scenes=sorted(generated))
+
+        # 5. Piste video --------------------------------------------------------
+        progress("Montage de la piste video", 72,
+                 f"{len(generated)} clip(s) genere(s)" if generated else "effet Ken Burns")
+        slideshow = build_visual_track(images, timings, workdir, generated)
 
         # 6. Bruitages --------------------------------------------------------
         sfx_plan: list[tuple[Path, float]] = []
