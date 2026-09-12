@@ -427,11 +427,14 @@ function PlanningTimeline({
   );
 }
 
-/** Une tranche d'une heure. La première heure d'une demi-journée porte le titre, les suivantes prolongent le bloc. */
+/**
+ * Une tranche d'une heure. Chaque tranche porte le nom de sa tâche, y compris quand la même
+ * tâche en occupe plusieurs d'affilée : une case vide se lit comme un créneau libre, alors
+ * qu'elle est bel et bien occupée.
+ */
 function HourCell({
   task,
   absentPeriod,
-  isFirstHour,
   isPlanned = false,
   isSelected,
   title,
@@ -439,7 +442,6 @@ function HourCell({
 }: {
   task: ProjectTask | undefined;
   absentPeriod: boolean;
-  isFirstHour: boolean;
   /** Vrai quand l'heure retombe sur le prévisionnel faute de temps saisi : affichage atténué. */
   isPlanned?: boolean;
   isSelected: boolean;
@@ -454,7 +456,7 @@ function HourCell({
         title={`${title} — absent(e)`}
         className={`flex h-6 items-center justify-center rounded border border-dashed border-slate-200 bg-slate-50 text-[10px] text-slate-400 dark:border-slate-700 dark:bg-slate-800/40 ${ring}`}
       >
-        {isFirstHour ? 'Absent(e)' : ''}
+        Absent(e)
       </div>
     );
   }
@@ -471,12 +473,10 @@ function HourCell({
           : 'border-dashed border-slate-200 text-slate-400 hover:border-violet-300 dark:border-slate-700 dark:hover:border-violet-500/50'
       } ${ring}`}
     >
-      {isFirstHour ? (
-        <span className="flex min-w-0 items-center gap-1">
-          {meta && <span className="shrink-0">{meta.icon}</span>}
-          <span className="min-w-0 truncate">{task ? task.title : 'Non planifié'}</span>
-        </span>
-      ) : null}
+      <span className="flex min-w-0 items-center gap-1">
+        {meta && <span className="shrink-0">{meta.icon}</span>}
+        <span className="min-w-0 truncate">{task ? task.title : 'Non planifié'}</span>
+      </span>
     </button>
   );
 }
@@ -583,7 +583,6 @@ function GrilleHoraire({
                         <HourCell
                           task={task}
                           absentPeriod={isAbsent(absences, m.id, d, period)}
-                          isFirstHour={assignment?.isBlockStart ?? false}
                           isPlanned={assignment?.source === 'prevu'}
                           isSelected={selected?.memberId === m.id && selected.date === iso && selected.period === period}
                           title={`${m.name} · ${formatDayLabel(d)} · ${h.rangeLabel}${

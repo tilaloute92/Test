@@ -17,10 +17,6 @@ export interface HourAssignment {
   taskId: string | null;
   /** D'où vient l'information : temps réellement saisi, créneau prévisionnel, ou rien. */
   source: 'saisi' | 'prevu' | null;
-  /** Vrai sur la première heure d'un bloc : c'est elle qui porte le titre. */
-  isBlockStart: boolean;
-  /** Durée du bloc auquel cette heure appartient, en heures. */
-  blockHours: number;
 }
 
 export interface PlacedItem {
@@ -34,9 +30,9 @@ export interface PlacedItem {
  * déborde du créneau est tronquée à sa dernière heure : le créneau ne s'étire pas au-delà
  * de 12:00 ou 18:00.
  */
-export function placeItems(period: Period, items: PlacedItem[]): Map<number, { taskId: string; blockHours: number; isStart: boolean }> {
+export function placeItems(period: Period, items: PlacedItem[]): Map<number, string> {
   const { start, end } = PERIOD_RANGES[period];
-  const placed = new Map<number, { taskId: string; blockHours: number; isStart: boolean }>();
+  const placed = new Map<number, string>();
   let cursor = start;
 
   for (const item of items) {
@@ -44,11 +40,9 @@ export function placeItems(period: Period, items: PlacedItem[]): Map<number, { t
     const from = cursor;
     // Une tranche est attribuée à l'activité qui l'occupe au moment où elle commence.
     const to = from + item.hours;
-    let first = true;
     for (let h = Math.floor(from); h < Math.ceil(to); h++) {
       if (h + 1 <= from || h >= to) continue;
-      placed.set(h, { taskId: item.taskId, blockHours: item.hours, isStart: first });
-      first = false;
+      placed.set(h, item.taskId);
     }
     cursor = Math.min(to, end);
   }
@@ -67,31 +61,14 @@ export function entriesFor(timeEntries: TimeEntry[], memberId: string, iso: stri
  */
 export function assignHours(slot: PlanningSlot | undefined, entries: (period: Period) => TimeEntry[]): HourAssignment[] {
   return getHourSlots().map(({ hour, period }) => {
-    if (period === null) return { hour, taskId: null, source: null, isBlockStart: false, blockHours: 0 };
+    if (period === null) return { hour, taskId: null, source: null };
 
     const items: PlacedItem[] = entries(period).map((e) => ({ taskId: e.taskId, hours: e.hours }));
     const hit = placeItems(period, items).get(hour);
-    if (hit) return { hour, taskId: hit.taskId, source: 'saisi', isBlockStart: hit.isStart, blockHours: hit.blockHours };
+    if (hit) return { hour, taskId: hit, source: 'saisi' };
 
     // Aucune activité saisie sur cette heure : on retombe sur le prévisionnel de la demi-journée.
-    if (slot?.taskId) {
-      const firstFree = firstFreeHour(period, items);
-      return {
-        hour,
-        taskId: slot.taskId,
-        source: 'prevu',
-        isBlockStart: hour === firstFree,
-        blockHours: PERIOD_RANGES[period].end - (firstFree ?? PERIOD_RANGES[period].start),
-      };
-    }
-    return { hour, taskId: null, source: null, isBlockStart: false, blockHours: 0 };
+    if (slot?.taskId) return { hour, taskId: slot.taskId, source: 'prevu' };
+    return { hour, taskId: null, source: null };
   });
-}
-
-/** Première heure du créneau qu'aucune activité n'occupe — celle qui portera le titre du prévisionnel. */
-function firstFreeHour(period: Period, items: PlacedItem[]): number | null {
-  const { start, end } = PERIOD_RANGES[period];
-  const placed = placeItems(period, items);
-  for (let h = start; h < end; h++) if (!placed.has(h)) return h;
-  return null;
 }
