@@ -34,6 +34,7 @@ export function DailyView() {
   const [hours, setHours] = useState('3.5');
   const [note, setNote] = useState('');
 
+
   const iso = toISODate(date);
 
   // `timeEntries` est une liste d'ajouts : la dernière saisie est donc la dernière du tableau.
@@ -48,7 +49,7 @@ export function DailyView() {
 
   const openLogging = (target: LoggingTarget) => {
     setLogging(target);
-    setHours('3.5');
+    setHours('1');
     setNote('');
   };
 

@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { formatDateLong, formatDayLabel, formatWeekRange, getWeeks, isToday, isWeekend, toISODate } from '../lib/date';
 import { PERIOD_LABELS, PERIOD_RANGES, getHourSlots, periodRangeLabel } from '../lib/hours';
+import { assignHours, entriesFor } from '../lib/dayAllocation';
 import { isAbsent } from '../lib/workload';
 import { getTaskById } from '../lib/selectors';
 import { Avatar, Card, ModeSwitcher, PrintButton, PrintHeader, TaskTypeBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import { useViewMode } from '../hooks/useViewMode';
-import type { Absence, Period, PlanningSlot, ProjectTask, TaskType, TeamMember } from '../types';
+import type { Absence, Period, PlanningSlot, ProjectTask, TaskType, TeamMember, TimeEntry } from '../types';
 
 const PLANNING_VIEW_MODES = ['grille', 'personne', 'liste'] as const;
 type PlanningViewMode = (typeof PLANNING_VIEW_MODES)[number];
@@ -43,7 +44,7 @@ interface SelectedCell {
 }
 
 export function PlanningView() {
-  const { members, tasks, planningSlots, absences, setPlanningSlot } = useStore();
+  const { members, tasks, planningSlots, timeEntries, absences, setPlanningSlot } = useStore();
   const confirm = useConfirm();
   const weeks = useMemo(() => getWeeks(new Date(), 3), []);
   const [weekIndex, setWeekIndex] = useState(0);
@@ -155,6 +156,7 @@ export function PlanningView() {
         currentWeek={currentWeek}
         tasks={tasks}
         planningSlots={planningSlots}
+        timeEntries={timeEntries}
         absences={absences}
         selected={selected}
         onSelect={setSelected}
@@ -213,6 +215,7 @@ export function PlanningView() {
           weeks={weeks}
           tasks={tasks}
           planningSlots={planningSlots}
+          timeEntries={timeEntries}
           absences={absences}
           personId={personId}
           setPersonId={setPersonId}
@@ -240,6 +243,7 @@ function PlanningByPerson({
   weeks,
   tasks,
   planningSlots,
+  timeEntries,
   absences,
   personId,
   setPersonId,
@@ -248,6 +252,7 @@ function PlanningByPerson({
   weeks: Date[][];
   tasks: ProjectTask[];
   planningSlots: PlanningSlot[];
+  timeEntries: TimeEntry[];
   absences: Absence[];
   personId: string;
   setPersonId: (id: string) => void;
@@ -311,7 +316,7 @@ function PlanningByPerson({
                       );
                     })}
                   </div>
-                  <DayHourStrip memberId={person.id} day={d} tasks={tasks} planningSlots={planningSlots} absences={absences} />
+                  <DayHourStrip memberId={person.id} day={d} tasks={tasks} planningSlots={planningSlots} timeEntries={timeEntries} absences={absences} />
                 </div>
               );
             })}
@@ -427,6 +432,7 @@ function HourCell({
   task,
   absentPeriod,
   isFirstHour,
+  isPlanned = false,
   isSelected,
   title,
   onClick,
@@ -434,6 +440,8 @@ function HourCell({
   task: ProjectTask | undefined;
   absentPeriod: boolean;
   isFirstHour: boolean;
+  /** Vrai quand l'heure retombe sur le prévisionnel faute de temps saisi : affichage atténué. */
+  isPlanned?: boolean;
   isSelected: boolean;
   title: string;
   onClick: () => void;
@@ -459,7 +467,7 @@ function HourCell({
       title={title}
       className={`block h-6 w-full min-w-0 rounded border px-1.5 text-left text-[10px] transition-colors ${
         meta
-          ? `${meta.bg} ${meta.border} ${meta.text}`
+          ? `${meta.bg} ${meta.border} ${meta.text} ${isPlanned ? 'opacity-50 border-dashed' : ''}`
           : 'border-dashed border-slate-200 text-slate-400 hover:border-violet-300 dark:border-slate-700 dark:hover:border-violet-500/50'
       } ${ring}`}
     >
@@ -494,6 +502,7 @@ function GrilleHoraire({
   currentWeek,
   tasks,
   planningSlots,
+  timeEntries,
   absences,
   selected,
   onSelect,
@@ -502,6 +511,7 @@ function GrilleHoraire({
   currentWeek: Date[];
   tasks: ProjectTask[];
   planningSlots: PlanningSlot[];
+  timeEntries: TimeEntry[];
   absences: Absence[];
   selected: SelectedCell | null;
   onSelect: (cell: SelectedCell) => void;
@@ -563,15 +573,22 @@ function GrilleHoraire({
                       );
                     }
                     const period = h.period;
-                    const task = slotTask(planningSlots, tasks, m.id, iso, period);
+                    const slot = planningSlots.find((p) => p.memberId === m.id && p.date === iso && p.period === period);
+                    const assignment = assignHours(slot, (per) => entriesFor(timeEntries, m.id, iso, per)).find(
+                      (a) => a.hour === h.hour
+                    );
+                    const task = getTaskById(tasks, assignment?.taskId);
                     return (
                       <div key={iso} className={weekendBg}>
                         <HourCell
                           task={task}
                           absentPeriod={isAbsent(absences, m.id, d, period)}
-                          isFirstHour={PERIOD_RANGES[period].start === h.hour}
+                          isFirstHour={assignment?.isBlockStart ?? false}
+                          isPlanned={assignment?.source === 'prevu'}
                           isSelected={selected?.memberId === m.id && selected.date === iso && selected.period === period}
-                          title={`${m.name} · ${formatDayLabel(d)} · ${h.rangeLabel}${task ? ` — ${task.title}` : ''}`}
+                          title={`${m.name} · ${formatDayLabel(d)} · ${h.rangeLabel}${
+                            task ? ` — ${task.title}${assignment?.source === 'prevu' ? ' (prévu)' : ' (temps saisi)'}` : ''
+                          }`}
                           onClick={() => onSelect({ memberId: m.id, date: iso, period })}
                         />
                       </div>
@@ -613,12 +630,14 @@ function DayHourStrip({
   day,
   tasks,
   planningSlots,
+  timeEntries,
   absences,
 }: {
   memberId: string;
   day: Date;
   tasks: ProjectTask[];
   planningSlots: PlanningSlot[];
+  timeEntries: TimeEntry[];
   absences: Absence[];
 }) {
   const hourSlots = useMemo(() => getHourSlots(), []);
@@ -636,7 +655,9 @@ function DayHourStrip({
           );
         }
         const absentPeriod = isAbsent(absences, memberId, day, h.period);
-        const task = absentPeriod ? undefined : slotTask(planningSlots, tasks, memberId, iso, h.period);
+        const slot = planningSlots.find((p) => p.memberId === memberId && p.date === iso && p.period === h.period);
+        const assignment = assignHours(slot, (per) => entriesFor(timeEntries, memberId, iso, per)).find((a) => a.hour === h.hour);
+        const task = absentPeriod ? undefined : getTaskById(tasks, assignment?.taskId);
         const meta = task ? typeMeta[task.type] : null;
         return (
           <div
@@ -644,7 +665,13 @@ function DayHourStrip({
             className="min-w-0 flex-1"
             title={`${h.rangeLabel} · ${PERIOD_LABELS[h.period]}${task ? ` — ${task.title}` : absentPeriod ? ' — absent(e)' : ' — non planifié'}`}
           >
-            <div className={`h-4 rounded-sm border ${meta ? `${meta.bg} ${meta.border}` : 'border-dashed border-slate-200 dark:border-slate-700'}`} />
+            <div
+              className={`h-4 rounded-sm border ${
+                meta
+                  ? `${meta.bg} ${meta.border} ${assignment?.source === 'prevu' ? 'opacity-50 border-dashed' : ''}`
+                  : 'border-dashed border-slate-200 dark:border-slate-700'
+              }`}
+            />
             <div className="mt-0.5 text-center text-[9px] font-medium tabular-nums text-slate-500 dark:text-slate-400">{h.hour}h</div>
           </div>
         );
