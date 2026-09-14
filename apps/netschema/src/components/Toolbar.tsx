@@ -3,6 +3,7 @@ import { Btn } from './ui'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
 import { diagramFileContent, readDiagramFile } from '../lib/storage'
 import { useDiagram } from '../store/useDiagram'
+import { useAudit } from '../store/useAudit'
 
 export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | null> }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -12,6 +13,7 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
   const canUndo = useDiagram((s) => s.past.length > 0)
   const canRedo = useDiagram((s) => s.future.length > 0)
   const hasSelection = useDiagram((s) => s.selectedNodes.length + s.selectedLinks.length > 0)
+  const report = useAudit()
 
   const store = useDiagram.getState
 
@@ -92,6 +94,25 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => store().setPanel('ha')}
+          title="Ouvrir l'analyse de haute disponibilité"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"
+        >
+          <span
+            className="h-2 w-2 rounded-full"
+            style={{
+              backgroundColor:
+                report.counts.critique > 0 ? '#dc2626' : report.counts.avertissement > 0 ? '#d97706' : '#059669',
+            }}
+          />
+          Haute dispo
+          <span className="tabular-nums text-slate-400">{report.score}</span>
+        </button>
+
+        <Separator />
+
         <Btn onClick={() => store().loadSample()} title="Charger le schéma d'exemple">Exemple</Btn>
         <Btn onClick={() => store().newDiagram()} title="Repartir d'un schéma vide">Nouveau</Btn>
 

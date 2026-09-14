@@ -1,7 +1,9 @@
 import { Btn, Checkbox, Field, Select, Slider, TextInput } from './ui'
-import { DEVICES, LAYER_LABELS, LINKS, rankOf } from '../lib/catalog'
+import { HaPanel } from './HaPanel'
+import { DEVICES, LAYER_LABELS, LINKS, ROLES, rankOf } from '../lib/catalog'
 import { useDiagram } from '../store/useDiagram'
-import type { DeviceKind, LinkKind, NetNode } from '../types'
+import { useAudit } from '../store/useAudit'
+import type { DeviceKind, HaRole, LinkKind, NetNode } from '../types'
 
 const DEVICE_OPTIONS = (Object.keys(DEVICES) as DeviceKind[]).map((kind) => ({
   value: kind,
@@ -13,6 +15,11 @@ const LINK_OPTIONS = (Object.keys(LINKS) as LinkKind[]).map((kind) => ({
   label: LINKS[kind].label,
 }))
 
+const ROLE_OPTIONS = (Object.keys(ROLES) as HaRole[]).map((role) => ({
+  value: role,
+  label: ROLES[role].label,
+}))
+
 const RANK_OPTIONS = [
   { value: 'auto', label: 'Automatique (selon le type)' },
   ...Object.entries(LAYER_LABELS).map(([rank, label]) => ({ value: rank, label: `${rank} — ${label}` })),
@@ -22,12 +29,50 @@ export function Inspector() {
   const diagram = useDiagram((s) => s.diagram)
   const selectedNodes = useDiagram((s) => s.selectedNodes)
   const selectedLinks = useDiagram((s) => s.selectedLinks)
+  const panel = useDiagram((s) => s.panel)
+  const setPanel = useDiagram((s) => s.setPanel)
+  const report = useAudit()
 
   const nodes = diagram.nodes.filter((n) => selectedNodes.includes(n.id))
   const link = diagram.links.find((l) => selectedLinks.includes(l.id))
 
+  const alerts = report.counts.critique + report.counts.avertissement
+
   return (
     <aside className="flex w-72 shrink-0 flex-col gap-5 overflow-y-auto border-l border-slate-200 bg-white p-4">
+      <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+        <button
+          type="button"
+          onClick={() => setPanel('properties')}
+          className={`flex-1 rounded-md px-2 py-1.5 text-[12px] font-medium transition ${
+            panel === 'properties' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Propriétés
+        </button>
+        <button
+          type="button"
+          onClick={() => setPanel('ha')}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] font-medium transition ${
+            panel === 'ha' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Haute dispo
+          {alerts > 0 && (
+            <span
+              className="rounded-full px-1.5 text-[10px] font-bold text-white"
+              style={{ backgroundColor: report.counts.critique > 0 ? '#dc2626' : '#d97706' }}
+            >
+              {alerts}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {panel === 'ha' && <HaPanel />}
+
+      {panel === 'properties' && (
+      <>
       <section>
         <SectionTitle>Sélection</SectionTitle>
         {nodes.length === 1 && <NodeForm node={nodes[0]} />}
@@ -58,6 +103,9 @@ export function Inspector() {
           <dd className="text-right font-medium">{diagram.nodes.filter((n) => n.pinned).length}</dd>
         </dl>
       </section>
+
+      </>
+      )}
 
       <section className="mt-auto rounded-lg bg-slate-50 p-3 text-[11px] leading-relaxed text-slate-500">
         <p className="font-semibold text-slate-600">Raccourcis</p>
@@ -96,9 +144,40 @@ function NodeForm({ node }: { node: NetNode }) {
       <Field label="Modèle">
         <TextInput value={node.model ?? ''} onChange={(model) => set({ model })} placeholder="FortiGate 100F" />
       </Field>
-      <Field label="Zone">
-        <TextInput value={node.zone ?? ''} onChange={(zone) => set({ zone })} placeholder="DMZ, Bâtiment A…" />
-      </Field>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Zone">
+          <TextInput value={node.zone ?? ''} onChange={(zone) => set({ zone })} placeholder="DMZ…" />
+        </Field>
+        <Field label="Site">
+          <TextInput value={node.site ?? ''} onChange={(site) => set({ site })} placeholder="Siège" />
+        </Field>
+      </div>
+
+      <div className="rounded-lg border border-pink-100 bg-pink-50/50 p-2.5">
+        <p className="pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-pink-700">
+          Haute disponibilité
+        </p>
+        <div className="flex flex-col gap-2">
+          <Field label="Grappe (cluster)">
+            <TextInput value={node.cluster ?? ''} onChange={(cluster) => set({ cluster })} placeholder="FW-HA" />
+          </Field>
+          <Field label="Rôle dans la grappe">
+            <Select
+              value={node.role ?? 'standalone'}
+              onChange={(role) => set({ role: role as HaRole })}
+              options={ROLE_OPTIONS}
+            />
+          </Field>
+          <Field label="Adresse virtuelle (VRRP / HSRP / VIP)">
+            <TextInput value={node.vip ?? ''} onChange={(vip) => set({ vip })} placeholder="10.0.0.254" />
+          </Field>
+          <Checkbox
+            checked={node.dualPower === true}
+            onChange={(dualPower) => set({ dualPower })}
+            label="Double alimentation (chaînes A/B)"
+          />
+        </div>
+      </div>
       <Field label="Couche pour le placement auto">
         <Select
           value={typeof node.rank === 'number' ? String(node.rank) : 'auto'}
@@ -125,7 +204,11 @@ function MultiNodeForm({ nodes }: { nodes: NetNode[] }) {
   const updateNodes = useDiagram((s) => s.updateNodes)
   const ids = nodes.map((n) => n.id)
   const allPinned = nodes.every((n) => n.pinned)
-  const sharedZone = nodes.every((n) => n.zone === nodes[0].zone) ? (nodes[0].zone ?? '') : ''
+  const shared = (pick: (node: NetNode) => string | undefined) =>
+    nodes.every((n) => pick(n) === pick(nodes[0])) ? (pick(nodes[0]) ?? '') : ''
+  const sharedZone = shared((n) => n.zone)
+  const sharedSite = shared((n) => n.site)
+  const sharedCluster = shared((n) => n.cluster)
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -133,6 +216,17 @@ function MultiNodeForm({ nodes }: { nodes: NetNode[] }) {
       <Field label="Zone commune">
         <TextInput value={sharedZone} onChange={(zone) => updateNodes(ids, { zone })} placeholder="Bâtiment A" />
       </Field>
+      <Field label="Site commun">
+        <TextInput value={sharedSite} onChange={(site) => updateNodes(ids, { site })} placeholder="Siège" />
+      </Field>
+      <Field label="Grappe commune">
+        <TextInput value={sharedCluster} onChange={(cluster) => updateNodes(ids, { cluster })} placeholder="FW-HA" />
+      </Field>
+      <Checkbox
+        checked={nodes.every((n) => n.dualPower)}
+        onChange={(dualPower) => updateNodes(ids, { dualPower })}
+        label="Double alimentation (A/B)"
+      />
       <Checkbox
         checked={allPinned}
         onChange={(pinned) => updateNodes(ids, { pinned })}
@@ -186,6 +280,8 @@ function LayoutForm() {
   const showGrid = useDiagram((s) => s.showGrid)
   const snap = useDiagram((s) => s.snap)
   const showZones = useDiagram((s) => s.showZones)
+  const showSites = useDiagram((s) => s.showSites)
+  const showClusters = useDiagram((s) => s.showClusters)
   const showLayerLabels = useDiagram((s) => s.showLayerLabels)
   const showDetails = useDiagram((s) => s.showDetails)
 
@@ -210,6 +306,11 @@ function LayoutForm() {
           <Slider value={layout.layerGap} min={40} max={220} step={4} onChange={(layerGap) => setLayout({ layerGap })} />
         </Field>
         <Checkbox
+          checked={layout.groupBySite}
+          onChange={(groupBySite) => setLayout({ groupBySite })}
+          label="Regrouper par site"
+        />
+        <Checkbox
           checked={layout.groupByZone}
           onChange={(groupByZone) => setLayout({ groupByZone })}
           label="Regrouper par zone"
@@ -228,7 +329,9 @@ function LayoutForm() {
         </Field>
         <div className="flex flex-col gap-1.5 pt-1">
           <Checkbox checked={showDetails} onChange={(v) => setDisplay({ showDetails: v })} label="Afficher IP, VLAN, débits" />
+          <Checkbox checked={showSites} onChange={(v) => setDisplay({ showSites: v })} label="Afficher les sites" />
           <Checkbox checked={showZones} onChange={(v) => setDisplay({ showZones: v })} label="Afficher les zones" />
+          <Checkbox checked={showClusters} onChange={(v) => setDisplay({ showClusters: v })} label="Afficher les grappes HA" />
           <Checkbox checked={showLayerLabels} onChange={(v) => setDisplay({ showLayerLabels: v })} label="Afficher les noms de couches" />
           <Checkbox checked={showGrid} onChange={(v) => setDisplay({ showGrid: v })} label="Afficher la grille" />
           <Checkbox checked={snap} onChange={(v) => setDisplay({ snap: v })} label="Aimanter à la grille" />

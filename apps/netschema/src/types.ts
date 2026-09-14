@@ -13,11 +13,33 @@ export type DeviceKind =
   | 'wifi'
   | 'server'
   | 'storage'
+  | 'hypervisor'
+  | 'witness'
+  | 'backup'
   | 'workstation'
   | 'printer'
   | 'phone'
+  | 'ups'
+  | 'pdu'
 
-export type LinkKind = 'ethernet' | 'fiber' | 'trunk' | 'wan' | 'vpn' | 'wireless'
+export type LinkKind =
+  | 'ethernet'
+  | 'fiber'
+  | 'trunk'
+  | 'wan'
+  | 'vpn'
+  | 'wireless'
+  | 'heartbeat'
+  | 'stack'
+  | 'replication'
+  | 'oob'
+  | 'power'
+
+/**
+ * Rôle d'un équipement au sein d'une grappe haute disponibilité.
+ * `witness` désigne le témoin / quorum qui départage une grappe à deux nœuds.
+ */
+export type HaRole = 'standalone' | 'active' | 'passive' | 'active-active' | 'witness'
 
 /**
  * Un équipement. `x`/`y` désignent le CENTRE de la boîte, en coordonnées « diagramme »
@@ -32,6 +54,16 @@ export interface NetNode {
   vlan?: string
   /** Zone logique (DMZ, LAN siège, agence…) : sert au regroupement et au cadre en pointillés. */
   zone?: string
+  /** Site physique (siège, site de secours, datacenter opérateur…). */
+  site?: string
+  /** Nom de la grappe HA à laquelle l'équipement appartient (FW-CLUSTER, CORE-MLAG…). */
+  cluster?: string
+  /** Rôle dans la grappe : actif, passif, actif/actif, témoin de quorum. */
+  role?: HaRole
+  /** Adresse virtuelle portée par la grappe (VRRP / HSRP / VIP de répartiteur). */
+  vip?: string
+  /** Double alimentation électrique (deux chaînes A/B). */
+  dualPower?: boolean
   notes?: string
   x: number
   y: number
@@ -69,6 +101,8 @@ export interface LayoutOptions {
   layerGap: number
   /** Regroupe les équipements d'une même zone côte à côte dans leur couche. */
   groupByZone: boolean
+  /** Regroupe d'abord par site physique (siège, site de secours…). */
+  groupBySite: boolean
 }
 
 export type LinkStyle = 'orthogonal' | 'straight'

@@ -121,6 +121,50 @@ export function DeviceIcon({ kind, color }: { kind: DeviceKind; color: string })
           <path d="M10 5.5h4M10.5 18.5h3" />
         </g>
       )
+    case 'hypervisor':
+      return (
+        <g {...stroke}>
+          <rect x="2.5" y="4.5" width="19" height="15" rx="2" />
+          <rect x="5.5" y="7.5" width="5" height="4" rx="0.8" />
+          <rect x="13.5" y="7.5" width="5" height="4" rx="0.8" />
+          <rect x="5.5" y="13.5" width="5" height="3" rx="0.8" />
+          <rect x="13.5" y="13.5" width="5" height="3" rx="0.8" />
+        </g>
+      )
+    case 'witness':
+      return (
+        <g {...stroke}>
+          <path d="M12 4.5v15M7 19.5h10" />
+          <path d="M4 9h16M4 9l-2.2 4.5a2.6 2.6 0 0 0 4.4 0Z" />
+          <path d="M20 9l2.2 4.5a2.6 2.6 0 0 1-4.4 0Z" />
+          <circle cx="12" cy="4.2" r="1.3" fill={color} stroke="none" />
+        </g>
+      )
+    case 'backup':
+      return (
+        <g {...stroke}>
+          <rect x="3" y="4.5" width="18" height="15" rx="2" />
+          <path d="M8.5 12a3.5 3.5 0 1 0 1.1-2.5" />
+          <path d="M9.6 6.6v3h-3" />
+        </g>
+      )
+    case 'ups':
+      return (
+        <g {...stroke}>
+          <rect x="2.5" y="6.5" width="17" height="11" rx="2" />
+          <path d="M19.5 10.5h2v3h-2" />
+          <path d="M11.5 8.8 8.8 12.6h3l-.8 2.9 3.2-4h-3Z" fill={color} stroke="none" />
+        </g>
+      )
+    case 'pdu':
+      return (
+        <g {...stroke}>
+          <rect x="2.5" y="8.5" width="19" height="7" rx="1.8" />
+          <circle cx="7" cy="12" r="1.5" />
+          <circle cx="12" cy="12" r="1.5" />
+          <circle cx="17" cy="12" r="1.5" />
+        </g>
+      )
     default:
       return (
         <g {...stroke}>

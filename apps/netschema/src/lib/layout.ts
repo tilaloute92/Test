@@ -20,6 +20,17 @@ function buildAdjacency(diagram: Diagram): Map<string, string[]> {
   return adj
 }
 
+const trimmed = (value?: string) => value?.trim() ?? ''
+
+/** Index alphabétique d'une valeur de regroupement ; les équipements sans valeur passent en dernier. */
+function groupIndexer(nodes: NetNode[], pick: (node: NetNode) => string) {
+  const values = [...new Set(nodes.map(pick).filter(Boolean))].sort()
+  return (node: NetNode) => {
+    const value = pick(node)
+    return value ? values.indexOf(value) : values.length
+  }
+}
+
 /**
  * Placement automatique par couches.
  *
@@ -27,7 +38,10 @@ function buildAdjacency(diagram: Diagram): Map<string, string[]> {
  * 2. les couches vides sont supprimées pour éviter les trous ;
  * 3. l'ordre à l'intérieur d'une couche est affiné par barycentres successifs — chaque
  *    équipement glisse en face de ses voisins, ce qui réduit fortement les croisements ;
- * 4. les positions sont réparties régulièrement et centrées couche par couche.
+ * 4. les regroupements (site, zone, grappe HA) reprennent la main sur cet ordre, pour que
+ *    les membres d'une même grappe restent côte à côte ;
+ * 5. les positions sont réparties avec un espacement variable — serré dans une grappe,
+ *    large entre deux zones — puis chaque couche est centrée.
  *
  * Les équipements épinglés (`pinned`) gardent leur position : c'est le côté « semi »
  * de l'automatisation — on laisse l'algorithme faire le gros du travail, puis on fige
@@ -36,7 +50,7 @@ function buildAdjacency(diagram: Diagram): Map<string, string[]> {
 export function autoLayout(diagram: Diagram, options: LayoutOptions): NetNode[] {
   if (diagram.nodes.length === 0) return diagram.nodes
 
-  const { direction, nodeGap, layerGap, groupByZone } = options
+  const { direction, nodeGap, layerGap, groupByZone, groupBySite } = options
   const adj = buildAdjacency(diagram)
 
   const buckets = new Map<number, NetNode[]>()
@@ -92,30 +106,44 @@ export function autoLayout(diagram: Diagram, options: LayoutOptions): NetNode[] 
     sweep('next')
   }
 
-  if (groupByZone) {
-    const zones = [...new Set(diagram.nodes.map((n) => n.zone?.trim()).filter((z): z is string => !!z))].sort()
-    const zoneRank = (node: NetNode) => {
-      const zone = node.zone?.trim()
-      return zone ? zones.indexOf(zone) : zones.length
-    }
-    for (const layer of layers) {
-      const current = new Map(layer.map((node, i) => [node.id, i]))
-      layer.sort((a, b) => zoneRank(a) - zoneRank(b) || (current.get(a.id) ?? 0) - (current.get(b.id) ?? 0))
-    }
-    reindex()
+  // Regroupements : site (le plus large), puis zone, puis grappe HA (le plus serré).
+  const siteIndex = groupIndexer(diagram.nodes, (n) => trimmed(n.site))
+  const zoneIndex = groupIndexer(diagram.nodes, (n) => trimmed(n.zone))
+  const clusterIndex = groupIndexer(diagram.nodes, (n) => trimmed(n.cluster))
+  for (const layer of layers) {
+    const current = new Map(layer.map((node, i) => [node.id, i]))
+    layer.sort(
+      (a, b) =>
+        (groupBySite ? siteIndex(a) - siteIndex(b) : 0) ||
+        (groupByZone ? zoneIndex(a) - zoneIndex(b) : 0) ||
+        clusterIndex(a) - clusterIndex(b) ||
+        (current.get(a.id) ?? 0) - (current.get(b.id) ?? 0),
+    )
   }
+  reindex()
 
   const crossCenter = direction === 'TB' ? ORIGIN_CROSS_TB : ORIGIN_CROSS_LR
-  const slot = (direction === 'TB' ? NODE_W : NODE_H) + nodeGap
+  const size = direction === 'TB' ? NODE_W : NODE_H
   const thickness = direction === 'TB' ? NODE_H : NODE_W
+
+  /** Espacement entre deux voisins d'une couche, resserré dans une grappe, élargi entre groupes. */
+  const gapBetween = (a: NetNode, b: NetNode): number => {
+    if (trimmed(a.cluster) && trimmed(a.cluster) === trimmed(b.cluster)) return Math.max(14, nodeGap * 0.3)
+    if (groupBySite && trimmed(a.site) !== trimmed(b.site)) return nodeGap * 2.2
+    if (groupByZone && trimmed(a.zone) !== trimmed(b.zone)) return nodeGap * 1.5
+    return nodeGap
+  }
 
   const positions = new Map<string, { x: number; y: number }>()
   layers.forEach((layer, li) => {
-    const span = layer.length * slot - nodeGap
-    const start = crossCenter - span / 2
+    const gaps = layer.map((node, i) => (i === 0 ? 0 : gapBetween(layer[i - 1], node)))
+    const span = layer.length * size + gaps.reduce((acc, g) => acc + g, 0)
+    let offset = crossCenter - span / 2
     const main = ORIGIN_MAIN + li * (thickness + layerGap) + thickness / 2
     layer.forEach((node, i) => {
-      const c = start + i * slot + (direction === 'TB' ? NODE_W : NODE_H) / 2
+      offset += gaps[i]
+      const c = offset + size / 2
+      offset += size
       positions.set(node.id, direction === 'TB' ? { x: c, y: main } : { x: main, y: c })
     })
   })
@@ -156,31 +184,88 @@ export function layerBands(nodes: NetNode[], direction: LayoutOptions['direction
     }))
 }
 
-export interface ZoneBox {
-  zone: string
+export interface GroupBox {
+  key: string
+  /** Libellé affiché ; vide sur les rangées de continuation d'un même groupe. */
+  label: string
   x: number
   y: number
   width: number
   height: number
 }
 
-/** Cadres en pointillés regroupant les équipements d'une même zone. */
-export function zoneBoxes(nodes: NetNode[], padding = 22): ZoneBox[] {
+/**
+ * Cadres regroupant les équipements partageant une même valeur (site, zone ou grappe).
+ *
+ * Un groupe étalé sur plusieurs couches ne donne pas un grand rectangle — qui engloberait
+ * des équipements voisins n'appartenant pas au groupe — mais un cadre par rangée, étiré
+ * jusqu'à la rangée suivante quand elles se suivent : l'ensemble se lit comme une seule
+ * forme sans déborder sur les autres groupes.
+ */
+export function groupBoxes(
+  nodes: NetNode[],
+  pick: (node: NetNode) => string | undefined,
+  padding: number,
+  topSpace = 14,
+  direction: LayoutOptions['direction'] = 'TB',
+): GroupBox[] {
   const buckets = new Map<string, NetNode[]>()
   for (const node of nodes) {
-    const zone = node.zone?.trim()
-    if (!zone) continue
-    const bucket = buckets.get(zone)
+    const key = trimmed(pick(node))
+    if (!key) continue
+    const bucket = buckets.get(key)
     if (bucket) bucket.push(node)
-    else buckets.set(zone, [node])
+    else buckets.set(key, [node])
   }
-  return [...buckets.entries()].map(([zone, members]) => {
-    const minX = Math.min(...members.map((n) => n.x - NODE_W / 2)) - padding
-    const maxX = Math.max(...members.map((n) => n.x + NODE_W / 2)) + padding
-    const minY = Math.min(...members.map((n) => n.y - NODE_H / 2)) - padding - 12
-    const maxY = Math.max(...members.map((n) => n.y + NODE_H / 2)) + padding
-    return { zone, x: minX, y: minY, width: maxX - minX, height: maxY - minY }
-  })
+
+  const vertical = direction === 'TB'
+  const thickness = vertical ? NODE_H : NODE_W
+  const boxes: GroupBox[] = []
+
+  for (const [key, members] of buckets) {
+    const main = (node: NetNode) => (vertical ? node.y : node.x)
+    const sorted = [...members].sort((a, b) => main(a) - main(b))
+
+    // Découpage en rangées : deux équipements d'une même rangée sont à la même hauteur
+    // (à une hauteur de boîte près).
+    const rows: NetNode[][] = []
+    for (const node of sorted) {
+      const row = rows[rows.length - 1]
+      if (row && main(node) - main(row[row.length - 1]) <= thickness * 1.2) row.push(node)
+      else rows.push([node])
+    }
+
+    const rects = rows.map((row) => {
+      const minX = Math.min(...row.map((n) => n.x - NODE_W / 2)) - padding
+      const maxX = Math.max(...row.map((n) => n.x + NODE_W / 2)) + padding
+      const minY = Math.min(...row.map((n) => n.y - NODE_H / 2)) - padding
+      const maxY = Math.max(...row.map((n) => n.y + NODE_H / 2)) + padding
+      return { minX, maxX, minY, maxY }
+    })
+
+    rects.forEach((rect, i) => {
+      const next = rects[i + 1]
+      if (!next) return
+      // Rangées qui se suivent : on étire la précédente jusqu'à la suivante pour souder le cadre.
+      if (vertical && next.minY - rect.maxY < 170) rect.maxY = next.minY
+      if (!vertical && next.minX - rect.maxX < 170) rect.maxX = next.minX
+    })
+
+    rects.forEach((rect, i) => {
+      const labelled = i === 0
+      const top = labelled ? rect.minY - topSpace : rect.minY
+      boxes.push({
+        key: `${key}#${i}`,
+        label: labelled ? key : '',
+        x: rect.minX,
+        y: top,
+        width: rect.maxX - rect.minX,
+        height: rect.maxY - top,
+      })
+    })
+  }
+
+  return boxes
 }
 
 export function diagramBounds(nodes: NetNode[]) {

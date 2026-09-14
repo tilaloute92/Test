@@ -89,6 +89,13 @@ export function Palette() {
         <p className="mt-2 text-[11px] leading-snug text-slate-400">
           Pointillés larges = liaison de secours.
         </p>
+        <h3 className="pt-3 pb-1.5 text-[11px] font-semibold text-slate-400">Conventions HA</h3>
+        <ul className="flex flex-col gap-1 text-[11px] leading-snug text-slate-500">
+          <li><span className="font-semibold text-emerald-700">ACTIF</span> / <span className="font-semibold text-slate-600">PASSIF</span> / <span className="font-semibold text-blue-700">A/A</span> / <span className="font-semibold text-yellow-700">QUORUM</span> — rôle dans la grappe</li>
+          <li><span className="font-semibold text-yellow-700">⚡ A/B</span> — double alimentation électrique</li>
+          <li>Cadre rose — grappe HA et son adresse virtuelle</li>
+          <li>Pastille rouge — point de défaillance unique détecté</li>
+        </ul>
       </section>
     </aside>
   )

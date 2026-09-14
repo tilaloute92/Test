@@ -1,6 +1,6 @@
-import { DEVICES, LINKS } from './catalog'
+import { DEVICES, LINKS, ROLES } from './catalog'
 import { uid } from './ids'
-import type { Diagram, DeviceKind, LinkKind, NetLink, NetNode } from '../types'
+import type { Diagram, DeviceKind, HaRole, LinkKind, NetLink, NetNode } from '../types'
 
 const STORAGE_KEY = 'netschema:diagram:v1'
 const FILE_VERSION = 1
@@ -15,6 +15,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
+}
+
+function roleOf(value: unknown): HaRole | undefined {
+  const role = str(value)
+  return role && role in ROLES ? (role as HaRole) : undefined
 }
 
 /**
@@ -43,6 +48,11 @@ export function parseDiagram(raw: unknown): Diagram {
       ip: str(item.ip),
       vlan: str(item.vlan),
       zone: str(item.zone),
+      site: str(item.site),
+      cluster: str(item.cluster),
+      role: roleOf(item.role),
+      vip: str(item.vip),
+      dualPower: item.dualPower === true,
       notes: str(item.notes),
       x: Number.isFinite(item.x) ? Number(item.x) : 0,
       y: Number.isFinite(item.y) ? Number(item.y) : 0,

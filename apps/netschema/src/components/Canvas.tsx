@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LinkShape } from './LinkShape'
 import { NodeShape } from './NodeShape'
-import { diagramBounds, layerBands, zoneBoxes } from '../lib/layout'
+import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
 import { parallelOffsets } from '../lib/routing'
 import { GRID, useDiagram } from '../store/useDiagram'
+import { useAudit } from '../store/useAudit'
 import { DRAG_MIME } from '../lib/dnd'
 import type { DeviceKind, NetLink, NetNode } from '../types'
 
@@ -37,6 +38,9 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const snap = useDiagram((s) => s.snap)
   const showGrid = useDiagram((s) => s.showGrid)
   const showZones = useDiagram((s) => s.showZones)
+  const showSites = useDiagram((s) => s.showSites)
+  const showClusters = useDiagram((s) => s.showClusters)
+  const showAudit = useDiagram((s) => s.showAudit)
   const showLayerLabels = useDiagram((s) => s.showLayerLabels)
   const showDetails = useDiagram((s) => s.showDetails)
   const linkStyle = useDiagram((s) => s.linkStyle)
@@ -183,9 +187,28 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     useDiagram.getState().addNode(kind, x, y)
   }
 
+  const report = useAudit()
+  const flagged = useMemo(() => {
+    if (!showAudit) return new Set<string>()
+    return new Set(report.findings.filter((f) => f.severity === 'critique').flatMap((f) => f.nodeIds))
+  }, [report, showAudit])
+
+  /** Adresse virtuelle portée par chaque grappe, affichée sur son cadre. */
+  const clusterVips = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const node of diagram.nodes) {
+      const cluster = node.cluster?.trim()
+      const vip = node.vip?.trim()
+      if (cluster && vip && !map.has(cluster)) map.set(cluster, vip)
+    }
+    return map
+  }, [diagram.nodes])
+
   const bounds = diagramBounds(diagram.nodes)
   const bands = showLayerLabels ? layerBands(diagram.nodes, direction) : []
-  const zones = showZones ? zoneBoxes(diagram.nodes) : []
+  const sites = showSites ? groupBoxes(diagram.nodes, (n) => n.site, 50, 28, direction) : []
+  const zones = showZones ? groupBoxes(diagram.nodes, (n) => n.zone, 26, 14, direction) : []
+  const clusters = showClusters ? groupBoxes(diagram.nodes, (n) => n.cluster, 11, 13, direction) : []
 
   // Étalement des liaisons parallèles (deux équipements reliés par plusieurs câbles).
   const linkOffsets = useMemo(() => {
@@ -238,8 +261,29 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
         {showGrid && <rect data-export="false" width="100%" height="100%" fill="url(#netschema-grid)" />}
 
         <g data-export-root transform={`translate(${view.tx}, ${view.ty}) scale(${view.zoom})`}>
+          {sites.map((site) => (
+            <g key={`site-${site.key}`}>
+              <rect
+                x={site.x}
+                y={site.y}
+                width={site.width}
+                height={site.height}
+                rx={22}
+                fill="#0f172a"
+                fillOpacity={0.03}
+                stroke="#cbd5e1"
+                strokeWidth={1.6}
+              />
+              {site.label && (
+                <text x={site.x + 18} y={site.y + 22} fontSize={12.5} fontWeight={700} fill="#64748b">
+                  {`SITE — ${site.label.toUpperCase()}`}
+                </text>
+              )}
+            </g>
+          ))}
+
           {zones.map((zone) => (
-            <g key={zone.zone}>
+            <g key={`zone-${zone.key}`}>
               <rect
                 x={zone.x}
                 y={zone.y}
@@ -252,9 +296,35 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 strokeWidth={1.2}
                 strokeDasharray="7 6"
               />
-              <text x={zone.x + 14} y={zone.y + 18} fontSize={11} fontWeight={700} fill="#64748b">
-                {zone.zone.toUpperCase()}
-              </text>
+              {zone.label && (
+                <text x={zone.x + 14} y={zone.y + 17} fontSize={11} fontWeight={700} fill="#64748b">
+                  {zone.label.toUpperCase()}
+                </text>
+              )}
+            </g>
+          ))}
+
+          {clusters.map((cluster) => (
+            <g key={`cluster-${cluster.key}`}>
+              <rect
+                x={cluster.x}
+                y={cluster.y}
+                width={cluster.width}
+                height={cluster.height}
+                rx={12}
+                fill="#db2777"
+                fillOpacity={0.04}
+                stroke="#db2777"
+                strokeWidth={1.2}
+                strokeDasharray="4 4"
+              />
+              {cluster.label && (
+                <text x={cluster.x + 12} y={cluster.y + 16} fontSize={9.5} fontWeight={700} fill="#db2777">
+                  {`GRAPPE ${cluster.label}${
+                    clusterVips.get(cluster.label) ? ` · VIP ${clusterVips.get(cluster.label)}` : ''
+                  }`}
+                </text>
+              )}
             </g>
           ))}
 
@@ -324,6 +394,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
               selected={selectedNodes.includes(node.id)}
               isConnectSource={connectFrom === node.id}
               showDetails={showDetails}
+              flagged={flagged.has(node.id)}
               onPointerDown={onNodePointerDown}
             />
           ))}

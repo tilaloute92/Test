@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { autoLayout, diagramBounds } from '../lib/layout'
 import { deviceMeta } from '../lib/catalog'
 import { uid } from '../lib/ids'
+import { instantiatePattern, type HaPattern } from '../lib/patterns'
 import { emptyDiagram, loadLocal, saveLocal } from '../lib/storage'
 import { sampleDiagram } from '../lib/sample'
 import type { Diagram, DeviceKind, LayoutOptions, LinkStyle, NetLink, NetNode } from '../types'
@@ -11,6 +12,7 @@ const DEFAULT_LAYOUT: LayoutOptions = {
   nodeGap: 52,
   layerGap: 96,
   groupByZone: true,
+  groupBySite: true,
 }
 
 const HISTORY_LIMIT = 60
@@ -35,9 +37,13 @@ interface DiagramStore {
   showGrid: boolean
   snap: boolean
   showZones: boolean
+  showSites: boolean
+  showClusters: boolean
   showLayerLabels: boolean
   showDetails: boolean
+  showAudit: boolean
   mode: Mode
+  panel: 'properties' | 'ha'
   connectFrom: string | null
   view: ViewState
   canvasSize: { width: number; height: number }
@@ -60,11 +66,28 @@ interface DiagramStore {
   select: (target: { nodes?: string[]; links?: string[] }, additive?: boolean) => void
   clearSelection: () => void
   setMode: (mode: Mode) => void
+  setPanel: (panel: 'properties' | 'ha') => void
   setConnectFrom: (id: string | null) => void
 
   setLayout: (patch: Partial<LayoutOptions>) => void
   applyAutoLayout: () => void
-  setDisplay: (patch: Partial<Pick<DiagramStore, 'linkStyle' | 'showGrid' | 'snap' | 'showZones' | 'showLayerLabels' | 'showDetails'>>) => void
+  setDisplay: (
+    patch: Partial<
+      Pick<
+        DiagramStore,
+        | 'linkStyle'
+        | 'showGrid'
+        | 'snap'
+        | 'showZones'
+        | 'showSites'
+        | 'showClusters'
+        | 'showLayerLabels'
+        | 'showDetails'
+        | 'showAudit'
+      >
+    >,
+  ) => void
+  insertPattern: (pattern: HaPattern) => void
 
   setView: (patch: Partial<ViewState>) => void
   zoomAt: (factor: number, screenX: number, screenY: number) => void
@@ -94,9 +117,13 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   showGrid: true,
   snap: true,
   showZones: true,
+  showSites: true,
+  showClusters: true,
   showLayerLabels: true,
   showDetails: true,
+  showAudit: true,
   mode: 'select',
+  panel: 'properties',
   connectFrom: null,
   view: { zoom: 0.8, tx: 40, ty: 20 },
   canvasSize: { width: 1200, height: 800 },
@@ -261,6 +288,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   clearSelection: () => set({ selectedNodes: [], selectedLinks: [] }),
   setMode: (mode) => set({ mode, connectFrom: null }),
+  setPanel: (panel) => set({ panel }),
   setConnectFrom: (id) => set({ connectFrom: id }),
 
   setLayout: (patch) => set((state) => ({ layout: { ...state.layout, ...patch } })),
@@ -272,6 +300,36 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   setDisplay: (patch) => set(patch),
+
+  /**
+   * Insertion d'un modèle haute disponibilité : les équipements arrivent au centre de la
+   * vue, déjà reliés et déjà décrits (grappe, rôles, VIP), prêts à être raccordés au reste
+   * du schéma puis replacés automatiquement.
+   */
+  insertPattern: (pattern) => {
+    get().pushHistory()
+    const { view, canvasSize } = get()
+    const center = {
+      x: (canvasSize.width / 2 - view.tx) / view.zoom,
+      y: (canvasSize.height / 2 - view.ty) / view.zoom,
+    }
+    const taken = new Set(
+      get()
+        .diagram.nodes.map((n) => n.cluster?.trim())
+        .filter((name): name is string => !!name),
+    )
+    const { nodes, links } = instantiatePattern(pattern, center, taken)
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        nodes: [...state.diagram.nodes, ...nodes],
+        links: [...state.diagram.links, ...links],
+      },
+      selectedNodes: nodes.map((n) => n.id),
+      selectedLinks: [],
+      toast: `Modèle « ${pattern.title} » inséré — reliez-le au schéma puis lancez le placement auto.`,
+    }))
+  },
 
   setView: (patch) => set((state) => ({ view: { ...state.view, ...patch } })),
 
