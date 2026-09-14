@@ -26,4 +26,16 @@ export const config = {
   cookieSecure: process.env.COOKIE_SECURE !== 'false',
   entraTenantId: process.env.ENTRA_TENANT_ID || '',
   entraClientId: process.env.ENTRA_CLIENT_ID || '',
+  // Envoi du programme du jour par mail (voir src/mail/). Entièrement optionnel : sans
+  // SMTP_HOST ni SMTP_FROM, la fonction est annoncée indisponible et rien d'autre ne change.
+  smtp: {
+    host: process.env.SMTP_HOST || '',
+    port: Number(process.env.SMTP_PORT) || 25,
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.SMTP_FROM || '',
+  },
+  /** Heure d'envoi automatique du programme du jour, au format HH:MM. Vide = pas d'envoi automatique. */
+  dailyMailAt: (process.env.DAILY_MAIL_AT || '').trim(),
 };

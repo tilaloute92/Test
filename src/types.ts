@@ -12,6 +12,9 @@ export interface TeamMember {
   id: string;
   name: string;
   role: string;
+  /** Adresse professionnelle, pour l'envoi du programme du jour (voir server/src/mail/).
+   *  Absente = la personne ne reçoit pas de message ; ce n'est pas une erreur. */
+  email?: string;
   skills: string[];
   weeklyHours: number;
   color: string;

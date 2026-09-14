@@ -73,6 +73,9 @@ export function TeamView() {
               ))}
             </div>
             <div className="text-xs text-slate-400">Volume hebdo : {m.weeklyHours}h</div>
+            <div className="truncate text-xs text-slate-400" title={m.email || undefined}>
+              {m.email ? `✉ ${m.email}` : <span className="text-slate-300 dark:text-slate-600">✉ pas d'adresse mail</span>}
+            </div>
           </Card>
         ))}
       </div>
@@ -167,6 +170,7 @@ function initialsFrom(name: string) {
 interface MemberFormPayload {
   name: string;
   role: string;
+  email: string;
   skills: string[];
   weeklyHours: number;
   color: string;
@@ -184,6 +188,7 @@ function MemberForm({
 }) {
   const [name, setName] = useState(initial?.name ?? '');
   const [role, setRole] = useState(initial?.role ?? '');
+  const [email, setEmail] = useState(initial?.email ?? '');
   const [skills, setSkills] = useState(initial?.skills.join(', ') ?? '');
   const [weeklyHours, setWeeklyHours] = useState(String(initial?.weeklyHours ?? 35));
 
@@ -194,6 +199,13 @@ function MemberForm({
         <div className="space-y-2.5">
           <input placeholder="Nom complet" value={name} onChange={(e) => setName(e.target.value)} className="input" />
           <input placeholder="Rôle (ex : Administrateur systèmes)" value={role} onChange={(e) => setRole(e.target.value)} className="input" />
+          <input
+            type="email"
+            placeholder="Adresse mail professionnelle (programme du jour)"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="input"
+          />
           <input placeholder="Compétences (séparées par des virgules)" value={skills} onChange={(e) => setSkills(e.target.value)} className="input" />
           <label className="block">
             <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Volume hebdomadaire (h)</span>
@@ -210,6 +222,7 @@ function MemberForm({
               onSave({
                 name: name.trim(),
                 role: role.trim() || 'Membre équipe',
+                email: email.trim(),
                 skills: skills.split(',').map((s) => s.trim()).filter(Boolean),
                 weeklyHours: parseFloat(weeklyHours) || 0,
                 color: initial?.color ?? COLORS[Math.floor(Math.random() * COLORS.length)],

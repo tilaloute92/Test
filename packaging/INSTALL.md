@@ -8,7 +8,7 @@ installation complète.
 > | Dossier / fichier | Rôle |
 > | --- | --- |
 > | `site\` | L'application, déjà construite (HTML/CSS/JS) — publiée par IIS |
-> | `service\` | Le service optionnel (Node.js), **dépendances déjà installées** |
+> | `service\` | Le service optionnel (Node.js), **dépendances déjà installées** — données d'équipe, authentification, envoi du programme du jour par mail |
 > | `Install-SuiviInfra.ps1` | Installation automatisée |
 > | `Test-SuiviInfra.ps1` | Vérification de l'installation |
 > | `Backup-SuiviInfra.ps1` | Sauvegarde des données (vérifiée et cohérente) |
@@ -154,6 +154,36 @@ node scripts\create-local-user.js admin "MotDePasseSolide123!" "Administrateur"
 
 Ce compte sert à se connecter la première fois ; tout le reste (autres comptes, LDAP)
 se gère ensuite depuis l'onglet **Paramètres** de l'application.
+
+## 5 bis. Programme du jour par mail (optionnel, scénario B)
+
+Le service peut envoyer chaque matin à chacun son programme de la journée. Il ne délivre rien
+lui-même : il remet le message à votre relais SMTP.
+
+1. Renseignez dans `C:\services\suivi-infra\.env` :
+
+   ```
+   SMTP_HOST=relais.monentreprise.local
+   SMTP_PORT=25
+   SMTP_FROM=Suivi Infra <suivi-infra@monentreprise.fr>
+   DAILY_MAIL_AT=07:30
+   ```
+
+   `SMTP_USER` / `SMTP_PASS` uniquement si le relais exige une authentification ; un relais
+   interne accepte souvent les messages sur la seule foi de l'adresse IP du serveur.
+   Laissez `DAILY_MAIL_AT` vide pour n'envoyer qu'à la demande.
+
+2. Redémarrez le service : `Restart-Service SuiviInfraAuth`.
+
+3. Renseignez l'**adresse mail de chaque membre** dans l'onglet Équipe de l'application.
+   Sans adresse, la personne ne reçoit rien — c'est signalé, ce n'est pas une erreur.
+
+4. Depuis l'onglet **Activité du jour**, bouton « Programme par mail » : vous y trouvez l'état
+   du relais, un bouton *Tester le relais*, l'aperçu de chaque message avant envoi, et le
+   résultat destinataire par destinataire.
+
+> L'adresse de `SMTP_FROM` doit être autorisée à émettre sur le relais, sinon les messages
+> seront rejetés. C'est la cause d'échec la plus fréquente.
 
 ## 6. Vérifier
 

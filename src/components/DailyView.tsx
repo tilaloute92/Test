@@ -5,6 +5,7 @@ import { absencesToday, getTaskById, hoursLoggedToday } from '../lib/selectors';
 import { useViewMode } from '../hooks/useViewMode';
 import { Avatar, Card, ModeSwitcher, PriorityBadge, PrintButton, PrintHeader, TaskTypeBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
+import { DailyMailModal } from './DailyMailModal';
 import type { Absence, Period, PlanningSlot, ProjectTask, TaskStatus, TeamMember, TimeEntry } from '../types';
 
 const PERIOD_LABEL: Record<Period, string> = { matin: 'Matin — MCO & incidents', apres_midi: 'Après-midi — Projets' };
@@ -33,6 +34,7 @@ export function DailyView() {
   const [logging, setLogging] = useState<LoggingTarget | null>(null);
   const [hours, setHours] = useState('3.5');
   const [note, setNote] = useState('');
+  const [showMail, setShowMail] = useState(false);
 
 
   const iso = toISODate(date);
@@ -93,6 +95,13 @@ export function DailyView() {
             Aujourd'hui
           </button>
           <NavButton onClick={() => setDate((d) => addDays(d, 1))}>▶</NavButton>
+          <button
+            onClick={() => setShowMail(true)}
+            title="Envoyer à chacun son programme du jour par mail"
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            ✉ Programme par mail
+          </button>
           <PrintButton />
         </div>
       </div>
@@ -204,6 +213,8 @@ export function DailyView() {
           </table>
         </Card>
       )}
+
+      {showMail && <DailyMailModal date={iso} onClose={() => setShowMail(false)} />}
 
       {logging && (
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={() => setLogging(null)}>
