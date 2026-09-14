@@ -3,7 +3,7 @@ import { Btn } from './ui'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
 import { diagramFileContent, readDiagramFile } from '../lib/storage'
 import { useDiagram } from '../store/useDiagram'
-import type { DetailLevel } from '../types'
+import type { DetailLevel, OsiView } from '../types'
 import { useAudit } from '../store/useAudit'
 
 export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | null> }) {
@@ -16,6 +16,7 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
   const hasSelection = useDiagram((s) => s.selectedNodes.length + s.selectedLinks.length > 0)
   const report = useAudit()
   const detail = useDiagram((s) => s.detail)
+  const osi = useDiagram((s) => s.osi)
 
   const store = useDiagram.getState
 
@@ -106,6 +107,18 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
         </span>
         <Btn variant="ghost" onClick={() => zoomFromCenter(1.18)} title="Zoomer">+</Btn>
       </div>
+
+      <select
+        value={osi}
+        onChange={(event) => store().setOsi(event.target.value as OsiView)}
+        title="Couche du modèle OSI mise en avant"
+        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[13px] text-slate-700 outline-none"
+      >
+        <option value="all">Toutes couches</option>
+        <option value="l1">L1 — physique</option>
+        <option value="l2">L2 — liaison</option>
+        <option value="l3">L3 — réseau</option>
+      </select>
 
       <select
         value={detail}

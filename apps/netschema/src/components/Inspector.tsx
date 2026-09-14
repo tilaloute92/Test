@@ -1,11 +1,22 @@
 import { Btn, Checkbox, Field, Select, Slider, TextInput } from './ui'
 import { CatalogPanel } from './CatalogPanel'
 import { HaPanel } from './HaPanel'
+import { VlanPanel } from './VlanPanel'
+import { linkLayers } from '../lib/osi'
 import { collapsibleGroups } from '../lib/derive'
 import { allDevices, LAYER_LABELS, LINKS, ROLES, rankOf } from '../lib/catalog'
 import { useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
-import type { DetailLevel, HaRole, LinkKind, NetNode } from '../types'
+import type {
+  DetailLevel,
+  HaRole,
+  LinkKind,
+  NetNode,
+  OsiLayer,
+  PortMode,
+  RoutingProtocol,
+  StpRole,
+} from '../types'
 
 function deviceOptions() {
   return allDevices()
@@ -47,7 +58,8 @@ export function Inspector() {
         {(
           [
             ['properties', 'Propriétés'],
-            ['ha', 'Haute dispo'],
+            ['ha', 'HA'],
+            ['osi', 'L2/L3'],
             ['catalog', 'Catalogue'],
           ] as const
         ).map(([id, label]) => (
@@ -73,6 +85,7 @@ export function Inspector() {
       </div>
 
       {panel === 'ha' && <HaPanel />}
+      {panel === 'osi' && <VlanPanel />}
       {panel === 'catalog' && <CatalogPanel />}
 
       {panel === 'properties' && (
@@ -252,6 +265,7 @@ function LinkForm({ linkId }: { linkId: string }) {
 
   const nameOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? '—'
   const set = (patch: Partial<typeof link>) => updateLink(link.id, patch)
+  const layers = linkLayers(link)
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -274,7 +288,142 @@ function LinkForm({ linkId }: { linkId: string }) {
         onChange={(redundant) => set({ redundant })}
         label="Liaison de secours (pointillés)"
       />
-      <Btn onClick={() => set({ from: link.to, to: link.from })}>Inverser le sens</Btn>
+
+      <div className="rounded-lg border border-slate-200 p-2.5">
+        <p className="pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Couches OSI documentées
+        </p>
+        <div className="flex gap-3">
+          {(['l1', 'l2', 'l3'] as OsiLayer[]).map((layer) => (
+            <label key={layer} className="flex cursor-pointer items-center gap-1.5 text-[12px] text-slate-700">
+              <input
+                type="checkbox"
+                checked={layers.includes(layer)}
+                onChange={(event) => {
+                  const next = event.target.checked
+                    ? [...layers, layer]
+                    : layers.filter((item) => item !== layer)
+                  set({ layers: next.length > 0 ? (next as OsiLayer[]) : undefined })
+                }}
+                className="h-3.5 w-3.5 rounded border-slate-300 accent-blue-600"
+              />
+              {layer.toUpperCase()}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2.5">
+        <p className="pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Niveau 1 — physique
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Port départ">
+            <TextInput value={link.portA ?? ''} onChange={(portA) => set({ portA })} placeholder="Gi1/0/1" />
+          </Field>
+          <Field label="Port arrivée">
+            <TextInput value={link.portB ?? ''} onChange={(portB) => set({ portB })} placeholder="Gi1/0/2" />
+          </Field>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-cyan-100 bg-cyan-50/50 p-2.5">
+        <p className="pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-cyan-700">
+          Niveau 2 — liaison
+        </p>
+        <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Mode du port">
+              <Select
+                value={link.mode ?? ''}
+                onChange={(mode) => set({ mode: mode ? (mode as PortMode) : undefined })}
+                options={[
+                  { value: '', label: 'Non précisé' },
+                  { value: 'access', label: 'Accès' },
+                  { value: 'trunk', label: 'Trunk' },
+                ]}
+              />
+            </Field>
+            <Field label="VLAN (10,20,30-39)">
+              <TextInput value={link.vlans ?? ''} onChange={(vlans) => set({ vlans })} placeholder="10,20" />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="VLAN natif">
+              <TextInput value={link.nativeVlan ?? ''} onChange={(nativeVlan) => set({ nativeVlan })} placeholder="1" />
+            </Field>
+            <Field label="Agrégat (LACP)">
+              <TextInput value={link.lag ?? ''} onChange={(lag) => set({ lag })} placeholder="Po1" />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Rôle spanning-tree">
+              <Select
+                value={link.stp ?? ''}
+                onChange={(stp) => set({ stp: stp ? (stp as StpRole) : undefined })}
+                options={[
+                  { value: '', label: 'Non précisé' },
+                  { value: 'root', label: 'Vers la racine' },
+                  { value: 'designated', label: 'Désigné' },
+                  { value: 'alternate', label: 'Alternatif' },
+                  { value: 'blocking', label: 'Bloquant' },
+                  { value: 'edge', label: 'Port d’extrémité' },
+                ]}
+              />
+            </Field>
+            <Field label="MTU">
+              <TextInput
+                value={link.mtu ? String(link.mtu) : ''}
+                onChange={(value) => set({ mtu: value.trim() ? Number(value) : undefined })}
+                placeholder="9000"
+              />
+            </Field>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-2.5">
+        <p className="pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-blue-700">
+          Niveau 3 — réseau
+        </p>
+        <div className="flex flex-col gap-2">
+          <Field label="Sous-réseau (CIDR)">
+            <TextInput value={link.subnet ?? ''} onChange={(subnet) => set({ subnet })} placeholder="10.0.0.0/30" />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="IP départ">
+              <TextInput value={link.ipA ?? ''} onChange={(ipA) => set({ ipA })} placeholder="10.0.0.1" />
+            </Field>
+            <Field label="IP arrivée">
+              <TextInput value={link.ipB ?? ''} onChange={(ipB) => set({ ipB })} placeholder="10.0.0.2" />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="VRF">
+              <TextInput value={link.vrf ?? ''} onChange={(vrf) => set({ vrf })} placeholder="PROD" />
+            </Field>
+            <Field label="Routage">
+              <Select
+                value={link.routing ?? ''}
+                onChange={(routing) => set({ routing: routing ? (routing as RoutingProtocol) : undefined })}
+                options={[
+                  { value: '', label: 'Non précisé' },
+                  { value: 'static', label: 'Statique' },
+                  { value: 'ospf', label: 'OSPF' },
+                  { value: 'bgp', label: 'BGP' },
+                  { value: 'eigrp', label: 'EIGRP' },
+                  { value: 'is-is', label: 'IS-IS' },
+                  { value: 'rip', label: 'RIP' },
+                ]}
+              />
+            </Field>
+          </div>
+        </div>
+      </div>
+
+      <Btn onClick={() => set({ from: link.to, to: link.from, ipA: link.ipB, ipB: link.ipA, portA: link.portB, portB: link.portA })}>
+        Inverser le sens
+      </Btn>
     </div>
   )
 }

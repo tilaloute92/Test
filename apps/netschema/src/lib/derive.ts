@@ -1,5 +1,15 @@
 import { deviceMeta, LINKS, rankOf } from './catalog'
-import { NODE_H, NODE_W, type DetailLevel, type Diagram, type LayoutDirection, type NetLink, type NetNode } from '../types'
+import { linkInView, nodeInView } from './osi'
+import {
+  NODE_H,
+  NODE_W,
+  type DetailLevel,
+  type Diagram,
+  type LayoutDirection,
+  type NetLink,
+  type NetNode,
+  type OsiView,
+} from '../types'
 
 export type GroupType = 'site' | 'zone' | 'cluster'
 
@@ -30,6 +40,8 @@ export interface DerivedDiagram {
   links: NetLink[]
   hiddenNodes: number
   hiddenLinks: number
+  /** Identifiants estompés : hors de la couche OSI regardée, mais conservés pour le contexte. */
+  dimmed: Set<string>
 }
 
 const groupValue = (node: NetNode, type: GroupType): string =>
@@ -75,10 +87,22 @@ function keepForDetail(node: NetNode, detail: DetailLevel): boolean {
  */
 export function deriveDiagram(
   diagram: Diagram,
-  options: { collapsed: string[]; detail: DetailLevel; direction?: LayoutDirection },
+  options: {
+    collapsed: string[]
+    detail: DetailLevel
+    direction?: LayoutDirection
+    /** Couche OSI mise en avant. */
+    osi?: OsiView
+    /** Vrai : masquer ce qui n'est pas de la couche ; faux : l'estomper. */
+    strictOsi?: boolean
+  },
 ): DerivedDiagram {
-  const visible = diagram.nodes.filter((node) => keepForDetail(node, options.detail))
-  const hiddenNodes = diagram.nodes.length - visible.length
+  const osi = options.osi ?? 'all'
+  const strict = options.strictOsi === true && osi !== 'all'
+  const visible = diagram.nodes.filter(
+    (node) => keepForDetail(node, options.detail) && (!strict || nodeInView(node, osi)),
+  )
+  let hiddenNodes = diagram.nodes.length - visible.length
   const collapsed = new Set(options.collapsed)
 
   // Un équipement n'appartient qu'à un seul bloc replié : le plus fin l'emporte
@@ -142,6 +166,10 @@ export function deriveDiagram(
   const seen = new Map<string, NetLink>()
   let hiddenLinks = 0
   for (const link of diagram.links) {
+    if (strict && !linkInView(link, osi)) {
+      hiddenLinks += 1
+      continue
+    }
     const from = target(link.from)
     const to = target(link.to)
     if (!from || !to || from === to) {
@@ -172,14 +200,36 @@ export function deriveDiagram(
     seen.set(key, merged)
   }
 
+  // En mode strict, un équipement qui n'a plus aucune liaison de la couche regardée
+  // n'a rien à y faire : on le retire plutôt que de le laisser flotter.
+  let kept = nodes
+  if (strict && links.length > 0) {
+    const connected = new Set(links.flatMap((link) => [link.from, link.to]))
+    kept = nodes.filter((node) => connected.has(node.id))
+    hiddenNodes += nodes.length - kept.length
+  }
+
   // Replier un groupe vide une rangée entière : on referme le trou laissé, sinon la vue
   // simplifiée reste aussi haute que le schéma complet.
   const compacted =
     options.collapsed.length > 0 || options.detail !== 'full'
-      ? compactRows(nodes, (options.direction ?? 'TB') === 'TB')
-      : nodes
+      ? compactRows(kept, (options.direction ?? 'TB') === 'TB')
+      : kept
 
-  return { nodes: compacted, links, hiddenNodes, hiddenLinks }
+  // Hors mode strict, ce qui n'appartient pas à la couche regardée reste visible mais
+  // estompé : on garde le contexte du schéma tout en faisant ressortir la couche.
+  const dimmed = new Set<string>()
+  if (osi !== 'all' && !strict) {
+    for (const node of compacted) {
+      if (node.group) continue
+      if (!nodeInView(node, osi)) dimmed.add(node.id)
+    }
+    for (const link of links) {
+      if (!linkInView(link, osi)) dimmed.add(link.id)
+    }
+  }
+
+  return { nodes: compacted, links, hiddenNodes, hiddenLinks, dimmed }
 }
 
 /** Resserre les rangées trop espacées, sans jamais toucher au modèle. */

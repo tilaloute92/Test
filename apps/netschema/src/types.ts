@@ -21,6 +21,20 @@ export type LinkKind =
   | 'oob'
   | 'power'
 
+/** Couches du modèle OSI documentées par l'application. */
+export type OsiLayer = 'l1' | 'l2' | 'l3'
+
+/** Vue OSI courante : toutes les couches, ou une seule mise en avant. */
+export type OsiView = 'all' | 'l1' | 'l2' | 'l3'
+
+/** Mode d'un port de commutation. */
+export type PortMode = 'access' | 'trunk'
+
+/** Rôle spanning-tree d'un lien, tel qu'on le documente sur un schéma de niveau 2. */
+export type StpRole = 'root' | 'designated' | 'alternate' | 'blocking' | 'edge'
+
+export type RoutingProtocol = 'static' | 'ospf' | 'bgp' | 'eigrp' | 'is-is' | 'rip'
+
 /**
  * Rôle d'un équipement au sein d'une grappe haute disponibilité.
  * `witness` désigne le témoin / quorum qui départage une grappe à deux nœuds.
@@ -68,12 +82,64 @@ export interface NetLink {
   speed?: string
   /** Liaison redondante / secours : tracée en pointillés. */
   redundant?: boolean
+
+  /**
+   * Couches OSI documentées pour cette liaison. Absent = couches par défaut du type de
+   * liaison (un câble cuivre porte L1 et L2, un tunnel VPN porte L3…).
+   */
+  layers?: OsiLayer[]
+
+  // ─── Couche 1 : physique ──────────────────────────────────────────────────
+  /** Interface côté départ (Gi1/0/1, xe-0/0/3…). */
+  portA?: string
+  /** Interface côté arrivée. */
+  portB?: string
+
+  // ─── Couche 2 : liaison ───────────────────────────────────────────────────
+  /** VLAN transportés : « 20 » en accès, « 10,20,30-39 » en trunk. */
+  vlans?: string
+  mode?: PortMode
+  /** VLAN natif d'un trunk (non étiqueté). */
+  nativeVlan?: string
+  /** Agrégat de liens : nom du port-channel / bundle LACP. */
+  lag?: string
+  stp?: StpRole
+  /** MTU de la liaison (1500, 9000 pour le jumbo…). */
+  mtu?: number
+
+  // ─── Couche 3 : réseau ────────────────────────────────────────────────────
+  /** Sous-réseau de la liaison, en notation CIDR (10.0.0.0/30). */
+  subnet?: string
+  /** Adresse de l'extrémité de départ. */
+  ipA?: string
+  /** Adresse de l'extrémité d'arrivée. */
+  ipB?: string
+  vrf?: string
+  routing?: RoutingProtocol
+}
+
+/**
+ * Un VLAN et, quand il est routé, le sous-réseau et la passerelle qui vont avec :
+ * c'est la table qui fait le lien entre le schéma de niveau 2 et celui de niveau 3.
+ */
+export interface VlanDef {
+  /** Identifiant 802.1Q (1–4094), gardé en chaîne pour accepter les saisies libres. */
+  id: string
+  name?: string
+  /** Sous-réseau en notation CIDR. */
+  subnet?: string
+  gateway?: string
+  /** Couleur d'affichage ; attribuée automatiquement si absente. */
+  color?: string
+  notes?: string
 }
 
 export interface Diagram {
   title: string
   nodes: NetNode[]
   links: NetLink[]
+  /** Plan d'adressage : VLAN, sous-réseaux et passerelles. */
+  vlans?: VlanDef[]
 }
 
 export type LayoutDirection = 'TB' | 'LR'

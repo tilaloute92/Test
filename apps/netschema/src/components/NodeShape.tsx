@@ -14,6 +14,8 @@ interface Props {
   showDetails: boolean
   /** Signalé par l'analyse de haute disponibilité comme point de défaillance critique. */
   flagged: boolean
+  /** Hors de la couche OSI regardée : estompé plutôt que masqué. */
+  dimmed?: boolean
   onPointerDown: (event: React.PointerEvent<SVGGElement>, node: DisplayNode) => void
   onDoubleClick?: () => void
 }
@@ -24,6 +26,7 @@ export function NodeShape({
   isConnectSource,
   showDetails,
   flagged,
+  dimmed,
   onPointerDown,
   onDoubleClick,
 }: Props) {
@@ -41,6 +44,7 @@ export function NodeShape({
       transform={`translate(${node.x - NODE_W / 2}, ${node.y - NODE_H / 2})`}
       onPointerDown={(event) => onPointerDown(event, node)}
       onDoubleClick={onDoubleClick}
+      opacity={dimmed ? 0.22 : 1}
       style={{ cursor: group ? 'pointer' : 'grab' }}
     >
       {(selected || isConnectSource) && (

@@ -61,6 +61,29 @@ const LINK_WORDS: Record<string, LinkKind> = {
   alim: 'power',
 }
 
+const STP_WORDS: Record<string, 'root' | 'designated' | 'alternate' | 'blocking' | 'edge'> = {
+  root: 'root',
+  racine: 'root',
+  designated: 'designated',
+  designe: 'designated',
+  alternate: 'alternate',
+  alternatif: 'alternate',
+  blocking: 'blocking',
+  bloquant: 'blocking',
+  edge: 'edge',
+}
+
+const ROUTING_WORDS: Record<string, 'static' | 'ospf' | 'bgp' | 'eigrp' | 'is-is' | 'rip'> = {
+  static: 'static',
+  statique: 'static',
+  ospf: 'ospf',
+  bgp: 'bgp',
+  eigrp: 'eigrp',
+  isis: 'is-is',
+  'is-is': 'is-is',
+  rip: 'rip',
+}
+
 const NAME_HINTS: { pattern: RegExp; kind: string }[] = [
   { pattern: /^(fw|pare-?feu|ngfw)/i, kind: 'firewall' },
   { pattern: /^(rtr|rout)/i, kind: 'router' },
@@ -168,7 +191,30 @@ export function parseQuickImport(text: string, existing?: Diagram): ImportResult
       let kind: LinkKind | undefined
       const labelWords: string[] = []
       let redundant = false
+      const extra: Partial<NetLink> = {}
       for (const word of rest.split(/\s+/).filter(Boolean)) {
+        // Champs de niveau 1/2/3 : vlans=10,20 mode=trunk mtu=9000 lag=Po1 subnet=10.0.0.0/30
+        const pair = word.match(/^([a-zA-Zé]+)=(.+)$/)
+        if (pair) {
+          const field = normalize(pair[1])
+          const value = pair[2]
+          if (field === 'vlan' || field === 'vlans') extra.vlans = value
+          else if (field === 'mode') extra.mode = normalize(value) === 'trunk' ? 'trunk' : 'access'
+          else if (field === 'natif' || field === 'native') extra.nativeVlan = value
+          else if (field === 'lag' || field === 'po' || field === 'agregat') extra.lag = value
+          else if (field === 'mtu') extra.mtu = Number(value) || undefined
+          else if (field === 'stp') extra.stp = STP_WORDS[normalize(value)]
+          else if (field === 'subnet' || field === 'reseau' || field === 'sousreseau') extra.subnet = value
+          else if (field === 'ipa') extra.ipA = value
+          else if (field === 'ipb') extra.ipB = value
+          else if (field === 'vrf') extra.vrf = value
+          else if (field === 'routage' || field === 'routing') extra.routing = ROUTING_WORDS[normalize(value)]
+          else if (field === 'porta') extra.portA = value
+          else if (field === 'portb') extra.portB = value
+          else if (field === 'debit' || field === 'speed') extra.speed = value
+          else warnings.push(`${where} : champ « ${pair[1]} » ignoré.`)
+          continue
+        }
         const token = normalize(word.replace(/^!/, ''))
         if (word.startsWith('!') || token === 'secours' || token === 'backup') {
           redundant = true
@@ -189,6 +235,7 @@ export function parseQuickImport(text: string, existing?: Diagram): ImportResult
         kind: resolvedKind,
         label: labelWords.join(' ') || undefined,
         redundant: redundant || undefined,
+        ...extra,
       })
       continue
     }
@@ -267,4 +314,5 @@ K8S-PROD ; k8s ; site=Siège ; zone=Datacenter
 RTR-EDGE-01 -> FW-01 : fibre 10 Gb/s
 RTR-EDGE-02 -> FW-01 : fibre !
 FW-01 -> SW-CORE-01 : fibre
-SW-CORE-01 -> K8S-PROD : trunk`
+SW-CORE-01 -> K8S-PROD : trunk vlans=100,110 mtu=9000 lag=Po1
+FW-01 -> SW-CORE-01 : subnet=10.0.0.0/30 ipa=10.0.0.1 ipb=10.0.0.2 routage=ospf`

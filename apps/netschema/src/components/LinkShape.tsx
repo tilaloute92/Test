@@ -10,23 +10,40 @@ interface Props {
   offset: number
   selected: boolean
   showDetails: boolean
+  /** Libellé déjà adapté à la couche OSI regardée. */
+  label: string
+  /** Couleur de tracé (couleur du VLAN en vue niveau 2, sinon couleur du type). */
+  color: string
+  /** Hors de la couche regardée : conservée pour le contexte, mais estompée. */
+  dimmed?: boolean
   onPointerDown: (event: React.PointerEvent<SVGPathElement>, link: NetLink) => void
 }
 
-export function LinkShape({ link, from, to, style, offset, selected, showDetails, onPointerDown }: Props) {
+export function LinkShape({
+  link,
+  from,
+  to,
+  style,
+  offset,
+  selected,
+  showDetails,
+  label,
+  color,
+  dimmed,
+  onPointerDown,
+}: Props) {
   const meta = LINKS[link.kind]
   const { d, mid } = linkGeometry(from, to, style, offset)
-  const label = [link.label, link.speed].filter(Boolean).join(' · ')
 
   return (
-    <g>
+    <g opacity={dimmed ? 0.16 : 1}>
       {selected && (
         <path data-export="false" d={d} fill="none" stroke="#bfdbfe" strokeWidth={meta.width + 8} strokeLinecap="round" />
       )}
       <path
         d={d}
         fill="none"
-        stroke={meta.color}
+        stroke={color}
         strokeWidth={meta.width}
         strokeDasharray={link.redundant ? '8 6' : meta.dash}
         strokeLinecap="round"
@@ -50,11 +67,11 @@ export function LinkShape({ link, from, to, style, offset, selected, showDetails
             height={16}
             rx={8}
             fill="#ffffff"
-            stroke={meta.color}
+            stroke={color}
             strokeWidth={0.8}
             opacity={0.95}
           />
-          <text textAnchor="middle" y={3.5} fontSize={9.5} fill={meta.color} fontWeight={600}>
+          <text textAnchor="middle" y={3.5} fontSize={9.5} fill={color} fontWeight={600}>
             {label}
           </text>
         </g>

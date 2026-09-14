@@ -58,6 +58,68 @@ placement auto, figer ce qui est bien placé, relancer.
 Les liaisons sont tracées en orthogonal à angles arrondis (ou en direct), les câbles multiples
 entre deux mêmes équipements sont automatiquement étalés pour ne pas se superposer.
 
+## Niveaux 2 et 3 du modèle OSI
+
+Un schéma d'infrastructure ne dit pas la même chose selon la couche regardée : le même
+câble est un lien physique, un trunk 802.1Q et une interconnexion IP. L'application
+documente les trois et bascule d'une lecture à l'autre **sans redessiner quoi que ce soit**.
+
+### La vue OSI
+
+Sélecteur dans la barre d'outils (ou `Ctrl+K` → « Vue OSI ») :
+
+| Vue | Ce que portent les libellés des liaisons |
+| --- | --- |
+| **Toutes couches** | Libellé libre et débit — la vue de travail |
+| **L1 — physique** | Débit et interfaces (`Te1/0/1 ↔ port2`) |
+| **L2 — liaison** | Mode et VLAN (`T 20,40,50`, `A 20`), VLAN natif, agrégat LACP, rôle spanning-tree, MTU |
+| **L3 — réseau** | Sous-réseau, adresses des deux extrémités, VRF, protocole de routage |
+
+En vue L2, une liaison qui ne transporte qu'un seul VLAN prend **la couleur de ce VLAN** :
+les domaines de diffusion se lisent d'un coup d'œil.
+
+Ce qui n'appartient pas à la couche regardée est **estompé** (l'alimentation disparaît
+visuellement en L2, les commutateurs en L3) tout en gardant le contexte du schéma. La case
+*Masquer ce qui n'est pas de cette couche* passe en vue stricte : les équipements et les
+liaisons hors couche sont retirés, et un équipement qui n'a plus aucune liaison de cette
+couche l'est aussi — on obtient un vrai schéma de niveau 3, réduit aux éléments routés.
+
+### Ce qu'une liaison peut porter
+
+Chaque liaison déclare les couches qu'elle documente (par défaut celles de son type : un
+câble cuivre porte L1 et L2, un tunnel VPN seulement L3, un overlay VXLAN L2 au-dessus de L3)
+puis, couche par couche :
+
+- **L1** — interfaces de départ et d'arrivée, débit, type de média ;
+- **L2** — mode du port (accès / trunk), VLAN transportés (`10,20,30-39`), VLAN natif,
+  agrégat LACP (`Po1`), rôle spanning-tree (racine, désigné, alternatif, bloquant,
+  port d'extrémité), MTU ;
+- **L3** — sous-réseau en CIDR, adresse de chaque extrémité, VRF, protocole de routage
+  (statique, OSPF, BGP, EIGRP, IS-IS, RIP).
+
+Les types de liaison eux-mêmes couvrent le cuivre, la fibre, le trunk/agrégat LACP, le
+stack/MLAG/VSS, le lien WAN/MPLS, le tunnel VPN, le sans-fil, l'**overlay VXLAN/SD-WAN**, le
+battement de cœur HA, la réplication, l'administration hors bande et l'alimentation.
+
+### Plan d'adressage et contrôles
+
+L'onglet **L2/L3** tient la table des VLAN — numéro, nom, sous-réseau, passerelle, couleur —
+qui fait le lien entre le schéma de niveau 2 et celui de niveau 3. *Déduire du schéma*
+reprend tous les VLAN déjà cités sur les équipements et les liaisons.
+
+Les contrôles de cohérence tournent en continu :
+
+- VLAN utilisé mais absent du plan d'adressage ;
+- sous-réseau en notation invalide, ou partagé par deux VLAN ;
+- passerelle hors de son sous-réseau ;
+- adresse d'un équipement hors du sous-réseau de son VLAN ;
+- adresse d'extrémité de liaison hors du sous-réseau de la liaison ;
+- trunk sans VLAN déclarés, liaison de niveau 3 sans adressage ;
+- MTU divergents entre les membres d'un même agrégat ;
+- **boucle de niveau 2** : cycle entre commutateurs sans aucun rôle spanning-tree documenté.
+
+Un clic sur un constat sélectionne les équipements et les liaisons concernés.
+
 ## Catalogue d'équipements
 
 Le catalogue est décrit **en données, pas en code** : un type d'équipement est une ligne
@@ -141,9 +203,14 @@ Les outils pensés pour que trente ou cent équipements restent lisibles :
 
   ```
   SW-CORE-01 ; switch cœur ; ip=10.10.0.11 ; site=Siège ; cluster=CORE-MLAG ; role=aa
-  FW-01 -> SW-CORE-01 : fibre 10 Gb/s
+  FW-01 -> SW-CORE-01 : fibre 10 Gb/s subnet=10.0.0.0/29 ipa=10.0.0.2 ipb=10.0.0.5 routage=ospf
+  SW-CORE-01 -> SW-DIST-A : fibre vlans=20,40,50 mode=trunk lag=Po10 mtu=9000 stp=racine
   FW-02 -> SW-CORE-01 : fibre !          # « ! » = liaison de secours
   ```
+
+  Les champs de niveau 1, 2 et 3 s'écrivent directement sur la ligne de liaison :
+  `porta=`, `portb=`, `debit=`, `vlans=`, `mode=`, `natif=`, `lag=`, `mtu=`, `stp=`,
+  `subnet=`, `ipa=`, `ipb=`, `vrf=`, `routage=`.
 
 - **Type de liaison déduit** — deux pare-feu d'une même grappe se relient par un battement de
   cœur, deux switches cœur par un lien de pile, un onduleur par une liaison électrique. Le
@@ -221,9 +288,8 @@ marqués d'une pastille rouge sur le schéma.
 
 Chaque équipement porte un nom, un type, un modèle, une IP, un VLAN, une zone, un site, des
 notes et ses attributs de haute disponibilité (grappe, rôle, VIP, double alimentation) ;
-chaque liaison un type (cuivre, fibre, trunk LACP, stack/MLAG, WAN, VPN, sans fil, battement
-de cœur, réplication, hors bande, alimentation), un libellé, un débit et un indicateur
-« liaison de secours ».
+chaque liaison un type, un libellé, un débit, un indicateur « liaison de secours » et ses
+attributs de niveau 1, 2 et 3 (voir *Niveaux 2 et 3 du modèle OSI*).
 
 ## Exports et sauvegarde
 
@@ -245,7 +311,8 @@ src/
   lib/catalog.ts        registre du catalogue : lots chargés, recherche, couleurs, liaisons
   lib/catalogSource.ts  mise à jour du catalogue (dossier catalog/, source distante, lots locaux)
   lib/icons.tsx         registre de pictogrammes SVG, désignés par identifiant
-  lib/derive.ts         vue dérivée : niveau de détail, repli des groupes, compactage
+  lib/derive.ts         vue dérivée : niveau de détail, repli des groupes, couche OSI, compactage
+  lib/osi.ts            couches des liaisons, libellés par couche, plan d'adressage, contrôles L2/L3
   lib/linkRules.ts      type de liaison déduit des deux équipements reliés
   lib/quickImport.ts    import rapide par collage de texte
   lib/layout.ts         placement automatique par couches, cadres de groupes, cadrage
@@ -257,13 +324,15 @@ src/
   lib/sample.ts         schéma d'exemple (architecture HA siège + site de secours)
   store/useDiagram.ts   état global (zustand) : schéma, sélection, vue, historique
   store/useAudit.ts     analyse HA mémorisée sur la version courante du schéma
-  components/           barre d'outils, palette, plan de travail, inspecteur, panneaux HA
-                        et catalogue, palette de commandes, import rapide
+  components/           barre d'outils, palette, plan de travail, inspecteur, panneaux HA,
+                        L2/L3 et catalogue, palette de commandes, import rapide
 public/catalog/         lots chargés au démarrage — la voie de mise à jour sans recompilation
 ```
 
 ## Limites connues
 
+- Les contrôles L2/L3 ne lisent que ce qui est saisi dans le schéma : ils ne comparent pas
+  l'adressage documenté aux configurations réelles des équipements.
 - L'analyse raisonne sur la topologie telle qu'elle est dessinée : elle ne connaît ni les
   chemins physiques réels des fibres, ni les configurations des équipements. Deux liens
   « redondants » passant dans le même fourreau lui paraîtront redondants.

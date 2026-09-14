@@ -1,12 +1,23 @@
 import { deviceMeta, LINKS, ROLES } from './catalog'
 import { uid } from './ids'
-import type { Diagram, HaRole, LinkKind, NetLink, NetNode } from '../types'
+import type {
+  Diagram,
+  HaRole,
+  LinkKind,
+  NetLink,
+  NetNode,
+  OsiLayer,
+  PortMode,
+  RoutingProtocol,
+  StpRole,
+  VlanDef,
+} from '../types'
 
 const STORAGE_KEY = 'netschema:diagram:v1'
 const FILE_VERSION = 1
 
 export function emptyDiagram(): Diagram {
-  return { title: 'Nouveau schéma réseau', nodes: [], links: [] }
+  return { title: 'Nouveau schéma réseau', nodes: [], links: [], vlans: [] }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -16,6 +27,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
+
+const STP_ROLES = ['root', 'designated', 'alternate', 'blocking', 'edge']
+const ROUTING = ['static', 'ospf', 'bgp', 'eigrp', 'is-is', 'rip']
 
 function roleOf(value: unknown): HaRole | undefined {
   const role = str(value)
@@ -72,6 +86,9 @@ export function parseDiagram(raw: unknown): Diagram {
     const to = str(item.to)
     if (!from || !to || from === to || !ids.has(from) || !ids.has(to)) continue
     const kind = str(item.kind)
+    const layers = Array.isArray(item.layers)
+      ? item.layers.filter((layer): layer is OsiLayer => layer === 'l1' || layer === 'l2' || layer === 'l3')
+      : undefined
     links.push({
       id: str(item.id) ?? uid('l'),
       from,
@@ -80,10 +97,42 @@ export function parseDiagram(raw: unknown): Diagram {
       label: str(item.label),
       speed: str(item.speed),
       redundant: item.redundant === true,
+      layers: layers && layers.length > 0 ? layers : undefined,
+      portA: str(item.portA),
+      portB: str(item.portB),
+      vlans: str(item.vlans),
+      mode: item.mode === 'access' || item.mode === 'trunk' ? (item.mode as PortMode) : undefined,
+      nativeVlan: str(item.nativeVlan),
+      lag: str(item.lag),
+      stp: STP_ROLES.includes(String(item.stp)) ? (item.stp as StpRole) : undefined,
+      mtu: Number.isFinite(item.mtu) ? Number(item.mtu) : undefined,
+      subnet: str(item.subnet),
+      ipA: str(item.ipA),
+      ipB: str(item.ipB),
+      vrf: str(item.vrf),
+      routing: ROUTING.includes(String(item.routing)) ? (item.routing as RoutingProtocol) : undefined,
     })
   }
 
-  return { title: str(source.title) ?? 'Schéma réseau', nodes, links }
+  const rawVlans = Array.isArray(source.vlans) ? source.vlans : []
+  const vlans: VlanDef[] = []
+  const seenVlans = new Set<string>()
+  for (const item of rawVlans) {
+    if (!isRecord(item)) continue
+    const id = str(item.id) ?? (Number.isFinite(item.id) ? String(item.id) : undefined)
+    if (!id || seenVlans.has(id)) continue
+    seenVlans.add(id)
+    vlans.push({
+      id,
+      name: str(item.name),
+      subnet: str(item.subnet),
+      gateway: str(item.gateway),
+      color: str(item.color),
+      notes: str(item.notes),
+    })
+  }
+
+  return { title: str(source.title) ?? 'Schéma réseau', nodes, links, vlans }
 }
 
 export function saveLocal(diagram: Diagram) {

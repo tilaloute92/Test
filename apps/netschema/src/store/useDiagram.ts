@@ -7,6 +7,7 @@ import { suggestLinkKind } from '../lib/linkRules'
 import { parseQuickImport } from '../lib/quickImport'
 import { emptyDiagram, loadLocal, saveLocal } from '../lib/storage'
 import { sampleDiagram } from '../lib/sample'
+import { deduceVlans } from '../lib/osi'
 import type {
   DetailLevel,
   Diagram,
@@ -15,6 +16,8 @@ import type {
   LinkStyle,
   NetLink,
   NetNode,
+  OsiView,
+  VlanDef,
 } from '../types'
 
 const DEFAULT_LAYOUT: LayoutOptions = {
@@ -53,12 +56,16 @@ interface DiagramStore {
   showDetails: boolean
   showAudit: boolean
   mode: Mode
-  panel: 'properties' | 'ha' | 'catalog'
+  panel: 'properties' | 'ha' | 'osi' | 'catalog'
   /** Incrémenté à chaque modification du catalogue, pour rafraîchir les listes de types. */
   catalogRevision: number
   /** Clés des groupes repliés (« zone:Bâtiment A »). */
   collapsed: string[]
   detail: DetailLevel
+  /** Couche OSI mise en avant (toutes, physique, liaison, réseau). */
+  osi: OsiView
+  /** Masquer au lieu d'estomper ce qui n'appartient pas à la couche regardée. */
+  strictOsi: boolean
   commandOpen: boolean
   importOpen: boolean
   connectFrom: string | null
@@ -83,11 +90,17 @@ interface DiagramStore {
   select: (target: { nodes?: string[]; links?: string[] }, additive?: boolean) => void
   clearSelection: () => void
   setMode: (mode: Mode) => void
-  setPanel: (panel: 'properties' | 'ha' | 'catalog') => void
+  setPanel: (panel: 'properties' | 'ha' | 'osi' | 'catalog') => void
   bumpCatalog: () => void
   toggleCollapse: (key: string) => void
   setCollapsed: (keys: string[]) => void
   setDetail: (detail: DetailLevel) => void
+  setOsi: (osi: OsiView) => void
+  setStrictOsi: (strict: boolean) => void
+  setVlans: (vlans: VlanDef[]) => void
+  upsertVlan: (vlan: VlanDef) => void
+  removeVlan: (id: string) => void
+  deduceVlansFromDiagram: () => number
   setCommandOpen: (open: boolean) => void
   setImportOpen: (open: boolean) => void
   duplicateSelection: () => void
@@ -153,6 +166,8 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   catalogRevision: 0,
   collapsed: [],
   detail: 'full',
+  osi: 'all',
+  strictOsi: false,
   commandOpen: false,
   importOpen: false,
   connectFrom: null,
@@ -341,6 +356,41 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     })),
   setCollapsed: (collapsed) => set({ collapsed, selectedNodes: [], selectedLinks: [] }),
   setDetail: (detail) => set({ detail }),
+  setOsi: (osi) => set({ osi }),
+  setStrictOsi: (strictOsi) => set({ strictOsi }),
+
+  setVlans: (vlans) => {
+    get().pushHistory()
+    set((state) => ({ diagram: { ...state.diagram, vlans } }))
+  },
+
+  upsertVlan: (vlan) => {
+    get().pushHistory()
+    set((state) => {
+      const vlans = [...(state.diagram.vlans ?? [])]
+      const index = vlans.findIndex((item) => item.id === vlan.id)
+      if (index >= 0) vlans[index] = { ...vlans[index], ...vlan }
+      else vlans.push(vlan)
+      return { diagram: { ...state.diagram, vlans } }
+    })
+  },
+
+  removeVlan: (id) => {
+    get().pushHistory()
+    set((state) => ({
+      diagram: { ...state.diagram, vlans: (state.diagram.vlans ?? []).filter((vlan) => vlan.id !== id) },
+    }))
+  },
+
+  /** Complète la table des VLAN avec ceux déjà cités dans le schéma. */
+  deduceVlansFromDiagram: () => {
+    const before = get().diagram.vlans?.length ?? 0
+    const vlans = deduceVlans(get().diagram)
+    if (vlans.length === before) return 0
+    get().pushHistory()
+    set((state) => ({ diagram: { ...state.diagram, vlans } }))
+    return vlans.length - before
+  },
   setCommandOpen: (commandOpen) => set({ commandOpen }),
   setImportOpen: (importOpen) => set({ importOpen }),
 

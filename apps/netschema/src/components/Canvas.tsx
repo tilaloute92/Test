@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LinkShape } from './LinkShape'
 import { NodeShape } from './NodeShape'
+import { LINKS } from '../lib/catalog'
 import { deriveDiagram, groupMembers, type DisplayNode } from '../lib/derive'
+import { linkColorFor, linkLabelFor } from '../lib/osi'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
 import { parallelOffsets } from '../lib/routing'
 import { GRID, useDiagram } from '../store/useDiagram'
@@ -49,6 +51,8 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
 
   const collapsed = useDiagram((s) => s.collapsed)
   const detail = useDiagram((s) => s.detail)
+  const osi = useDiagram((s) => s.osi)
+  const strictOsi = useDiagram((s) => s.strictOsi)
 
   /**
    * Le plan de travail n'affiche pas le schéma brut mais sa version dérivée : niveau de
@@ -56,8 +60,8 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
    * n'est jamais modifié.
    */
   const display = useMemo(
-    () => deriveDiagram(diagram, { collapsed, detail, direction }),
-    [diagram, collapsed, detail, direction],
+    () => deriveDiagram(diagram, { collapsed, detail, direction, osi, strictOsi }),
+    [diagram, collapsed, detail, direction, osi, strictOsi],
   )
 
   const nodeById = useMemo(() => new Map(display.nodes.map((n) => [n.id, n])), [display.nodes])
@@ -397,6 +401,9 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 offset={linkOffsets.get(link.id) ?? 0}
                 selected={selectedLinks.includes(link.id)}
                 showDetails={showDetails}
+                label={linkLabelFor(link, osi)}
+                color={linkColorFor(link, osi, diagram.vlans) ?? LINKS[link.kind].color}
+                dimmed={display.dimmed.has(link.id)}
                 onPointerDown={onLinkPointerDown}
               />
             )
@@ -424,6 +431,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 isConnectSource={connectFrom === node.id}
                 showDetails={showDetails}
                 flagged={own.some((id) => flagged.has(id))}
+                dimmed={display.dimmed.has(node.id)}
                 onPointerDown={onNodePointerDown}
                 onDoubleClick={() => node.group && useDiagram.getState().toggleCollapse(node.group.key)}
               />
