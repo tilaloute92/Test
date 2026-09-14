@@ -1,20 +1,15 @@
-import type { DeviceKind, HaRole, LinkKind } from '../types'
+import { BUILTIN_PACKS, FAMILY_ORDER, type CatalogPack, type DeviceDef } from './catalogData'
+import type { HaRole, LinkKind } from '../types'
 
-export interface DeviceMeta {
-  label: string
-  /** Couche par défaut : c'est elle qui pilote le placement automatique. */
-  rank: number
+export interface DeviceMeta extends DeviceDef {
   /** Couleur de trait / pictogramme. */
   accent: string
   /** Couleur de fond de la boîte. */
   fill: string
-  /**
-   * Équipement d'infrastructure : c'est sur ces équipements que porte l'analyse de
-   * haute disponibilité (un poste de travail non redondé n'est pas un défaut).
-   */
-  infrastructure?: boolean
-  /** Équipement dont la panne coupe le service s'il n'a pas de pair : contrôlé plus sévèrement. */
-  critical?: boolean
+  /** Vrai si le type n'existe dans aucun lot chargé (schéma venant d'un autre poste). */
+  unknown?: boolean
+  /** Lot d'origine. */
+  packId?: string
 }
 
 /** Nom lisible de chaque couche, affiché en marge du schéma. */
@@ -25,9 +20,9 @@ export const LAYER_LABELS: Record<number, string> = {
   3: 'Cœur de réseau',
   4: 'Distribution',
   5: 'Accès',
-  6: 'Serveurs & stockage',
+  6: 'Serveurs & services',
   7: 'Postes & périphériques',
-  8: 'Énergie & alimentation',
+  8: 'Énergie & environnement',
 }
 
 const PALETTE: Record<number, { accent: string; fill: string }> = {
@@ -42,42 +37,116 @@ const PALETTE: Record<number, { accent: string; fill: string }> = {
   8: { accent: '#a16207', fill: '#fefce8' },
 }
 
-function device(label: string, rank: number, flags: Partial<DeviceMeta> = {}): DeviceMeta {
-  return { label, rank, ...PALETTE[rank], ...flags }
+const registry = new Map<string, DeviceMeta>()
+const packs = new Map<string, CatalogPack>()
+
+function metaOf(def: DeviceDef, packId: string): DeviceMeta {
+  const colors = PALETTE[def.palette ?? def.rank] ?? PALETTE[6]
+  return { ...def, ...colors, packId }
 }
 
-export const DEVICES: Record<DeviceKind, DeviceMeta> = {
-  internet: device('Internet', 0, { infrastructure: true }),
-  cloud: device('Cloud / SaaS', 0, { infrastructure: true }),
-  wan: device('Lien opérateur', 0, { infrastructure: true, critical: true }),
-  router: device('Routeur', 1, { infrastructure: true, critical: true }),
-  firewall: device('Pare-feu', 2, { infrastructure: true, critical: true }),
-  loadbalancer: device('Répartiteur de charge', 2, { infrastructure: true, critical: true }),
-  'core-switch': device('Switch cœur', 3, { infrastructure: true, critical: true }),
-  switch: device('Switch distribution', 4, { infrastructure: true, critical: true }),
-  'access-switch': device('Switch accès', 5, { infrastructure: true }),
-  wifi: device('Borne Wi-Fi', 5, { infrastructure: true }),
-  server: device('Serveur', 6),
-  hypervisor: device('Nœud hyperviseur', 6, { critical: true }),
-  storage: device('Baie de stockage', 6, { critical: true }),
-  backup: device('Serveur de sauvegarde', 6),
-  witness: device('Témoin de quorum', 6),
-  workstation: device('Poste de travail', 7),
-  printer: device('Imprimante', 7),
-  phone: device('Téléphone IP', 7),
-  ups: device('Onduleur', 8, { critical: true }),
-  pdu: device('Bandeau PDU', 8),
+/**
+ * Enregistre (ou remplace) un lot d'équipements. Appelé pour les lots embarqués, pour
+ * ceux déposés dans `public/catalog/`, et pour ceux importés par l'utilisateur.
+ */
+export function registerPack(pack: CatalogPack) {
+  packs.set(pack.id, pack)
+  for (const def of pack.devices) registry.set(def.id, metaOf(def, pack.id))
 }
 
-/** Ordre d'affichage de la palette, regroupé par famille. */
-export const PALETTE_GROUPS: { title: string; kinds: DeviceKind[] }[] = [
-  { title: 'Extérieur', kinds: ['internet', 'cloud', 'wan'] },
-  { title: 'Périmètre & sécurité', kinds: ['router', 'firewall', 'loadbalancer'] },
-  { title: 'Commutation', kinds: ['core-switch', 'switch', 'access-switch', 'wifi'] },
-  { title: 'Datacenter', kinds: ['server', 'hypervisor', 'storage', 'backup', 'witness'] },
-  { title: 'Utilisateurs', kinds: ['workstation', 'printer', 'phone'] },
-  { title: 'Énergie', kinds: ['ups', 'pdu'] },
-]
+export function removePack(packId: string) {
+  const pack = packs.get(packId)
+  if (!pack) return
+  for (const def of pack.devices) {
+    if (registry.get(def.id)?.packId === packId) registry.delete(def.id)
+  }
+  packs.delete(packId)
+}
+
+export function registeredPacks(): CatalogPack[] {
+  return [...packs.values()]
+}
+
+for (const pack of BUILTIN_PACKS) registerPack(pack)
+
+/** Type inconnu : le schéma reste lisible et modifiable, avec un pictogramme neutre. */
+function unknownMeta(kind: string): DeviceMeta {
+  return {
+    id: kind,
+    label: kind,
+    rank: 6,
+    icon: 'generic',
+    family: 'Types inconnus',
+    ...PALETTE[6],
+    unknown: true,
+  }
+}
+
+export function deviceMeta(kind: string): DeviceMeta {
+  return registry.get(kind) ?? unknownMeta(kind)
+}
+
+export function hasDevice(kind: string): boolean {
+  return registry.has(kind)
+}
+
+export function allDevices(): DeviceMeta[] {
+  return [...registry.values()]
+}
+
+/** Palette : familles dans l'ordre déclaré, puis familles inconnues à la fin. */
+export function familyGroups(): { title: string; devices: DeviceMeta[] }[] {
+  const groups = new Map<string, DeviceMeta[]>()
+  for (const device of registry.values()) {
+    const group = groups.get(device.family)
+    if (group) group.push(device)
+    else groups.set(device.family, [device])
+  }
+  const ordered = [...groups.keys()].sort((a, b) => {
+    const ia = FAMILY_ORDER.indexOf(a)
+    const ib = FAMILY_ORDER.indexOf(b)
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b)
+  })
+  return ordered.map((title) => ({
+    title,
+    devices: groups.get(title)!.sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label)),
+  }))
+}
+
+function normalize(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+}
+
+/**
+ * Recherche d'un type d'équipement par nom, famille ou synonyme : « k8s », « fortigate »,
+ * « pare-feu », « waf », « borne »… Les correspondances en début de mot passent devant.
+ */
+export function searchDevices(query: string): DeviceMeta[] {
+  const q = normalize(query.trim())
+  if (!q) return allDevices()
+  const scored: { device: DeviceMeta; score: number }[] = []
+  for (const device of registry.values()) {
+    const haystacks = [device.label, device.id, device.family, ...(device.aliases ?? [])]
+    let best = -1
+    for (const raw of haystacks) {
+      const value = normalize(raw)
+      if (value === q) best = Math.max(best, 100)
+      else if (value.startsWith(q)) best = Math.max(best, 80)
+      else if (value.includes(q)) best = Math.max(best, 50)
+    }
+    if (best >= 0) scored.push({ device, score: best })
+  }
+  return scored
+    .sort((a, b) => b.score - a.score || a.device.label.localeCompare(b.device.label))
+    .map((item) => item.device)
+}
+
+export function rankOf(kind: string, override?: number | null): number {
+  return typeof override === 'number' ? override : deviceMeta(kind).rank
+}
 
 export interface LinkMeta {
   label: string
@@ -100,6 +169,7 @@ export const LINKS: Record<LinkKind, LinkMeta> = {
   wan: { label: 'Lien WAN / MPLS', color: '#6d28d9', width: 2.4 },
   vpn: { label: 'Tunnel VPN', color: '#dc2626', width: 2, dash: '7 5' },
   wireless: { label: 'Sans fil', color: '#059669', width: 2, dash: '2 5' },
+  overlay: { label: 'Overlay VXLAN / SD-WAN', color: '#0d9488', width: 2.2, dash: '9 3 2 3' },
   heartbeat: { label: 'Battement de cœur (HA)', color: '#db2777', width: 1.8, dash: '3 4', service: true },
   replication: { label: 'Réplication / synchronisation', color: '#ea580c', width: 2.2, dash: '10 4', service: true },
   oob: { label: 'Administration hors bande', color: '#94a3b8', width: 1.4, dash: '2 4', service: true },
@@ -119,12 +189,4 @@ export const ROLES: Record<HaRole, RoleMeta> = {
   passive: { label: 'Passif (secours)', badge: 'PASSIF', color: '#64748b' },
   'active-active': { label: 'Actif / actif', badge: 'A/A', color: '#2563eb' },
   witness: { label: 'Témoin / quorum', badge: 'QUORUM', color: '#a16207' },
-}
-
-export function deviceMeta(kind: DeviceKind): DeviceMeta {
-  return DEVICES[kind] ?? DEVICES.server
-}
-
-export function rankOf(kind: DeviceKind, override?: number | null): number {
-  return typeof override === 'number' ? override : deviceMeta(kind).rank
 }

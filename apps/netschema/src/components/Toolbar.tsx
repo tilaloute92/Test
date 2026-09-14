@@ -3,6 +3,7 @@ import { Btn } from './ui'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
 import { diagramFileContent, readDiagramFile } from '../lib/storage'
 import { useDiagram } from '../store/useDiagram'
+import type { DetailLevel } from '../types'
 import { useAudit } from '../store/useAudit'
 
 export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | null> }) {
@@ -14,6 +15,7 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
   const canRedo = useDiagram((s) => s.future.length > 0)
   const hasSelection = useDiagram((s) => s.selectedNodes.length + s.selectedLinks.length > 0)
   const report = useAudit()
+  const detail = useDiagram((s) => s.detail)
 
   const store = useDiagram.getState
 
@@ -68,6 +70,18 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
 
       <Separator />
 
+      <button
+        type="button"
+        onClick={() => store().setCommandOpen(true)}
+        title="Palette de commandes (Ctrl+K)"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] text-slate-500 transition hover:bg-slate-50"
+      >
+        Rechercher
+        <kbd className="rounded border border-slate-200 bg-slate-50 px-1 text-[10px] text-slate-400">Ctrl K</kbd>
+      </button>
+
+      <Separator />
+
       <Btn
         variant={mode === 'connect' ? 'active' : 'default'}
         onClick={() => store().setMode(mode === 'connect' ? 'select' : 'connect')}
@@ -93,7 +107,21 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
         <Btn variant="ghost" onClick={() => zoomFromCenter(1.18)} title="Zoomer">+</Btn>
       </div>
 
+      <select
+        value={detail}
+        onChange={(event) => store().setDetail(event.target.value as DetailLevel)}
+        title="Niveau de détail affiché"
+        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[13px] text-slate-700 outline-none"
+      >
+        <option value="full">Détail complet</option>
+        <option value="no-endpoints">Sans les postes</option>
+        <option value="summary">Synthèse</option>
+      </select>
+
       <div className="ml-auto flex items-center gap-2">
+        <Btn onClick={() => store().setImportOpen(true)} title="Importer une liste d'équipements (Ctrl+I)">
+          Import rapide
+        </Btn>
         <button
           type="button"
           onClick={() => store().setPanel('ha')}

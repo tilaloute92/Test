@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LinkShape } from './LinkShape'
 import { NodeShape } from './NodeShape'
+import { deriveDiagram, groupMembers, type DisplayNode } from '../lib/derive'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
 import { parallelOffsets } from '../lib/routing'
 import { GRID, useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
 import { DRAG_MIME } from '../lib/dnd'
-import type { DeviceKind, NetLink, NetNode } from '../types'
+import type { DeviceKind, NetLink } from '../types'
 
 interface DragState {
   pointerId: number
@@ -46,7 +47,29 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const linkStyle = useDiagram((s) => s.linkStyle)
   const direction = useDiagram((s) => s.layout.direction)
 
-  const nodeById = useMemo(() => new Map(diagram.nodes.map((n) => [n.id, n])), [diagram.nodes])
+  const collapsed = useDiagram((s) => s.collapsed)
+  const detail = useDiagram((s) => s.detail)
+
+  /**
+   * Le plan de travail n'affiche pas le schéma brut mais sa version dérivée : niveau de
+   * détail appliqué et blocs repliés remplacés par un équipement unique. Le modèle, lui,
+   * n'est jamais modifié.
+   */
+  const display = useMemo(
+    () => deriveDiagram(diagram, { collapsed, detail, direction }),
+    [diagram, collapsed, detail, direction],
+  )
+
+  const nodeById = useMemo(() => new Map(display.nodes.map((n) => [n.id, n])), [display.nodes])
+
+  /** Un bloc replié représente plusieurs équipements réels : on agit sur ses membres. */
+  const realIds = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const node of display.nodes) {
+      map.set(node.id, node.group ? groupMembers(diagram, node.group.key).map((n) => n.id) : [node.id])
+    }
+    return map
+  }, [display.nodes, diagram])
 
   /** Conversion écran → coordonnées du schéma. */
   const toDiagram = useCallback(
@@ -86,7 +109,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     return () => element.removeEventListener('wheel', onWheel)
   }, [])
 
-  const onNodePointerDown = (event: React.PointerEvent<SVGGElement>, node: NetNode) => {
+  const onNodePointerDown = (event: React.PointerEvent<SVGGElement>, node: DisplayNode) => {
     event.stopPropagation()
     const store = useDiagram.getState()
 
@@ -104,21 +127,22 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     }
 
     const additive = event.shiftKey
-    const alreadySelected = selectedNodes.includes(node.id)
+    const own = realIds.get(node.id) ?? [node.id]
+    const alreadySelected = own.every((id) => selectedNodes.includes(id))
     const ids = additive
       ? alreadySelected
-        ? selectedNodes.filter((id) => id !== node.id)
-        : [...selectedNodes, node.id]
+        ? selectedNodes.filter((id) => !own.includes(id))
+        : [...new Set([...selectedNodes, ...own])]
       : alreadySelected
         ? selectedNodes
-        : [node.id]
+        : own
     store.select({ nodes: ids })
     if (ids.length === 0) return
 
     store.pushHistory()
     const origins: Record<string, { x: number; y: number }> = {}
     for (const id of ids) {
-      const target = nodeById.get(id)
+      const target = store.diagram.nodes.find((n) => n.id === id)
       if (target) origins[id] = { x: target.x, y: target.y }
     }
     dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, origins }
@@ -204,16 +228,19 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     return map
   }, [diagram.nodes])
 
-  const bounds = diagramBounds(diagram.nodes)
-  const bands = showLayerLabels ? layerBands(diagram.nodes, direction) : []
-  const sites = showSites ? groupBoxes(diagram.nodes, (n) => n.site, 50, 28, direction) : []
-  const zones = showZones ? groupBoxes(diagram.nodes, (n) => n.zone, 26, 14, direction) : []
-  const clusters = showClusters ? groupBoxes(diagram.nodes, (n) => n.cluster, 11, 13, direction) : []
+  // Les cadres de groupe ne s'appuient que sur les équipements réellement affichés :
+  // un groupe replié est déjà représenté par son bloc, inutile de l'encadrer.
+  const framed = display.nodes.filter((node) => !node.group)
+  const bounds = diagramBounds(display.nodes)
+  const bands = showLayerLabels ? layerBands(display.nodes, direction) : []
+  const sites = showSites ? groupBoxes(framed, (n) => n.site, 50, 28, direction) : []
+  const zones = showZones ? groupBoxes(framed, (n) => n.zone, 26, 14, direction) : []
+  const clusters = showClusters ? groupBoxes(framed, (n) => n.cluster, 11, 13, direction) : []
 
   // Étalement des liaisons parallèles (deux équipements reliés par plusieurs câbles).
   const linkOffsets = useMemo(() => {
     const groups = new Map<string, NetLink[]>()
-    for (const link of diagram.links) {
+    for (const link of display.links) {
       const key = [link.from, link.to].sort().join('~')
       const group = groups.get(key)
       if (group) group.push(link)
@@ -225,7 +252,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       group.forEach((link, i) => offsets.set(link.id, values[i]))
     }
     return offsets
-  }, [diagram.links])
+  }, [display.links])
 
   const source = connectFrom ? nodeById.get(connectFrom) : undefined
   const gridStep = GRID * view.zoom
@@ -356,7 +383,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
             ),
           )}
 
-          {diagram.links.map((link) => {
+          {display.links.map((link) => {
             const from = nodeById.get(link.from)
             const to = nodeById.get(link.to)
             if (!from || !to) return null
@@ -387,19 +414,32 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
             />
           )}
 
-          {diagram.nodes.map((node) => (
-            <NodeShape
-              key={node.id}
-              node={node}
-              selected={selectedNodes.includes(node.id)}
-              isConnectSource={connectFrom === node.id}
-              showDetails={showDetails}
-              flagged={flagged.has(node.id)}
-              onPointerDown={onNodePointerDown}
-            />
-          ))}
+          {display.nodes.map((node) => {
+            const own = realIds.get(node.id) ?? [node.id]
+            return (
+              <NodeShape
+                key={node.id}
+                node={node}
+                selected={own.every((id) => selectedNodes.includes(id))}
+                isConnectSource={connectFrom === node.id}
+                showDetails={showDetails}
+                flagged={own.some((id) => flagged.has(id))}
+                onPointerDown={onNodePointerDown}
+                onDoubleClick={() => node.group && useDiagram.getState().toggleCollapse(node.group.key)}
+              />
+            )
+          })}
         </g>
       </svg>
+
+      {(display.hiddenNodes > 0 || collapsed.length > 0) && (
+        <div className="pointer-events-none absolute bottom-4 right-4 rounded-lg bg-white/90 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm ring-1 ring-slate-200">
+          {collapsed.length > 0 && `${collapsed.length} groupe(s) replié(s)`}
+          {collapsed.length > 0 && display.hiddenNodes > 0 && ' · '}
+          {display.hiddenNodes > 0 && `${display.hiddenNodes} équipement(s) masqué(s)`}
+          {' — double-clic sur un bloc pour l’ouvrir'}
+        </div>
+      )}
 
       {diagram.nodes.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

@@ -3,9 +3,19 @@ import { autoLayout, diagramBounds } from '../lib/layout'
 import { deviceMeta } from '../lib/catalog'
 import { uid } from '../lib/ids'
 import { instantiatePattern, type HaPattern } from '../lib/patterns'
+import { suggestLinkKind } from '../lib/linkRules'
+import { parseQuickImport } from '../lib/quickImport'
 import { emptyDiagram, loadLocal, saveLocal } from '../lib/storage'
 import { sampleDiagram } from '../lib/sample'
-import type { Diagram, DeviceKind, LayoutOptions, LinkStyle, NetLink, NetNode } from '../types'
+import type {
+  DetailLevel,
+  Diagram,
+  DeviceKind,
+  LayoutOptions,
+  LinkStyle,
+  NetLink,
+  NetNode,
+} from '../types'
 
 const DEFAULT_LAYOUT: LayoutOptions = {
   direction: 'TB',
@@ -43,7 +53,14 @@ interface DiagramStore {
   showDetails: boolean
   showAudit: boolean
   mode: Mode
-  panel: 'properties' | 'ha'
+  panel: 'properties' | 'ha' | 'catalog'
+  /** Incrémenté à chaque modification du catalogue, pour rafraîchir les listes de types. */
+  catalogRevision: number
+  /** Clés des groupes repliés (« zone:Bâtiment A »). */
+  collapsed: string[]
+  detail: DetailLevel
+  commandOpen: boolean
+  importOpen: boolean
   connectFrom: string | null
   view: ViewState
   canvasSize: { width: number; height: number }
@@ -66,7 +83,16 @@ interface DiagramStore {
   select: (target: { nodes?: string[]; links?: string[] }, additive?: boolean) => void
   clearSelection: () => void
   setMode: (mode: Mode) => void
-  setPanel: (panel: 'properties' | 'ha') => void
+  setPanel: (panel: 'properties' | 'ha' | 'catalog') => void
+  bumpCatalog: () => void
+  toggleCollapse: (key: string) => void
+  setCollapsed: (keys: string[]) => void
+  setDetail: (detail: DetailLevel) => void
+  setCommandOpen: (open: boolean) => void
+  setImportOpen: (open: boolean) => void
+  duplicateSelection: () => void
+  importText: (text: string, mode: 'merge' | 'replace') => { nodes: number; links: number; warnings: string[] }
+  focusNode: (id: string) => void
   setConnectFrom: (id: string | null) => void
 
   setLayout: (patch: Partial<LayoutOptions>) => void
@@ -124,6 +150,11 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   showAudit: true,
   mode: 'select',
   panel: 'properties',
+  catalogRevision: 0,
+  collapsed: [],
+  detail: 'full',
+  commandOpen: false,
+  importOpen: false,
   connectFrom: null,
   view: { zoom: 0.8, tx: 40, ty: 20 },
   canvasSize: { width: 1200, height: 800 },
@@ -227,8 +258,17 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     const exists = get().diagram.links.some(
       (l) => (l.from === from && l.to === to) || (l.from === to && l.to === from),
     )
+    const nodes = get().diagram.nodes
+    const fromNode = nodes.find((n) => n.id === from)
+    const toNode = nodes.find((n) => n.id === to)
     get().pushHistory()
-    const link: NetLink = { id: uid('l'), from, to, kind: 'ethernet' }
+    // Le type est proposé d'après les deux équipements reliés (cf. lib/linkRules.ts).
+    const link: NetLink = {
+      id: uid('l'),
+      from,
+      to,
+      kind: fromNode && toNode ? suggestLinkKind(fromNode, toNode) : 'ethernet',
+    }
     set((state) => ({
       diagram: { ...state.diagram, links: [...state.diagram.links, link] },
       selectedLinks: [link.id],
@@ -289,6 +329,87 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   clearSelection: () => set({ selectedNodes: [], selectedLinks: [] }),
   setMode: (mode) => set({ mode, connectFrom: null }),
   setPanel: (panel) => set({ panel }),
+  bumpCatalog: () => set((state) => ({ catalogRevision: state.catalogRevision + 1 })),
+
+  toggleCollapse: (key) =>
+    set((state) => ({
+      collapsed: state.collapsed.includes(key)
+        ? state.collapsed.filter((item) => item !== key)
+        : [...state.collapsed, key],
+      selectedNodes: [],
+      selectedLinks: [],
+    })),
+  setCollapsed: (collapsed) => set({ collapsed, selectedNodes: [], selectedLinks: [] }),
+  setDetail: (detail) => set({ detail }),
+  setCommandOpen: (commandOpen) => set({ commandOpen }),
+  setImportOpen: (importOpen) => set({ importOpen }),
+
+  /**
+   * Duplication : le nom est incrémenté (SW-ACC-A1 → SW-ACC-A2), les attributs sont
+   * conservés, et les liaisons internes à la sélection sont dupliquées elles aussi.
+   */
+  duplicateSelection: () => {
+    const { diagram, selectedNodes } = get()
+    if (selectedNodes.length === 0) return
+    get().pushHistory()
+    const taken = new Set(diagram.nodes.map((n) => n.name))
+    const mapping = new Map<string, string>()
+    const clones = diagram.nodes
+      .filter((n) => selectedNodes.includes(n.id))
+      .map((node) => {
+        const id = uid('n')
+        mapping.set(node.id, id)
+        const name = nextName(node.name, taken)
+        taken.add(name)
+        return { ...node, id, name, x: node.x + 40, y: node.y + 40, pinned: false }
+      })
+    const clonedLinks = diagram.links
+      .filter((l) => mapping.has(l.from) && mapping.has(l.to))
+      .map((link) => ({ ...link, id: uid('l'), from: mapping.get(link.from)!, to: mapping.get(link.to)! }))
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        nodes: [...state.diagram.nodes, ...clones],
+        links: [...state.diagram.links, ...clonedLinks],
+      },
+      selectedNodes: clones.map((n) => n.id),
+      selectedLinks: [],
+    }))
+  },
+
+  importText: (text, mode) => {
+    const base = mode === 'merge' ? get().diagram : emptyDiagram()
+    const result = parseQuickImport(text, base)
+    if (result.nodes.length === 0 && result.links.length === 0) {
+      return { nodes: 0, links: 0, warnings: result.warnings }
+    }
+    get().pushHistory()
+    const updated = new Map(result.updates.map((node) => [node.id, node]))
+    const diagram: Diagram = {
+      title: base.title,
+      nodes: [...base.nodes.map((node) => updated.get(node.id) ?? node), ...result.nodes],
+      links: [...base.links, ...result.links],
+    }
+    set((state) => ({
+      diagram: autoLayoutOf(diagram, state.layout),
+      selectedNodes: [],
+      selectedLinks: [],
+    }))
+    get().fitView()
+    return { nodes: result.nodes.length, links: result.links.length, warnings: result.warnings }
+  },
+
+  focusNode: (id) => {
+    const { diagram, canvasSize, view } = get()
+    const node = diagram.nodes.find((n) => n.id === id)
+    if (!node) return
+    const zoom = Math.max(view.zoom, 0.7)
+    set({
+      selectedNodes: [id],
+      selectedLinks: [],
+      view: { zoom, tx: canvasSize.width / 2 - node.x * zoom, ty: canvasSize.height / 2 - node.y * zoom },
+    })
+  },
   setConnectFrom: (id) => set({ connectFrom: id }),
 
   setLayout: (patch) => set((state) => ({ layout: { ...state.layout, ...patch } })),
@@ -395,6 +516,18 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   notify: (toast) => set({ toast }),
 }))
+
+/** Incrémente le suffixe numérique d'un nom : SW-ACC-A1 → SW-ACC-A2, FW-01 → FW-02. */
+function nextName(name: string, taken: Set<string>): string {
+  const match = name.match(/^(.*?)(\d+)(\D*)$/)
+  let candidate = match ? `${match[1]}${String(Number(match[2]) + 1).padStart(match[2].length, '0')}${match[3]}` : `${name} 2`
+  let counter = 2
+  while (taken.has(candidate)) {
+    candidate = match ? `${match[1]}${String(Number(match[2]) + counter).padStart(match[2].length, '0')}${match[3]}` : `${name} ${counter + 1}`
+    counter += 1
+  }
+  return candidate
+}
 
 /** Sauvegarde locale automatique, pour retrouver son travail au prochain lancement. */
 let saveTimer: ReturnType<typeof setTimeout> | undefined

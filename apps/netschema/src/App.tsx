@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Canvas } from './components/Canvas'
+import { CommandPalette } from './components/CommandPalette'
+import { QuickImportDialog } from './components/QuickImportDialog'
 import { Inspector } from './components/Inspector'
 import { Palette } from './components/Palette'
 import { Toolbar } from './components/Toolbar'
@@ -27,6 +29,21 @@ export default function App() {
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
       const store = useDiagram.getState()
 
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        store.setCommandOpen(true)
+        return
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
+        event.preventDefault()
+        store.duplicateSelection()
+        return
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'i') {
+        event.preventDefault()
+        store.setImportOpen(true)
+        return
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault()
         if (event.shiftKey) store.redo()
@@ -39,6 +56,8 @@ export default function App() {
         return
       }
       if (event.key === 'Escape') {
+        store.setCommandOpen(false)
+        store.setImportOpen(false)
         store.setMode('select')
         store.clearSelection()
         return
@@ -54,6 +73,8 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen flex-col bg-slate-100 text-slate-900">
       <Toolbar svgRef={svgRef} />
+      <CommandPalette svgRef={svgRef} />
+      <QuickImportDialog />
       <div className="flex min-h-0 flex-1">
         <Palette />
         <main className="min-w-0 flex-1">

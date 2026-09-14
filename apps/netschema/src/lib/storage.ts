@@ -1,6 +1,6 @@
-import { DEVICES, LINKS, ROLES } from './catalog'
+import { deviceMeta, LINKS, ROLES } from './catalog'
 import { uid } from './ids'
-import type { Diagram, DeviceKind, HaRole, LinkKind, NetLink, NetNode } from '../types'
+import type { Diagram, HaRole, LinkKind, NetLink, NetNode } from '../types'
 
 const STORAGE_KEY = 'netschema:diagram:v1'
 const FILE_VERSION = 1
@@ -35,15 +35,17 @@ export function parseDiagram(raw: unknown): Diagram {
   const seen = new Set<string>()
   for (const item of rawNodes) {
     if (!isRecord(item)) continue
+    // Un type absent du catalogue local est conservé tel quel : le schéma reste ouvrable
+    // même si le lot d'équipements correspondant n'est pas installé sur ce poste.
     const kind = str(item.kind)
-    if (!kind || !(kind in DEVICES)) continue
+    if (!kind) continue
     let id = str(item.id) ?? uid('n')
     if (seen.has(id)) id = uid('n')
     seen.add(id)
     nodes.push({
       id,
-      kind: kind as DeviceKind,
-      name: str(item.name) ?? DEVICES[kind as DeviceKind].label,
+      kind,
+      name: str(item.name) ?? deviceMeta(kind).label,
       model: str(item.model),
       ip: str(item.ip),
       vlan: str(item.vlan),

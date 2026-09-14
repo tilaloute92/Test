@@ -1,26 +1,11 @@
 /** Modèle de données d'un schéma d'infrastructure réseau. */
 
-export type DeviceKind =
-  | 'internet'
-  | 'cloud'
-  | 'wan'
-  | 'router'
-  | 'firewall'
-  | 'loadbalancer'
-  | 'core-switch'
-  | 'switch'
-  | 'access-switch'
-  | 'wifi'
-  | 'server'
-  | 'storage'
-  | 'hypervisor'
-  | 'witness'
-  | 'backup'
-  | 'workstation'
-  | 'printer'
-  | 'phone'
-  | 'ups'
-  | 'pdu'
+/**
+ * Identifiant de type d'équipement (« firewall », « k8s-cluster », un type maison…).
+ * Volontairement une chaîne libre et non une énumération figée : le catalogue est
+ * extensible par fichier de données, sans recompiler l'application.
+ */
+export type DeviceKind = string
 
 export type LinkKind =
   | 'ethernet'
@@ -29,6 +14,7 @@ export type LinkKind =
   | 'wan'
   | 'vpn'
   | 'wireless'
+  | 'overlay'
   | 'heartbeat'
   | 'stack'
   | 'replication'
@@ -106,6 +92,9 @@ export interface LayoutOptions {
 }
 
 export type LinkStyle = 'orthogonal' | 'straight'
+
+/** Niveau de détail d'affichage, pour dégrossir un schéma complexe. */
+export type DetailLevel = 'full' | 'no-endpoints' | 'summary'
 
 export const NODE_W = 148
 export const NODE_H = 64

@@ -1,0 +1,44 @@
+{
+  "id": "ot-industriel",
+  "title": "OT / industriel",
+  "version": "2026.1",
+  "description": "Convergence IT/OT : automates, supervision industrielle, passerelles et capteurs.",
+  "devices": [
+    {
+      "id": "plc",
+      "label": "Automate (PLC)",
+      "rank": 6,
+      "icon": "chip",
+      "family": "Industriel (OT)",
+      "critical": true,
+      "aliases": ["automate", "plc", "api", "siemens", "schneider"]
+    },
+    {
+      "id": "scada",
+      "label": "Supervision SCADA",
+      "rank": 6,
+      "icon": "gauge",
+      "family": "Industriel (OT)",
+      "critical": true,
+      "aliases": ["scada", "supervision", "hmi", "ihm"]
+    },
+    {
+      "id": "ot-gateway",
+      "label": "Passerelle IT/OT",
+      "rank": 2,
+      "icon": "funnel",
+      "family": "Industriel (OT)",
+      "infrastructure": true,
+      "critical": true,
+      "aliases": ["passerelle", "diode", "dmz industrielle", "purdue"]
+    },
+    {
+      "id": "iot-sensor",
+      "label": "Capteur IoT",
+      "rank": 7,
+      "icon": "antenna",
+      "family": "Industriel (OT)",
+      "aliases": ["capteur", "iot", "lora", "sonde"]
+    }
+  ]
+}

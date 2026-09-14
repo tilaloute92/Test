@@ -1,23 +1,34 @@
 import { deviceMeta, ROLES } from '../lib/catalog'
+import { groupSummary, type DisplayNode } from '../lib/derive'
 import { DeviceIcon } from '../lib/icons'
-import { NODE_H, NODE_W, type NetNode } from '../types'
+import { NODE_H, NODE_W } from '../types'
 
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value
 }
 
 interface Props {
-  node: NetNode
+  node: DisplayNode
   selected: boolean
   isConnectSource: boolean
   showDetails: boolean
   /** Signalé par l'analyse de haute disponibilité comme point de défaillance critique. */
   flagged: boolean
-  onPointerDown: (event: React.PointerEvent<SVGGElement>, node: NetNode) => void
+  onPointerDown: (event: React.PointerEvent<SVGGElement>, node: DisplayNode) => void
+  onDoubleClick?: () => void
 }
 
-export function NodeShape({ node, selected, isConnectSource, showDetails, flagged, onPointerDown }: Props) {
+export function NodeShape({
+  node,
+  selected,
+  isConnectSource,
+  showDetails,
+  flagged,
+  onPointerDown,
+  onDoubleClick,
+}: Props) {
   const meta = deviceMeta(node.kind)
+  const group = node.group
   const details = [node.ip, node.vlan, node.model].filter(Boolean).join(' · ')
   const context = [node.zone, node.cluster ? undefined : node.vip ? `VIP ${node.vip}` : undefined]
     .filter(Boolean)
@@ -29,7 +40,8 @@ export function NodeShape({ node, selected, isConnectSource, showDetails, flagge
     <g
       transform={`translate(${node.x - NODE_W / 2}, ${node.y - NODE_H / 2})`}
       onPointerDown={(event) => onPointerDown(event, node)}
-      style={{ cursor: 'grab' }}
+      onDoubleClick={onDoubleClick}
+      style={{ cursor: group ? 'pointer' : 'grab' }}
     >
       {(selected || isConnectSource) && (
         <rect
@@ -46,6 +58,14 @@ export function NodeShape({ node, selected, isConnectSource, showDetails, flagge
         />
       )}
 
+      {/* Bloc replié : un empilement de fiches suggère qu'il en contient plusieurs. */}
+      {group && (
+        <>
+          <rect x={8} y={8} width={NODE_W} height={NODE_H} rx={10} fill={meta.fill} stroke={meta.accent} strokeWidth={1.2} opacity={0.45} />
+          <rect x={4} y={4} width={NODE_W} height={NODE_H} rx={10} fill={meta.fill} stroke={meta.accent} strokeWidth={1.4} opacity={0.7} />
+        </>
+      )}
+
       <rect
         width={NODE_W}
         height={NODE_H}
@@ -57,48 +77,68 @@ export function NodeShape({ node, selected, isConnectSource, showDetails, flagge
       <rect width={5} height={NODE_H} rx={2.5} fill={meta.accent} />
 
       <g transform={`translate(16, ${NODE_H / 2 - 12})`}>
-        <DeviceIcon kind={node.kind} color={meta.accent} />
+        <DeviceIcon icon={meta.icon} color={meta.accent} />
       </g>
 
-      <text x={50} y={showDetails && (details || context) ? 26 : 34} fontSize={12.5} fontWeight={600} fill="#0f172a">
+      <text x={50} y={showDetails && (details || context || group) ? 26 : 34} fontSize={12.5} fontWeight={600} fill="#0f172a">
         {truncate(node.name, role ? 12 : 15)}
       </text>
-      {showDetails && details && (
-        <text x={50} y={41} fontSize={10} fill="#475569">
-          {truncate(details, 18)}
-        </text>
-      )}
-      {showDetails && context && (
-        <text x={50} y={53} fontSize={9} fill={meta.accent} fontWeight={600}>
-          {truncate(context, 20)}
-        </text>
-      )}
 
-      {role && (
-        <g transform={`translate(${NODE_W - badgeWidth - 7}, 6)`}>
-          <rect width={badgeWidth} height={14} rx={7} fill={role.color} />
-          <text x={badgeWidth / 2} y={10.2} textAnchor="middle" fontSize={8} fontWeight={700} fill="#ffffff">
-            {role.badge}
+      {group ? (
+        <>
+          <text x={50} y={42} fontSize={9.5} fill="#475569">
+            {truncate(groupSummary(group), 24)}
           </text>
-        </g>
-      )}
-
-      {node.dualPower && (
-        <g transform={`translate(${NODE_W - 34}, ${NODE_H - 17})`}>
-          <title>Double alimentation électrique (chaînes A et B)</title>
-          <path d="M5 0 1.5 6h3L3.5 11 8 4.5H5Z" fill="#a16207" />
-          <text x={10} y={9} fontSize={8} fontWeight={700} fill="#a16207">
-            A/B
+          <text x={50} y={54} fontSize={9} fontWeight={600} fill={meta.accent}>
+            Double-clic pour ouvrir
           </text>
-        </g>
-      )}
+          <g transform={`translate(${NODE_W - 30}, 8)`}>
+            <rect width={22} height={15} rx={7.5} fill={meta.accent} />
+            <text x={11} y={11} textAnchor="middle" fontSize={9} fontWeight={700} fill="#ffffff">
+              {group.count}
+            </text>
+          </g>
+        </>
+      ) : (
+        <>
+          {showDetails && details && (
+            <text x={50} y={41} fontSize={10} fill="#475569">
+              {truncate(details, 18)}
+            </text>
+          )}
+          {showDetails && context && (
+            <text x={50} y={53} fontSize={9} fill={meta.accent} fontWeight={600}>
+              {truncate(context, 20)}
+            </text>
+          )}
 
-      {node.pinned && (
-        <g transform={`translate(10, ${NODE_H - 18})`} fill="none" stroke={meta.accent} strokeWidth={1.4}>
-          <title>Position figée : ignoré par le placement automatique</title>
-          <path d="M5 0v5M1.5 5h7l-1 3.5h-5Z" strokeLinejoin="round" />
-          <path d="M5 8.5V12" />
-        </g>
+          {role && (
+            <g transform={`translate(${NODE_W - badgeWidth - 7}, 6)`}>
+              <rect width={badgeWidth} height={14} rx={7} fill={role.color} />
+              <text x={badgeWidth / 2} y={10.2} textAnchor="middle" fontSize={8} fontWeight={700} fill="#ffffff">
+                {role.badge}
+              </text>
+            </g>
+          )}
+
+          {node.dualPower && (
+            <g transform={`translate(${NODE_W - 34}, ${NODE_H - 17})`}>
+              <title>Double alimentation électrique (chaînes A et B)</title>
+              <path d="M5 0 1.5 6h3L3.5 11 8 4.5H5Z" fill="#a16207" />
+              <text x={10} y={9} fontSize={8} fontWeight={700} fill="#a16207">
+                A/B
+              </text>
+            </g>
+          )}
+
+          {node.pinned && (
+            <g transform={`translate(10, ${NODE_H - 18})`} fill="none" stroke={meta.accent} strokeWidth={1.4}>
+              <title>Position figée : ignoré par le placement automatique</title>
+              <path d="M5 0v5M1.5 5h7l-1 3.5h-5Z" strokeLinejoin="round" />
+              <path d="M5 8.5V12" />
+            </g>
+          )}
+        </>
       )}
 
       {flagged && (

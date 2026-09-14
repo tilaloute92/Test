@@ -1,14 +1,17 @@
 import { Btn, Checkbox, Field, Select, Slider, TextInput } from './ui'
+import { CatalogPanel } from './CatalogPanel'
 import { HaPanel } from './HaPanel'
-import { DEVICES, LAYER_LABELS, LINKS, ROLES, rankOf } from '../lib/catalog'
+import { collapsibleGroups } from '../lib/derive'
+import { allDevices, LAYER_LABELS, LINKS, ROLES, rankOf } from '../lib/catalog'
 import { useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
-import type { DeviceKind, HaRole, LinkKind, NetNode } from '../types'
+import type { DetailLevel, HaRole, LinkKind, NetNode } from '../types'
 
-const DEVICE_OPTIONS = (Object.keys(DEVICES) as DeviceKind[]).map((kind) => ({
-  value: kind,
-  label: DEVICES[kind].label,
-}))
+function deviceOptions() {
+  return allDevices()
+    .sort((a, b) => a.family.localeCompare(b.family) || a.label.localeCompare(b.label))
+    .map((device) => ({ value: device.id, label: `${device.label} — ${device.family}` }))
+}
 
 const LINK_OPTIONS = (Object.keys(LINKS) as LinkKind[]).map((kind) => ({
   value: kind,
@@ -41,35 +44,36 @@ export function Inspector() {
   return (
     <aside className="flex w-72 shrink-0 flex-col gap-5 overflow-y-auto border-l border-slate-200 bg-white p-4">
       <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
-        <button
-          type="button"
-          onClick={() => setPanel('properties')}
-          className={`flex-1 rounded-md px-2 py-1.5 text-[12px] font-medium transition ${
-            panel === 'properties' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          Propriétés
-        </button>
-        <button
-          type="button"
-          onClick={() => setPanel('ha')}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] font-medium transition ${
-            panel === 'ha' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          Haute dispo
-          {alerts > 0 && (
-            <span
-              className="rounded-full px-1.5 text-[10px] font-bold text-white"
-              style={{ backgroundColor: report.counts.critique > 0 ? '#dc2626' : '#d97706' }}
-            >
-              {alerts}
-            </span>
-          )}
-        </button>
+        {(
+          [
+            ['properties', 'Propriétés'],
+            ['ha', 'Haute dispo'],
+            ['catalog', 'Catalogue'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setPanel(id)}
+            className={`flex flex-1 items-center justify-center gap-1 rounded-md px-1.5 py-1.5 text-[11px] font-medium transition ${
+              panel === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {label}
+            {id === 'ha' && alerts > 0 && (
+              <span
+                className="rounded-full px-1 text-[9px] font-bold text-white"
+                style={{ backgroundColor: report.counts.critique > 0 ? '#dc2626' : '#d97706' }}
+              >
+                {alerts}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {panel === 'ha' && <HaPanel />}
+      {panel === 'catalog' && <CatalogPanel />}
 
       {panel === 'properties' && (
       <>
@@ -87,6 +91,8 @@ export function Inspector() {
       </section>
 
       <LayoutForm />
+
+      <ReadabilityForm />
 
       <section>
         <SectionTitle>Schéma</SectionTitle>
@@ -109,9 +115,11 @@ export function Inspector() {
 
       <section className="mt-auto rounded-lg bg-slate-50 p-3 text-[11px] leading-relaxed text-slate-500">
         <p className="font-semibold text-slate-600">Raccourcis</p>
-        <p>L — mode Relier · Suppr — supprimer · Échap — annuler</p>
-        <p>Ctrl+Z / Ctrl+Maj+Z — annuler / rétablir</p>
+        <p>Ctrl+K — recherche et commandes · Ctrl+I — import rapide</p>
+        <p>L — mode Relier · Ctrl+D — dupliquer · Suppr — supprimer</p>
+        <p>Ctrl+Z / Ctrl+Maj+Z — annuler / rétablir · Échap — annuler</p>
         <p>Molette — zoom · Glisser le fond — déplacer la vue</p>
+        <p>Double-clic sur un bloc replié — l’ouvrir</p>
       </section>
     </aside>
   )
@@ -131,7 +139,7 @@ function NodeForm({ node }: { node: NetNode }) {
         <TextInput value={node.name} onChange={(name) => set({ name })} />
       </Field>
       <Field label="Type d'équipement">
-        <Select value={node.kind} onChange={(kind) => set({ kind: kind as DeviceKind })} options={DEVICE_OPTIONS} />
+        <Select value={node.kind} onChange={(kind) => set({ kind })} options={deviceOptions()} />
       </Field>
       <div className="grid grid-cols-2 gap-2">
         <Field label="Adresse IP">
@@ -268,6 +276,80 @@ function LinkForm({ linkId }: { linkId: string }) {
       />
       <Btn onClick={() => set({ from: link.to, to: link.from })}>Inverser le sens</Btn>
     </div>
+  )
+}
+
+/**
+ * Lisibilité : les deux leviers qui font tenir une architecture complexe sur un écran —
+ * le niveau de détail, et le repli des groupes en un bloc unique.
+ */
+function ReadabilityForm() {
+  const diagram = useDiagram((s) => s.diagram)
+  const detail = useDiagram((s) => s.detail)
+  const setDetail = useDiagram((s) => s.setDetail)
+  const collapsed = useDiagram((s) => s.collapsed)
+  const toggleCollapse = useDiagram((s) => s.toggleCollapse)
+  const setCollapsed = useDiagram((s) => s.setCollapsed)
+  const groups = collapsibleGroups(diagram)
+
+  const TYPE_LABEL = { site: 'Site', zone: 'Zone', cluster: 'Grappe' } as const
+
+  return (
+    <section>
+      <SectionTitle>Lisibilité</SectionTitle>
+      <div className="flex flex-col gap-2.5">
+        <Field label="Niveau de détail">
+          <Select
+            value={detail}
+            onChange={(value) => setDetail(value as DetailLevel)}
+            options={[
+              { value: 'full', label: 'Complet' },
+              { value: 'no-endpoints', label: 'Sans les postes ni l’énergie' },
+              { value: 'summary', label: 'Synthèse (jusqu’à la distribution)' },
+            ]}
+          />
+        </Field>
+
+        {groups.length > 0 && (
+          <div>
+            <div className="flex items-baseline justify-between pb-1">
+              <p className="text-[11px] font-medium text-slate-500">Replier un groupe</p>
+              {collapsed.length > 0 && (
+                <button type="button" onClick={() => setCollapsed([])} className="text-[11px] text-blue-600 hover:underline">
+                  tout déplier
+                </button>
+              )}
+            </div>
+            <ul className="flex max-h-44 flex-col gap-1 overflow-y-auto">
+              {groups.map((group) => {
+                const active = collapsed.includes(group.key)
+                return (
+                  <li key={group.key}>
+                    <button
+                      type="button"
+                      onClick={() => toggleCollapse(group.key)}
+                      className={`flex w-full items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-left text-[12px] transition ${
+                        active
+                          ? 'border-blue-300 bg-blue-50 text-blue-800'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="min-w-0 truncate">
+                        <span className="text-[10px] text-slate-400">{TYPE_LABEL[group.type]} · </span>
+                        {group.label}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-slate-400">
+                        {active ? 'replié' : group.count}
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
 
