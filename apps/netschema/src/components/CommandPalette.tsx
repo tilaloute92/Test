@@ -138,6 +138,18 @@ function buildItems(query: string, svgRef: React.RefObject<SVGSVGElement | null>
     { id: 'fit', label: 'Ajuster la vue', hint: 'vue', run: () => store().fitView() },
     { id: 'connect', label: 'Mode Relier', hint: 'L', run: () => store().setMode('connect') },
     { id: 'duplicate', label: 'Dupliquer la sélection', hint: 'Ctrl+D', run: () => store().duplicateSelection() },
+    {
+      id: 'front',
+      label: 'Mettre la sélection au premier plan',
+      hint: 'Ctrl+Maj+F',
+      run: () => store().reorderNodes(store().selectedNodes, 'front'),
+    },
+    {
+      id: 'back',
+      label: 'Mettre la sélection à l’arrière-plan',
+      hint: 'Ctrl+Maj+B',
+      run: () => store().reorderNodes(store().selectedNodes, 'back'),
+    },
     { id: 'import', label: 'Import rapide (coller une liste)', hint: 'Ctrl+I', run: () => store().setImportOpen(true) },
     { id: 'ha', label: 'Analyse haute disponibilité', hint: 'panneau', run: () => store().setPanel('ha') },
     { id: 'catalog', label: 'Catalogue d’équipements', hint: 'panneau', run: () => store().setPanel('catalog') },

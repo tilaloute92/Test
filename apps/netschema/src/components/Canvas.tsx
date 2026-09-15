@@ -8,11 +8,11 @@ import { setDiagramSvg } from '../lib/exportRegistry'
 import { readProjectFile } from '../lib/storage'
 import { linkColorFor, linkLabelFor } from '../lib/osi'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
-import { insertIndexAt, parallelOffsets, type LinkGeometry } from '../lib/routing'
+import { insertIndexAt, parallelOffsets, pointToAttach, type LinkGeometry } from '../lib/routing'
 import { GRID, useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
 import { DRAG_MIME } from '../lib/dnd'
-import type { DeviceKind, NetLink } from '../types'
+import { NODE_H, NODE_W, type Attach, type DeviceKind, type NetLink } from '../types'
 
 interface DragState {
   pointerId: number
@@ -32,6 +32,13 @@ interface LinkDragState {
   startY: number
 }
 
+/** Déplacement d'une extrémité de liaison vers un équipement (et un point de sa boîte). */
+interface EndpointDragState {
+  pointerId: number
+  linkId: string
+  end: 'a' | 'b'
+}
+
 interface PanState {
   pointerId: number
   startX: number
@@ -45,6 +52,9 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const dragRef = useRef<DragState | null>(null)
   const panRef = useRef<PanState | null>(null)
   const linkDragRef = useRef<LinkDragState | null>(null)
+  const endpointDragRef = useRef<EndpointDragState | null>(null)
+  /** Point d'accroche choisi sur l'équipement de départ, en mode « Relier ». */
+  const connectAttachRef = useRef<Attach | null>(null)
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
 
   const diagram = useDiagram((s) => s.diagram)
@@ -138,13 +148,23 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     const store = useDiagram.getState()
 
     if (mode === 'connect') {
+      // Cliquer près d'un bord fixe le point d'accroche de ce côté ; cliquer au centre
+      // laisse l'accroche se calculer, comme avant.
+      const point = toDiagram(event.clientX, event.clientY)
+      const attach = edgeAttach(node, point)
       if (!connectFrom) {
+        connectAttachRef.current = attach
         store.setConnectFrom(node.id)
         store.select({ nodes: [node.id] })
       } else if (connectFrom === node.id) {
+        connectAttachRef.current = null
         store.setConnectFrom(null)
       } else {
-        store.addLink(connectFrom, node.id)
+        store.addLink(connectFrom, node.id, {
+          attachA: connectAttachRef.current ?? undefined,
+          attachB: attach ?? undefined,
+        })
+        connectAttachRef.current = null
         store.setConnectFrom(null)
       }
       return
@@ -228,6 +248,40 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     event.currentTarget.setPointerCapture?.(event.pointerId)
   }
 
+  /**
+   * Équipement réel sous le pointeur. Les blocs repliés sont ignorés : ils représentent
+   * plusieurs équipements, on ne saurait pas auquel accrocher la liaison.
+   */
+  /**
+   * Accroche déduite d'un clic sur un équipement : seulement si le clic tombe dans la bande
+   * proche du bord, là où l'on désigne visiblement un point de branchement précis.
+   */
+  const edgeAttach = (node: { x: number; y: number }, point: { x: number; y: number }): Attach | null => {
+    const margin = 14
+    const nearEdge =
+      Math.abs(point.x - node.x) > NODE_W / 2 - margin || Math.abs(point.y - node.y) > NODE_H / 2 - margin
+    return nearEdge ? pointToAttach(node, point) : null
+  }
+
+  const nodeAt = (point: { x: number; y: number }) => {
+    for (let i = display.nodes.length - 1; i >= 0; i -= 1) {
+      const node = display.nodes[i]
+      if (node.group) continue
+      if (Math.abs(point.x - node.x) <= NODE_W / 2 && Math.abs(point.y - node.y) <= NODE_H / 2) return node
+    }
+    return null
+  }
+
+  const beginEndpointDrag = (event: React.PointerEvent<SVGRectElement>, link: NetLink, end: 'a' | 'b') => {
+    event.stopPropagation()
+    if (!isRealLink(link.id)) return
+    const store = useDiagram.getState()
+    store.select({ links: [link.id] })
+    store.pushHistory()
+    endpointDragRef.current = { pointerId: event.pointerId, linkId: link.id, end }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
   const removeWaypoint = (link: NetLink, index: number) => {
     if (!isRealLink(link.id)) return
     const store = useDiagram.getState()
@@ -254,6 +308,18 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
 
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     if (mode === 'connect' && connectFrom) setCursor(toDiagram(event.clientX, event.clientY))
+
+    const endpointDrag = endpointDragRef.current
+    if (endpointDrag) {
+      const point = toDiagram(event.clientX, event.clientY)
+      const target = nodeAt(point)
+      if (target) {
+        useDiagram
+          .getState()
+          .attachLink(endpointDrag.linkId, endpointDrag.end, target.id, pointToAttach(target, point))
+      }
+      return
+    }
 
     const linkDrag = linkDragRef.current
     if (linkDrag) {
@@ -307,6 +373,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     dragRef.current = null
     panRef.current = null
     linkDragRef.current = null
+    endpointDragRef.current = null
   }
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
@@ -581,6 +648,8 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 onInsertDown={(event, target, index, point) =>
                   beginWaypointDrag(event, target, index, true, point)
                 }
+                onEndpointDown={beginEndpointDrag}
+                onEndpointReset={(target) => useDiagram.getState().clearLinkAttach(target.id)}
               />
             )
           })}

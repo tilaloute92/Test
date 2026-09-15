@@ -203,7 +203,7 @@ export function GuideView() {
     {
       id: 'schema',
       title: 'Construire le schéma',
-      keywords: 'palette equipement materiel deplacer selection groupes zones sites grappes disposition automatique epingler motifs',
+      keywords: 'palette equipement materiel deplacer selection groupes zones sites grappes disposition automatique epingler motifs premier plan arriere plan empilement chevauchement ordre',
       body: (
         <>
           <List
@@ -225,6 +225,13 @@ export function GuideView() {
                 l'inspecteur dessinent les cadres et guident le rangement automatique.
               </>,
               <>
+                <b>Premier plan / arrière-plan</b> : quand deux boîtes se chevauchent, c'est
+                l'ordre d'empilement qui tranche. Les quatre boutons <i>Plan d'affichage</i> de
+                l'inspecteur — ou <Keys>Ctrl</Keys> <Keys>Maj</Keys> <Keys>F</Keys> et
+                <Keys>Ctrl</Keys> <Keys>Maj</Keys> <Keys>B</Keys>, <Keys>]</Keys> et
+                <Keys>[</Keys> pour un cran — le règlent pour la sélection.
+              </>,
+              <>
                 <b>Motifs</b> : le panneau Haute dispo propose des ensembles prêts à poser (paire
                 de pare-feu, cœur redondant, cluster hyperviseur…).
               </>,
@@ -240,7 +247,7 @@ export function GuideView() {
     {
       id: 'liaisons',
       title: 'Liaisons, tracés et couches OSI',
-      keywords: 'liaisons liens cable fibre trunk vlan lacp agregat osi couche niveau 2 3 routage trace point de passage ancrage courbe orthogonal',
+      keywords: 'liaisons liens cable fibre trunk vlan lacp agregat osi couche niveau 2 3 routage trace point de passage ancrage accroche brancher rebrancher extremite courbe orthogonal',
       body: (
         <>
           <P>
@@ -254,6 +261,21 @@ export function GuideView() {
                 <b>Tracer à la main</b> : tirez le trait d'une liaison, un point de passage
                 apparaît là où vous l'avez saisi. Glissez-le pour le déplacer, double-cliquez
                 dessus pour le retirer.
+              </>,
+              <>
+                <b>Choisir où la liaison se branche</b> : sélectionnez-la, puis glissez l'un des
+                deux carrés verts — ses extrémités — à l'endroit voulu sur la boîte d'un
+                équipement. Le point d'accroche est libre tout autour de la boîte, suit
+                l'équipement quand on le déplace, et la liaison sort perpendiculairement avant
+                de repartir. Double-clic sur un carré : retour à l'accroche calculée.
+              </>,
+              <>
+                <b>Rebrancher ailleurs</b> : lâchez cette même extrémité sur un <i>autre</i>
+                équipement et la liaison change de destination, sans avoir à la supprimer.
+              </>,
+              <>
+                <b>À la création</b> : en mode <Keys>L</Keys>, un clic près d'un bord fixe
+                l'accroche de ce côté ; un clic au centre laisse l'application choisir.
               </>,
               <>
                 <b>Forme</b> : automatique, orthogonale, droite ou courbe, au choix dans
@@ -606,6 +628,9 @@ export function GuideView() {
               ['Ctrl + Maj + Z', 'Rétablir'],
               ['Ctrl + D', 'Dupliquer la sélection'],
               ['L', 'Mode liaison : cliquer les deux extrémités'],
+              ['Ctrl + Maj + F', 'Mettre la sélection au premier plan'],
+              ['Ctrl + Maj + B', 'Mettre la sélection à l’arrière-plan'],
+              ['] / [', 'Avancer / reculer la sélection d’un cran'],
               ['Suppr', 'Supprimer la sélection'],
               ['Échap', 'Quitter le mode courant, fermer les fenêtres'],
             ]}
@@ -613,7 +638,8 @@ export function GuideView() {
           <P>
             À la souris : molette pour zoomer, glisser le fond pour déplacer la vue, glisser dans
             le vide pour un rectangle de sélection, double-clic sur un cadre de groupe pour le
-            replier.
+            replier, et sur une liaison sélectionnée : glisser le trait pour poser un point de
+            passage, glisser un carré vert pour choisir où elle se branche.
           </P>
         </>
       ),

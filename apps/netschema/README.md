@@ -268,13 +268,51 @@ faire passer une liaison ailleurs, il faut pouvoir la prendre en main.
 - **Côté d'accroche** imposé au départ et à l'arrivée : dessus, dessous, gauche, droite —
   ou automatique. C'est ce qui permet de faire sortir deux liaisons par des faces
   différentes du même équipement.
-- **Rendre le tracé automatique** efface points de passage, forme et accroches.
+- **Tracé auto** (bouton de l'inspecteur) efface points de passage, forme et accroches.
 - À la voix : « Tracé courbe », « Réinitialise le tracé » sur la liaison sélectionnée.
+
+### Où la liaison se branche
+
+Le côté ne suffit pas toujours : sur un même bord, deux liaisons se superposent et l'on veut
+parfois brancher *là*, précisément. Les deux extrémités de la liaison sélectionnée sont donc
+des poignées (carrés verts) :
+
+- **Glissez une extrémité sur la boîte d'un équipement** : elle s'accroche à l'endroit exact
+  désigné, n'importe où sur le pourtour. Le point est mémorisé en proportion de la boîte : il
+  suit l'équipement quand on le déplace et reste juste quel que soit le zoom.
+- **Glissez-la sur un *autre* équipement** : la liaison change de destination sans être
+  supprimée ni recréée — ses attributs (type, VLAN, débit, ports) sont conservés.
+- **Aimantation** : à quelques pixels du milieu d'une arête, le point s'y cale, pour retrouver
+  facilement l'accroche « propre » d'un schéma rangé.
+- **Amorce** : une accroche choisie à la main fait sortir la liaison perpendiculairement à la
+  boîte sur quelques pixels avant de repartir. Sans elle, une accroche prise à revers ferait
+  traverser l'équipement au trait.
+- **Double-clic** sur une extrémité, ou bouton *Accroches auto* : retour au calcul
+  automatique. À la voix : « Accroches automatiques ».
+- **À la création** : en mode *Relier* (`L`), un clic près d'un bord fixe l'accroche de ce
+  côté ; un clic au centre laisse l'application choisir.
 
 Les poignées sont dessinées au-dessus des équipements : un point de passage posé sur une
 boîte reste attrapable. Elles n'apparaissent jamais dans les exports, et une liaison reportée
 sur un bloc replié retrouve un tracé automatique — son tracé manuel ne vaut que pour ses
 extrémités d'origine.
+
+## Premier plan, arrière-plan
+
+Deux boîtes qui se chevauchent, un équipement posé sur un cadre de zone, une grappe dense :
+c'est l'ordre d'empilement qui décide de ce qu'on voit. Il se règle pour la sélection —
+un équipement ou plusieurs, qui se déplacent alors d'un bloc :
+
+| Action | Inspecteur | Clavier | Voix |
+| --- | --- | --- | --- |
+| Premier plan | *Plan d'affichage → Premier plan* | `Ctrl+Maj+F` | « Mets FW-01 au premier plan » |
+| Arrière-plan | *Plan d'affichage → Arrière-plan* | `Ctrl+Maj+B` | « Place SW-ACC-A1 en arrière-plan » |
+| Avancer d'un cran | *Plan d'affichage → Avancer* | `]` | « Avance FW-01 » |
+| Reculer d'un cran | *Plan d'affichage → Reculer* | `[` | « Recule FW-01 » |
+
+L'ordre est celui du schéma, pas de la vue : il est enregistré avec le projet et respecté à
+l'export SVG et PNG. Les cadres de sites, de zones et de grappes restent toujours derrière les
+équipements, et les liaisons sous les boîtes qu'elles relient.
 
 ## Niveaux 2 et 3 du modèle OSI
 
@@ -503,6 +541,8 @@ marqués d'une pastille rouge sur le schéma.
 | Importer une liste | `Ctrl+I` |
 | Dupliquer | `Ctrl+D` |
 | Ouvrir un bloc replié | Double-clic dessus |
+| Premier plan / arrière-plan | `Ctrl+Maj+F` / `Ctrl+Maj+B` · `]` / `[` pour un cran |
+| Brancher une liaison où l'on veut | Glisser un carré vert de la liaison sélectionnée sur un équipement |
 | Retrouver comment faire | Onglet **Guide**, ou « ouvre le guide » à la voix |
 
 Chaque équipement porte un nom, un type, un modèle, une IP, un VLAN, une zone, un site, des
@@ -537,7 +577,7 @@ src/
   lib/layout.ts         placement automatique par couches, cadres de groupes, cadrage
   lib/ha.ts             analyse haute disponibilité (points d'articulation + règles métier)
   lib/patterns.ts       bibliothèque de modèles d'architectures redondées
-  lib/routing.ts        tracé des liaisons : automatique, points de passage, accroches, courbes
+  lib/routing.ts        tracé des liaisons : automatique, points de passage, accroches libres, courbes
   lib/exportImage.ts    export SVG / PNG
   lib/storage.ts        sauvegarde locale, lecture/écriture des fichiers projet
   lib/sample.ts         schéma d'exemple (architecture HA siège + site de secours, baies, parc)

@@ -59,6 +59,22 @@ export default function App() {
         else store.undo()
         return
       }
+      // Plan d'affichage : mêmes touches que dans les outils de dessin.
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        store.reorderNodes(store.selectedNodes, 'front')
+        return
+      }
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'b') {
+        event.preventDefault()
+        store.reorderNodes(store.selectedNodes, 'back')
+        return
+      }
+      if (!event.ctrlKey && !event.metaKey && (event.key === ']' || event.key === '[')) {
+        event.preventDefault()
+        store.reorderNodes(store.selectedNodes, event.key === ']' ? 'forward' : 'backward')
+        return
+      }
       if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault()
         store.deleteSelection()

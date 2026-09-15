@@ -201,6 +201,8 @@ export function deriveDiagram(
       waypoints: undefined,
       anchorA: undefined,
       anchorB: undefined,
+      attachA: undefined,
+      attachB: undefined,
     }
     if (existing) {
       const index = links.indexOf(existing)

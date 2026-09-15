@@ -2,6 +2,7 @@ import {
   NODE_H,
   NODE_W,
   type AnchorSide,
+  type Attach,
   type LinkShape,
   type LinkStyle,
   type NetNode,
@@ -114,6 +115,58 @@ function anchorPoint(node: NetNode, side: Side, offset: number): Point {
 
 const isVertical = (side: Side) => side === 'top' || side === 'bottom'
 
+/** Longueur de l'amorce perpendiculaire à la boîte, sur un côté choisi à la main. */
+const STUB = 24
+
+function stub(point: Point, side: Side): Point {
+  if (side === 'top') return { x: point.x, y: point.y - STUB }
+  if (side === 'bottom') return { x: point.x, y: point.y + STUB }
+  if (side === 'left') return { x: point.x - STUB, y: point.y }
+  return { x: point.x + STUB, y: point.y }
+}
+
+/** Position, en coordonnées du schéma, d'un point d'accroche libre. */
+export function attachToPoint(node: Point, attach: Attach): Point {
+  return { x: node.x + attach.dx * NODE_W, y: node.y + attach.dy * NODE_H }
+}
+
+/**
+ * Point d'accroche libre correspondant à un endroit désigné à la souris.
+ *
+ * Le point est ramené sur le pourtour de la boîte — une liaison doit toucher l'équipement,
+ * pas finir en son milieu — et aimanté au centre de l'arête quand on en passe tout près,
+ * pour retrouver facilement l'accroche « propre » d'un tracé rangé.
+ */
+export function pointToAttach(node: Point, point: Point): Attach {
+  let dx = Math.max(-0.5, Math.min(0.5, (point.x - node.x) / NODE_W))
+  let dy = Math.max(-0.5, Math.min(0.5, (point.y - node.y) / NODE_H))
+
+  // L'arête la plus proche l'emporte : c'est elle que le pointeur désigne.
+  if (Math.abs(dx) >= Math.abs(dy)) dx = dx >= 0 ? 0.5 : -0.5
+  else dy = dy >= 0 ? 0.5 : -0.5
+
+  const magnet = 0.07
+  if (Math.abs(dx) < magnet) dx = 0
+  if (Math.abs(dy) < magnet) dy = 0
+
+  return { dx: Math.round(dx * 1000) / 1000, dy: Math.round(dy * 1000) / 1000 }
+}
+
+/** Côté de la boîte sur lequel se trouve un point d'accroche libre. */
+export function attachSide(attach: Attach): Side {
+  if (Math.abs(attach.dx) >= 0.499 && Math.abs(attach.dx) >= Math.abs(attach.dy)) {
+    return attach.dx >= 0 ? 'right' : 'left'
+  }
+  if (Math.abs(attach.dy) >= 0.499) return attach.dy >= 0 ? 'bottom' : 'top'
+  return Math.abs(attach.dx) >= Math.abs(attach.dy)
+    ? attach.dx >= 0
+      ? 'right'
+      : 'left'
+    : attach.dy >= 0
+      ? 'bottom'
+      : 'top'
+}
+
 /** Insère les coudes nécessaires pour relier deux points à angles droits. */
 function elbow(from: Point, to: Point, verticalFirst: boolean): Point[] {
   if (Math.abs(from.x - to.x) < 1 || Math.abs(from.y - to.y) < 1) return []
@@ -150,6 +203,9 @@ export interface RouteOptions {
   waypoints?: Waypoint[]
   anchorA?: AnchorSide
   anchorB?: AnchorSide
+  /** Points d'accroche libres, prioritaires sur les côtés. */
+  attachA?: Attach
+  attachB?: Attach
 }
 
 /**
@@ -165,16 +221,37 @@ export function linkGeometry(a: NetNode, b: NetNode, options: RouteOptions): Lin
   const waypoints = (options.waypoints ?? []).map((point) => ({ x: point.x, y: point.y }))
   const shape: LinkShape = options.shape && options.shape !== 'auto' ? options.shape : options.style
 
-  const sideA = sideToward(a, waypoints[0] ?? { x: b.x, y: b.y }, options.anchorA)
-  const sideB = sideToward(b, waypoints[waypoints.length - 1] ?? { x: a.x, y: a.y }, options.anchorB)
-  const from = anchorPoint(a, sideA, offset)
-  const to = anchorPoint(b, sideB, offset)
+  // Un point d'accroche posé à la main commande tout : position exacte, et côté de sortie
+  // déduit de l'arête sur laquelle il se trouve. Le décalage des liaisons parallèles ne
+  // s'applique alors plus de ce côté — sinon le point ne serait plus là où on l'a mis.
+  const sideA = options.attachA
+    ? attachSide(options.attachA)
+    : sideToward(a, waypoints[0] ?? { x: b.x, y: b.y }, options.anchorA)
+  const sideB = options.attachB
+    ? attachSide(options.attachB)
+    : sideToward(b, waypoints[waypoints.length - 1] ?? { x: a.x, y: a.y }, options.anchorB)
+  const from = options.attachA ? attachToPoint(a, options.attachA) : anchorPoint(a, sideA, offset)
+  const to = options.attachB ? attachToPoint(b, options.attachB) : anchorPoint(b, sideB, offset)
   const nodes = [from, ...waypoints, to]
+
+  // Un côté choisi à la main mérite une amorce : la liaison sort perpendiculairement à la
+  // boîte sur quelques pixels avant de repartir. Sans cela, une accroche prise à revers fait
+  // traverser l'équipement au trait — il disparaît sous la boîte et semble arriver ailleurs.
+  const forced =
+    options.attachA !== undefined ||
+    options.attachB !== undefined ||
+    (options.anchorA !== undefined && options.anchorA !== 'auto') ||
+    (options.anchorB !== undefined && options.anchorB !== 'auto')
+  // Les deux extrémités reçoivent leur amorce dès qu'un côté est imposé : le trait quitte
+  // chaque boîte perpendiculairement, et les décrochements se font tous à l'extérieur.
+  const stubA = forced ? stub(from, sideA) : null
+  const stubB = forced ? stub(to, sideB) : null
+  const route = [from, ...(stubA ? [stubA] : []), ...waypoints, ...(stubB ? [stubB] : []), to]
 
   let points: Point[]
   if (shape === 'straight' || shape === 'curved') {
-    points = nodes
-  } else if (waypoints.length === 0) {
+    points = shape === 'curved' ? route : nodes
+  } else if (waypoints.length === 0 && !stubA && !stubB) {
     // Tracé automatique historique : un seul décrochement à mi-parcours, qui donne des
     // schémas lisibles quand les équipements sont rangés en couches.
     if (isVertical(sideA) && isVertical(sideB)) {
@@ -187,15 +264,25 @@ export function linkGeometry(a: NetNode, b: NetNode, options: RouteOptions): Lin
       points = dedupe([from, ...elbow(from, to, isVertical(sideA)), to])
     }
   } else {
-    // Avec des points de passage : un coude par segment, en sortant puis en arrivant
-    // selon les côtés d'accroche.
-    const built: Point[] = [nodes[0]]
-    for (let i = 0; i < nodes.length - 1; i += 1) {
-      const start = nodes[i]
-      const end = nodes[i + 1]
-      const first = i === 0
-      const last = i === nodes.length - 2
-      const verticalFirst = first ? isVertical(sideA) : last ? !isVertical(sideB) : i % 2 === 0
+    // Un coude par segment. Le sens du premier décrochement dépend de la façon dont on
+    // quitte (ou rejoint) l'équipement : après une amorce, on repart perpendiculairement à
+    // celle-ci pour contourner la boîte au lieu de la retraverser.
+    const built: Point[] = [route[0]]
+    for (let i = 0; i < route.length - 1; i += 1) {
+      const start = route[i]
+      const end = route[i + 1]
+      // Segments remarquables : la sortie de l'équipement, le départ depuis l'amorce, et
+      // l'arrivée (sur l'amorce d'en face, ou directement sur l'ancre).
+      const leavingStubA = stubA !== null && i === 1
+      const reachingStubB = stubB !== null && i === route.length - 3
+      const reachingAnchorB = stubB === null && i === route.length - 2
+
+      let verticalFirst: boolean
+      if (i === 0) verticalFirst = isVertical(sideA)
+      else if (leavingStubA) verticalFirst = !isVertical(sideA)
+      else if (reachingStubB) verticalFirst = isVertical(sideB)
+      else if (reachingAnchorB) verticalFirst = !isVertical(sideB)
+      else verticalFirst = i % 2 === 0
       built.push(...elbow(start, end, verticalFirst), end)
     }
     points = dedupe(built)

@@ -120,6 +120,10 @@ export interface NetLink {
   anchorA?: AnchorSide
   /** Côté d'accroche à l'arrivée. */
   anchorB?: AnchorSide
+  /** Point d'accroche libre au départ — prioritaire sur le côté. */
+  attachA?: Attach
+  /** Point d'accroche libre à l'arrivée. */
+  attachB?: Attach
 
   /**
    * Couches OSI documentées pour cette liaison. Absent = couches par défaut du type de
@@ -219,6 +223,20 @@ export type LinkShape = 'auto' | 'orthogonal' | 'straight' | 'curved'
 
 /** Côté d'accroche d'une liaison sur un équipement. */
 export type AnchorSide = 'auto' | 'top' | 'bottom' | 'left' | 'right'
+
+/**
+ * Point d'accroche libre sur la boîte d'un équipement.
+ *
+ * Exprimé en fraction de la taille de la boîte (-0,5 à 0,5 depuis son centre) : l'accroche
+ * suit ainsi l'équipement quand on le déplace, et reste juste si la boîte change de taille.
+ */
+export interface Attach {
+  dx: number
+  dy: number
+}
+
+/** Déplacement d'un équipement dans l'ordre d'empilement. */
+export type ZOrder = 'front' | 'back' | 'forward' | 'backward'
 
 /** Point de passage manuel d'une liaison, en coordonnées du schéma. */
 export interface Waypoint {

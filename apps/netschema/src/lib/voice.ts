@@ -10,6 +10,7 @@ import type {
   LinkShape,
   LinkStyle,
   OsiView,
+  ZOrder,
 } from '../types'
 
 /**
@@ -61,6 +62,8 @@ export type VoiceIntent =
   | { type: 'setRole'; target: string; role: HaRole }
   | { type: 'setStatus'; target: string; status: AssetStatus }
   | { type: 'setPinned'; target?: string; pinned: boolean }
+  | { type: 'zorder'; target?: string; where: ZOrder }
+  | { type: 'linkAttach'; target?: string; reset: true }
   | { type: 'duplicate'; target?: string }
   | { type: 'delete'; target?: string }
   | { type: 'selectAll' }
@@ -489,6 +492,33 @@ const RULES: Rule[] = [
     return match ? { type: 'setPinned', target: cleanName(match[1]) || undefined, pinned: false } : null
   },
 
+  // ── Plan d'affichage ───────────────────────────────────────────────────────
+  (t) => {
+    const match = t.match(
+      /^(?:mets|met|mettre|passe|place|envoie|remonte|descends?|avance|recule)\s*(.*?)\s*(?:au |en |a l'|vers l'|vers le |au niveau )?(premier.?plan|avant.?plan|arriere.?plan|second.?plan|dessus|dessous|devant|derriere)$/,
+    )
+    if (!match) return null
+    const where: ZOrder =
+      /premier.?plan|avant.?plan|dessus|devant/.test(match[2]) ? 'front' : 'back'
+    return { type: 'zorder', target: cleanName(match[1]) || undefined, where }
+  },
+  // « avance » / « recule » tout court restent le zoom : il faut un équipement visé ou la
+  // mention du cran pour parler du plan d'affichage.
+  (t) => {
+    const match = t.match(/^(?:avance|avancer|remonte|remonter)\s+(?:d'un (?:cran|plan)|(.+))$/)
+    if (!match) return null
+    return { type: 'zorder', target: cleanName(match[1] ?? '') || undefined, where: 'forward' }
+  },
+  (t) => {
+    const match = t.match(/^(?:recule|reculer|descends|descendre)\s+(?:d'un (?:cran|plan)|(.+))$/)
+    if (!match) return null
+    return { type: 'zorder', target: cleanName(match[1] ?? '') || undefined, where: 'backward' }
+  },
+  (t) =>
+    /(accroches? automatiques?|reinitialise les accroches|accroches? auto)/.test(t)
+      ? { type: 'linkAttach', reset: true }
+      : null,
+
   // ── Baies et plan d'adressage ──────────────────────────────────────────────
   (t) => {
     const match = t.match(/^(?:implante|implanter|installe|pose|place)\s+(.+?)\s+(?:dans|en|sur)\s+(?:la\s+)?(?:baie\s+)?(.+)$/)
@@ -838,6 +868,9 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'De gauche à droite',
       'Tracé courbe',
       'Réinitialise le tracé',
+      'Accroches automatiques',
+      'Mets FW-01 au premier plan',
+      'Place SW-ACC-A1 en arrière-plan',
       'Masque la grille',
       'Va à SAN Siège',
     ],

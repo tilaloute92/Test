@@ -21,6 +21,7 @@ import { deduceVlans } from '../lib/osi'
 import { firstFreeUnit, heightOf, rackOccupancy } from '../lib/racks'
 import type {
   AppView,
+  Attach,
   DetailLevel,
   Diagram,
   DeviceKind,
@@ -32,6 +33,7 @@ import type {
   RackDef,
   VlanDef,
   Waypoint,
+  ZOrder,
 } from '../types'
 
 const DEFAULT_LAYOUT: LayoutOptions = {
@@ -101,10 +103,16 @@ interface DiagramStore {
   updateNodes: (ids: string[], patch: Partial<NetNode>) => void
   moveNodes: (ids: string[], dx: number, dy: number) => void
   setNodePositions: (positions: Record<string, { x: number; y: number }>) => void
-  addLink: (from: string, to: string) => void
+  addLink: (from: string, to: string, seed?: Partial<NetLink>) => void
   updateLink: (id: string, patch: Partial<NetLink>) => void
   setLinkWaypoints: (id: string, waypoints: Waypoint[]) => void
   clearLinkRoute: (id: string) => void
+  /** Accroche une extrémité de liaison à un équipement, en un point précis de sa boîte. */
+  attachLink: (id: string, end: 'a' | 'b', nodeId: string, attach: Attach | null) => void
+  /** Rend leur accroche automatique aux deux extrémités d'une liaison. */
+  clearLinkAttach: (id: string) => void
+  /** Ordre d'empilement des équipements : premier plan, arrière-plan, d'un cran. */
+  reorderNodes: (ids: string[], where: ZOrder) => void
   deleteSelection: () => void
 
   select: (target: { nodes?: string[]; links?: string[] }, additive?: boolean) => void
@@ -301,7 +309,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       },
     })),
 
-  addLink: (from, to) => {
+  addLink: (from, to, seed) => {
     if (from === to) return
     const exists = get().diagram.links.some(
       (l) => (l.from === from && l.to === to) || (l.from === to && l.to === from),
@@ -316,6 +324,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       from,
       to,
       kind: fromNode && toNode ? suggestLinkKind(fromNode, toNode) : 'ethernet',
+      ...seed,
     }
     set((state) => ({
       diagram: { ...state.diagram, links: [...state.diagram.links, link] },
@@ -358,11 +367,84 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         ...state.diagram,
         links: state.diagram.links.map((link) =>
           link.id === id
-            ? { ...link, waypoints: undefined, anchorA: undefined, anchorB: undefined, shape: undefined }
+            ? {
+                ...link,
+                waypoints: undefined,
+                anchorA: undefined,
+                anchorB: undefined,
+                attachA: undefined,
+                attachB: undefined,
+                shape: undefined,
+              }
             : link,
         ),
       },
     }))
+  },
+
+  /**
+   * Déplace une extrémité de liaison : elle change d'équipement si on l'a lâchée sur un
+   * autre, et retient le point exact de la boîte où elle a été posée.
+   */
+  attachLink: (id, end, nodeId, attach) =>
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        links: state.diagram.links.map((link) => {
+          if (link.id !== id) return link
+          const other = end === 'a' ? link.to : link.from
+          if (nodeId === other) return link
+          return end === 'a'
+            ? { ...link, from: nodeId, attachA: attach ?? undefined }
+            : { ...link, to: nodeId, attachB: attach ?? undefined }
+        }),
+      },
+    })),
+
+  clearLinkAttach: (id) => {
+    get().pushHistory()
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        links: state.diagram.links.map((link) =>
+          link.id === id ? { ...link, attachA: undefined, attachB: undefined } : link,
+        ),
+      },
+    }))
+  },
+
+  /**
+   * Ordre d'empilement.
+   *
+   * L'ordre du tableau est l'ordre de dessin : ce qui vient après passe devant. « Avancer »
+   * et « reculer » sautent par-dessus le voisin non sélectionné le plus proche, pour qu'une
+   * sélection multiple se déplace d'un bloc sans se désordonner.
+   */
+  reorderNodes: (ids, where) => {
+    if (ids.length === 0) return
+    const selected = new Set(ids)
+    get().pushHistory()
+    set((state) => {
+      const nodes = state.diagram.nodes
+      const picked = nodes.filter((node) => selected.has(node.id))
+      const rest = nodes.filter((node) => !selected.has(node.id))
+      if (picked.length === 0) return {}
+
+      let next: typeof nodes
+      if (where === 'front') next = [...rest, ...picked]
+      else if (where === 'back') next = [...picked, ...rest]
+      else {
+        next = [...nodes]
+        const indexes = next.flatMap((node, index) => (selected.has(node.id) ? [index] : []))
+        const order = where === 'forward' ? [...indexes].reverse() : indexes
+        for (const index of order) {
+          const target = where === 'forward' ? index + 1 : index - 1
+          if (target < 0 || target >= next.length || selected.has(next[target].id)) continue
+          ;[next[index], next[target]] = [next[target], next[index]]
+        }
+      }
+      return { diagram: { ...state.diagram, nodes: next } }
+    })
   },
 
   deleteSelection: () => {
@@ -944,6 +1026,32 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         if (ids.length === 0) return { ok: false, message: 'Aucun équipement visé.' }
         get().updateNodes(ids, { pinned: intent.pinned })
         return { ok: true, message: intent.pinned ? 'Position figée.' : 'Position libérée.' }
+      }
+
+      case 'zorder': {
+        const ids = intent.target
+          ? resolveTargets(intent.target).map((node) => node.id)
+          : state.selectedNodes
+        if (ids.length === 0) {
+          return { ok: false, message: intent.target ? missMessage(intent.target) : 'Aucun équipement visé.' }
+        }
+        get().setAppView('diagram')
+        get().select({ nodes: ids })
+        get().reorderNodes(ids, intent.where)
+        const labels: Record<ZOrder, string> = {
+          front: 'au premier plan',
+          back: 'à l’arrière-plan',
+          forward: 'avancé d’un cran',
+          backward: 'reculé d’un cran',
+        }
+        return { ok: true, message: `${ids.length} équipement(s) ${labels[intent.where]}.` }
+      }
+
+      case 'linkAttach': {
+        const id = state.selectedLinks[0]
+        if (!id) return { ok: false, message: 'Sélectionnez d’abord une liaison.' }
+        get().clearLinkAttach(id)
+        return { ok: true, message: 'Accroches rendues automatiques.' }
       }
 
       case 'duplicate': {

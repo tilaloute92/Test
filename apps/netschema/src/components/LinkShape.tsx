@@ -44,6 +44,8 @@ export function LinkShape({
     waypoints: link.waypoints,
     anchorA: link.anchorA,
     anchorB: link.anchorB,
+    attachA: link.attachA,
+    attachB: link.attachB,
   })
   const { d, mid } = geometry
 

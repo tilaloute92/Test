@@ -19,6 +19,7 @@ import type {
   PortMode,
   RoutingProtocol,
   StpRole,
+  ZOrder,
 } from '../types'
 
 function deviceOptions() {
@@ -221,6 +222,38 @@ function NodeForm({ node }: { node: NetNode }) {
         onChange={(pinned) => set({ pinned })}
         label="Figer la position (ignoré par le placement auto)"
       />
+      <ZOrderRow ids={[node.id]} />
+    </div>
+  )
+}
+
+/**
+ * Ordre d'empilement de la sélection.
+ *
+ * L'ordre de dessin est celui du tableau d'équipements : ce qui vient en dernier passe
+ * devant. Ces quatre boutons sont le seul moyen de trancher quand deux boîtes se
+ * chevauchent — un équipement posé sur un cadre, une grappe dense, un plan de salle serré.
+ */
+function ZOrderRow({ ids }: { ids: string[] }) {
+  const reorderNodes = useDiagram((s) => s.reorderNodes)
+  const buttons: { where: ZOrder; label: string; title: string }[] = [
+    { where: 'front', label: 'Premier plan', title: 'Passer devant tout le reste (Ctrl+Maj+F)' },
+    { where: 'forward', label: 'Avancer', title: 'Passer devant l’équipement suivant (])' },
+    { where: 'backward', label: 'Reculer', title: 'Passer derrière l’équipement précédent ([)' },
+    { where: 'back', label: 'Arrière-plan', title: 'Passer derrière tout le reste (Ctrl+Maj+B)' },
+  ]
+  return (
+    <div className="rounded-lg border border-slate-200 p-2.5">
+      <p className="pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        Plan d’affichage
+      </p>
+      <div className="grid grid-cols-2 gap-1.5">
+        {buttons.map((button) => (
+          <Btn key={button.where} title={button.title} onClick={() => reorderNodes(ids, button.where)}>
+            {button.label}
+          </Btn>
+        ))}
+      </div>
     </div>
   )
 }
@@ -257,6 +290,7 @@ function MultiNodeForm({ nodes }: { nodes: NetNode[] }) {
         onChange={(pinned) => updateNodes(ids, { pinned })}
         label="Figer la position de la sélection"
       />
+      <ZOrderRow ids={ids} />
     </div>
   )
 }
@@ -274,6 +308,7 @@ function LinkForm({ linkId }: { linkId: string }) {
   const nodes = useDiagram((s) => s.diagram.nodes)
   const updateLink = useDiagram((s) => s.updateLink)
   const clearRoute = useDiagram((s) => s.clearLinkRoute)
+  const clearAttach = useDiagram((s) => s.clearLinkAttach)
   if (!link) return null
 
   const nameOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? '—'
@@ -338,7 +373,21 @@ function LinkForm({ linkId }: { linkId: string }) {
               ? `${link.waypoints.length} point(s) de passage. Glissez-les pour ajuster, double-cliquez pour en retirer un.`
               : 'Tirez le trait — ou une poignée claire au milieu d’un segment — pour poser un point de passage.'}
           </p>
-          <Btn onClick={() => clearRoute(link.id)}>Rendre le tracé automatique</Btn>
+          <p className="text-[11px] leading-snug text-slate-400">
+            {link.attachA || link.attachB
+              ? `Accroche libre ${link.attachA && link.attachB ? 'aux deux extrémités' : link.attachA ? 'au départ' : 'à l’arrivée'} : la liaison arrive à l’endroit choisi sur la boîte.`
+              : 'Glissez une extrémité (carré vert) sur un équipement pour choisir l’endroit exact où la liaison s’y raccorde — ou pour la brancher ailleurs.'}
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <Btn
+              disabled={!link.attachA && !link.attachB}
+              onClick={() => clearAttach(link.id)}
+              title="Revenir à une accroche calculée aux deux extrémités"
+            >
+              Accroches auto
+            </Btn>
+            <Btn onClick={() => clearRoute(link.id)}>Tracé auto</Btn>
+          </div>
         </div>
       </div>
 
