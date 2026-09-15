@@ -12,8 +12,8 @@ points de défaillance uniques.
 
 L'application tient quatre modules sur la même base de données : le **schéma**, l'**inventaire**
 du parc, l'**implantation en baies** et la **découverte réseau** — auxquels s'ajoutent les
-**commandes vocales**. Un serveur posé dans une baie est le même objet que celui câblé sur le
-schéma et listé à l'inventaire.
+**commandes vocales** et un **guide intégré**. Un serveur posé dans une baie est le même objet
+que celui câblé sur le schéma et listé à l'inventaire.
 
 Le catalogue d'équipements couvre l'état de l'art 2026 — SD-WAN et SASE/SSE, fabric
 spine-leaf VXLAN/EVPN, Wi-Fi 7, 5G, Kubernetes et serverless, serveurs GPU, pile Zero Trust
@@ -206,12 +206,52 @@ noms d'équipements se retrouvent **sans tenir compte des accents** ; les types 
 **au pluriel comme au singulier** (« tous les postes de travail », « les bornes wifi ») ; et
 les adresses IP gardent leurs points malgré la ponctuation de la dictée.
 
-La reconnaissance s'appuie sur celle du navigateur (Chrome ou Edge, connexion réseau
-requise). Le même panneau accepte les **commandes tapées** : c'est le repli quand le
-navigateur n'a pas de reconnaissance vocale, quand le micro est refusé, ou dans un local
-bruyant — et c'est aussi ce qui rend la grammaire testable.
+### Être compris du premier coup
+
+La reconnaissance du navigateur rend rarement une phrase technique telle qu'on l'a dite. Six
+mécanismes rattrapent l'écart, entre le micro et la grammaire :
+
+- **Phrase reconstituée** : la reconnaissance découpe une phrase en plusieurs segments ; ils
+  sont accumulés et la commande n'est exécutée qu'après un court silence, ce qui évite qu'une
+  instruction soit coupée en deux. L'écoute redémarre toute seule tant que le micro est actif.
+- **Plusieurs transcriptions par phrase** : le navigateur en propose jusqu'à cinq ; elles sont
+  essayées, segment par segment, et la première combinaison comprise est retenue.
+- **Nombres dictés** : « dix point dix point zéro point onze » devient `10.10.0.11`, « zéro
+  deux » devient `02`, « cent quatre-vingt-douze » devient `192`, « slash vingt-quatre »
+  devient `/24`. « un » reste l'article dans « ajoute un serveur », et redevient un nombre
+  après « VLAN » ou « U ».
+- **Sigles épelés** : « S W core zéro un » est recollé en « SW-CORE-01 ».
+- **Correspondance approximative** : « pare-fou » retombe sur *Pare-feu*, « switche » sur
+  *Switch*, et un nom d'équipement mal entendu est rapproché du plus ressemblant (distance
+  d'édition, accents et séparateurs ignorés). La palette, elle, reste sur la recherche stricte.
+- **Propositions** : quand une phrase n'est pas comprise, le panneau affiche les commandes les
+  plus proches — un clic les exécute.
+
+Le même panneau accepte les **commandes tapées** : c'est le repli quand le navigateur n'a pas
+de reconnaissance vocale (Firefox), quand le micro est refusé, ou dans un local bruyant — et
+c'est aussi ce qui rend la grammaire testable sans microphone.
 
 Une phrase non reconnue n'est jamais exécutée au hasard : elle est signalée telle quelle.
+
+## Guide intégré
+
+Onglet **Guide**, ou « ouvre le guide » à la voix, ou encore « comment ça marche ». Le mode
+d'emploi vit dans l'application plutôt que dans un fichier à côté :
+
+- **treize sections** — prise en main, les quatre modules, construction du schéma, liaisons et
+  couches OSI, haute disponibilité, simplification d'une architecture complexe, commande
+  vocale, imports et exports, découverte, inventaire et baies, catalogue, raccourcis clavier,
+  dépannage ;
+- une **recherche** insensible aux accents (« decouverte », « export », « micro ») ;
+- des **exemples vocaux cliquables** : le clic exécute la commande pour de vrai, l'application
+  bascule sur le module concerné et répond ;
+- des **renvois directs** : charger le schéma d'exemple, ouvrir l'analyse de haute
+  disponibilité, le panneau OSI, le catalogue ou l'import rapide.
+
+La section *Commande vocale* rassemble les conseils de dictée, et la section *Dépannage* les
+cas qui reviennent : micro refusé, navigateur sans reconnaissance vocale, schéma introuvable
+après un nettoyage du navigateur, export tronqué par un niveau de détail, import draw.io
+pauvre en types.
 
 ## Tracé des liaisons
 
@@ -463,6 +503,7 @@ marqués d'une pastille rouge sur le schéma.
 | Importer une liste | `Ctrl+I` |
 | Dupliquer | `Ctrl+D` |
 | Ouvrir un bloc replié | Double-clic dessus |
+| Retrouver comment faire | Onglet **Guide**, ou « ouvre le guide » à la voix |
 
 Chaque équipement porte un nom, un type, un modèle, une IP, un VLAN, une zone, un site, des
 notes et ses attributs de haute disponibilité (grappe, rôle, VIP, double alimentation) ;
@@ -504,12 +545,13 @@ src/
   lib/inventory.ts      colonnes de l'inventaire, export et import CSV
   lib/racks.ts          occupation des baies, hauteurs, chevauchements
   lib/voice.ts          grammaire des commandes vocales et reconnaissance du navigateur
+  lib/speech.ts         préparation de la dictée : nombres, sigles épelés, correspondance approchée
   lib/vendors.ts        base de matériels constructeurs (≈145 références)
   lib/drawio.ts         import des schémas draw.io / diagrams.net
   store/useDiagram.ts   état global (zustand) : schéma, sélection, vue, historique
   store/useAudit.ts     analyse HA mémorisée sur la version courante du schéma
   components/           barre d'outils, palette, plan de travail, inspecteur, panneaux HA,
-                        L2/L3 et catalogue, palette de commandes, import rapide
+                        L2/L3 et catalogue, palette de commandes, import rapide, guide intégré
 public/catalog/         lots chargés au démarrage — la voie de mise à jour sans recompilation
 tools/collector/        collecteur de découverte réseau (Node, sans dépendance) et exemples
 ```

@@ -195,7 +195,7 @@ export interface Diagram {
 }
 
 /** Module affiché : le schéma, l'inventaire, les baies ou la découverte réseau. */
-export type AppView = 'diagram' | 'inventory' | 'racks' | 'discovery'
+export type AppView = 'diagram' | 'inventory' | 'racks' | 'discovery' | 'guide'
 
 export type LayoutDirection = 'TB' | 'LR'
 

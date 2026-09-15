@@ -1,4 +1,5 @@
 import { BUILTIN_PACKS, FAMILY_ORDER, type CatalogPack, type DeviceDef } from './catalogData'
+import { bestMatch } from './speech'
 import { registerModels } from './vendors'
 import type { HaRole, LinkKind } from '../types'
 
@@ -117,6 +118,9 @@ export function familyGroups(): { title: string; devices: DeviceMeta[] }[] {
 
 function normalize(value: string): string {
   return value
+    // « cœur » et « coeur » doivent se correspondre : la dictée ne produit jamais la ligature.
+    .replace(/[œŒ]/g, 'oe')
+    .replace(/[æÆ]/g, 'ae')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
@@ -143,7 +147,31 @@ export function searchDevices(query: string): DeviceMeta[] {
     const found = scoreDevices(transform(base), transform)
     if (found.length > 0) return found
   }
+
   return []
+}
+
+/**
+ * Recherche tolérante : la recherche stricte d'abord, puis le type le plus proche au sens
+ * de la distance d'édition. Réservée à la dictée, où « pare-fou » doit tomber sur
+ * « Pare-feu » — la palette, elle, s'en tient à la recherche stricte.
+ */
+export function findDevice(query: string): DeviceMeta | undefined {
+  return findDeviceScored(query)?.device
+}
+
+/**
+ * Comme `findDevice`, mais avec la qualité de la correspondance (1 pour une trouvaille
+ * stricte). Elle sert à départager plusieurs découpages d'une même phrase dictée.
+ */
+export function findDeviceScored(query: string): { device: DeviceMeta; score: number } | undefined {
+  const strict = searchDevices(query)[0]
+  if (strict) return { device: strict, score: 1 }
+  const candidates = allDevices().flatMap((device) =>
+    [device.label, ...(device.aliases ?? [])].map((text) => ({ device, text })),
+  )
+  const found = bestMatch(query, candidates, (item) => item.text)
+  return found ? { device: found.item.device, score: found.score } : undefined
 }
 
 /**

@@ -1,4 +1,5 @@
-import { searchDevices } from './catalog'
+import { findDevice, findDeviceScored, type DeviceMeta } from './catalog'
+import { prepareSpeech } from './speech'
 import type {
   AppView,
   AssetStatus,
@@ -313,13 +314,23 @@ function splitClauses(text: string, raw: string): Clauses {
 function matchDevice(phrase: string, rawPhrase: string): { kind: string; label: string; name?: string } | null {
   const words = phrase.split(' ').filter(Boolean)
   const rawWords = rawPhrase.split(' ').filter(Boolean)
+  // Chaque découpage possible est noté : 1 pour une trouvaille stricte du catalogue, moins
+  // pour une ressemblance. On garde ensuite le découpage le plus long parmi ceux qui
+  // approchent la meilleure note — « par feu FW-09 » doit consommer « par feu », et non le
+  // seul « par » (préfixe de l'alias « pare ») qui laisserait « feu » dans le nom.
+  const scored: { device: DeviceMeta; score: number; words: number }[] = []
   for (let i = words.length; i > 0; i -= 1) {
-    const device = searchDevices(words.slice(0, i).join(' '))[0]
-    if (!device) continue
-    const name = rawWords.slice(i).join(' ').trim()
-    return { kind: device.id, label: device.label, name: name || undefined }
+    const found = findDeviceScored(words.slice(0, i).join(' '))
+    if (found) scored.push({ ...found, words: i })
   }
-  return null
+  if (scored.length === 0) return null
+
+  const bestScore = Math.max(...scored.map((entry) => entry.score))
+  const chosen = scored
+    .filter((entry) => entry.score >= bestScore - 0.15)
+    .reduce((longest, entry) => (entry.words > longest.words ? entry : longest))
+  const name = rawWords.slice(chosen.words).join(' ').trim()
+  return { kind: chosen.device.id, label: chosen.device.label, name: name || undefined }
 }
 
 /**
@@ -342,7 +353,7 @@ function rawValue(raw: string, pattern: RegExp, group: number, fallback: string)
  */
 const RULES: Rule[] = [
   // ── Questions ──────────────────────────────────────────────────────────────
-  (t) => (/^(aide|aidez moi|commandes|que sais tu faire|que peux tu faire)$/.test(t) ? { type: 'help' } : null),
+  (t) => (/^(aide|aide moi|aidez moi|commandes|au secours|que sais tu faire|que peux tu faire|comment ca marche)$/.test(t) ? { type: 'help' } : null),
   (t) => {
     const match = t.match(/^(?:combien (?:de|d')\s*)(u libres?|unites? libres?)(?:\s+(?:dans|de)\s+(?:la\s+)?(?:baie\s+)?(.+))?$/)
     return match ? { type: 'query', question: 'freeUnits', argument: match[2]?.trim() } : null
@@ -541,7 +552,7 @@ const RULES: Rule[] = [
       /^(?:change|changer|modifie|modifier|transforme|transformer|passe|convertis)\s+(?:le type (?:de |du |d')?)?(.+?)\s+(?:en|vers|comme)\s+(.+)$/,
     )
     if (!match) return null
-    const device = searchDevices(match[2].trim())[0]
+    const device = findDevice(match[2].trim())
     if (!device) return null
     return {
       type: 'setKind',
@@ -621,7 +632,7 @@ const RULES: Rule[] = [
   (t) => {
     const match = t.match(/^(?:selectionne|selectionner|choisis)\s+(?:tous\s+les|toutes\s+les|les)\s+(.+)$/)
     if (!match) return null
-    const device = searchDevices(match[1].trim())[0]
+    const device = findDevice(match[1].trim())
     return device ? { type: 'selectKind', kind: device.id, label: device.label } : null
   },
   (t) => {
@@ -681,6 +692,7 @@ const RULES: Rule[] = [
   (t) => (/(synthese|vue resumee|resume)/.test(t) ? { type: 'detail', level: 'summary' } : null),
   (t) => (/(sans les postes|masque les postes|cache les postes)/.test(t) ? { type: 'detail', level: 'no-endpoints' } : null),
   (t) => (/(detail complet|tout le detail|montre tout)/.test(t) ? { type: 'detail', level: 'full' } : null),
+  (t) => (/(guide|mode d'emploi|manuel|documentation|notice|tutoriel)/.test(t) ? { type: 'view', view: 'guide' } : null),
   (t) => (/(inventaire|parc)/.test(t) ? { type: 'view', view: 'inventory' } : null),
   (t) => (/(baies?|racks?|salle serveur|salle machine)/.test(t) ? { type: 'view', view: 'racks' } : null),
   (t) => (/(decouverte|scan reseau|releve)/.test(t) ? { type: 'view', view: 'discovery' } : null),
@@ -723,13 +735,17 @@ const RULES: Rule[] = [
  * est alors signalée à l'utilisateur plutôt que d'être exécutée au hasard.
  */
 export function interpret(transcript: string): VoiceIntent | null {
-  const normalized = normalizeSpeech(transcript)
+  // Nombres dictés en chiffres, séparateurs parlés en symboles, sigles recollés : le texte
+  // préparé sert de référence pour les deux versions (normalisée et d'origine), ce qui
+  // garde leur alignement caractère par caractère.
+  const prepared = prepareSpeech(transcript)
+  const normalized = normalizeSpeech(prepared)
   const text = stripPrefix(normalized)
   if (!text) return null
 
   // Le texte d'origine subit les mêmes découpages d'espaces, puis on retire exactement
   // autant de caractères en tête : les deux chaînes restent alignées, index par index.
-  const collapsed = transcript
+  const collapsed = prepared
     .replace(/[?!,;]/g, ' ')
     .replace(/\.(?!\d)/g, ' ')
     .replace(/[’']/g, "'")
@@ -742,6 +758,42 @@ export function interpret(transcript: string): VoiceIntent | null {
     if (intent) return intent
   }
   return null
+}
+
+/**
+ * La reconnaissance vocale propose plusieurs transcriptions d'une même phrase. Plutôt que
+ * de s'arrêter à la première, on retient la première qui donne une commande comprise : une
+ * hésitation sur un mot ne fait plus échouer la phrase entière.
+ */
+export function interpretBest(alternatives: string[]): { transcript: string; intent: VoiceIntent | null } {
+  for (const alternative of alternatives) {
+    if (!alternative.trim()) continue
+    const intent = interpret(alternative)
+    if (intent) return { transcript: alternative, intent }
+  }
+  return { transcript: alternatives.find((item) => item.trim()) ?? '', intent: null }
+}
+
+/**
+ * Commandes les plus proches d'une phrase incomprise, pour proposer une correction plutôt
+ * que de laisser l'utilisateur deviner.
+ */
+export function suggestCommands(transcript: string, limit = 3): string[] {
+  const words = new Set(
+    normalizeSpeech(transcript)
+      .split(' ')
+      .filter((word) => word.length > 2),
+  )
+  if (words.size === 0) return []
+  return VOICE_EXAMPLES.map((example) => {
+    const exampleWords = normalizeSpeech(example).split(' ')
+    const shared = exampleWords.filter((word) => words.has(word)).length
+    return { example, score: shared / Math.max(1, exampleWords.length) }
+  })
+    .filter((entry) => entry.score > 0.15)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((entry) => entry.example)
 }
 
 /** Exemples affichés dans le panneau : ce sont de vraies commandes reconnues. */
@@ -827,9 +879,14 @@ interface SpeechRecognitionLike {
   lang: string
   continuous: boolean
   interimResults: boolean
+  maxAlternatives: number
   start(): void
   stop(): void
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null
+  onresult:
+    | ((event: {
+        results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean; length: number }>
+      }) => void)
+    | null
   onerror: ((event: { error: string }) => void) | null
   onend: (() => void) | null
 }
@@ -858,7 +915,8 @@ export interface Recognizer {
  * servent à l'affichage ; seules les phrases finales déclenchent une action.
  */
 export function createRecognizer(handlers: {
-  onTranscript: (transcript: string, isFinal: boolean) => void
+  /** `alternatives` contient les transcriptions proposées, de la plus probable à la moins. */
+  onTranscript: (alternatives: string[], isFinal: boolean) => void
   onError: (message: string) => void
   onEnd: () => void
   lang?: string
@@ -870,30 +928,63 @@ export function createRecognizer(handlers: {
   recognition.lang = handlers.lang ?? 'fr-FR'
   recognition.continuous = true
   recognition.interimResults = true
+  // Plusieurs transcriptions par phrase : l'interprétation choisit celle qu'elle comprend.
+  recognition.maxAlternatives = 5
+
+  let wanted = false
 
   recognition.onresult = (event) => {
     const results = event.results
     const last = results[results.length - 1]
     if (!last) return
-    const transcript = last[0]?.transcript ?? ''
-    handlers.onTranscript(transcript, last.isFinal === true)
+    const alternatives: string[] = []
+    for (let i = 0; i < (last.length ?? 1); i += 1) {
+      const transcript = last[i]?.transcript
+      if (transcript) alternatives.push(transcript)
+    }
+    if (alternatives.length === 0) return
+    handlers.onTranscript(alternatives, last.isFinal === true)
   }
+
   recognition.onerror = (event) => {
     const messages: Record<string, string> = {
       'not-allowed': 'Micro refusé : autorisez l’accès dans le navigateur.',
       'service-not-allowed': 'Service de reconnaissance indisponible.',
-      'no-speech': 'Rien n’a été entendu.',
       network: 'Reconnaissance vocale injoignable (connexion réseau requise).',
+      'no-speech': '',
       aborted: '',
     }
     const message = messages[event.error] ?? `Erreur de reconnaissance : ${event.error}`
-    if (message) handlers.onError(message)
+    if (message) {
+      wanted = false
+      handlers.onError(message)
+    }
   }
-  recognition.onend = handlers.onEnd
+
+  // Le navigateur arrête l'écoute après un silence : on la relance tant que l'utilisateur
+  // n'a pas coupé le micro, sinon une commande sur deux tombe dans le vide.
+  recognition.onend = () => {
+    if (!wanted) {
+      handlers.onEnd()
+      return
+    }
+    try {
+      recognition.start()
+    } catch {
+      wanted = false
+      handlers.onEnd()
+    }
+  }
 
   return {
-    start: () => recognition.start(),
-    stop: () => recognition.stop(),
+    start: () => {
+      wanted = true
+      recognition.start()
+    },
+    stop: () => {
+      wanted = false
+      recognition.stop()
+    },
   }
 }
 

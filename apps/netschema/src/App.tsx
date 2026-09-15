@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { AppTabs } from './components/AppTabs'
 import { Canvas } from './components/Canvas'
 import { DiscoveryView } from './components/DiscoveryView'
+import { GuideView } from './components/GuideView'
 import { InventoryView } from './components/InventoryView'
 import { RackView } from './components/RackView'
 import { VoicePanel } from './components/VoicePanel'
@@ -100,6 +101,7 @@ export default function App() {
       {appView === 'inventory' && <InventoryView />}
       {appView === 'racks' && <RackView />}
       {appView === 'discovery' && <DiscoveryView />}
+      {appView === 'guide' && <GuideView />}
 
       {toast && (
         <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-slate-900 px-4 py-2 text-[13px] text-white shadow-lg">

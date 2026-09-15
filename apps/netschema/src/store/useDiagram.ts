@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { autoLayout, diagramBounds } from '../lib/layout'
-import { deviceMeta, ROLES, searchDevices } from '../lib/catalog'
+import { deviceMeta, findDevice, ROLES } from '../lib/catalog'
+import { bestMatch } from '../lib/speech'
 import { searchModels } from '../lib/vendors'
 import { STATUS_LABELS } from '../lib/inventory'
 import { uid } from '../lib/ids'
@@ -675,7 +676,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       }
       const bulk = needle.match(/^(?:tous|toutes)\s+(?:les|des)\s+(.+)$/)
       if (bulk) {
-        const device = searchDevices(bulk[1])[0]
+        const device = findDevice(bulk[1])
         return device ? nodes.filter((node) => node.kind === device.id) : []
       }
       const single = findNode(target)
@@ -688,7 +689,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       if (/^(la selection|selection|ca|cela)$/.test(needle)) return 'Rien n’est sélectionné.'
       const bulk = needle.match(/^(?:tous|toutes)\s+(?:les|des)\s+(.+)$/)
       if (bulk) {
-        const device = searchDevices(bulk[1])[0]
+        const device = findDevice(bulk[1])
         return device
           ? `Aucun équipement « ${device.label} » dans le schéma.`
           : `Type d’équipement « ${bulk[1]} » inconnu.`
@@ -708,6 +709,11 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       return { from, to, link }
     }
 
+    /**
+     * Retrouve un équipement par son nom. La dictée rend rarement « SW-CORE-01 » à la
+     * lettre : on accepte « sw core 01 », « swcore1 », et à défaut le nom le plus proche
+     * au sens de la distance d'édition.
+     */
     const findNode = (name: string) => {
       const needle = plain(name)
       const squeezed = needle.replace(/[\s-]/g, '')
@@ -715,7 +721,8 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       return (
         nodes.find((node) => plain(node.name) === needle) ??
         nodes.find((node) => plain(node.name).startsWith(needle)) ??
-        nodes.find((node) => plain(node.name).replace(/[\s-]/g, '').includes(squeezed))
+        nodes.find((node) => plain(node.name).replace(/[\s-]/g, '').includes(squeezed)) ??
+        bestMatch(name, nodes, (node) => node.name)?.item
       )
     }
 
@@ -739,9 +746,10 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
         if (intent.rack) {
           const wanted = plain(intent.rack)
-          const rack = (get().diagram.racks ?? []).find(
-            (item) => plain(item.name) === wanted || plain(item.name).includes(wanted),
-          )
+          const racks = get().diagram.racks ?? []
+          const rack =
+            racks.find((item) => plain(item.name) === wanted || plain(item.name).includes(wanted)) ??
+            bestMatch(intent.rack, racks, (item) => item.name)?.item
           if (rack) {
             get().assignToRack([id], rack.id)
             extras.push(`implanté dans ${rack.name}`)
@@ -1029,9 +1037,10 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         const node = findNode(intent.target)
         if (!node) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
         const wanted = plain(intent.rack)
-        const rack = (get().diagram.racks ?? []).find(
-          (item) => plain(item.name) === wanted || plain(item.name).includes(wanted),
-        )
+        const racks = get().diagram.racks ?? []
+        const rack =
+          racks.find((item) => plain(item.name) === wanted || plain(item.name).includes(wanted)) ??
+          bestMatch(intent.rack, racks, (item) => item.name)?.item
         if (!rack) return { ok: false, message: `Baie « ${intent.rack} » introuvable.` }
         get().assignToRack([node.id], rack.id)
         return { ok: true, message: `${node.name} implanté dans ${rack.name}.` }
@@ -1054,7 +1063,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
           case 'count':
             return { ok: true, message: `Le schéma compte ${diagram.nodes.length} équipements et ${diagram.links.length} liaisons.` }
           case 'countKind': {
-            const device = intent.argument ? searchDevices(intent.argument)[0] : undefined
+            const device = intent.argument ? findDevice(intent.argument) : undefined
             if (!device) return { ok: false, message: `Type « ${intent.argument ?? ''} » inconnu.` }
             const total = diagram.nodes.filter((node) => node.kind === device.id).length
             return { ok: true, message: `${total} ${device.label.toLowerCase()} dans le schéma.` }
@@ -1085,7 +1094,8 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
             if (racks.length === 0) return { ok: false, message: 'Aucune baie déclarée.' }
             const wanted = intent.argument ? plain(intent.argument) : null
             const target = wanted
-              ? racks.find((rack) => plain(rack.name) === wanted || plain(rack.name).includes(wanted))
+              ? (racks.find((rack) => plain(rack.name) === wanted || plain(rack.name).includes(wanted)) ??
+                (intent.argument ? bestMatch(intent.argument, racks, (rack) => rack.name)?.item : undefined))
               : undefined
             if (wanted && !target) return { ok: false, message: `Baie « ${intent.argument} » introuvable.` }
             const list = target ? [target] : racks
@@ -1150,7 +1160,13 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         return { ok: true, message: `Affichage : ${labels[intent.level]}.` }
       }
       case 'view': {
-        const labels = { diagram: 'Schéma', inventory: 'Inventaire', racks: 'Baies', discovery: 'Découverte' }
+        const labels = {
+          diagram: 'Schéma',
+          inventory: 'Inventaire',
+          racks: 'Baies',
+          discovery: 'Découverte',
+          guide: 'Guide',
+        }
         get().setAppView(intent.view)
         return { ok: true, message: `${labels[intent.view]} ouvert.` }
       }
@@ -1188,8 +1204,9 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         get().setImportOpen(true)
         return { ok: true, message: 'Import rapide ouvert.' }
       case 'help':
+        get().setAppView('guide')
         get().setVoiceOpen(true)
-        return { ok: true, message: 'Voici les commandes reconnues.' }
+        return { ok: true, message: 'Guide ouvert : voici les commandes reconnues.' }
       default:
         return { ok: false, message: 'Commande non comprise.' }
     }

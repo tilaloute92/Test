@@ -6,6 +6,7 @@ const TABS: { id: AppView; label: string; hint: string }[] = [
   { id: 'inventory', label: 'Inventaire', hint: 'Parc, garanties, responsables' },
   { id: 'racks', label: 'Baies', hint: 'Implantation physique en salle' },
   { id: 'discovery', label: 'Découverte', hint: 'Relevés réseau à interpréter' },
+  { id: 'guide', label: 'Guide', hint: "Mode d'emploi de l'application" },
 ]
 
 /** Barre de modules : le schéma n'est qu'une des vues du même jeu de données. */
