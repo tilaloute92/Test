@@ -9,8 +9,10 @@ import { allDevices, LAYER_LABELS, LINKS, ROLES, rankOf } from '../lib/catalog'
 import { useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
 import type {
+  AnchorSide,
   DetailLevel,
   HaRole,
+  LinkShape,
   LinkKind,
   NetNode,
   OsiLayer,
@@ -259,10 +261,19 @@ function MultiNodeForm({ nodes }: { nodes: NetNode[] }) {
   )
 }
 
+const ANCHOR_OPTIONS = [
+  { value: 'auto', label: 'Automatique' },
+  { value: 'top', label: 'Dessus' },
+  { value: 'bottom', label: 'Dessous' },
+  { value: 'left', label: 'Gauche' },
+  { value: 'right', label: 'Droite' },
+]
+
 function LinkForm({ linkId }: { linkId: string }) {
   const link = useDiagram((s) => s.diagram.links.find((l) => l.id === linkId))
   const nodes = useDiagram((s) => s.diagram.nodes)
   const updateLink = useDiagram((s) => s.updateLink)
+  const clearRoute = useDiagram((s) => s.clearLinkRoute)
   if (!link) return null
 
   const nameOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? '—'
@@ -290,6 +301,46 @@ function LinkForm({ linkId }: { linkId: string }) {
         onChange={(redundant) => set({ redundant })}
         label="Liaison de secours (pointillés)"
       />
+
+      <div className="rounded-lg border border-slate-200 p-2.5">
+        <p className="pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tracé</p>
+        <div className="flex flex-col gap-2">
+          <Field label="Forme">
+            <Select
+              value={link.shape ?? 'auto'}
+              onChange={(shape) => set({ shape: shape === 'auto' ? undefined : (shape as LinkShape) })}
+              options={[
+                { value: 'auto', label: 'Comme le schéma' },
+                { value: 'orthogonal', label: 'Orthogonal (angles droits)' },
+                { value: 'straight', label: 'Direct (ligne droite)' },
+                { value: 'curved', label: 'Courbe' },
+              ]}
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Accroche au départ">
+              <Select
+                value={link.anchorA ?? 'auto'}
+                onChange={(side) => set({ anchorA: side === 'auto' ? undefined : (side as AnchorSide) })}
+                options={ANCHOR_OPTIONS}
+              />
+            </Field>
+            <Field label="Accroche à l’arrivée">
+              <Select
+                value={link.anchorB ?? 'auto'}
+                onChange={(side) => set({ anchorB: side === 'auto' ? undefined : (side as AnchorSide) })}
+                options={ANCHOR_OPTIONS}
+              />
+            </Field>
+          </div>
+          <p className="text-[11px] leading-snug text-slate-400">
+            {link.waypoints?.length
+              ? `${link.waypoints.length} point(s) de passage. Glissez-les pour ajuster, double-cliquez pour en retirer un.`
+              : 'Tirez le trait — ou une poignée claire au milieu d’un segment — pour poser un point de passage.'}
+          </p>
+          <Btn onClick={() => clearRoute(link.id)}>Rendre le tracé automatique</Btn>
+        </div>
+      </div>
 
       <div className="rounded-lg border border-slate-200 p-2.5">
         <p className="pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">

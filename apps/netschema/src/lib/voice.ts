@@ -6,6 +6,7 @@ import type {
   HaRole,
   LayoutDirection,
   LinkKind,
+  LinkShape,
   LinkStyle,
   OsiView,
 } from '../types'
@@ -46,6 +47,7 @@ export type VoiceIntent =
   | { type: 'expand' }
   | { type: 'direction'; direction: LayoutDirection }
   | { type: 'linkStyle'; style: LinkStyle }
+  | { type: 'route'; shape: LinkShape }
   | { type: 'toggle'; key: ToggleKey; value: boolean }
   // Projet
   | { type: 'export'; format: 'svg' | 'png' }
@@ -352,6 +354,23 @@ const RULES: Rule[] = [
     /(ajuste|ajuster|recentre|recentrer|vue d'ensemble|cadre le schema|tout voir)/.test(t) ? { type: 'fit' } : null,
   (t) => (/(de gauche a droite|horizontal|a l'horizontale)/.test(t) ? { type: 'direction', direction: 'LR' } : null),
   (t) => (/(de haut en bas|vertical|a la verticale)/.test(t) ? { type: 'direction', direction: 'TB' } : null),
+  // « tracé … » vise la liaison sélectionnée ; « liaisons … » vise tout le schéma.
+  (t) => {
+    const match = t.match(/^(?:trace|tracer|le trace)\s+(courbe|droit|direct|orthogonal|automatique)$/)
+    if (!match) return null
+    const shapes: Record<string, LinkShape> = {
+      courbe: 'curved',
+      droit: 'straight',
+      direct: 'straight',
+      orthogonal: 'orthogonal',
+      automatique: 'auto',
+    }
+    return { type: 'route', shape: shapes[match[1]] }
+  },
+  (t) =>
+    /(reinitialise le trace|trace automatique|rends? le trace automatique|redresse la liaison)/.test(t)
+      ? { type: 'route', shape: 'auto' }
+      : null,
   (t) => (/(liaisons? droites?|traits? droits?|ligne droite)/.test(t) ? { type: 'linkStyle', style: 'straight' } : null),
   (t) =>
     /(liaisons? orthogonales?|angles? droits?)/.test(t) ? { type: 'linkStyle', style: 'orthogonal' } : null,
@@ -457,6 +476,8 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'Replie la zone Datacenter',
       'Déplie tout',
       'De gauche à droite',
+      'Tracé courbe',
+      'Réinitialise le tracé',
       'Masque la grille',
       'Va à SAN Siège',
     ],

@@ -189,7 +189,19 @@ export function deriveDiagram(
       hiddenLinks += 1
       continue
     }
-    const merged: NetLink = { ...link, id: `${link.id}@${key}`, from, to, label: undefined, speed: undefined }
+    // Le tracé manuel vaut pour les extrémités d'origine : il n'a plus de sens une fois
+    // la liaison reportée sur un bloc replié.
+    const merged: NetLink = {
+      ...link,
+      id: `${link.id}@${key}`,
+      from,
+      to,
+      label: undefined,
+      speed: undefined,
+      waypoints: undefined,
+      anchorA: undefined,
+      anchorB: undefined,
+    }
     if (existing) {
       const index = links.indexOf(existing)
       if (index >= 0) links.splice(index, 1, merged)

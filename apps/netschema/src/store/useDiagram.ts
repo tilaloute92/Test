@@ -29,6 +29,7 @@ import type {
   OsiView,
   RackDef,
   VlanDef,
+  Waypoint,
 } from '../types'
 
 const DEFAULT_LAYOUT: LayoutOptions = {
@@ -100,6 +101,8 @@ interface DiagramStore {
   setNodePositions: (positions: Record<string, { x: number; y: number }>) => void
   addLink: (from: string, to: string) => void
   updateLink: (id: string, patch: Partial<NetLink>) => void
+  setLinkWaypoints: (id: string, waypoints: Waypoint[]) => void
+  clearLinkRoute: (id: string) => void
   deleteSelection: () => void
 
   select: (target: { nodes?: string[]; links?: string[] }, additive?: boolean) => void
@@ -325,6 +328,36 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       diagram: {
         ...state.diagram,
         links: state.diagram.links.map((l) => (l.id === id ? { ...l, ...patch } : l)),
+      },
+    }))
+  },
+
+  /**
+   * Points de passage d'une liaison, sans instantané d'historique : le geste de
+   * déplacement en enregistre un seul, à son début (comme pour le déplacement d'un
+   * équipement).
+   */
+  setLinkWaypoints: (id, waypoints) =>
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        links: state.diagram.links.map((link) =>
+          link.id === id ? { ...link, waypoints: waypoints.length > 0 ? waypoints : undefined } : link,
+        ),
+      },
+    })),
+
+  /** Rend son tracé automatique à une liaison : points de passage et accroches effacés. */
+  clearLinkRoute: (id) => {
+    get().pushHistory()
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        links: state.diagram.links.map((link) =>
+          link.id === id
+            ? { ...link, waypoints: undefined, anchorA: undefined, anchorB: undefined, shape: undefined }
+            : link,
+        ),
       },
     }))
   },
@@ -735,6 +768,18 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         get().setLayout({ direction: intent.direction })
         get().applyAutoLayout()
         return { ok: true, message: intent.direction === 'LR' ? 'Couches de gauche à droite.' : 'Couches de haut en bas.' }
+
+      case 'route': {
+        const id = state.selectedLinks[0]
+        if (!id) return { ok: false, message: 'Sélectionnez d’abord une liaison.' }
+        if (intent.shape === 'auto') {
+          get().clearLinkRoute(id)
+          return { ok: true, message: 'Tracé rendu automatique.' }
+        }
+        get().updateLink(id, { shape: intent.shape })
+        const labels = { orthogonal: 'orthogonal', straight: 'direct', curved: 'courbe', auto: 'automatique' }
+        return { ok: true, message: `Tracé ${labels[intent.shape]}.` }
+      }
 
       case 'linkStyle':
         get().setDisplay({ linkStyle: intent.style })

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { LinkHandles } from './LinkHandles'
 import { LinkShape } from './LinkShape'
 import { NodeShape } from './NodeShape'
 import { LINKS } from '../lib/catalog'
@@ -7,7 +8,7 @@ import { setDiagramSvg } from '../lib/exportRegistry'
 import { readProjectFile } from '../lib/storage'
 import { linkColorFor, linkLabelFor } from '../lib/osi'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
-import { parallelOffsets } from '../lib/routing'
+import { insertIndexAt, parallelOffsets, type LinkGeometry } from '../lib/routing'
 import { GRID, useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
 import { DRAG_MIME } from '../lib/dnd'
@@ -18,6 +19,17 @@ interface DragState {
   startX: number
   startY: number
   origins: Record<string, { x: number; y: number }>
+}
+
+/** Déplacement d'un point de passage de liaison (ou création par tirage du trait). */
+interface LinkDragState {
+  pointerId: number
+  linkId: string
+  index: number
+  /** Vrai tant que le point n'est pas encore créé : il naîtra au premier mouvement. */
+  pending: boolean
+  startX: number
+  startY: number
 }
 
 interface PanState {
@@ -32,6 +44,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const containerRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
   const panRef = useRef<PanState | null>(null)
+  const linkDragRef = useRef<LinkDragState | null>(null)
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
 
   const diagram = useDiagram((s) => s.diagram)
@@ -160,9 +173,69 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     ;(event.currentTarget as SVGGElement).setPointerCapture?.(event.pointerId)
   }
 
-  const onLinkPointerDown = (event: React.PointerEvent<SVGPathElement>, link: NetLink) => {
+  /** Une liaison de la vue dérivée (blocs repliés) n'est pas modifiable telle quelle. */
+  const isRealLink = (id: string) => diagram.links.some((link) => link.id === id)
+
+  const onLinkPointerDown = (
+    event: React.PointerEvent<SVGPathElement>,
+    link: NetLink,
+    geometry: LinkGeometry,
+  ) => {
     event.stopPropagation()
-    useDiagram.getState().select({ links: [link.id] }, event.shiftKey)
+    const store = useDiagram.getState()
+    store.select({ links: [link.id] }, event.shiftKey)
+    if (!isRealLink(link.id) || event.shiftKey) return
+
+    // Tirer le trait lui-même pose un point de passage à cet endroit : c'est le geste
+    // attendu quand on veut « faire passer la liaison par là ».
+    const point = toDiagram(event.clientX, event.clientY)
+    linkDragRef.current = {
+      pointerId: event.pointerId,
+      linkId: link.id,
+      index: insertIndexAt(geometry, point),
+      pending: true,
+      startX: event.clientX,
+      startY: event.clientY,
+    }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
+  const beginWaypointDrag = (
+    event: React.PointerEvent<SVGCircleElement>,
+    link: NetLink,
+    index: number,
+    insert: boolean,
+    point?: { x: number; y: number },
+  ) => {
+    event.stopPropagation()
+    if (!isRealLink(link.id)) return
+    const store = useDiagram.getState()
+    store.select({ links: [link.id] })
+    store.pushHistory()
+    if (insert && point) {
+      const waypoints = [...(link.waypoints ?? [])]
+      waypoints.splice(index, 0, point)
+      store.setLinkWaypoints(link.id, waypoints)
+    }
+    linkDragRef.current = {
+      pointerId: event.pointerId,
+      linkId: link.id,
+      index,
+      pending: false,
+      startX: event.clientX,
+      startY: event.clientY,
+    }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
+  const removeWaypoint = (link: NetLink, index: number) => {
+    if (!isRealLink(link.id)) return
+    const store = useDiagram.getState()
+    store.pushHistory()
+    store.setLinkWaypoints(
+      link.id,
+      (link.waypoints ?? []).filter((_, position) => position !== index),
+    )
   }
 
   const onBackgroundPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
@@ -181,6 +254,29 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
 
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     if (mode === 'connect' && connectFrom) setCursor(toDiagram(event.clientX, event.clientY))
+
+    const linkDrag = linkDragRef.current
+    if (linkDrag) {
+      const moved = Math.hypot(event.clientX - linkDrag.startX, event.clientY - linkDrag.startY)
+      if (linkDrag.pending && moved < 4) return
+      const store = useDiagram.getState()
+      const link = store.diagram.links.find((item) => item.id === linkDrag.linkId)
+      if (!link) return
+      const raw = toDiagram(event.clientX, event.clientY)
+      const point = snap
+        ? { x: Math.round(raw.x / GRID) * GRID, y: Math.round(raw.y / GRID) * GRID }
+        : { x: Math.round(raw.x), y: Math.round(raw.y) }
+      const waypoints = [...(link.waypoints ?? [])]
+      if (linkDrag.pending) {
+        store.pushHistory()
+        waypoints.splice(linkDrag.index, 0, point)
+        linkDragRef.current = { ...linkDrag, pending: false }
+      } else {
+        waypoints[linkDrag.index] = point
+      }
+      store.setLinkWaypoints(link.id, waypoints)
+      return
+    }
 
     const drag = dragRef.current
     if (drag) {
@@ -210,6 +306,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const endGesture = () => {
     dragRef.current = null
     panRef.current = null
+    linkDragRef.current = null
   }
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
@@ -430,6 +527,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 label={linkLabelFor(link, osi)}
                 color={linkColorFor(link, osi, diagram.vlans) ?? LINKS[link.kind].color}
                 dimmed={display.dimmed.has(link.id)}
+                editable={isRealLink(link.id)}
                 onPointerDown={onLinkPointerDown}
               />
             )
@@ -460,6 +558,29 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 dimmed={display.dimmed.has(node.id)}
                 onPointerDown={onNodePointerDown}
                 onDoubleClick={() => node.group && useDiagram.getState().toggleCollapse(node.group.key)}
+              />
+            )
+          })}
+
+          {/* Poignées de tracé : au-dessus des équipements pour rester attrapables. */}
+          {display.links.map((link) => {
+            if (!selectedLinks.includes(link.id) || !isRealLink(link.id)) return null
+            const from = nodeById.get(link.from)
+            const to = nodeById.get(link.to)
+            if (!from || !to) return null
+            return (
+              <LinkHandles
+                key={`handles-${link.id}`}
+                link={link}
+                from={from}
+                to={to}
+                style={linkStyle}
+                offset={linkOffsets.get(link.id) ?? 0}
+                onWaypointDown={(event, target, index) => beginWaypointDrag(event, target, index, false)}
+                onWaypointRemove={removeWaypoint}
+                onInsertDown={(event, target, index, point) =>
+                  beginWaypointDrag(event, target, index, true, point)
+                }
               />
             )
           })}

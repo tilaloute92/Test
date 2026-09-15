@@ -2,8 +2,10 @@ import { deviceMeta, LINKS, ROLES } from './catalog'
 import { looksLikeDrawio, parseDrawio } from './drawio'
 import { uid } from './ids'
 import type {
+  AnchorSide,
   AssetStatus,
   Diagram,
+  LinkShape,
   HaRole,
   LinkKind,
   NetLink,
@@ -31,6 +33,8 @@ function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
 
+const SHAPES = ['auto', 'orthogonal', 'straight', 'curved']
+const ANCHORS = ['auto', 'top', 'bottom', 'left', 'right']
 const STATUSES = ['production', 'stock', 'maintenance', 'retire']
 const STP_ROLES = ['root', 'designated', 'alternate', 'blocking', 'edge']
 const ROUTING = ['static', 'ospf', 'bgp', 'eigrp', 'is-is', 'rip']
@@ -113,6 +117,14 @@ export function parseDiagram(raw: unknown): Diagram {
       speed: str(item.speed),
       redundant: item.redundant === true,
       layers: layers && layers.length > 0 ? layers : undefined,
+      waypoints: Array.isArray(item.waypoints)
+        ? item.waypoints
+            .filter((point): point is { x: number; y: number } => isRecord(point) && Number.isFinite(point.x) && Number.isFinite(point.y))
+            .map((point) => ({ x: Number(point.x), y: Number(point.y) }))
+        : undefined,
+      shape: SHAPES.includes(String(item.shape)) ? (item.shape as LinkShape) : undefined,
+      anchorA: ANCHORS.includes(String(item.anchorA)) ? (item.anchorA as AnchorSide) : undefined,
+      anchorB: ANCHORS.includes(String(item.anchorB)) ? (item.anchorB as AnchorSide) : undefined,
       portA: str(item.portA),
       portB: str(item.portB),
       vlans: str(item.vlans),

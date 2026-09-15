@@ -111,6 +111,16 @@ export interface NetLink {
   /** Liaison redondante / secours : tracée en pointillés. */
   redundant?: boolean
 
+  // ─── Tracé ────────────────────────────────────────────────────────────────
+  /** Points de passage imposés à la main ; vide = tracé automatique. */
+  waypoints?: Waypoint[]
+  /** Forme du tracé pour cette liaison seulement. */
+  shape?: LinkShape
+  /** Côté d'accroche au départ. */
+  anchorA?: AnchorSide
+  /** Côté d'accroche à l'arrivée. */
+  anchorB?: AnchorSide
+
   /**
    * Couches OSI documentées pour cette liaison. Absent = couches par défaut du type de
    * liaison (un câble cuivre porte L1 et L2, un tunnel VPN porte L3…).
@@ -203,6 +213,18 @@ export interface LayoutOptions {
 }
 
 export type LinkStyle = 'orthogonal' | 'straight'
+
+/** Tracé d'une liaison : par défaut celui du schéma, ou imposé liaison par liaison. */
+export type LinkShape = 'auto' | 'orthogonal' | 'straight' | 'curved'
+
+/** Côté d'accroche d'une liaison sur un équipement. */
+export type AnchorSide = 'auto' | 'top' | 'bottom' | 'left' | 'right'
+
+/** Point de passage manuel d'une liaison, en coordonnées du schéma. */
+export interface Waypoint {
+  x: number
+  y: number
+}
 
 /** Niveau de détail d'affichage, pour dégrossir un schéma complexe. */
 export type DetailLevel = 'full' | 'no-endpoints' | 'summary'

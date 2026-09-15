@@ -204,6 +204,29 @@ bruyant — et c'est aussi ce qui rend la grammaire testable.
 
 Une phrase non reconnue n'est jamais exécutée au hasard : elle est signalée telle quelle.
 
+## Tracé des liaisons
+
+Le tracé automatique convient tant que le schéma reste rangé en couches ; dès qu'on veut
+faire passer une liaison ailleurs, il faut pouvoir la prendre en main.
+
+- **Poser un point de passage** : tirez le trait à l'endroit voulu, ou tirez l'une des
+  poignées claires posées au milieu de chaque segment de la liaison sélectionnée. La
+  liaison passe alors par ce point.
+- **Déplacer** un point : glissez sa poignée bleue (aimantée à la grille si l'option est
+  active). **Supprimer** : double-clic dessus.
+- **Forme**, liaison par liaison (inspecteur → *Tracé*) : comme le schéma, orthogonale,
+  directe ou **courbe**. Le réglage global reste dans *Mise en page*.
+- **Côté d'accroche** imposé au départ et à l'arrivée : dessus, dessous, gauche, droite —
+  ou automatique. C'est ce qui permet de faire sortir deux liaisons par des faces
+  différentes du même équipement.
+- **Rendre le tracé automatique** efface points de passage, forme et accroches.
+- À la voix : « Tracé courbe », « Réinitialise le tracé » sur la liaison sélectionnée.
+
+Les poignées sont dessinées au-dessus des équipements : un point de passage posé sur une
+boîte reste attrapable. Elles n'apparaissent jamais dans les exports, et une liaison reportée
+sur un bloc replié retrouve un tracé automatique — son tracé manuel ne vaut que pour ses
+extrémités d'origine.
+
 ## Niveaux 2 et 3 du modèle OSI
 
 Un schéma d'infrastructure ne dit pas la même chose selon la couche regardée : le même
@@ -464,7 +487,7 @@ src/
   lib/layout.ts         placement automatique par couches, cadres de groupes, cadrage
   lib/ha.ts             analyse haute disponibilité (points d'articulation + règles métier)
   lib/patterns.ts       bibliothèque de modèles d'architectures redondées
-  lib/routing.ts        tracé des liaisons (orthogonal arrondi, étalement des parallèles)
+  lib/routing.ts        tracé des liaisons : automatique, points de passage, accroches, courbes
   lib/exportImage.ts    export SVG / PNG
   lib/storage.ts        sauvegarde locale, lecture/écriture des fichiers projet
   lib/sample.ts         schéma d'exemple (architecture HA siège + site de secours, baies, parc)

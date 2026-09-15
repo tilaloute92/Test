@@ -1,11 +1,12 @@
 import { LINKS } from '../lib/catalog'
-import { linkGeometry } from '../lib/routing'
+import { linkGeometry, type LinkGeometry } from '../lib/routing'
 import type { LinkStyle, NetLink, NetNode } from '../types'
 
 interface Props {
   link: NetLink
   from: NetNode
   to: NetNode
+  /** Tracé par défaut du schéma ; la liaison peut imposer le sien. */
   style: LinkStyle
   offset: number
   selected: boolean
@@ -16,7 +17,9 @@ interface Props {
   color: string
   /** Hors de la couche regardée : conservée pour le contexte, mais estompée. */
   dimmed?: boolean
-  onPointerDown: (event: React.PointerEvent<SVGPathElement>, link: NetLink) => void
+  /** Les poignées de tracé ne sont proposées que sur le schéma réel, pas sur une vue dérivée. */
+  editable?: boolean
+  onPointerDown: (event: React.PointerEvent<SVGPathElement>, link: NetLink, geometry: LinkGeometry) => void
 }
 
 export function LinkShape({
@@ -30,10 +33,19 @@ export function LinkShape({
   label,
   color,
   dimmed,
+  editable,
   onPointerDown,
 }: Props) {
   const meta = LINKS[link.kind]
-  const { d, mid } = linkGeometry(from, to, style, offset)
+  const geometry = linkGeometry(from, to, {
+    style,
+    shape: link.shape,
+    offset,
+    waypoints: link.waypoints,
+    anchorA: link.anchorA,
+    anchorB: link.anchorB,
+  })
+  const { d, mid } = geometry
 
   return (
     <g opacity={dimmed ? 0.16 : 1}>
@@ -55,9 +67,10 @@ export function LinkShape({
         fill="none"
         stroke="transparent"
         strokeWidth={16}
-        style={{ cursor: 'pointer' }}
-        onPointerDown={(event) => onPointerDown(event, link)}
+        style={{ cursor: editable ? 'grab' : 'pointer' }}
+        onPointerDown={(event) => onPointerDown(event, link, geometry)}
       />
+
       {showDetails && label && (
         <g transform={`translate(${mid.x}, ${mid.y})`} pointerEvents="none">
           <rect
