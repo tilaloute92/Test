@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { autoLayout, diagramBounds } from '../lib/layout'
 import { deviceMeta, ROLES, searchDevices } from '../lib/catalog'
+import { searchModels } from '../lib/vendors'
 import { STATUS_LABELS } from '../lib/inventory'
 import { uid } from '../lib/ids'
 import { HA_PATTERNS, instantiatePattern, type HaPattern } from '../lib/patterns'
@@ -94,7 +95,7 @@ interface DiagramStore {
   redo: () => void
 
   setTitle: (title: string) => void
-  addNode: (kind: DeviceKind, x: number, y: number) => string
+  addNode: (kind: DeviceKind, x: number, y: number, seed?: Partial<NetNode>) => string
   updateNode: (id: string, patch: Partial<NetNode>) => void
   updateNodes: (ids: string[], patch: Partial<NetNode>) => void
   moveNodes: (ids: string[], dx: number, dy: number) => void
@@ -239,7 +240,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   setTitle: (title) => set((state) => ({ diagram: { ...state.diagram, title } })),
 
-  addNode: (kind, x, y) => {
+  addNode: (kind, x, y, seed) => {
     get().pushHistory()
     const id = uid('n')
     const count = get().diagram.nodes.filter((n) => n.kind === kind).length + 1
@@ -249,6 +250,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       name: `${deviceMeta(kind).label} ${count}`,
       x: Math.round(x),
       y: Math.round(y),
+      ...seed,
     }
     set((state) => ({
       diagram: { ...state.diagram, nodes: [...state.diagram.nodes, node] },
@@ -661,6 +663,51 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         .replace(/[\u0300-\u036f]/g, '')
         .toLowerCase()
         .trim()
+    /**
+     * Cible d'une commande : un nom d'équipement, « la sélection », ou « tous les … »
+     * suivi d'un type. C'est ce qui permet de dicter une modification en lot.
+     */
+    const resolveTargets = (target: string): NetNode[] => {
+      const nodes = get().diagram.nodes
+      const needle = plain(target)
+      if (/^(la selection|selection|ca|cela|eux|celles ci|ceux ci)$/.test(needle)) {
+        return nodes.filter((node) => get().selectedNodes.includes(node.id))
+      }
+      const bulk = needle.match(/^(?:tous|toutes)\s+(?:les|des)\s+(.+)$/)
+      if (bulk) {
+        const device = searchDevices(bulk[1])[0]
+        return device ? nodes.filter((node) => node.kind === device.id) : []
+      }
+      const single = findNode(target)
+      return single ? [single] : []
+    }
+
+    /** Message d'échec parlant : « aucun téléphone IP » plutôt que « introuvable ». */
+    const missMessage = (target: string): string => {
+      const needle = plain(target)
+      if (/^(la selection|selection|ca|cela)$/.test(needle)) return 'Rien n’est sélectionné.'
+      const bulk = needle.match(/^(?:tous|toutes)\s+(?:les|des)\s+(.+)$/)
+      if (bulk) {
+        const device = searchDevices(bulk[1])[0]
+        return device
+          ? `Aucun équipement « ${device.label} » dans le schéma.`
+          : `Type d’équipement « ${bulk[1]} » inconnu.`
+      }
+      return `Équipement « ${target} » introuvable.`
+    }
+
+    /** Une liaison désignée par ses deux extrémités, dans un sens ou dans l'autre. */
+    const findLink = (fromName: string, toName: string) => {
+      const from = findNode(fromName)
+      const to = findNode(toName)
+      if (!from || !to) return { from, to, link: undefined }
+      const link = get().diagram.links.find(
+        (item) =>
+          (item.from === from.id && item.to === to.id) || (item.from === to.id && item.to === from.id),
+      )
+      return { from, to, link }
+    }
+
     const findNode = (name: string) => {
       const needle = plain(name)
       const squeezed = needle.replace(/[\s-]/g, '')
@@ -676,8 +723,128 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       case 'add': {
         const position = center()
         get().setAppView('diagram')
-        get().addNode(intent.kind, position.x, position.y)
-        return { ok: true, message: `${intent.label} ajouté.` }
+
+        const seed: Partial<NetNode> = {}
+        if (intent.name) seed.name = intent.name
+        for (const [field, value] of Object.entries(intent.props ?? {})) {
+          if (field === 'vlan') seed.vlan = /^\d+$/.test(value) ? `VLAN ${value}` : value
+          else if (field === 'rackUnit' || field === 'heightU' || field === 'powerW') {
+            const numeric = Number(value.replace(/[^\d.]/g, ''))
+            if (Number.isFinite(numeric)) Object.assign(seed, { [field]: numeric })
+          } else Object.assign(seed, { [field]: value })
+        }
+
+        const id = get().addNode(intent.kind, position.x, position.y, seed)
+        const extras: string[] = []
+
+        if (intent.rack) {
+          const wanted = plain(intent.rack)
+          const rack = (get().diagram.racks ?? []).find(
+            (item) => plain(item.name) === wanted || plain(item.name).includes(wanted),
+          )
+          if (rack) {
+            get().assignToRack([id], rack.id)
+            extras.push(`implanté dans ${rack.name}`)
+          } else extras.push(`baie « ${intent.rack} » introuvable`)
+        }
+
+        if (intent.connectTo) {
+          const peer = findNode(intent.connectTo)
+          if (peer) {
+            get().addLink(id, peer.id)
+            extras.push(`relié à ${peer.name}`)
+          } else extras.push(`« ${intent.connectTo} » introuvable`)
+        }
+
+        get().select({ nodes: [id] })
+        const created = get().diagram.nodes.find((node) => node.id === id)
+        return {
+          ok: true,
+          message: `${intent.label} « ${created?.name ?? intent.label} » ajouté${extras.length > 0 ? `, ${extras.join(', ')}` : ''}.`,
+        }
+      }
+
+      case 'setKind': {
+        const targets = resolveTargets(intent.target)
+        if (targets.length === 0) return { ok: false, message: missMessage(intent.target) }
+        get().updateNodes(
+          targets.map((node) => node.id),
+          { kind: intent.kind },
+        )
+        return {
+          ok: true,
+          message:
+            targets.length === 1
+              ? `${targets[0].name} est maintenant un ${intent.label.toLowerCase()}.`
+              : `${targets.length} équipements passés en ${intent.label.toLowerCase()}.`,
+        }
+      }
+
+      case 'move': {
+        const targets = resolveTargets(intent.target)
+        if (targets.length === 0) return { ok: false, message: missMessage(intent.target) }
+        const delta = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[intent.direction]
+        get().pushHistory()
+        get().moveNodes(
+          targets.map((node) => node.id),
+          delta[0] * intent.amount,
+          delta[1] * intent.amount,
+        )
+        return {
+          ok: true,
+          message:
+            targets.length === 1 ? `${targets[0].name} déplacé.` : `${targets.length} équipements déplacés.`,
+        }
+      }
+
+      case 'linkDelete': {
+        const { from, to, link } = findLink(intent.from, intent.to)
+        if (!from) return { ok: false, message: `Équipement « ${intent.from} » introuvable.` }
+        if (!to) return { ok: false, message: `Équipement « ${intent.to} » introuvable.` }
+        if (!link) return { ok: false, message: `Aucune liaison entre ${from.name} et ${to.name}.` }
+        get().select({ links: [link.id] })
+        get().deleteSelection()
+        return { ok: true, message: `Liaison ${from.name} – ${to.name} supprimée.` }
+      }
+
+      case 'linkEdit': {
+        const { from, to, link } = findLink(intent.from, intent.to)
+        if (!from) return { ok: false, message: `Équipement « ${intent.from} » introuvable.` }
+        if (!to) return { ok: false, message: `Équipement « ${intent.to} » introuvable.` }
+
+        // « la liaison entre A et B est en fibre » vaut aussi bien pour une liaison qui
+        // existe déjà que pour une qui reste à créer.
+        let id = link?.id
+        let created = false
+        if (!id) {
+          get().addLink(from.id, to.id)
+          id = get().selectedLinks[0]
+          created = true
+        }
+        if (!id) return { ok: false, message: 'La liaison n’a pas pu être créée.' }
+
+        get().updateLink(id, intent.patch)
+        get().select({ links: [id] })
+        return {
+          ok: true,
+          message: `Liaison ${from.name} – ${to.name} ${created ? 'créée' : 'modifiée'}.`,
+        }
+      }
+
+      case 'selectKind': {
+        const ids = get()
+          .diagram.nodes.filter((node) => node.kind === intent.kind)
+          .map((node) => node.id)
+        if (ids.length === 0) return { ok: false, message: `Aucun ${intent.label.toLowerCase()} dans le schéma.` }
+        get().setAppView('diagram')
+        get().select({ nodes: ids })
+        return {
+          ok: true,
+          message:
+            ids.length === 1
+              ? `1 équipement « ${intent.label} » sélectionné.`
+              : `${ids.length} équipements « ${intent.label} » sélectionnés.`,
+        }
       }
       case 'link': {
         const from = findNode(intent.from)
@@ -700,30 +867,71 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       }
 
       case 'setField': {
-        const node = findNode(intent.target)
-        if (!node) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
-        const value = intent.field === 'vlan' && /^\d+$/.test(intent.value) ? `VLAN ${intent.value}` : intent.value
-        get().updateNode(node.id, { [intent.field]: value })
-        return { ok: true, message: `${node.name} : ${intent.field} renseigné.` }
+        const targets = resolveTargets(intent.target)
+        if (targets.length === 0) return { ok: false, message: missMessage(intent.target) }
+        const ids = targets.map((node) => node.id)
+
+        // Un modèle dicté est cherché dans la base matériels : il remplit aussi le
+        // constructeur, la hauteur en baie et la consommation.
+        if (intent.field === 'model') {
+          const hardware = searchModels(intent.value)[0]
+          if (hardware) {
+            get().updateNodes(ids, {
+              vendor: hardware.vendor,
+              model: hardware.model,
+              heightU: hardware.heightU,
+              powerW: hardware.powerW,
+            })
+            return { ok: true, message: `${hardware.vendor} ${hardware.model} appliqué.` }
+          }
+        }
+
+        const numericFields = ['rackUnit', 'heightU', 'powerW']
+        let value: string | number = intent.value
+        if (numericFields.includes(intent.field)) {
+          const numeric = Number(intent.value.replace(/[^\d.]/g, ''))
+          if (!Number.isFinite(numeric)) return { ok: false, message: `Valeur « ${intent.value} » non numérique.` }
+          value = numeric
+        } else if (intent.field === 'vlan' && /^\d+$/.test(intent.value)) {
+          value = `VLAN ${intent.value}`
+        }
+
+        get().updateNodes(ids, { [intent.field]: value })
+        return {
+          ok: true,
+          message:
+            targets.length === 1
+              ? `${targets[0].name} mis à jour.`
+              : `${targets.length} équipements mis à jour.`,
+        }
       }
 
       case 'setRole': {
-        const node = findNode(intent.target)
-        if (!node) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
-        get().updateNode(node.id, { role: intent.role })
-        return { ok: true, message: `${node.name} : rôle « ${ROLES[intent.role].label} ».` }
+        const targets = resolveTargets(intent.target)
+        if (targets.length === 0) return { ok: false, message: missMessage(intent.target) }
+        get().updateNodes(
+          targets.map((node) => node.id),
+          { role: intent.role },
+        )
+        return { ok: true, message: `Rôle « ${ROLES[intent.role].label} » appliqué à ${targets.length} équipement(s).` }
       }
 
       case 'setStatus': {
-        const node = findNode(intent.target)
-        if (!node) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
-        get().updateNode(node.id, { status: intent.status })
-        return { ok: true, message: `${node.name} : ${STATUS_LABELS[intent.status].toLowerCase()}.` }
+        const targets = resolveTargets(intent.target)
+        if (targets.length === 0) return { ok: false, message: missMessage(intent.target) }
+        get().updateNodes(
+          targets.map((node) => node.id),
+          { status: intent.status },
+        )
+        return {
+          ok: true,
+          message: `${targets.length} équipement(s) : ${STATUS_LABELS[intent.status].toLowerCase()}.`,
+        }
       }
 
       case 'setPinned': {
         const ids = intent.target
-          ? [findNode(intent.target)?.id].filter((id): id is string => !!id)
+          ? resolveTargets(intent.target).map((node) => node.id)
           : state.selectedNodes
         if (ids.length === 0) return { ok: false, message: 'Aucun équipement visé.' }
         get().updateNodes(ids, { pinned: intent.pinned })
@@ -731,9 +939,16 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       }
 
       case 'duplicate': {
-        if (state.selectedNodes.length === 0) return { ok: false, message: 'Rien n’est sélectionné.' }
+        if (intent.target) {
+          const targets = resolveTargets(intent.target)
+          if (targets.length === 0) return { ok: false, message: missMessage(intent.target) }
+          get().select({ nodes: targets.map((node) => node.id) })
+        } else if (state.selectedNodes.length === 0) {
+          return { ok: false, message: 'Rien n’est sélectionné.' }
+        }
         get().duplicateSelection()
-        return { ok: true, message: 'Sélection dupliquée.' }
+        const copies = get().selectedNodes.length
+        return { ok: true, message: copies === 1 ? 'Équipement dupliqué.' : `${copies} équipements dupliqués.` }
       }
 
       case 'selectAll': {
@@ -903,11 +1118,15 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         return { ok: true, message: 'Rétabli.' }
       case 'delete': {
         if (intent.target) {
-          const node = findNode(intent.target)
-          if (!node) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
-          get().select({ nodes: [node.id] })
+          const targets = resolveTargets(intent.target)
+          if (targets.length === 0) return { ok: false, message: missMessage(intent.target) }
+          get().select({ nodes: targets.map((node) => node.id) })
           get().deleteSelection()
-          return { ok: true, message: `${node.name} supprimé.` }
+          return {
+            ok: true,
+            message:
+              targets.length === 1 ? `${targets[0].name} supprimé.` : `${targets.length} équipements supprimés.`,
+          }
         }
         const count = state.selectedNodes.length + state.selectedLinks.length
         if (count === 0) return { ok: false, message: 'Rien n’est sélectionné.' }

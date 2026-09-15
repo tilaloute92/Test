@@ -124,20 +124,58 @@ function normalize(value: string): string {
 
 /**
  * Recherche d'un type d'équipement par nom, famille ou synonyme : « k8s », « fortigate »,
- * « pare-feu », « waf », « borne »… Les correspondances en début de mot passent devant.
+ * « pare-feu », « waf », « bornes wifi »… Les correspondances en début de mot passent devant.
  */
 export function searchDevices(query: string): DeviceMeta[] {
-  const q = normalize(query.trim())
-  if (!q) return allDevices()
+  const base = normalize(query.trim())
+  if (!base) return allDevices()
+
+  // La dictée met volontiers les types au pluriel (« tous les postes de travail ») et
+  // écrit « wifi » là où le catalogue dit « Wi-Fi ». Chaque tentative applique la même
+  // transformation des deux côtés, sinon les troncatures ne se correspondent plus.
+  const attempts: ((value: string) => string)[] = [
+    (value) => value,
+    depluralize,
+    (value) => compactForm(depluralize(value)),
+  ]
+
+  for (const transform of attempts) {
+    const found = scoreDevices(transform(base), transform)
+    if (found.length > 0) return found
+  }
+  return []
+}
+
+/**
+ * Racine approximative d'un mot : on retire le pluriel puis le « e » final. Appliquée des
+ * deux côtés, elle fait correspondre « postes » à « poste », « switches » à « switch » et
+ * « téléphones » à « téléphone » sans dictionnaire.
+ */
+function depluralize(value: string): string {
+  return value
+    .split(' ')
+    .map((word) => (word.length > 3 ? word.replace(/s$/, '').replace(/e$/, '') : word))
+    .join(' ')
+    .trim()
+}
+
+/** Forme compacte : ni espaces, ni tirets, ni points (« wi-fi » et « wifi » se rejoignent). */
+function compactForm(value: string): string {
+  return value.replace(/[^a-z0-9]/g, '')
+}
+
+function scoreDevices(query: string, transform: (value: string) => string): DeviceMeta[] {
+  if (!query) return []
   const scored: { device: DeviceMeta; score: number }[] = []
   for (const device of registry.values()) {
     const haystacks = [device.label, device.id, device.family, ...(device.aliases ?? [])]
     let best = -1
     for (const raw of haystacks) {
-      const value = normalize(raw)
-      if (value === q) best = Math.max(best, 100)
-      else if (value.startsWith(q)) best = Math.max(best, 80)
-      else if (value.includes(q)) best = Math.max(best, 50)
+      const value = transform(normalize(raw))
+      if (!value) continue
+      if (value === query) best = Math.max(best, 100)
+      else if (value.startsWith(query)) best = Math.max(best, 80)
+      else if (value.includes(query)) best = Math.max(best, 50)
     }
     if (best >= 0) scored.push({ device, score: best })
   }

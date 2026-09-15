@@ -18,16 +18,49 @@ import type {
  * fonction pure qui transforme une phrase en intention. Elle sert aussi bien à la dictée
  * qu'au champ de saisie du panneau — et c'est ce qui la rend testable sans microphone.
  */
+/** Champs d'équipement modifiables à la voix. */
+export type NodeField =
+  | 'ip'
+  | 'vlan'
+  | 'zone'
+  | 'site'
+  | 'cluster'
+  | 'owner'
+  | 'serial'
+  | 'model'
+  | 'vip'
+  | 'notes'
+  | 'rackUnit'
+  | 'heightU'
+  | 'powerW'
+
 export type VoiceIntent =
   // Édition
-  | { type: 'add'; kind: string; label: string }
+  | {
+      type: 'add'
+      kind: string
+      label: string
+      /** Nom dicté : « ajoute un switch cœur SW-CORE-03 ». */
+      name?: string
+      /** Attributs dictés dans la même phrase (IP, zone, site, grappe, VLAN…). */
+      props?: Partial<Record<NodeField, string>>
+      /** Baie d'implantation dictée. */
+      rack?: string
+      /** Équipement auquel raccorder le nouvel arrivant. */
+      connectTo?: string
+    }
+  | { type: 'setKind'; target: string; kind: string; label: string }
+  | { type: 'move'; target: string; direction: 'left' | 'right' | 'up' | 'down'; amount: number }
+  | { type: 'linkEdit'; from: string; to: string; patch: LinkPatch }
+  | { type: 'linkDelete'; from: string; to: string }
+  | { type: 'selectKind'; kind: string; label: string }
   | { type: 'link'; from: string; to: string; linkKind?: LinkKind }
   | { type: 'rename'; target: string; name: string }
-  | { type: 'setField'; target: string; field: 'ip' | 'vlan' | 'zone' | 'site' | 'cluster' | 'owner' | 'serial' | 'model' | 'vip'; value: string }
+  | { type: 'setField'; target: string; field: NodeField; value: string }
   | { type: 'setRole'; target: string; role: HaRole }
   | { type: 'setStatus'; target: string; status: AssetStatus }
   | { type: 'setPinned'; target?: string; pinned: boolean }
-  | { type: 'duplicate' }
+  | { type: 'duplicate'; target?: string }
   | { type: 'delete'; target?: string }
   | { type: 'selectAll' }
   | { type: 'clearSelection' }
@@ -62,6 +95,17 @@ export type VoiceIntent =
   | { type: 'query'; question: QueryKind; argument?: string }
   | { type: 'help' }
 
+/** Modifications applicables à une liaison désignée à la voix. */
+export interface LinkPatch {
+  kind?: LinkKind
+  speed?: string
+  label?: string
+  redundant?: boolean
+  vlans?: string
+  subnet?: string
+  mode?: 'access' | 'trunk'
+}
+
 export type ToggleKey =
   | 'showGrid'
   | 'showZones'
@@ -74,12 +118,19 @@ export type ToggleKey =
 
 export type QueryKind = 'count' | 'countKind' | 'ha' | 'spof' | 'power' | 'freeUnits' | 'vlans' | 'racks'
 
+/**
+ * Normalisation d'une phrase dictée : sans accents, en minuscules, ponctuation de phrase
+ * retirée. Les points entre chiffres sont conservés — sans quoi « 10.0.0.9 » deviendrait
+ * « 10 0 0 9 ». Chaque remplacement garde la longueur du texte, ce qui permet de retrouver
+ * la casse d'origine par simple index.
+ */
 export function normalizeSpeech(value: string): string {
   return value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/[?!.,]/g, ' ')
+    .replace(/[?!,;]/g, ' ')
+    .replace(/\.(?!\d)/g, ' ')
     .replace(/[’']/g, "'")
     .replace(/\s+/g, ' ')
     .trim()
@@ -177,6 +228,101 @@ function cleanName(value: string): string {
 type Rule = (text: string, raw: string) => VoiceIntent | null | undefined
 
 /**
+ * Mots-clés qui introduisent un complément dans une phrase de création :
+ * « ajoute un switch cœur SW-CORE-03 dans la zone Datacenter avec l'IP 10.10.0.13 ».
+ */
+const CLAUSE_KEYWORDS =
+  "appelee?|appele|nommee?|nomme|de nom|avec l'ip|avec ip|adresse ip|dans la zone|en zone|zone|sur le site|site|dans la grappe|grappe|cluster|en vlan|vlan|dans la baie|reliee? a|reliee? au|relie a|relie au|raccordee? a|raccorde a|connectee? a|connecte a|rattachee? a|rattache a|en u|hauteur|puissance"
+
+const CLAUSE_FIELD: Record<string, string> = {
+  appele: 'name',
+  appelee: 'name',
+  nomme: 'name',
+  nommee: 'name',
+  'de nom': 'name',
+  "avec l'ip": 'ip',
+  'avec ip': 'ip',
+  'adresse ip': 'ip',
+  'dans la zone': 'zone',
+  'en zone': 'zone',
+  zone: 'zone',
+  'sur le site': 'site',
+  site: 'site',
+  'dans la grappe': 'cluster',
+  grappe: 'cluster',
+  cluster: 'cluster',
+  'en vlan': 'vlan',
+  vlan: 'vlan',
+  'dans la baie': 'rack',
+  'relie a': 'connectTo',
+  'relie au': 'connectTo',
+  'reliee a': 'connectTo',
+  'reliee au': 'connectTo',
+  'raccorde a': 'connectTo',
+  'raccordee a': 'connectTo',
+  'connecte a': 'connectTo',
+  'connectee a': 'connectTo',
+  'rattache a': 'connectTo',
+  'rattachee a': 'connectTo',
+  'en u': 'rackUnit',
+  hauteur: 'heightU',
+  puissance: 'powerW',
+}
+
+interface Clauses {
+  /** Début de phrase, avant tout complément (le type d'équipement, et parfois le nom). */
+  head: string
+  rawHead: string
+  values: Record<string, string>
+}
+
+/**
+ * Découpe une phrase en tête + compléments. Le texte normalisé et le texte d'origine sont
+ * alignés caractère par caractère, ce qui permet de rendre chaque valeur avec sa casse.
+ */
+function splitClauses(text: string, raw: string): Clauses {
+  // Le mot-clé doit être précédé d'un espace : « baie de stockage » en tête de phrase est
+  // un type d'équipement, pas un complément d'implantation.
+  const pattern = new RegExp(`\\s(${CLAUSE_KEYWORDS})(?=\\s)`, 'g')
+  const found: { key: string; start: number; valueStart: number }[] = []
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(text)) !== null) {
+    const keyword = match[1]
+    const start = match.index + 1
+    found.push({ key: keyword, start, valueStart: start + keyword.length })
+    pattern.lastIndex = match.index + match[0].length
+  }
+
+  const values: Record<string, string> = {}
+  found.forEach((clause, index) => {
+    const end = found[index + 1]?.start ?? text.length
+    const field = CLAUSE_FIELD[clause.key]
+    if (!field) return
+    const value = raw.slice(clause.valueStart, end).trim()
+    if (value && !values[field]) values[field] = value
+  })
+
+  const headEnd = found[0]?.start ?? text.length
+  return { head: text.slice(0, headEnd).trim(), rawHead: raw.slice(0, headEnd).trim(), values }
+}
+
+/**
+ * Reconnaît un type d'équipement en tête de phrase, et considère le reste comme son nom :
+ * « switch cœur SW-CORE-03 » donne le type « Switch cœur » et le nom « SW-CORE-03 ».
+ */
+function matchDevice(phrase: string, rawPhrase: string): { kind: string; label: string; name?: string } | null {
+  const words = phrase.split(' ').filter(Boolean)
+  const rawWords = rawPhrase.split(' ').filter(Boolean)
+  for (let i = words.length; i > 0; i -= 1) {
+    const device = searchDevices(words.slice(0, i).join(' '))[0]
+    if (!device) continue
+    const name = rawWords.slice(i).join(' ').trim()
+    return { kind: device.id, label: device.label, name: name || undefined }
+  }
+  return null
+}
+
+/**
  * Récupère une valeur avec sa casse d'origine.
  *
  * Les règles travaillent sur le texte normalisé (sans accents ni majuscules) ; pour tout ce
@@ -245,14 +391,14 @@ const RULES: Rule[] = [
   (t, raw) => {
     // « mets l'ip 10.0.0.1 sur FW-01 » / « l'adresse de FW-01 est 10.0.0.1 »
     const direct = t.match(
-      /^(?:mets|met|mettre|affecte|attribue|donne)\s+(?:l'|la |le )?(ip|adresse ip|adresse|vlan|zone|site|grappe|cluster|responsable|numero de serie|serie|modele|vip)\s+(.+?)\s+(?:a|au|sur|pour)\s+(.+)$/,
+      /^(?:mets|met|mettre|affecte|attribue|donne)\s+(?:l'|la |le )?(ip|adresse ip|adresse|vlan|zone|site|grappe|cluster|responsable|numero de serie|serie|modele|materiel|vip|note|notes|hauteur|puissance|position)\s+(.+?)\s+(?:a|au|sur|pour)\s+(.+)$/,
     )
     const reverse = t.match(
-      /^(?:l'|la |le )?(ip|adresse ip|adresse|vlan|zone|site|grappe|cluster|responsable|numero de serie|serie|modele|vip)\s+(?:de |du |d')(.+?)\s+(?:est|c'est|:)\s+(.+)$/,
+      /^(?:l'|la |le )?(ip|adresse ip|adresse|vlan|zone|site|grappe|cluster|responsable|numero de serie|serie|modele|materiel|vip|note|notes|hauteur|puissance|position)\s+(?:de |du |d')(.+?)\s+(?:est|c'est|:)\s+(.+)$/,
     )
     const match = direct ?? reverse
     if (!match) return null
-    const fields: Record<string, 'ip' | 'vlan' | 'zone' | 'site' | 'cluster' | 'owner' | 'serial' | 'model' | 'vip'> = {
+    const fields: Record<string, NodeField> = {
       ip: 'ip',
       adresse: 'ip',
       'adresse ip': 'ip',
@@ -265,7 +411,13 @@ const RULES: Rule[] = [
       'numero de serie': 'serial',
       serie: 'serial',
       modele: 'model',
+      materiel: 'model',
       vip: 'vip',
+      note: 'notes',
+      notes: 'notes',
+      hauteur: 'heightU',
+      puissance: 'powerW',
+      position: 'rackUnit',
     }
     const field = fields[match[1]]
     if (!field) return null
@@ -280,6 +432,31 @@ const RULES: Rule[] = [
       value: rawValue(raw, rawPattern, 1, value.trim()),
     }
   },
+  // « mets tous les postes de travail dans la zone Bâtiment A »
+  (t, raw) => {
+    const match = t.match(
+      /^(?:mets|met|mettre|place|placer|affecte|affecter|range|ranger|deplace)\s+(.+?)\s+(dans la zone|en zone|dans le site|sur le site|dans la grappe|dans le cluster|en vlan|dans le vlan|sur le vlan|dans la baie)\s+(.+)$/,
+    )
+    if (!match) return null
+    const keyword = match[2]
+    const value = rawValue(
+      raw,
+      /(?:dans la zone|en zone|dans le site|sur le site|dans la grappe|dans le cluster|en vlan|dans le vlan|sur le vlan|dans la baie)\s+(.+)$/i,
+      1,
+      match[3].trim(),
+    )
+    const target = cleanName(match[1])
+    if (keyword === 'dans la baie') return { type: 'rackAssign', target, rack: value }
+    const field: NodeField = keyword.includes('zone')
+      ? 'zone'
+      : keyword.includes('site')
+        ? 'site'
+        : keyword.includes('vlan')
+          ? 'vlan'
+          : 'cluster'
+    return { type: 'setField', target, field, value }
+  },
+
   (t) => {
     const match = t.match(/^(.+?)\s+(?:est|passe)\s+(?:en\s+|le\s+)?(actif|passif|maitre|principal|secours|temoin|quorum|autonome|actif actif)$/)
     if (!match) return null
@@ -326,14 +503,127 @@ const RULES: Rule[] = [
     const match = t.match(/^(?:insere|inserer|ajoute|ajouter)\s+(?:le\s+)?(?:modele|patron|gabarit)\s+(.+)$/)
     return match ? { type: 'pattern', query: match[1].trim() } : null
   },
-  (t) => {
-    const match = t.match(/^(?:ajoute|ajouter|cree|creer|nouveau|nouvelle|pose|poser|insere|inserer)\s+(?:un|une|le|la|les|des|l')?\s*(.+)$/)
+  (t, raw) => {
+    const match = t.match(
+      /^(?:ajoute|ajouter|cree|creer|nouveau|nouvelle|pose|poser|insere|inserer)\s+(?:(?:un|une|le|la|les|des)\s+|l')?(.+)$/,
+    )
     if (!match) return null
-    const wanted = match[1].trim()
-    const device = searchDevices(wanted)[0]
-    return device ? { type: 'add', kind: device.id, label: device.label } : null
+    const offset = t.length - match[1].length
+    const { head, rawHead, values } = splitClauses(match[1], raw.slice(offset))
+    const device = matchDevice(head, rawHead)
+    if (!device) return null
+
+    const props: Partial<Record<NodeField, string>> = {}
+    for (const field of ['ip', 'zone', 'site', 'cluster', 'vlan', 'rackUnit', 'heightU', 'powerW'] as NodeField[]) {
+      if (values[field]) props[field] = values[field]
+    }
+    return {
+      type: 'add',
+      kind: device.kind,
+      label: device.label,
+      name: values.name ?? device.name,
+      props: Object.keys(props).length > 0 ? props : undefined,
+      rack: values.rack,
+      connectTo: values.connectTo,
+    }
   },
-  (t) => (/^(duplique|dupliquer|copie|copier)(\s+.*)?$/.test(t) ? { type: 'duplicate' } : null),
+  (t, raw) => {
+    const match = t.match(/^(?:duplique|dupliquer|copie|copier)(?:\s+(.+))?$/)
+    if (!match) return null
+    const target = match[1] ? cleanName(match[1]) : undefined
+    if (!target || /^(la selection|selection|ca|cela)$/.test(target)) return { type: 'duplicate' }
+    return { type: 'duplicate', target: rawValue(raw, /(?:duplique|dupliquer|copie|copier)\s+(.+)$/i, 1, target) }
+  },
+
+  // Changer le type d'un équipement.
+  (t, raw) => {
+    const match = t.match(
+      /^(?:change|changer|modifie|modifier|transforme|transformer|passe|convertis)\s+(?:le type (?:de |du |d')?)?(.+?)\s+(?:en|vers|comme)\s+(.+)$/,
+    )
+    if (!match) return null
+    const device = searchDevices(match[2].trim())[0]
+    if (!device) return null
+    return {
+      type: 'setKind',
+      target: rawValue(raw, /(?:change|changer|modifie|modifier|transforme|transformer|passe|convertis)\s+(?:le type (?:de |du |d')?)?(.+?)\s+(?:en|vers|comme)\s+/i, 1, cleanName(match[1])),
+      kind: device.id,
+      label: device.label,
+    }
+  },
+
+  // Déplacer un équipement sur le plan.
+  (t, raw) => {
+    const match = t.match(
+      /^(?:deplace|deplacer|bouge|bouger|decale|decaler)\s+(.+?)\s+(?:vers |a |au |en |sur )?(la droite|la gauche|le haut|le bas|droite|gauche|haut|bas)(?:\s+de\s+(\d+))?$/,
+    )
+    if (!match) return null
+    const directions: Record<string, 'left' | 'right' | 'up' | 'down'> = {
+      droite: 'right',
+      'la droite': 'right',
+      gauche: 'left',
+      'la gauche': 'left',
+      haut: 'up',
+      'le haut': 'up',
+      bas: 'down',
+      'le bas': 'down',
+    }
+    const direction = directions[match[2]]
+    if (!direction) return null
+    return {
+      type: 'move',
+      target: rawValue(raw, /(?:deplace|deplacer|bouge|bouger|decale|decaler)\s+(.+?)\s+(?:vers |a |au |en |sur )?(?:la |le )?(?:droite|gauche|haut|bas)/i, 1, cleanName(match[1])),
+      direction,
+      amount: match[3] ? Number(match[3]) : 120,
+    }
+  },
+
+  // Supprimer une liaison désignée par ses extrémités.
+  (t, raw) => {
+    const match = t.match(
+      /^(?:supprime|supprimer|efface|effacer|enleve|enlever|coupe|couper)\s+(?:la\s+)?(?:liaison|lien|cable|connexion)\s+(?:entre\s+)?(.+?)\s+(?:et|a|au|avec|vers)\s+(.+)$/,
+    )
+    if (!match) return null
+    void raw
+    return { type: 'linkDelete', from: cleanName(match[1]), to: cleanName(match[2]) }
+  },
+
+  // Modifier une liaison désignée par ses extrémités.
+  (t, raw) => {
+    const match = t.match(
+      /^(?:(?:passe|mets|met|mettre|modifie|change)\s+)?(?:la\s+)?(?:liaison|lien|cable|connexion)\s+(?:entre\s+)?(.+?)\s+(?:et|vers)\s+(.+?)\s+(?:en|a|au|avec|:)\s+(.+)$/,
+    )
+    if (!match) return null
+    const from = cleanName(match[1])
+    const to = cleanName(match[2])
+    const rest = match[3].trim()
+    const patch: LinkPatch = {}
+
+    const media = Object.entries(LINK_WORDS).find(([word]) => rest.includes(word))
+    if (media) patch.kind = media[1]
+    if (/secours|redondant|backup/.test(rest)) patch.redundant = true
+    if (/trunk/.test(rest)) patch.mode = 'trunk'
+    else if (/acces/.test(rest)) patch.mode = 'access'
+
+    const vlans = rest.match(/vlan[s]?\s+([\d,;\s-]+)/)
+    if (vlans) patch.vlans = vlans[1].replace(/\s/g, '')
+    const subnet = rest.match(/(\d{1,3}(?:\.\d{1,3}){3}\s*\/\s*\d{1,2})/)
+    if (subnet) patch.subnet = subnet[1].replace(/\s/g, '')
+    const speed = rest.match(/(\d+(?:[.,]\d+)?\s*(?:g|gb|gbps|gb\/s|gigabit|m|mb|mbps|mb\/s)[a-z/]*)/)
+    if (speed) patch.speed = rawValue(raw, /\s(\d+(?:[.,]\d+)?\s*(?:G|Gb|Gbps|Gb\/s|M|Mb|Mbps|Mb\/s)[a-z/]*)\b/i, 1, speed[1])
+    const label = rest.match(/(?:libelle|etiquette|nom)\s+(.+)$/)
+    if (label) patch.label = rawValue(raw, /(?:libell[ée]|[ée]tiquette|nom)\s+(.+)$/i, 1, label[1])
+
+    if (Object.keys(patch).length === 0) return null
+    return { type: 'linkEdit', from, to, patch }
+  },
+
+  // Sélectionner tous les équipements d'un type.
+  (t) => {
+    const match = t.match(/^(?:selectionne|selectionner|choisis)\s+(?:tous\s+les|toutes\s+les|les)\s+(.+)$/)
+    if (!match) return null
+    const device = searchDevices(match[1].trim())[0]
+    return device ? { type: 'selectKind', kind: device.id, label: device.label } : null
+  },
   (t) => {
     const match = t.match(/^(?:supprime|supprimer|efface|effacer|enleve|enlever)\s+(.+)$/)
     if (!match) return null
@@ -433,9 +723,20 @@ const RULES: Rule[] = [
  * est alors signalée à l'utilisateur plutôt que d'être exécutée au hasard.
  */
 export function interpret(transcript: string): VoiceIntent | null {
-  const text = stripPrefix(normalizeSpeech(transcript))
+  const normalized = normalizeSpeech(transcript)
+  const text = stripPrefix(normalized)
   if (!text) return null
-  const raw = stripPrefix(transcript.replace(/\s+/g, ' ').trim())
+
+  // Le texte d'origine subit les mêmes découpages d'espaces, puis on retire exactement
+  // autant de caractères en tête : les deux chaînes restent alignées, index par index.
+  const collapsed = transcript
+    .replace(/[?!,;]/g, ' ')
+    .replace(/\.(?!\d)/g, ' ')
+    .replace(/[’']/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+  const raw = collapsed.slice(normalized.length - text.length)
+
   for (const rule of RULES) {
     const intent = rule(text, raw)
     if (intent) return intent
@@ -449,8 +750,12 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
     title: 'Construire',
     examples: [
       'Ajoute un pare-feu',
-      'Ajoute un cluster Kubernetes',
+      'Ajoute un switch cœur SW-CORE-03 dans la zone Datacenter',
+      'Ajoute un serveur SRV-APP-01 avec IP 10.10.0.60 relié à SW-CORE-01',
       'Relie SW-CORE-01 à FW-01 en fibre',
+      'Change le type de SRV-APP-01 en nœud hyperviseur',
+      'Supprime la liaison entre SW-CORE-01 et FW-01',
+      'Liaison entre SW-CORE-01 et SW-DIST-BATA en fibre 10 Gb/s',
       'Insère le modèle pare-feu actif passif',
       'Duplique',
       'Supprime SW-ACC-B1',
@@ -464,6 +769,9 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'La zone de FW-01 est DMZ',
       'FW-02 est passif',
       'Marque ESXi-03 en maintenance',
+      'Déplace FW-01 vers la droite',
+      'Sélectionne tous les switches accès',
+      'Mets tous les postes de travail dans la zone Bâtiment A',
       'Crée le VLAN 60 nom Vidéo sous-réseau 10.10.60.0/24',
     ],
   },
@@ -489,6 +797,8 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'Montre les baies',
       'Implante SW-DIST-BATA dans la baie A1',
       'Retire PDU B de la baie',
+      'Mets le modèle PowerEdge R760 sur ESXi-01',
+      'Mets la hauteur 2 sur ESXi-01',
     ],
   },
   {

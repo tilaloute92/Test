@@ -181,21 +181,30 @@ reconnues, réparties en six familles :
 
 | Famille | Exemples |
 | --- | --- |
-| **Construire** | « Ajoute un pare-feu », « Ajoute un cluster Kubernetes », « Relie SW-CORE-01 à FW-01 **en fibre** », « Insère le modèle pare-feu actif passif », « Duplique », « Supprime SW-ACC-B1 » |
-| **Renseigner** | « Renomme SW-CORE-01 en SW-CORE-A », « Mets l'IP 10.10.0.11 sur SW-CORE-A », « La zone de FW-01 est DMZ », « FW-02 est passif », « Marque ESXi-03 en maintenance », « Crée le VLAN 60 nom Vidéo sous-réseau 10.10.60.0/24 », « Fige la position de FW-01 » |
-| **Lire le schéma** | « Placement automatique », « Vue couche 2 », « Synthèse », « Replie la zone Datacenter », « Déplie tout », « De gauche à droite », « Liaisons droites », « Masque la grille », « Affiche les zones », « Va à SAN Siège », « Zoom arrière » |
-| **Parc et baies** | « Ouvre l'inventaire », « Montre les baies », « Implante SW-DIST-BATA dans la baie A1 », « Retire PDU B de la baie » |
+| **Construire** | « Ajoute un pare-feu », « Ajoute un **switch cœur SW-CORE-03** dans la zone Datacenter », « Ajoute un **serveur SRV-APP-01 avec l'IP 10.10.0.60 relié à SW-CORE-01** », « Ajoute une borne Wi-Fi AP-ETAGE-3 en VLAN 40 », « Ajoute un switch accès SW-ACC-C1 dans la baie A1 », « Duplique SW-ACC-C1 », « Supprime SW-ACC-B1 », « **Supprime tous les téléphones IP** » |
+| **Liaisons** | « Relie SW-CORE-01 à FW-01 en fibre », « **Liaison entre SW-CORE-01 et SW-DIST-BATA en fibre 10 Gb/s** » (créée si elle n'existe pas), « Liaison entre A et B en trunk VLAN 10,20 », « Supprime la liaison entre SW-CORE-01 et FW-01 », « Tracé courbe », « Réinitialise le tracé » |
+| **Renseigner** | « Renomme SW-CORE-01 en SW-CORE-A », « Mets l'IP 10.10.0.11 sur SW-CORE-A », « La zone de FW-01 est DMZ », « **Change le type de SRV-APP-01 en nœud hyperviseur** », « **Mets le modèle PowerEdge R760 sur ESXi-01** », « FW-02 est passif », « Marque ESXi-03 en maintenance », « Crée le VLAN 60 nom Vidéo sous-réseau 10.10.60.0/24 », « Fige la position de FW-01 » |
+| **En lot** | « **Sélectionne tous les postes de travail** », « **Mets tous les postes de travail dans la zone Bâtiment A** », « Marque toutes les bornes Wi-Fi en maintenance », « Supprime tous les téléphones IP » |
+| **Déplacer et lire** | « Déplace FW-01 vers la droite de 200 », « Placement automatique », « Vue couche 2 », « Synthèse », « Replie la zone Datacenter », « Déplie tout », « De gauche à droite », « Masque la grille », « Va à SAN Siège », « Zoom arrière » |
+| **Parc et baies** | « Ouvre l'inventaire », « Montre les baies », « Implante SW-DIST-BATA dans la baie A1 », « Retire PDU B de la baie », « Mets la hauteur 2 sur ESXi-01 » |
 | **Questions** | « Combien d'équipements ? », « Combien de pare-feu ? », « Quel est le score de haute disponibilité ? », « Y a-t-il des points de défaillance ? », « Quelle est la consommation ? », « Combien de U libres dans la baie A1 ? » |
 | **Projet** | « Exporte en PNG », « Enregistre le projet », « Charge l'exemple », « Titre : Architecture agence », « Annule », « Rétablis » |
+
+Tout ce qui se fait à la souris se dicte : **créer, modifier, supprimer** n'importe quel
+composant — cœurs de réseau, switches, pare-feu, serveurs, bornes, baies, liaisons — et les
+modifications s'appliquent aussi **en lot** (« tous les … ») ou à la sélection courante.
+Une phrase de création accepte le nom et les attributs d'un coup : type, nom, IP, zone, site,
+grappe, VLAN, baie d'implantation et équipement à raccorder.
 
 Les **questions** reçoivent une vraie réponse, lue à voix haute : « Robustesse : 68 sur 100,
 niveau Fragile, 8 constats », « 1 point de défaillance : SW-DIST-BATA », « Baie A1 : 23 U
 libres ».
 
-Deux détails qui comptent à l'usage : les valeurs écrites dans une fiche — un nom, un titre,
-une adresse — gardent la **casse d'origine** (« SW-CORE-A », pas « sw-core-a »), et les noms
-d'équipements se retrouvent **sans tenir compte des accents** (« va à SAN Siège » fonctionne
-sur une dictée sans accent).
+Quelques détails qui comptent à l'usage : les valeurs écrites dans une fiche — un nom, un
+titre, une adresse — gardent la **casse d'origine** (« SW-CORE-A », pas « sw-core-a ») ; les
+noms d'équipements se retrouvent **sans tenir compte des accents** ; les types se reconnaissent
+**au pluriel comme au singulier** (« tous les postes de travail », « les bornes wifi ») ; et
+les adresses IP gardent leurs points malgré la ponctuation de la dictée.
 
 La reconnaissance s'appuie sur celle du navigateur (Chrome ou Edge, connexion réseau
 requise). Le même panneau accepte les **commandes tapées** : c'est le repli quand le
