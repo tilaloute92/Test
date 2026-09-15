@@ -4,6 +4,7 @@ import { NodeShape } from './NodeShape'
 import { LINKS } from '../lib/catalog'
 import { deriveDiagram, groupMembers, type DisplayNode } from '../lib/derive'
 import { setDiagramSvg } from '../lib/exportRegistry'
+import { readProjectFile } from '../lib/storage'
 import { linkColorFor, linkLabelFor } from '../lib/osi'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
 import { parallelOffsets } from '../lib/routing'
@@ -213,6 +214,25 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
+
+    // Un fichier lâché sur le plan de travail est un schéma à ouvrir (projet ou draw.io).
+    const file = event.dataTransfer.files?.[0]
+    if (file) {
+      void readProjectFile(file)
+        .then(({ diagram: loaded, warnings }) => {
+          const store = useDiagram.getState()
+          store.loadDiagram(loaded)
+          store.notify(
+            `« ${file.name} » chargé : ${loaded.nodes.length} équipement(s).` +
+              (warnings.length > 0 ? ` ${warnings[0]}` : ''),
+          )
+        })
+        .catch((error: unknown) =>
+          useDiagram.getState().notify(error instanceof Error ? error.message : 'Fichier illisible.'),
+        )
+      return
+    }
+
     const kind = event.dataTransfer.getData(DRAG_MIME) as DeviceKind
     if (!kind) return
     const point = toDiagram(event.clientX, event.clientY)

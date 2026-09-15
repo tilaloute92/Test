@@ -1,4 +1,5 @@
 import { deviceMeta, LINKS, ROLES } from './catalog'
+import { looksLikeDrawio, parseDrawio } from './drawio'
 import { uid } from './ids'
 import type {
   AssetStatus,
@@ -200,4 +201,23 @@ export function diagramFileContent(diagram: Diagram): string {
 
 export async function readDiagramFile(file: File): Promise<Diagram> {
   return parseDiagram(JSON.parse(await file.text()))
+}
+
+/**
+ * Ouverture d'un fichier de schéma, quel qu'en soit le format : projet NetSchema (.json)
+ * ou schéma draw.io / diagrams.net (.drawio, .xml), compressé ou non.
+ */
+export async function readProjectFile(file: File): Promise<{ diagram: Diagram; warnings: string[] }> {
+  const text = await file.text()
+  if (looksLikeDrawio(text)) {
+    return parseDrawio(text, file.name.replace(/\.[^.]+$/, ''))
+  }
+  try {
+    return { diagram: parseDiagram(JSON.parse(text)), warnings: [] }
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error('Fichier non reconnu : attendu un projet NetSchema (.json) ou un schéma draw.io.')
+    }
+    throw error
+  }
 }

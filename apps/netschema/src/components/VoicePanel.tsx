@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Btn } from './ui'
-import { createRecognizer, isSpeechSupported, speak, VOICE_EXAMPLES, type Recognizer } from '../lib/voice'
+import { createRecognizer, isSpeechSupported, speak, VOICE_EXAMPLE_GROUPS, type Recognizer } from '../lib/voice'
 import { useDiagram } from '../store/useDiagram'
 
 interface Entry {
@@ -172,20 +172,31 @@ export function VoicePanel() {
         )}
 
         <details className="rounded-lg bg-slate-50 p-2 text-[11px] text-slate-600">
-          <summary className="cursor-pointer font-medium text-slate-700">Commandes reconnues</summary>
-          <ul className="flex flex-col gap-0.5 pt-1.5">
-            {VOICE_EXAMPLES.map((example) => (
-              <li key={example}>
-                <button
-                  type="button"
-                  onClick={() => execute(example)}
-                  className="text-left hover:text-blue-700 hover:underline"
-                >
-                  « {example} »
-                </button>
-              </li>
+          <summary className="cursor-pointer font-medium text-slate-700">
+            Commandes reconnues ({VOICE_EXAMPLE_GROUPS.reduce((acc, group) => acc + group.examples.length, 0)} exemples)
+          </summary>
+          <div className="max-h-56 overflow-y-auto pt-1.5">
+            {VOICE_EXAMPLE_GROUPS.map((group) => (
+              <div key={group.title} className="pb-2">
+                <p className="pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  {group.title}
+                </p>
+                <ul className="flex flex-col gap-0.5">
+                  {group.examples.map((example) => (
+                    <li key={example}>
+                      <button
+                        type="button"
+                        onClick={() => execute(example)}
+                        className="text-left hover:text-blue-700 hover:underline"
+                      >
+                        « {example} »
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
         </details>
       </div>
     </div>

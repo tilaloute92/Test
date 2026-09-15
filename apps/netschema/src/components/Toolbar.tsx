@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { Btn } from './ui'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
-import { diagramFileContent, readDiagramFile } from '../lib/storage'
+import { diagramFileContent, readProjectFile } from '../lib/storage'
 import { useDiagram } from '../store/useDiagram'
 import type { DetailLevel, OsiView } from '../types'
 import { useAudit } from '../store/useAudit'
@@ -44,8 +44,12 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
   const openProject = async (file: File | undefined) => {
     if (!file) return
     try {
-      store().loadDiagram(await readDiagramFile(file))
-      store().notify(`« ${file.name} » chargé.`)
+      const { diagram, warnings } = await readProjectFile(file)
+      store().loadDiagram(diagram)
+      store().notify(
+        `« ${file.name} » chargé : ${diagram.nodes.length} équipement(s), ${diagram.links.length} liaison(s).` +
+          (warnings.length > 0 ? ` ${warnings[0]}` : ''),
+      )
     } catch (error) {
       store().notify(error instanceof Error ? error.message : 'Fichier illisible.')
     }
@@ -160,11 +164,13 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
         <Separator />
 
         <Btn onClick={saveProject} title="Enregistrer le projet (.json)">Enregistrer</Btn>
-        <Btn onClick={() => fileRef.current?.click()} title="Ouvrir un projet (.json)">Ouvrir…</Btn>
+        <Btn onClick={() => fileRef.current?.click()} title="Ouvrir un projet .json ou un schéma draw.io (.drawio, .xml)">
+          Ouvrir…
+        </Btn>
         <input
           ref={fileRef}
           type="file"
-          accept="application/json,.json"
+          accept="application/json,.json,.drawio,.xml"
           className="hidden"
           onChange={(event) => {
             void openProject(event.target.files?.[0])

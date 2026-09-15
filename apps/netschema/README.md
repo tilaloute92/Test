@@ -98,6 +98,28 @@ En SNMP, il relève le nom système, la description et la table LLDP distante de
 trouvé. Les exemples de `tools/collector/exemples/` servent à essayer la chaîne complète sans
 toucher à un réseau réel.
 
+## Importer un schéma draw.io
+
+Un fichier `.drawio` (ou `.xml`) de draw.io / diagrams.net s'ouvre directement : bouton
+**Ouvrir…**, ou simple glisser-déposer du fichier sur le plan de travail.
+
+- Les deux formats sont acceptés : XML en clair **et** XML compressé (base64 + deflate),
+  celui que draw.io produit par défaut.
+- Les **positions d'origine sont conservées** — on retrouve le schéma tel qu'il a été
+  dessiné, quitte à relancer ensuite le placement automatique.
+- Le **type d'équipement est déduit du stencil** utilisé (`mxgraph.cisco.routers`,
+  `firewall`, `wireless_access_point`, `server`…) et, à défaut, du libellé de la forme.
+- Les **conteneurs nommés deviennent des zones** : un cadre « DMZ » qui englobe deux
+  équipements donne la zone DMZ sur ces équipements.
+- Les **propriétés personnalisées** de draw.io sont reprises quand leur nom est reconnu :
+  `ip`, `vlan`, `zone`, `site`, `vendor`/`constructeur`, `model`/`modèle`, `serial`,
+  `owner`/`responsable`, `notes`.
+- Les liaisons reprennent leur libellé ; un trait en pointillés devient une liaison de
+  secours.
+
+Ce qui n'est pas repris est annoncé : pages supplémentaires (seule la première est
+importée), liaisons dont une extrémité manque, formes sans libellé.
+
 ## Inventaire du parc
 
 Onglet **Inventaire** : la table des actifs, avec constructeur, modèle, numéro de série,
@@ -112,6 +134,28 @@ directement ; le type et la baie renvoient au schéma et à la salle.
   en français. **Import CSV** par la colonne « Nom » : les équipements connus sont mis à jour,
   les inconnus créés.
 - Le total de puissance des lignes affichées est calculé en continu.
+
+### Base de matériels constructeurs
+
+La colonne *Modèle* est un champ de recherche sur une base d'environ 145 matériels : on tape
+« r760 », « fortigate », « nutanix », « catalyst » et la fiche se remplit — constructeur,
+modèle, hauteur en U et consommation indicative. Le type d'équipement est aligné au passage
+(un FortiGate devient un pare-feu nouvelle génération, une AFF A250 une baie de stockage).
+
+Constructeurs couverts : Cisco (Catalyst, Nexus, ISR/ASR, Firepower, Meraki), Dell
+(PowerEdge, PowerStore, PowerVault, PowerSwitch), HPE (ProLiant, Alletra, Nimble, MSA,
+SimpliVity), Aruba, Nutanix, Palo Alto Networks, Fortinet, Juniper, Arista, Extreme,
+Ubiquiti, Check Point, Sophos, Stormshield, WatchGuard, F5, Citrix, Radware, NetApp, Pure
+Storage, Synology, QNAP, Quantum, Veritas, Rubrik, Lenovo, Supermicro, NVIDIA, IBM, APC,
+Eaton, Legrand, Schneider Electric, HP, Xerox, Yealink, Axis, Siemens.
+
+Le champ reste libre : la base est une aide à la saisie, pas une contrainte. Un filtre
+*constructeur* s'ajoute aux filtres de l'inventaire.
+
+Les hauteurs sont celles des châssis ; **les puissances sont des ordres de grandeur en
+fonctionnement**, pas des valeurs de plaque — elles restent modifiables équipement par
+équipement. Un lot de catalogue peut apporter ses propres matériels (clé `models` à côté de
+`devices`), donc la base s'étend elle aussi sans recompiler.
 
 ## Implantation en baies
 
@@ -132,22 +176,31 @@ Supprimer une baie ne supprime pas les équipements : ils redeviennent simplemen
 ## Commandes vocales
 
 Bouton **Voix** dans la barre de modules. On dicte l'action, l'application l'exécute et
-répond — vocalement si la réponse parlée est activée.
+répond — vocalement si la réponse parlée est activée. Une quarantaine de tournures sont
+reconnues, réparties en six familles :
 
-| Exemple | Effet |
+| Famille | Exemples |
 | --- | --- |
-| « Ajoute un pare-feu », « Ajoute un cluster Kubernetes » | Ajoute l'équipement au centre de la vue (n'importe quel type du catalogue, retrouvé par ses synonymes) |
-| « Relie SW-CORE-01 à FW-01 » | Crée la liaison, avec le type déduit des deux extrémités |
-| « Placement automatique », « Ajuste la vue », « Zoom arrière » | Mise en page et navigation |
-| « Vue couche 2 », « Synthèse », « Replie la zone Datacenter », « Déplie tout » | Lecture du schéma |
-| « Va à SAN Siège » | Sélectionne l'équipement et centre la vue dessus |
-| « Ouvre l'inventaire », « Montre les baies », « Découverte » | Changement de module |
-| « Exporte en PNG », « Annule », « Rétablis », « Supprime » | Actions courantes |
+| **Construire** | « Ajoute un pare-feu », « Ajoute un cluster Kubernetes », « Relie SW-CORE-01 à FW-01 **en fibre** », « Insère le modèle pare-feu actif passif », « Duplique », « Supprime SW-ACC-B1 » |
+| **Renseigner** | « Renomme SW-CORE-01 en SW-CORE-A », « Mets l'IP 10.10.0.11 sur SW-CORE-A », « La zone de FW-01 est DMZ », « FW-02 est passif », « Marque ESXi-03 en maintenance », « Crée le VLAN 60 nom Vidéo sous-réseau 10.10.60.0/24 », « Fige la position de FW-01 » |
+| **Lire le schéma** | « Placement automatique », « Vue couche 2 », « Synthèse », « Replie la zone Datacenter », « Déplie tout », « De gauche à droite », « Liaisons droites », « Masque la grille », « Affiche les zones », « Va à SAN Siège », « Zoom arrière » |
+| **Parc et baies** | « Ouvre l'inventaire », « Montre les baies », « Implante SW-DIST-BATA dans la baie A1 », « Retire PDU B de la baie » |
+| **Questions** | « Combien d'équipements ? », « Combien de pare-feu ? », « Quel est le score de haute disponibilité ? », « Y a-t-il des points de défaillance ? », « Quelle est la consommation ? », « Combien de U libres dans la baie A1 ? » |
+| **Projet** | « Exporte en PNG », « Enregistre le projet », « Charge l'exemple », « Titre : Architecture agence », « Annule », « Rétablis » |
 
-La reconnaissance s'appuie sur celle du navigateur (Chrome ou Edge, connexion réseau requise).
-Le même panneau accepte les **commandes tapées** : c'est le repli quand le navigateur n'a pas
-de reconnaissance vocale, quand le micro est refusé, ou dans un local bruyant — et c'est aussi
-ce qui rend la grammaire testable.
+Les **questions** reçoivent une vraie réponse, lue à voix haute : « Robustesse : 68 sur 100,
+niveau Fragile, 8 constats », « 1 point de défaillance : SW-DIST-BATA », « Baie A1 : 23 U
+libres ».
+
+Deux détails qui comptent à l'usage : les valeurs écrites dans une fiche — un nom, un titre,
+une adresse — gardent la **casse d'origine** (« SW-CORE-A », pas « sw-core-a »), et les noms
+d'équipements se retrouvent **sans tenir compte des accents** (« va à SAN Siège » fonctionne
+sur une dictée sans accent).
+
+La reconnaissance s'appuie sur celle du navigateur (Chrome ou Edge, connexion réseau
+requise). Le même panneau accepte les **commandes tapées** : c'est le repli quand le
+navigateur n'a pas de reconnaissance vocale, quand le micro est refusé, ou dans un local
+bruyant — et c'est aussi ce qui rend la grammaire testable.
 
 Une phrase non reconnue n'est jamais exécutée au hasard : elle est signalée telle quelle.
 
@@ -419,6 +472,8 @@ src/
   lib/inventory.ts      colonnes de l'inventaire, export et import CSV
   lib/racks.ts          occupation des baies, hauteurs, chevauchements
   lib/voice.ts          grammaire des commandes vocales et reconnaissance du navigateur
+  lib/vendors.ts        base de matériels constructeurs (≈145 références)
+  lib/drawio.ts         import des schémas draw.io / diagrams.net
   store/useDiagram.ts   état global (zustand) : schéma, sélection, vue, historique
   store/useAudit.ts     analyse HA mémorisée sur la version courante du schéma
   components/           barre d'outils, palette, plan de travail, inspecteur, panneaux HA,
@@ -437,6 +492,10 @@ tools/collector/        collecteur de découverte réseau (Node, sans dépendanc
 - La découverte interprète des relevés : elle ne sonde pas le réseau depuis le navigateur.
   La collecte passe par le collecteur fourni ou par un copier-coller, et un balayage nmap seul
   donne des hôtes sans liaisons — seuls LLDP et CDP donnent la topologie.
+- Les caractéristiques de la base matériels sont indicatives : hauteurs de châssis fiables,
+  puissances en ordre de grandeur. Vérifiez-les pour un dimensionnement électrique réel.
+- L'import draw.io reprend la première page du fichier et déduit les types des stencils :
+  un schéma dessiné avec des formes génériques donnera des types génériques.
 - La reconnaissance vocale dépend du navigateur (Chrome, Edge) et de sa connexion aux services
   de reconnaissance ; les commandes tapées fonctionnent partout.
 - Les pictogrammes sont dessinés pour cette application : ce ne sont pas les jeux d'icônes des

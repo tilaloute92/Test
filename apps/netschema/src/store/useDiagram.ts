@@ -1,15 +1,17 @@
 import { create } from 'zustand'
 import { autoLayout, diagramBounds } from '../lib/layout'
-import { deviceMeta } from '../lib/catalog'
+import { deviceMeta, ROLES, searchDevices } from '../lib/catalog'
+import { STATUS_LABELS } from '../lib/inventory'
 import { uid } from '../lib/ids'
-import { instantiatePattern, type HaPattern } from '../lib/patterns'
+import { HA_PATTERNS, instantiatePattern, type HaPattern } from '../lib/patterns'
 import { suggestLinkKind } from '../lib/linkRules'
 import { parseQuickImport } from '../lib/quickImport'
-import { emptyDiagram, loadLocal, saveLocal } from '../lib/storage'
+import { diagramFileContent, emptyDiagram, loadLocal, saveLocal } from '../lib/storage'
 import { sampleDiagram } from '../lib/sample'
 import { collapsibleGroups } from '../lib/derive'
+import { auditDiagram } from '../lib/ha'
 import type { DiscoveryResult } from '../lib/discovery'
-import { downloadPng, downloadSvg, slugify } from '../lib/exportImage'
+import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
 import { getDiagramSvg } from '../lib/exportRegistry'
 import { interpret } from '../lib/voice'
 import { inventoryFromCsv } from '../lib/inventory'
@@ -650,7 +652,189 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         if (!from) return { ok: false, message: `Équipement « ${intent.from} » introuvable.` }
         if (!to) return { ok: false, message: `Équipement « ${intent.to} » introuvable.` }
         get().addLink(from.id, to.id)
+        if (intent.linkKind) {
+          const created = get().selectedLinks[0]
+          if (created) get().updateLink(created, { kind: intent.linkKind })
+        }
         return { ok: true, message: `${from.name} relié à ${to.name}.` }
+      }
+
+      case 'rename': {
+        const node = findNode(intent.target)
+        if (!node) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
+        get().updateNode(node.id, { name: intent.name })
+        return { ok: true, message: `${node.name} renommé en ${intent.name}.` }
+      }
+
+      case 'setField': {
+        const node = findNode(intent.target)
+        if (!node) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
+        const value = intent.field === 'vlan' && /^\d+$/.test(intent.value) ? `VLAN ${intent.value}` : intent.value
+        get().updateNode(node.id, { [intent.field]: value })
+        return { ok: true, message: `${node.name} : ${intent.field} renseigné.` }
+      }
+
+      case 'setRole': {
+        const node = findNode(intent.target)
+        if (!node) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
+        get().updateNode(node.id, { role: intent.role })
+        return { ok: true, message: `${node.name} : rôle « ${ROLES[intent.role].label} ».` }
+      }
+
+      case 'setStatus': {
+        const node = findNode(intent.target)
+        if (!node) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
+        get().updateNode(node.id, { status: intent.status })
+        return { ok: true, message: `${node.name} : ${STATUS_LABELS[intent.status].toLowerCase()}.` }
+      }
+
+      case 'setPinned': {
+        const ids = intent.target
+          ? [findNode(intent.target)?.id].filter((id): id is string => !!id)
+          : state.selectedNodes
+        if (ids.length === 0) return { ok: false, message: 'Aucun équipement visé.' }
+        get().updateNodes(ids, { pinned: intent.pinned })
+        return { ok: true, message: intent.pinned ? 'Position figée.' : 'Position libérée.' }
+      }
+
+      case 'duplicate': {
+        if (state.selectedNodes.length === 0) return { ok: false, message: 'Rien n’est sélectionné.' }
+        get().duplicateSelection()
+        return { ok: true, message: 'Sélection dupliquée.' }
+      }
+
+      case 'selectAll': {
+        get().select({ nodes: get().diagram.nodes.map((node) => node.id) })
+        return { ok: true, message: `${get().diagram.nodes.length} équipements sélectionnés.` }
+      }
+
+      case 'clearSelection':
+        get().clearSelection()
+        return { ok: true, message: 'Sélection vidée.' }
+
+      case 'pattern': {
+        // « pare-feu actif passif » doit retrouver « Pare-feu actif / passif » : on compare
+        // mot à mot, sans ponctuation ni accents.
+        const words = plain(intent.query)
+          .split(/[^a-z0-9]+/)
+          .filter((word) => word.length > 2)
+        const score = (text: string) => {
+          const haystack = plain(text)
+          return words.filter((word) => haystack.includes(word)).length
+        }
+        const pattern = HA_PATTERNS.map((item) => ({ item, score: score(`${item.title} ${item.summary}`) }))
+          .filter((entry) => entry.score >= Math.max(1, words.length - 1))
+          .sort((a, b) => b.score - a.score)[0]?.item
+        if (!pattern) return { ok: false, message: `Aucun modèle « ${intent.query} ».` }
+        get().setAppView('diagram')
+        get().insertPattern(pattern)
+        return { ok: true, message: `Modèle ${pattern.title} inséré.` }
+      }
+
+      case 'direction':
+        get().setLayout({ direction: intent.direction })
+        get().applyAutoLayout()
+        return { ok: true, message: intent.direction === 'LR' ? 'Couches de gauche à droite.' : 'Couches de haut en bas.' }
+
+      case 'linkStyle':
+        get().setDisplay({ linkStyle: intent.style })
+        return { ok: true, message: intent.style === 'straight' ? 'Liaisons en ligne droite.' : 'Liaisons orthogonales.' }
+
+      case 'toggle':
+        get().setDisplay({ [intent.key]: intent.value })
+        return { ok: true, message: intent.value ? 'Affiché.' : 'Masqué.' }
+
+      case 'project': {
+        if (intent.action === 'new') {
+          get().newDiagram()
+          return { ok: true, message: 'Nouveau schéma.' }
+        }
+        if (intent.action === 'sample') {
+          get().loadSample()
+          return { ok: true, message: 'Schéma d’exemple chargé.' }
+        }
+        const diagram = get().diagram
+        downloadBlob(
+          new Blob([diagramFileContent(diagram)], { type: 'application/json' }),
+          `${slugify(diagram.title)}.json`,
+        )
+        return { ok: true, message: 'Projet enregistré.' }
+      }
+
+      case 'title':
+        get().setTitle(intent.title)
+        return { ok: true, message: `Schéma renommé : ${intent.title}.` }
+
+      case 'rackAssign': {
+        const node = findNode(intent.target)
+        if (!node) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
+        const wanted = plain(intent.rack)
+        const rack = (get().diagram.racks ?? []).find(
+          (item) => plain(item.name) === wanted || plain(item.name).includes(wanted),
+        )
+        if (!rack) return { ok: false, message: `Baie « ${intent.rack} » introuvable.` }
+        get().assignToRack([node.id], rack.id)
+        return { ok: true, message: `${node.name} implanté dans ${rack.name}.` }
+      }
+
+      case 'rackDetach': {
+        const node = findNode(intent.target)
+        if (!node) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
+        get().detachFromRack([node.id])
+        return { ok: true, message: `${node.name} retiré de sa baie.` }
+      }
+
+      case 'vlanAdd':
+        get().upsertVlan({ id: intent.id, name: intent.name, subnet: intent.subnet })
+        return { ok: true, message: `VLAN ${intent.id} ajouté au plan d’adressage.` }
+
+      case 'query': {
+        const diagram = get().diagram
+        switch (intent.question) {
+          case 'count':
+            return { ok: true, message: `Le schéma compte ${diagram.nodes.length} équipements et ${diagram.links.length} liaisons.` }
+          case 'countKind': {
+            const device = intent.argument ? searchDevices(intent.argument)[0] : undefined
+            if (!device) return { ok: false, message: `Type « ${intent.argument ?? ''} » inconnu.` }
+            const total = diagram.nodes.filter((node) => node.kind === device.id).length
+            return { ok: true, message: `${total} ${device.label.toLowerCase()} dans le schéma.` }
+          }
+          case 'ha': {
+            const report = auditDiagram(diagram)
+            return { ok: true, message: `Robustesse : ${report.score} sur 100, niveau ${report.level}, ${report.findings.length} constats.` }
+          }
+          case 'spof': {
+            const report = auditDiagram(diagram)
+            if (report.spof.length === 0) return { ok: true, message: 'Aucun point de défaillance unique détecté.' }
+            const names = report.spof
+              .map((id) => diagram.nodes.find((node) => node.id === id)?.name)
+              .filter(Boolean)
+              .slice(0, 4)
+            return { ok: true, message: `${report.spof.length} point(s) de défaillance : ${names.join(', ')}.` }
+          }
+          case 'power': {
+            const total = diagram.nodes.reduce((acc, node) => acc + (node.powerW ?? 0), 0)
+            return { ok: true, message: `Consommation renseignée : ${total} watts.` }
+          }
+          case 'vlans':
+            return { ok: true, message: `${diagram.vlans?.length ?? 0} VLAN au plan d’adressage.` }
+          case 'racks':
+            return { ok: true, message: `${diagram.racks?.length ?? 0} baie(s) déclarée(s).` }
+          case 'freeUnits': {
+            const racks = diagram.racks ?? []
+            if (racks.length === 0) return { ok: false, message: 'Aucune baie déclarée.' }
+            const wanted = intent.argument ? plain(intent.argument) : null
+            const target = wanted
+              ? racks.find((rack) => plain(rack.name) === wanted || plain(rack.name).includes(wanted))
+              : undefined
+            if (wanted && !target) return { ok: false, message: `Baie « ${intent.argument} » introuvable.` }
+            const list = target ? [target] : racks
+            const parts = list.map((rack) => `${rack.name} : ${rackOccupancy(diagram, rack).freeUnits} U libres`)
+            return { ok: true, message: parts.join(', ') + '.' }
+          }
+          default:
+            return { ok: false, message: 'Question non comprise.' }
+        }
       }
       case 'focus': {
         const node = findNode(intent.name)
@@ -673,6 +857,13 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         get().redo()
         return { ok: true, message: 'Rétabli.' }
       case 'delete': {
+        if (intent.target) {
+          const node = findNode(intent.target)
+          if (!node) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
+          get().select({ nodes: [node.id] })
+          get().deleteSelection()
+          return { ok: true, message: `${node.name} supprimé.` }
+        }
         const count = state.selectedNodes.length + state.selectedLinks.length
         if (count === 0) return { ok: false, message: 'Rien n’est sélectionné.' }
         get().deleteSelection()
@@ -689,9 +880,11 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
           ok: true,
           message: intent.layer === 'all' ? 'Toutes les couches affichées.' : `Vue ${intent.layer.toUpperCase()}.`,
         }
-      case 'detail':
+      case 'detail': {
+        const labels = { full: 'détail complet', 'no-endpoints': 'sans les postes', summary: 'synthèse' }
         get().setDetail(intent.level)
-        return { ok: true, message: 'Niveau de détail modifié.' }
+        return { ok: true, message: `Affichage : ${labels[intent.level]}.` }
+      }
       case 'view': {
         const labels = { diagram: 'Schéma', inventory: 'Inventaire', racks: 'Baies', discovery: 'Découverte' }
         get().setAppView(intent.view)

@@ -9,6 +9,8 @@ import {
   STATUS_COLORS,
   STATUS_LABELS,
 } from '../lib/inventory'
+import { ModelPicker } from './ModelPicker'
+import { vendors } from '../lib/vendors'
 import { useDiagram } from '../store/useDiagram'
 import type { AssetStatus, NetNode } from '../types'
 
@@ -38,6 +40,13 @@ export function InventoryView() {
   const [site, setSite] = useState('')
   const [status, setStatus] = useState('')
   const [rack, setRack] = useState('')
+  const [vendor, setVendor] = useState('')
+
+  // Constructeurs présents dans le parc, puis ceux de la base matériels.
+  const vendorOptions = useMemo(() => {
+    const used = new Set(diagram.nodes.map((node) => node.vendor?.trim()).filter(Boolean) as string[])
+    return [...new Set([...used, ...vendors()])].sort((a, b) => a.localeCompare(b))
+  }, [diagram.nodes])
 
   const sites = useMemo(
     () => [...new Set(diagram.nodes.map((node) => node.site?.trim()).filter(Boolean))].sort() as string[],
@@ -49,6 +58,7 @@ export function InventoryView() {
     return diagram.nodes
       .filter((node) => {
         if (site && node.site !== site) return false
+        if (vendor && node.vendor !== vendor) return false
         if (status && node.status !== status) return false
         if (rack === '__none' && node.rack) return false
         if (rack && rack !== '__none' && node.rack !== rack) return false
@@ -68,7 +78,7 @@ export function InventoryView() {
         return normalize(haystack).includes(q)
       })
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [diagram.nodes, query, site, status, rack])
+  }, [diagram.nodes, query, site, status, rack, vendor])
 
   const totalPower = rows.reduce((acc, node) => acc + (node.powerW ?? 0), 0)
 
@@ -110,6 +120,14 @@ export function InventoryView() {
           {STATUS_OPTIONS.map((item) => (
             <option key={item} value={item}>
               {STATUS_LABELS[item]}
+            </option>
+          ))}
+        </select>
+        <select value={vendor} onChange={(e) => setVendor(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 text-[13px]">
+          <option value="">Tous les constructeurs</option>
+          {vendorOptions.map((item) => (
+            <option key={item} value={item}>
+              {item}
             </option>
           ))}
         </select>
@@ -218,6 +236,13 @@ function Row({
                 </svg>
                 {value}
               </button>
+            </td>
+          )
+        }
+        if (column.key === 'model') {
+          return (
+            <td key={column.key} className="border-b border-slate-100 px-2 py-1">
+              <ModelPicker node={node} onPick={onChange} compact />
             </td>
           )
         }

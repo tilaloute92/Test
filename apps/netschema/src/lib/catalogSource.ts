@@ -1,6 +1,7 @@
 import { registerPack, registeredPacks, removePack } from './catalog'
 import { BUILTIN_CATALOG_VERSION, BUILTIN_PACKS, type CatalogPack, type DeviceDef } from './catalogData'
 import { hasIcon } from './icons'
+import type { HardwareModel } from './vendors'
 
 const SOURCE_KEY = 'netschema:catalog-source'
 const USER_PACKS_KEY = 'netschema:catalog-user-packs'
@@ -55,12 +56,31 @@ export function parsePack(raw: unknown): CatalogPack {
     })
   }
   if (devices.length === 0) throw new Error('Ce lot ne contient aucun type d’équipement valide.')
+
+  // Un lot peut aussi apporter des matériels constructeurs pour l'inventaire.
+  const models: HardwareModel[] = []
+  for (const item of Array.isArray(raw.models) ? raw.models : []) {
+    if (!isRecord(item)) continue
+    const vendor = typeof item.vendor === 'string' ? item.vendor.trim() : ''
+    const model = typeof item.model === 'string' ? item.model.trim() : ''
+    if (!vendor || !model) continue
+    models.push({
+      vendor,
+      model,
+      kind: typeof item.kind === 'string' && item.kind.trim() ? item.kind.trim() : 'server',
+      heightU: Number.isFinite(item.heightU) ? Math.max(1, Number(item.heightU)) : undefined,
+      powerW: Number.isFinite(item.powerW) ? Number(item.powerW) : undefined,
+      spec: typeof item.spec === 'string' ? item.spec : undefined,
+    })
+  }
+
   return {
     id,
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : id,
     version: typeof raw.version === 'string' ? raw.version : '1.0.0',
     description: typeof raw.description === 'string' ? raw.description : '',
     devices,
+    models: models.length > 0 ? models : undefined,
   }
 }
 

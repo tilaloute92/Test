@@ -1,4 +1,5 @@
 import { BUILTIN_PACKS, FAMILY_ORDER, type CatalogPack, type DeviceDef } from './catalogData'
+import { registerModels } from './vendors'
 import type { HaRole, LinkKind } from '../types'
 
 export interface DeviceMeta extends DeviceDef {
@@ -52,6 +53,7 @@ function metaOf(def: DeviceDef, packId: string): DeviceMeta {
 export function registerPack(pack: CatalogPack) {
   packs.set(pack.id, pack)
   for (const def of pack.devices) registry.set(def.id, metaOf(def, pack.id))
+  if (pack.models) registerModels(pack.models)
 }
 
 export function removePack(packId: string) {

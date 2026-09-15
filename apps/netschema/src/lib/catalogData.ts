@@ -8,6 +8,8 @@
  * lot depuis l'application.
  */
 
+import type { HardwareModel } from './vendors'
+
 export interface DeviceDef {
   /** Identifiant stable, stocké dans les fichiers de schéma. Ne jamais le renommer. */
   id: string
@@ -33,6 +35,8 @@ export interface CatalogPack {
   version: string
   description: string
   devices: DeviceDef[]
+  /** Matériels constructeurs apportés par le lot (voir vendors.ts). */
+  models?: HardwareModel[]
 }
 
 export const FAMILY_ORDER = [

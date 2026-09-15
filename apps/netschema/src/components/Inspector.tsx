@@ -1,5 +1,6 @@
 import { Btn, Checkbox, Field, Select, Slider, TextInput } from './ui'
 import { CatalogPanel } from './CatalogPanel'
+import { ModelPicker } from './ModelPicker'
 import { HaPanel } from './HaPanel'
 import { VlanPanel } from './VlanPanel'
 import { linkLayers } from '../lib/osi'
@@ -162,9 +163,10 @@ function NodeForm({ node }: { node: NetNode }) {
           <TextInput value={node.vlan ?? ''} onChange={(vlan) => set({ vlan })} placeholder="VLAN 20" />
         </Field>
       </div>
-      <Field label="Modèle">
-        <TextInput value={node.model ?? ''} onChange={(model) => set({ model })} placeholder="FortiGate 100F" />
+      <Field label="Matériel (base constructeurs)">
+        <ModelPicker node={node} onPick={set} alignKind />
       </Field>
+      {node.vendor && <p className="-mt-1 text-[11px] text-slate-400">Constructeur : {node.vendor}</p>}
       <div className="grid grid-cols-2 gap-2">
         <Field label="Zone">
           <TextInput value={node.zone ?? ''} onChange={(zone) => set({ zone })} placeholder="DMZ…" />
