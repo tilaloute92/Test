@@ -21,6 +21,9 @@ export type LinkKind =
   | 'oob'
   | 'power'
 
+/** Statut d'un actif, au sens d'un inventaire de parc. */
+export type AssetStatus = 'production' | 'stock' | 'maintenance' | 'retire'
+
 /** Couches du modèle OSI documentées par l'application. */
 export type OsiLayer = 'l1' | 'l2' | 'l3'
 
@@ -64,6 +67,31 @@ export interface NetNode {
   vip?: string
   /** Double alimentation électrique (deux chaînes A/B). */
   dualPower?: boolean
+
+  // ─── Inventaire ───────────────────────────────────────────────────────────
+  /** Numéro de série constructeur. */
+  serial?: string
+  /** Constructeur / fournisseur. */
+  vendor?: string
+  /** Numéro d'immobilisation ou code interne. */
+  assetTag?: string
+  /** Date d'achat (AAAA-MM-JJ). */
+  purchaseDate?: string
+  /** Fin de garantie ou de contrat de support (AAAA-MM-JJ). */
+  warrantyEnd?: string
+  status?: AssetStatus
+  /** Service ou personne responsable. */
+  owner?: string
+
+  // ─── Implantation physique ────────────────────────────────────────────────
+  /** Identifiant de la baie qui héberge l'équipement. */
+  rack?: string
+  /** Position dans la baie : U de départ, 1 = unité la plus basse. */
+  rackUnit?: number
+  /** Hauteur occupée, en U (1 par défaut). */
+  heightU?: number
+  /** Puissance consommée, en watts. */
+  powerW?: number
   notes?: string
   x: number
   y: number
@@ -134,13 +162,30 @@ export interface VlanDef {
   notes?: string
 }
 
+/** Une baie informatique, décrite comme dans un inventaire de parc. */
+export interface RackDef {
+  id: string
+  name: string
+  site?: string
+  /** Local technique / salle. */
+  room?: string
+  /** Hauteur utile en U (42 par défaut). */
+  units: number
+  notes?: string
+}
+
 export interface Diagram {
   title: string
   nodes: NetNode[]
   links: NetLink[]
   /** Plan d'adressage : VLAN, sous-réseaux et passerelles. */
   vlans?: VlanDef[]
+  /** Baies et locaux techniques. */
+  racks?: RackDef[]
 }
+
+/** Module affiché : le schéma, l'inventaire, les baies ou la découverte réseau. */
+export type AppView = 'diagram' | 'inventory' | 'racks' | 'discovery'
 
 export type LayoutDirection = 'TB' | 'LR'
 

@@ -1,5 +1,10 @@
 import { useEffect, useRef } from 'react'
+import { AppTabs } from './components/AppTabs'
 import { Canvas } from './components/Canvas'
+import { DiscoveryView } from './components/DiscoveryView'
+import { InventoryView } from './components/InventoryView'
+import { RackView } from './components/RackView'
+import { VoicePanel } from './components/VoicePanel'
 import { CommandPalette } from './components/CommandPalette'
 import { QuickImportDialog } from './components/QuickImportDialog'
 import { Inspector } from './components/Inspector'
@@ -10,6 +15,7 @@ import { useDiagram } from './store/useDiagram'
 export default function App() {
   const svgRef = useRef<SVGSVGElement>(null)
   const toast = useDiagram((s) => s.toast)
+  const appView = useDiagram((s) => s.appView)
 
   useEffect(() => {
     // Première ouverture : on cadre le schéma sur la fenêtre.
@@ -28,6 +34,8 @@ export default function App() {
       const target = event.target as HTMLElement | null
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
       const store = useDiagram.getState()
+      // Les raccourcis d'édition ne valent que dans le module schéma.
+      if (store.appView !== 'diagram' && event.key !== 'Escape') return
 
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
@@ -72,16 +80,26 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen flex-col bg-slate-100 text-slate-900">
-      <Toolbar svgRef={svgRef} />
+      <AppTabs />
       <CommandPalette svgRef={svgRef} />
       <QuickImportDialog />
-      <div className="flex min-h-0 flex-1">
-        <Palette />
-        <main className="min-w-0 flex-1">
-          <Canvas svgRef={svgRef} />
-        </main>
-        <Inspector />
-      </div>
+      <VoicePanel />
+
+      {appView === 'diagram' && (
+        <>
+          <Toolbar svgRef={svgRef} />
+          <div className="flex min-h-0 flex-1">
+            <Palette />
+            <main className="min-w-0 flex-1">
+              <Canvas svgRef={svgRef} />
+            </main>
+            <Inspector />
+          </div>
+        </>
+      )}
+      {appView === 'inventory' && <InventoryView />}
+      {appView === 'racks' && <RackView />}
+      {appView === 'discovery' && <DiscoveryView />}
 
       {toast && (
         <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-slate-900 px-4 py-2 text-[13px] text-white shadow-lg">

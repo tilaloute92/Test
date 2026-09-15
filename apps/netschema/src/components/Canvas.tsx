@@ -3,6 +3,7 @@ import { LinkShape } from './LinkShape'
 import { NodeShape } from './NodeShape'
 import { LINKS } from '../lib/catalog'
 import { deriveDiagram, groupMembers, type DisplayNode } from '../lib/derive'
+import { setDiagramSvg } from '../lib/exportRegistry'
 import { linkColorFor, linkLabelFor } from '../lib/osi'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
 import { parallelOffsets } from '../lib/routing'
@@ -87,6 +88,11 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     },
     [view.tx, view.ty, view.zoom],
   )
+
+  useEffect(() => {
+    setDiagramSvg(svgRef.current)
+    return () => setDiagramSvg(null)
+  }, [svgRef])
 
   useEffect(() => {
     const element = containerRef.current

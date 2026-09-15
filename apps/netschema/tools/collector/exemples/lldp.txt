@@ -1,0 +1,28 @@
+SW-CORE-01#show lldp neighbors detail
+------------------------------------------------
+Local Intf: Te1/0/1
+Chassis id: 000c.29ab.cd01
+Port id: port2
+System Name: FW-01
+System Description: FortiGate-100F v7.4.3
+Capabilities: B,R
+Management Addresses:
+    IP: 10.0.0.2
+------------------------------------------------
+Local Intf: Gi1/0/12
+Chassis id: 000c.29ab.cd02
+Port id: Gi0/1
+System Name: SW-ACC-A1
+System Description: cisco WS-C2960X-48FPD-L
+Capabilities: B
+Management Addresses:
+    IP: 10.10.1.5
+------------------------------------------------
+Local Intf: Gi1/0/24
+Chassis id: 000c.29ab.cd03
+Port id: eth0
+System Name: AP-ETAGE-2
+System Description: Aruba AP-635 access point
+Capabilities: W
+Management Addresses:
+    IP: 10.10.40.11

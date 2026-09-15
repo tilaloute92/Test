@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -sV -oX - 10.10.0.0/24">
+<host><status state="up" reason="arp-response"/>
+<address addr="10.10.0.21" addrtype="ipv4"/>
+<address addr="00:0c:29:11:22:33" addrtype="mac" vendor="VMware"/>
+<hostnames><hostname name="esxi-01" type="PTR"/></hostnames>
+<ports>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/><service name="ssh"/></port>
+<port protocol="tcp" portid="443"><state state="open" reason="syn-ack"/><service name="https"/></port>
+<port protocol="tcp" portid="902"><state state="open" reason="syn-ack"/><service name="vmware-auth"/></port>
+</ports>
+<os><osmatch name="VMware ESXi 8.0" accuracy="95"/></os>
+</host>
+<host><status state="up" reason="arp-response"/>
+<address addr="10.10.0.35" addrtype="ipv4"/>
+<hostnames><hostname name="imprimante-a2" type="PTR"/></hostnames>
+<ports>
+<port protocol="tcp" portid="9100"><state state="open" reason="syn-ack"/><service name="jetdirect"/></port>
+</ports>
+</host>
+<host><status state="down"/><address addr="10.10.0.99" addrtype="ipv4"/></host>
+</nmaprun>

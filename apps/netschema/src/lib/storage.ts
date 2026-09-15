@@ -1,12 +1,14 @@
 import { deviceMeta, LINKS, ROLES } from './catalog'
 import { uid } from './ids'
 import type {
+  AssetStatus,
   Diagram,
   HaRole,
   LinkKind,
   NetLink,
   NetNode,
   OsiLayer,
+  RackDef,
   PortMode,
   RoutingProtocol,
   StpRole,
@@ -17,7 +19,7 @@ const STORAGE_KEY = 'netschema:diagram:v1'
 const FILE_VERSION = 1
 
 export function emptyDiagram(): Diagram {
-  return { title: 'Nouveau schéma réseau', nodes: [], links: [], vlans: [] }
+  return { title: 'Nouveau schéma réseau', nodes: [], links: [], vlans: [], racks: [] }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -28,6 +30,7 @@ function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
 
+const STATUSES = ['production', 'stock', 'maintenance', 'retire']
 const STP_ROLES = ['root', 'designated', 'alternate', 'blocking', 'edge']
 const ROUTING = ['static', 'ospf', 'bgp', 'eigrp', 'is-is', 'rip']
 
@@ -69,6 +72,17 @@ export function parseDiagram(raw: unknown): Diagram {
       role: roleOf(item.role),
       vip: str(item.vip),
       dualPower: item.dualPower === true,
+      serial: str(item.serial),
+      vendor: str(item.vendor),
+      assetTag: str(item.assetTag),
+      purchaseDate: str(item.purchaseDate),
+      warrantyEnd: str(item.warrantyEnd),
+      status: STATUSES.includes(String(item.status)) ? (item.status as AssetStatus) : undefined,
+      owner: str(item.owner),
+      rack: str(item.rack),
+      rackUnit: Number.isFinite(item.rackUnit) ? Number(item.rackUnit) : undefined,
+      heightU: Number.isFinite(item.heightU) ? Math.max(1, Number(item.heightU)) : undefined,
+      powerW: Number.isFinite(item.powerW) ? Number(item.powerW) : undefined,
       notes: str(item.notes),
       x: Number.isFinite(item.x) ? Number(item.x) : 0,
       y: Number.isFinite(item.y) ? Number(item.y) : 0,
@@ -132,7 +146,25 @@ export function parseDiagram(raw: unknown): Diagram {
     })
   }
 
-  return { title: str(source.title) ?? 'Schéma réseau', nodes, links, vlans }
+  const rawRacks = Array.isArray(source.racks) ? source.racks : []
+  const racks: RackDef[] = []
+  const seenRacks = new Set<string>()
+  for (const item of rawRacks) {
+    if (!isRecord(item)) continue
+    const id = str(item.id)
+    if (!id || seenRacks.has(id)) continue
+    seenRacks.add(id)
+    racks.push({
+      id,
+      name: str(item.name) ?? id,
+      site: str(item.site),
+      room: str(item.room),
+      units: Number.isFinite(item.units) ? Math.max(1, Math.min(60, Number(item.units))) : 42,
+      notes: str(item.notes),
+    })
+  }
+
+  return { title: str(source.title) ?? 'Schéma réseau', nodes, links, vlans, racks }
 }
 
 export function saveLocal(diagram: Diagram) {

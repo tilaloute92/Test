@@ -26,9 +26,44 @@ const AA: HaRole = 'active-active'
  * secours et double chaîne électrique.
  * Les coordonnées sont laissées à zéro : le placement automatique s'en charge au chargement.
  */
+/**
+ * Implantation physique et fiche d'inventaire des équipements de l'exemple : c'est la même
+ * base d'objets que le schéma, vue depuis la salle machine et depuis le parc.
+ */
+const ASSETS: Record<string, Partial<NetNode>> = {
+  rtr1: { rack: 'rack-a1', rackUnit: 10, heightU: 1, vendor: 'Cisco', model: 'ISR 4331', serial: 'FDO2401R001', purchaseDate: '2023-06-14', warrantyEnd: '2028-06-13', status: 'production', owner: 'Infrastructure', powerW: 90 },
+  rtr2: { rack: 'rack-a2', rackUnit: 10, heightU: 1, vendor: 'Cisco', model: 'ISR 4331', serial: 'FDO2401R002', purchaseDate: '2023-06-14', warrantyEnd: '2028-06-13', status: 'production', owner: 'Infrastructure', powerW: 90 },
+  fw1: { rack: 'rack-a1', rackUnit: 9, heightU: 1, vendor: 'Fortinet', serial: 'FGT100F0001', purchaseDate: '2024-01-09', warrantyEnd: '2027-01-08', status: 'production', owner: 'Sécurité', powerW: 70 },
+  fw2: { rack: 'rack-a2', rackUnit: 9, heightU: 1, vendor: 'Fortinet', serial: 'FGT100F0002', purchaseDate: '2024-01-09', warrantyEnd: '2027-01-08', status: 'production', owner: 'Sécurité', powerW: 70 },
+  core1: { rack: 'rack-a1', rackUnit: 6, heightU: 2, vendor: 'Cisco', model: 'C9500-24Y4C', serial: 'FOC2312C001', purchaseDate: '2024-02-20', warrantyEnd: '2029-02-19', status: 'production', owner: 'Infrastructure', powerW: 350 },
+  core2: { rack: 'rack-a2', rackUnit: 6, heightU: 2, vendor: 'Cisco', model: 'C9500-24Y4C', serial: 'FOC2312C002', purchaseDate: '2024-02-20', warrantyEnd: '2029-02-19', status: 'production', owner: 'Infrastructure', powerW: 350 },
+  hv1: { rack: 'rack-a1', rackUnit: 12, heightU: 2, vendor: 'Dell', model: 'PowerEdge R660', serial: 'DL7X1Q1', purchaseDate: '2025-04-02', warrantyEnd: '2030-04-01', status: 'production', owner: 'Production', powerW: 650 },
+  hv2: { rack: 'rack-a1', rackUnit: 15, heightU: 2, vendor: 'Dell', model: 'PowerEdge R660', serial: 'DL7X1Q2', purchaseDate: '2025-04-02', warrantyEnd: '2030-04-01', status: 'production', owner: 'Production', powerW: 650 },
+  hv3: { rack: 'rack-a2', rackUnit: 12, heightU: 2, vendor: 'Dell', model: 'PowerEdge R660', serial: 'DL7X1Q3', purchaseDate: '2025-04-02', warrantyEnd: '2030-04-01', status: 'production', owner: 'Production', powerW: 650 },
+  san: { rack: 'rack-a1', rackUnit: 18, heightU: 4, vendor: 'NetApp', model: 'AFF A250', serial: 'NA250-0007', purchaseDate: '2024-09-30', warrantyEnd: '2029-09-29', status: 'production', owner: 'Production', powerW: 800 },
+  bkp: { rack: 'rack-a1', rackUnit: 23, heightU: 2, vendor: 'HPE', model: 'ProLiant DL380', serial: 'HP380-0012', purchaseDate: '2022-11-15', warrantyEnd: '2026-11-14', status: 'production', owner: 'Production', powerW: 450 },
+  upsA: { rack: 'rack-a1', rackUnit: 1, heightU: 3, vendor: 'APC', model: 'Smart-UPS SRT 5000', serial: 'APC-SRT-A', purchaseDate: '2021-05-04', warrantyEnd: '2026-05-03', status: 'production', owner: 'Services généraux' },
+  upsB: { rack: 'rack-a2', rackUnit: 1, heightU: 3, vendor: 'APC', model: 'Smart-UPS SRT 5000', serial: 'APC-SRT-B', purchaseDate: '2021-05-04', warrantyEnd: '2026-05-03', status: 'production', owner: 'Services généraux' },
+  pduA: { rack: 'rack-a1', rackUnit: 4, heightU: 1, vendor: 'APC', model: 'AP8853', status: 'production' },
+  pduB: { rack: 'rack-a2', rackUnit: 4, heightU: 1, vendor: 'APC', model: 'AP8853', status: 'production' },
+  coreB: { rack: 'rack-pra', rackUnit: 6, heightU: 2, vendor: 'Cisco', model: 'C9300-24T', serial: 'FOC2401P001', purchaseDate: '2024-02-20', warrantyEnd: '2029-02-19', status: 'production', owner: 'Infrastructure', powerW: 210 },
+  sanB: { rack: 'rack-pra', rackUnit: 10, heightU: 4, vendor: 'NetApp', model: 'AFF A150', serial: 'NA150-0003', purchaseDate: '2024-09-30', warrantyEnd: '2029-09-29', status: 'production', owner: 'Production', powerW: 500 },
+  distA: { vendor: 'Cisco', model: 'C9300-48P', serial: 'FOC2405D001', status: 'production', owner: 'Infrastructure', powerW: 260 },
+  distB: { vendor: 'Cisco', model: 'C9300-48P', serial: 'FOC2405D002', status: 'production', owner: 'Infrastructure', powerW: 260 },
+  accA: { vendor: 'Cisco', model: 'C9200-24P', serial: 'FOC2409A001', status: 'production', owner: 'Infrastructure', powerW: 180 },
+  accB: { vendor: 'Cisco', model: 'C9200-24P', serial: 'FOC2409A002', status: 'production', owner: 'Infrastructure', powerW: 180 },
+  wifiA: { vendor: 'Aruba', model: 'AP-635', status: 'production', owner: 'Infrastructure', powerW: 25 },
+  wit: { status: 'production', owner: 'Production' },
+}
+
 export function sampleDiagram(): Diagram {
   return {
     title: 'Architecture haute disponibilité — siège + site de secours',
+    racks: [
+      { id: 'rack-a1', name: 'Baie A1', site: SIEGE, room: 'Salle serveurs', units: 42 },
+      { id: 'rack-a2', name: 'Baie A2', site: SIEGE, room: 'Salle serveurs', units: 42 },
+      { id: 'rack-pra', name: 'Baie PRA', site: PRA, room: 'Local technique', units: 24 },
+    ],
     nodes: [
       node('net', 'internet', 'Internet'),
       node('isp1', 'wan', 'Opérateur A', { zone: 'WAN', notes: 'Fibre 1 Gb/s, chemin nord' }),
@@ -67,7 +102,7 @@ export function sampleDiagram(): Diagram {
       node('upsB', 'ups', 'Onduleur B', { site: SIEGE, notes: 'Arrivée EDF 2 + groupe' }),
       node('pduA', 'pdu', 'PDU A', { site: SIEGE }),
       node('pduB', 'pdu', 'PDU B', { site: SIEGE }),
-    ],
+    ].map((item) => ({ ...item, ...ASSETS[item.id] })),
     links: [
       link('net', 'isp1', 'wan', { speed: '1 Gb/s' }),
       link('net', 'isp2', 'wan', { speed: '1 Gb/s' }),

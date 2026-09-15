@@ -10,6 +10,11 @@ double attachement, double adduction opérateur, site de secours, double chaîne
 Elle sait non seulement les représenter, mais aussi **analyser le schéma** et signaler les
 points de défaillance uniques.
 
+L'application tient quatre modules sur la même base de données : le **schéma**, l'**inventaire**
+du parc, l'**implantation en baies** et la **découverte réseau** — auxquels s'ajoutent les
+**commandes vocales**. Un serveur posé dans une baie est le même objet que celui câblé sur le
+schéma et listé à l'inventaire.
+
 Le catalogue d'équipements couvre l'état de l'art 2026 — SD-WAN et SASE/SSE, fabric
 spine-leaf VXLAN/EVPN, Wi-Fi 7, 5G, Kubernetes et serverless, serveurs GPU, pile Zero Trust
 (ZTNA, WAF, EDR/XDR, SIEM/SOAR, PAM, HSM), OT/industriel — et il se met à jour **sans
@@ -57,6 +62,94 @@ placement auto, figer ce qui est bien placé, relancer.
 
 Les liaisons sont tracées en orthogonal à angles arrondis (ou en direct), les câbles multiples
 entre deux mêmes équipements sont automatiquement étalés pour ne pas se superposer.
+
+## Découverte réseau
+
+Un navigateur ne peut ni envoyer un ping, ni interroger un équipement en SNMP : la collecte
+se fait donc hors de l'application, et le module **Découverte** interprète les relevés.
+
+### Coller un relevé
+
+Le module reconnaît seul le format de ce qu'on lui donne :
+
+| Relevé | Ce qu'on en tire |
+| --- | --- |
+| `show lldp neighbors detail`, `show cdp neighbors detail` | **La topologie** : voisins directs, ports des deux côtés, adresse d'administration, type déduit de la plateforme annoncée |
+| `nmap -sn … -oX` ou `nmap -sV … -oG` | Les hôtes actifs, leur nom, leur constructeur (OUI MAC) et un type déduit des services ouverts |
+| `show ip arp`, `arp -a` | Les couples adresse IP / adresse MAC et leur VLAN |
+
+L'aperçu liste ce qui a été reconnu avant toute modification. La fusion **complète sans
+écraser** : un équipement est reconnu par son nom ou son adresse IP, et les champs déjà saisis
+à la main sont conservés ; seules les liaisons inconnues sont ajoutées.
+
+### Collecteur en ligne de commande
+
+`tools/collector/netschema-collect.mjs` enchaîne la collecte depuis un poste d'administration
+et écrit un fichier de projet ouvrable directement. Aucune dépendance npm : il s'appuie sur
+`nmap` et `snmpwalk` s'ils sont présents, et sait aussi relire des relevés déjà pris.
+
+```bash
+node tools/collector/netschema-collect.mjs --subnet 10.10.0.0/24 --out site.json
+node tools/collector/netschema-collect.mjs --subnet 10.10.0.0/24 --snmp-community public --out site.json
+node tools/collector/netschema-collect.mjs --from exemples/lldp.txt exemples/nmap.xml --out exemple.json
+```
+
+En SNMP, il relève le nom système, la description et la table LLDP distante de chaque hôte
+trouvé. Les exemples de `tools/collector/exemples/` servent à essayer la chaîne complète sans
+toucher à un réseau réel.
+
+## Inventaire du parc
+
+Onglet **Inventaire** : la table des actifs, avec constructeur, modèle, numéro de série,
+numéro d'immobilisation, site, zone, baie et position, adresse IP, VLAN, responsable, dates
+d'achat et de fin de garantie, consommation et notes. Les cellules sont modifiables
+directement ; le type et la baie renvoient au schéma et à la salle.
+
+- Recherche plein texte (nom, IP, numéro de série, modèle, responsable) et filtres par site,
+  statut et baie — dont « non implantés ».
+- Statut d'actif : en production, en stock, en maintenance, retiré.
+- **Export CSV** séparateur point-virgule avec BOM : le fichier s'ouvre tel quel dans Excel
+  en français. **Import CSV** par la colonne « Nom » : les équipements connus sont mis à jour,
+  les inconnus créés.
+- Le total de puissance des lignes affichées est calculé en continu.
+
+## Implantation en baies
+
+Onglet **Baies** : l'élévation des baies, comme la vue « rack » d'un outil de parc.
+
+- Une colonne par baie, numérotée en U, avec le nom, le site, le local et le nombre d'U libres.
+- Chaque équipement occupe sa hauteur réelle (1 U pour un switch d'accès, 2 U pour un serveur,
+  4 U pour une baie de stockage… valeur par défaut selon le type, modifiable).
+- **Glisser-déposer** d'une position à l'autre, et d'une baie à l'autre.
+- Liste des **équipements physiques non implantés** : un clic les pose à la première hauteur
+  libre en partant du bas.
+- Contrôles : chevauchements d'implantation signalés en rouge, dépassement de la hauteur de
+  baie, taux d'occupation et puissance totale par baie.
+- Export **SVG** et **PNG** de la salle entière.
+
+Supprimer une baie ne supprime pas les équipements : ils redeviennent simplement non implantés.
+
+## Commandes vocales
+
+Bouton **Voix** dans la barre de modules. On dicte l'action, l'application l'exécute et
+répond — vocalement si la réponse parlée est activée.
+
+| Exemple | Effet |
+| --- | --- |
+| « Ajoute un pare-feu », « Ajoute un cluster Kubernetes » | Ajoute l'équipement au centre de la vue (n'importe quel type du catalogue, retrouvé par ses synonymes) |
+| « Relie SW-CORE-01 à FW-01 » | Crée la liaison, avec le type déduit des deux extrémités |
+| « Placement automatique », « Ajuste la vue », « Zoom arrière » | Mise en page et navigation |
+| « Vue couche 2 », « Synthèse », « Replie la zone Datacenter », « Déplie tout » | Lecture du schéma |
+| « Va à SAN Siège » | Sélectionne l'équipement et centre la vue dessus |
+| « Ouvre l'inventaire », « Montre les baies », « Découverte » | Changement de module |
+| « Exporte en PNG », « Annule », « Rétablis », « Supprime » | Actions courantes |
+
+La reconnaissance s'appuie sur celle du navigateur (Chrome ou Edge, connexion réseau requise).
+Le même panneau accepte les **commandes tapées** : c'est le repli quand le navigateur n'a pas
+de reconnaissance vocale, quand le micro est refusé, ou dans un local bruyant — et c'est aussi
+ce qui rend la grammaire testable.
+
+Une phrase non reconnue n'est jamais exécutée au hasard : elle est signalée telle quelle.
 
 ## Niveaux 2 et 3 du modèle OSI
 
@@ -321,12 +414,17 @@ src/
   lib/routing.ts        tracé des liaisons (orthogonal arrondi, étalement des parallèles)
   lib/exportImage.ts    export SVG / PNG
   lib/storage.ts        sauvegarde locale, lecture/écriture des fichiers projet
-  lib/sample.ts         schéma d'exemple (architecture HA siège + site de secours)
+  lib/sample.ts         schéma d'exemple (architecture HA siège + site de secours, baies, parc)
+  lib/discovery.ts      reconnaissance et analyse des relevés LLDP/CDP, nmap et ARP
+  lib/inventory.ts      colonnes de l'inventaire, export et import CSV
+  lib/racks.ts          occupation des baies, hauteurs, chevauchements
+  lib/voice.ts          grammaire des commandes vocales et reconnaissance du navigateur
   store/useDiagram.ts   état global (zustand) : schéma, sélection, vue, historique
   store/useAudit.ts     analyse HA mémorisée sur la version courante du schéma
   components/           barre d'outils, palette, plan de travail, inspecteur, panneaux HA,
                         L2/L3 et catalogue, palette de commandes, import rapide
 public/catalog/         lots chargés au démarrage — la voie de mise à jour sans recompilation
+tools/collector/        collecteur de découverte réseau (Node, sans dépendance) et exemples
 ```
 
 ## Limites connues
@@ -336,8 +434,11 @@ public/catalog/         lots chargés au démarrage — la voie de mise à jour 
 - L'analyse raisonne sur la topologie telle qu'elle est dessinée : elle ne connaît ni les
   chemins physiques réels des fibres, ni les configurations des équipements. Deux liens
   « redondants » passant dans le même fourreau lui paraîtront redondants.
-- L'import rapide lit une liste collée, pas encore un fichier CSV/Excel ni un export
-  d'équipement (LLDP/CDP, ARP, configurations) : la topologie n'est pas déduite du réseau réel.
+- La découverte interprète des relevés : elle ne sonde pas le réseau depuis le navigateur.
+  La collecte passe par le collecteur fourni ou par un copier-coller, et un balayage nmap seul
+  donne des hôtes sans liaisons — seuls LLDP et CDP donnent la topologie.
+- La reconnaissance vocale dépend du navigateur (Chrome, Edge) et de sa connexion aux services
+  de reconnaissance ; les commandes tapées fonctionnent partout.
 - Les pictogrammes sont dessinés pour cette application : ce ne sont pas les jeux d'icônes des
   constructeurs ou des fournisseurs cloud, et ils ne cherchent pas à les imiter.
 - Pas d'export PPTX ni PDF pour l'instant (le SVG s'insère tel quel dans PowerPoint et Word).
