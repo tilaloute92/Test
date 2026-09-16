@@ -7,6 +7,8 @@ import type {
   NetNode,
   OsiLayer,
   OsiView,
+  PortMode,
+  StpRole,
   VlanDef,
 } from '../types'
 
@@ -156,29 +158,118 @@ export function vlanLabel(id: string, vlans: VlanDef[] = []): string {
 }
 
 /** Libellé d'une liaison, adapté à la couche regardée. */
+/** Configuration d'une extrémité de liaison, valeurs communes déjà appliquées. */
+export interface LinkEndConfig {
+  port?: string
+  mode?: PortMode
+  vlans?: string
+  nativeVlan?: string
+  stp?: StpRole
+  lag?: string
+  ip?: string
+}
+
+const trimmed = (value?: string) => value?.trim() || undefined
+
+/**
+ * Configuration d'un côté de la liaison.
+ *
+ * Les champs propres à l'extrémité l'emportent ; à défaut, la valeur commune s'applique.
+ * C'est ce qui permet de documenter « trunk 10,20 des deux côtés » en une fois, tout en
+ * décrivant un rôle spanning-tree ou un port-channel différent sur chaque équipement.
+ */
+export function linkEnd(link: NetLink, end: 'a' | 'b'): LinkEndConfig {
+  const pick = <T,>(a: T | undefined, b: T | undefined, common: T | undefined) =>
+    (end === 'a' ? a : b) ?? common
+  return {
+    port: trimmed(end === 'a' ? link.portA : link.portB),
+    mode: pick(link.modeA, link.modeB, link.mode),
+    vlans: trimmed(pick(link.vlansA, link.vlansB, link.vlans)),
+    nativeVlan: trimmed(pick(link.nativeVlanA, link.nativeVlanB, link.nativeVlan)),
+    stp: pick(link.stpA, link.stpB, link.stp),
+    lag: trimmed(pick(link.lagA, link.lagB, link.lag)),
+    ip: trimmed(end === 'a' ? link.ipA : link.ipB),
+  }
+}
+
+/** Rôles spanning-tree abrégés : sur un schéma, « STP desig. » suffit et tient en place. */
+const STP_SHORT: Record<StpRole, string> = {
+  root: 'racine',
+  designated: 'desig.',
+  alternate: 'altern.',
+  blocking: 'bloqué',
+  edge: 'edge',
+}
+
+/** Résumé de couche 2 d'une extrémité : mode et VLAN, VLAN natif, agrégat, rôle STP. */
+function l2Summary(config: LinkEndConfig): string {
+  const parts: string[] = []
+  if (config.mode === 'trunk') parts.push(config.vlans ? `T ${config.vlans}` : 'trunk')
+  else if (config.mode === 'access') parts.push(config.vlans ? `A ${config.vlans}` : 'accès')
+  else if (config.vlans) parts.push(`VLAN ${config.vlans}`)
+  if (config.nativeVlan) parts.push(`natif ${config.nativeVlan}`)
+  if (config.lag) parts.push(config.lag)
+  if (config.stp) parts.push(`STP ${STP_SHORT[config.stp]}`)
+  return parts.join(' · ')
+}
+
+/**
+ * Ce qui s'écrit à chaque extrémité d'une liaison, du côté de l'équipement concerné.
+ *
+ * Un port et sa configuration n'appartiennent pas à la liaison mais à l'équipement où elle
+ * est branchée : au milieu du trait, « Gi1/0/1 ↔ Gi0/1 » oblige à deviner lequel est de quel
+ * côté, et il n'y a pas de place pour dire que le trunk est racine ici et bloquant là. Écrit
+ * à la sortie de chaque boîte, chaque bout se lit sans ambiguïté — c'est ainsi que se lisent
+ * les plans de brassage. Même logique en couche 3 avec les adresses d'interface.
+ */
+export function linkEndLabels(link: NetLink, view: OsiView): { a?: string[]; b?: string[] } {
+  if (view === 'l1') {
+    return { a: [link.portA?.trim()].filter(Boolean) as string[], b: [link.portB?.trim()].filter(Boolean) as string[] }
+  }
+  if (view === 'l2') {
+    const lines = (end: 'a' | 'b') => {
+      const config = linkEnd(link, end)
+      return [config.port, l2Summary(config)].filter(Boolean) as string[]
+    }
+    return { a: lines('a'), b: lines('b') }
+  }
+  if (view === 'l3') {
+    return {
+      a: [linkEnd(link, 'a').ip].filter(Boolean) as string[],
+      b: [linkEnd(link, 'b').ip].filter(Boolean) as string[],
+    }
+  }
+  return {}
+}
+
+/** Vrai si la liaison porte au moins une information à afficher à ses extrémités. */
+export function hasEndLabels(link: NetLink, view: OsiView): boolean {
+  const labels = linkEndLabels(link, view)
+  return (labels.a?.length ?? 0) > 0 || (labels.b?.length ?? 0) > 0
+}
+
 export function linkLabelFor(link: NetLink, view: OsiView): string {
   const parts: string[] = []
   if (view === 'l1') {
     if (link.speed) parts.push(link.speed)
-    if (link.portA || link.portB) parts.push([link.portA, link.portB].filter(Boolean).join(' ↔ '))
     if (parts.length === 0 && link.label) parts.push(link.label)
     return parts.join(' · ')
   }
   if (view === 'l2') {
-    const vlans = link.vlans?.trim()
-    if (link.mode === 'trunk') parts.push(vlans ? `T ${vlans}` : 'trunk')
-    else if (link.mode === 'access') parts.push(vlans ? `A ${vlans}` : 'accès')
-    else if (vlans) parts.push(`VLAN ${vlans}`)
-    if (link.nativeVlan) parts.push(`natif ${link.nativeVlan}`)
-    if (link.lag) parts.push(link.lag)
-    if (link.stp) parts.push(`STP ${link.stp}`)
+    // Mode, VLAN, agrégat et rôle STP sont écrits côté équipement : au milieu ne reste que
+    // ce qui vaut pour tout le câble.
     if (link.mtu) parts.push(`MTU ${link.mtu}`)
-    if (parts.length === 0 && link.label) parts.push(link.label)
+    if (!hasEndLabels(link, 'l2')) {
+      const vlans = link.vlans?.trim()
+      if (link.mode === 'trunk') parts.unshift(vlans ? `T ${vlans}` : 'trunk')
+      else if (link.mode === 'access') parts.unshift(vlans ? `A ${vlans}` : 'accès')
+      else if (vlans) parts.unshift(`VLAN ${vlans}`)
+      if (parts.length === 0 && link.label) parts.push(link.label)
+    }
     return parts.join(' · ')
   }
   if (view === 'l3') {
     if (link.subnet) parts.push(link.subnet)
-    else if (link.ipA || link.ipB) parts.push([link.ipA, link.ipB].filter(Boolean).join(' ↔ '))
     if (link.vrf) parts.push(`VRF ${link.vrf}`)
     if (link.routing) parts.push(link.routing.toUpperCase())
     if (parts.length === 0 && link.label) parts.push(link.label)

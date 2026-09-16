@@ -3,7 +3,8 @@ import { Btn } from './ui'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
 import { diagramFileContent, readProjectFile } from '../lib/storage'
 import { useDiagram } from '../store/useDiagram'
-import type { DetailLevel, OsiView } from '../types'
+import { VIEW_MODES } from '../lib/viewModes'
+import type { DetailLevel, OsiView, ViewMode } from '../types'
 import { useAudit } from '../store/useAudit'
 
 export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | null> }) {
@@ -17,6 +18,7 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
   const report = useAudit()
   const detail = useDiagram((s) => s.detail)
   const osi = useDiagram((s) => s.osi)
+  const viewMode = useDiagram((s) => s.viewMode)
 
   const store = useDiagram.getState
 
@@ -110,6 +112,23 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
           {Math.round(zoom * 100)}%
         </span>
         <Btn variant="ghost" onClick={() => zoomFromCenter(1.18)} title="Zoomer">+</Btn>
+      </div>
+
+      {/* Mode de visualisation : trois lectures du même schéma. */}
+      <div className="flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5">
+        {VIEW_MODES.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            title={item.hint}
+            onClick={() => store().setViewMode(item.id as ViewMode)}
+            className={`rounded-md px-2.5 py-1 text-[12.5px] font-medium transition ${
+              viewMode === item.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
       </div>
 
       <select

@@ -18,6 +18,7 @@ import { getDiagramSvg } from '../lib/exportRegistry'
 import { interpret } from '../lib/voice'
 import { inventoryFromCsv } from '../lib/inventory'
 import { deduceVlans } from '../lib/osi'
+import { modeDefinition } from '../lib/viewModes'
 import { firstFreeUnit, heightOf, rackOccupancy } from '../lib/racks'
 import type {
   AppView,
@@ -31,6 +32,7 @@ import type {
   NetNode,
   OsiView,
   RackDef,
+  ViewMode,
   VlanDef,
   Waypoint,
   ZOrder,
@@ -71,6 +73,10 @@ interface DiagramStore {
   showLayerLabels: boolean
   showDetails: boolean
   showAudit: boolean
+  /** Ponts dessinés là où deux liaisons se croisent. */
+  showHops: boolean
+  /** Mode de visualisation : architecture, technique, présentation. */
+  viewMode: ViewMode
   /** Module affiché : schéma, inventaire, baies, découverte. */
   appView: AppView
   mode: Mode
@@ -146,6 +152,8 @@ interface DiagramStore {
   focusNode: (id: string) => void
   setConnectFrom: (id: string | null) => void
 
+  /** Choisit un mode de visualisation et applique ses réglages d'affichage. */
+  setViewMode: (mode: ViewMode) => void
   setLayout: (patch: Partial<LayoutOptions>) => void
   applyAutoLayout: () => void
   setDisplay: (
@@ -161,6 +169,7 @@ interface DiagramStore {
         | 'showLayerLabels'
         | 'showDetails'
         | 'showAudit'
+        | 'showHops'
       >
     >,
   ) => void
@@ -199,6 +208,8 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   showLayerLabels: true,
   showDetails: true,
   showAudit: true,
+  showHops: true,
+  viewMode: 'architecture',
   appView: 'diagram',
   mode: 'select',
   panel: 'properties',
@@ -1278,6 +1289,12 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         get().setAppView(intent.view)
         return { ok: true, message: `${labels[intent.view]} ouvert.` }
       }
+      case 'viewMode': {
+        get().setAppView('diagram')
+        get().setViewMode(intent.mode)
+        return { ok: true, message: `Mode ${modeDefinition(intent.mode).label.toLowerCase()}.` }
+      }
+
       case 'collapse': {
         const groups = collapsibleGroups(get().diagram)
         if (!intent.label) {
@@ -1397,6 +1414,12 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   setDisplay: (patch) => set(patch),
+
+  /**
+   * Un mode n'est pas qu'un habillage : il règle aussi ce que l'on montre. Les cases
+   * d'affichage restent modifiables ensuite — le mode donne le point de départ.
+   */
+  setViewMode: (mode) => set({ viewMode: mode, ...modeDefinition(mode).display }),
 
   /**
    * Insertion d'un modèle haute disponibilité : les équipements arrivent au centre de la

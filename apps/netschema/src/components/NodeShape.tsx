@@ -1,6 +1,7 @@
 import { deviceMeta, ROLES } from '../lib/catalog'
 import { groupSummary, type DisplayNode } from '../lib/derive'
 import { DeviceIcon } from '../lib/icons'
+import type { ModeStyle } from '../lib/viewModes'
 import { NODE_H, NODE_W } from '../types'
 
 function truncate(value: string, max: number): string {
@@ -16,6 +17,8 @@ interface Props {
   flagged: boolean
   /** Hors de la couche OSI regardée : estompé plutôt que masqué. */
   dimmed?: boolean
+  /** Habillage du mode de visualisation courant. */
+  style: ModeStyle
   onPointerDown: (event: React.PointerEvent<SVGGElement>, node: DisplayNode) => void
   onDoubleClick?: () => void
 }
@@ -27,15 +30,27 @@ export function NodeShape({
   showDetails,
   flagged,
   dimmed,
+  style,
   onPointerDown,
   onDoubleClick,
 }: Props) {
   const meta = deviceMeta(node.kind)
   const group = node.group
-  const details = [node.ip, node.vlan, node.model].filter(Boolean).join(' · ')
-  const context = [node.zone, node.cluster ? undefined : node.vip ? `VIP ${node.vip}` : undefined]
-    .filter(Boolean)
-    .join(' · ')
+  // En mode technique, l'adressage et le matériel restent affichés : c'est ce qu'on vient y
+  // chercher. En présentation, la boîte ne porte que son nom.
+  const withDetails = style.details && showDetails
+  const details = withDetails
+    ? [node.ip, node.vlan, node.model, style.dense ? node.serial : undefined].filter(Boolean).join(' · ')
+    : ''
+  const context = withDetails
+    ? [
+        node.zone,
+        node.cluster ? undefined : node.vip ? `VIP ${node.vip}` : undefined,
+        style.dense && node.owner ? node.owner : undefined,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : ''
   const role = node.role && node.role !== 'standalone' ? ROLES[node.role] : undefined
   const badgeWidth = role ? role.badge.length * 6 + 12 : 0
 
@@ -65,18 +80,18 @@ export function NodeShape({
       {/* Bloc replié : un empilement de fiches suggère qu'il en contient plusieurs. */}
       {group && (
         <>
-          <rect x={8} y={8} width={NODE_W} height={NODE_H} rx={10} fill={meta.fill} stroke={meta.accent} strokeWidth={1.2} opacity={0.45} />
-          <rect x={4} y={4} width={NODE_W} height={NODE_H} rx={10} fill={meta.fill} stroke={meta.accent} strokeWidth={1.4} opacity={0.7} />
+          <rect x={8} y={8} width={NODE_W} height={NODE_H} rx={style.radius} fill={meta.fill} stroke={meta.accent} strokeWidth={1.2} opacity={0.45} />
+          <rect x={4} y={4} width={NODE_W} height={NODE_H} rx={style.radius} fill={meta.fill} stroke={meta.accent} strokeWidth={1.4} opacity={0.7} />
         </>
       )}
 
       <rect
         width={NODE_W}
         height={NODE_H}
-        rx={10}
+        rx={style.radius}
         fill={meta.fill}
         stroke={flagged ? '#dc2626' : meta.accent}
-        strokeWidth={flagged ? 2.2 : 1.6}
+        strokeWidth={flagged ? Math.max(2.2, style.stroke) : style.stroke}
       />
       <rect width={5} height={NODE_H} rx={2.5} fill={meta.accent} />
 
@@ -84,8 +99,14 @@ export function NodeShape({
         <DeviceIcon icon={meta.icon} color={meta.accent} />
       </g>
 
-      <text x={50} y={showDetails && (details || context || group) ? 26 : 34} fontSize={12.5} fontWeight={600} fill="#0f172a">
-        {truncate(node.name, role ? 12 : 15)}
+      <text
+        x={50}
+        y={details || context || group ? 26 : 34 + (style.nameSize - 12.5) / 2}
+        fontSize={style.nameSize}
+        fontWeight={600}
+        fill="#0f172a"
+      >
+        {truncate(node.name, role ? 12 : style.nameSize > 13 ? 13 : 15)}
       </text>
 
       {group ? (
@@ -105,12 +126,12 @@ export function NodeShape({
         </>
       ) : (
         <>
-          {showDetails && details && (
-            <text x={50} y={41} fontSize={10} fill="#475569">
-              {truncate(details, 18)}
+          {details && (
+            <text x={50} y={41} fontSize={style.dense ? 9.5 : 10} fill="#475569">
+              {truncate(details, style.dense ? 22 : 18)}
             </text>
           )}
-          {showDetails && context && (
+          {context && (
             <text x={50} y={53} fontSize={9} fill={meta.accent} fontWeight={600}>
               {truncate(context, 20)}
             </text>

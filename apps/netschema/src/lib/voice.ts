@@ -10,6 +10,7 @@ import type {
   LinkShape,
   LinkStyle,
   OsiView,
+  ViewMode,
   ZOrder,
 } from '../types'
 
@@ -80,6 +81,7 @@ export type VoiceIntent =
   | { type: 'osi'; layer: OsiView }
   | { type: 'detail'; level: DetailLevel }
   | { type: 'view'; view: AppView }
+  | { type: 'viewMode'; mode: ViewMode }
   | { type: 'collapse'; label?: string }
   | { type: 'expand' }
   | { type: 'direction'; direction: LayoutDirection }
@@ -118,6 +120,7 @@ export type ToggleKey =
   | 'showDetails'
   | 'showLayerLabels'
   | 'showAudit'
+  | 'showHops'
   | 'snap'
 
 export type QueryKind = 'count' | 'countKind' | 'ha' | 'spof' | 'power' | 'freeUnits' | 'vlans' | 'racks'
@@ -218,6 +221,7 @@ const TOGGLE_WORDS: { pattern: RegExp; key: ToggleKey }[] = [
   { pattern: /details?|ip|adresses|debits/, key: 'showDetails' },
   { pattern: /couches?|libelles/, key: 'showLayerLabels' },
   { pattern: /alertes?|points critiques|defaillances?/, key: 'showAudit' },
+  { pattern: /croisements?|ponts?|sauts?/, key: 'showHops' },
   { pattern: /aimant|magnet|grille magnetique/, key: 'snap' },
 ]
 
@@ -722,6 +726,16 @@ const RULES: Rule[] = [
   (t) => (/(synthese|vue resumee|resume)/.test(t) ? { type: 'detail', level: 'summary' } : null),
   (t) => (/(sans les postes|masque les postes|cache les postes)/.test(t) ? { type: 'detail', level: 'no-endpoints' } : null),
   (t) => (/(detail complet|tout le detail|montre tout)/.test(t) ? { type: 'detail', level: 'full' } : null),
+  // Modes de visualisation : « mode présentation », « vue technique », « en architecture ».
+  (t) => {
+    const match = t.match(
+      /(?:mode|vue|affichage|passe en|bascule en|mets? en)\s+(architecture|technique|presentation|projection)/,
+    )
+    if (!match) return null
+    const mode: ViewMode =
+      match[1] === 'technique' ? 'technique' : match[1] === 'architecture' ? 'architecture' : 'presentation'
+    return { type: 'viewMode', mode }
+  },
   (t) => (/(guide|mode d'emploi|manuel|documentation|notice|tutoriel)/.test(t) ? { type: 'view', view: 'guide' } : null),
   (t) => (/(inventaire|parc)/.test(t) ? { type: 'view', view: 'inventory' } : null),
   (t) => (/(baies?|racks?|salle serveur|salle machine)/.test(t) ? { type: 'view', view: 'racks' } : null),
@@ -869,6 +883,9 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'Tracé courbe',
       'Réinitialise le tracé',
       'Accroches automatiques',
+      'Mode présentation',
+      'Vue technique',
+      'Masque les croisements',
       'Mets FW-01 au premier plan',
       'Place SW-ACC-A1 en arrière-plan',
       'Masque la grille',

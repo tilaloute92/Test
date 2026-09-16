@@ -16,10 +16,65 @@ export interface Point {
 
 const CORNER = 10
 
+/** Rayon du petit pont dessiné là où une liaison en enjambe une autre. */
+const HOP = 6
+
+/**
+ * Croisement à enjamber, tel que le tracé le reçoit : la position absolue et le segment de
+ * la ligne brisée concerné. (`lib/crossings.ts` les calcule pour tout le schéma.)
+ */
+export interface PathHop {
+  segment: number
+  x: number
+  y: number
+}
+
+/**
+ * Portion droite d'un tracé, ponts compris.
+ *
+ * Chaque croisement remplace un bout de segment par un demi-cercle : le trait du dessus
+ * passe par-dessus celui du dessous au lieu de le couper, et le croisement se voit.
+ */
+function lineWithHops(start: Point, end: Point, segment: number, hops: PathHop[]): string {
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  const length = Math.hypot(dx, dy)
+  if (length < 0.01) return ` L ${end.x} ${end.y}`
+
+  const ux = dx / length
+  const uy = dy / length
+  const at = (distance: number) => ({ x: start.x + ux * distance, y: start.y + uy * distance })
+
+  const positions = hops
+    .filter((hop) => hop.segment === segment)
+    .map((hop) => (hop.x - start.x) * ux + (hop.y - start.y) * uy)
+    // Un pont a besoin de place de part et d'autre : trop près d'un coude, il le mange.
+    .filter((distance) => distance > HOP + 1 && distance < length - HOP - 1)
+    .sort((a, b) => a - b)
+
+  // Tous les ponts bombent du même côté — vers le haut pour un trait horizontal, vers la
+  // gauche pour un vertical — quel que soit le sens de parcours de la liaison. Deux traits
+  // superposés qui enjambent la même ligne forment alors deux bosses parallèles, et non un
+  // anneau.
+  const sweep = (Math.abs(ux) > Math.abs(uy) ? ux < 0 : uy > 0) ? 1 : 0
+
+  let d = ''
+  let cursor = 0
+  for (const distance of positions) {
+    if (distance - HOP < cursor) continue
+    const before = at(distance - HOP)
+    const after = at(distance + HOP)
+    d += ` L ${before.x} ${before.y} A ${HOP} ${HOP} 0 0 ${sweep} ${after.x} ${after.y}`
+    cursor = distance + HOP
+  }
+  return `${d} L ${end.x} ${end.y}`
+}
+
 /** Transforme une ligne brisée en chemin SVG à angles arrondis. */
-function roundedPath(points: Point[], radius = CORNER): string {
+function roundedPath(points: Point[], radius = CORNER, hops: PathHop[] = []): string {
   if (points.length < 2) return ''
   let d = `M ${points[0].x} ${points[0].y}`
+  let cursor = points[0]
   for (let i = 1; i < points.length - 1; i += 1) {
     const prev = points[i - 1]
     const curr = points[i]
@@ -28,7 +83,8 @@ function roundedPath(points: Point[], radius = CORNER): string {
     const outLen = Math.hypot(next.x - curr.x, next.y - curr.y)
     const r = Math.min(radius, inLen / 2, outLen / 2)
     if (r < 1) {
-      d += ` L ${curr.x} ${curr.y}`
+      d += lineWithHops(cursor, curr, i - 1, hops)
+      cursor = curr
       continue
     }
     const from = {
@@ -39,10 +95,11 @@ function roundedPath(points: Point[], radius = CORNER): string {
       x: curr.x + ((next.x - curr.x) / outLen) * r,
       y: curr.y + ((next.y - curr.y) / outLen) * r,
     }
-    d += ` L ${from.x} ${from.y} Q ${curr.x} ${curr.y} ${to.x} ${to.y}`
+    d += `${lineWithHops(cursor, from, i - 1, hops)} Q ${curr.x} ${curr.y} ${to.x} ${to.y}`
+    cursor = to
   }
   const last = points[points.length - 1]
-  return `${d} L ${last.x} ${last.y}`
+  return d + lineWithHops(cursor, last, points.length - 2, hops)
 }
 
 /** Courbe lissée passant par tous les points (Catmull-Rom converti en Bézier). */
@@ -183,6 +240,8 @@ function dedupe(points: Point[]): Point[] {
 export interface LinkGeometry {
   /** Chemin SVG complet. */
   d: string
+  /** Forme réellement appliquée (la liaison peut imposer la sienne). */
+  shape: LinkShape
   /** Milieu du tracé, pour l'étiquette. */
   mid: Point
   /** Ligne brisée complète (ancres, coudes et points manuels). */
@@ -295,7 +354,57 @@ export function linkGeometry(a: NetNode, b: NetNode, options: RouteOptions): Lin
         ? `M ${points.map((point) => `${point.x} ${point.y}`).join(' L ')}`
         : roundedPath(points)
 
-  return { d, mid: midpointOf(points), points, nodes, waypoints }
+  return { d, shape, mid: midpointOf(points), points, nodes, waypoints }
+}
+
+/**
+ * Chemin SVG d'une ligne brisée déjà calculée, ponts de croisement compris.
+ *
+ * Les croisements sont connus du plan de travail, pas de la liaison : le tracé est donc
+ * reconstruit ici quand il y a des ponts à poser.
+ */
+export function pathFrom(points: Point[], shape: LinkShape, hops: PathHop[] = []): string {
+  if (points.length < 2) return ''
+  if (shape === 'curved') return smoothPath(points)
+  if (shape === 'straight') return roundedPath(points, 0, hops)
+  return roundedPath(points, CORNER, hops)
+}
+
+/**
+ * Point situé à une certaine distance d'une extrémité, en suivant le tracé, avec la
+ * direction locale. Sert à poser une étiquette de port juste à la sortie de l'équipement.
+ */
+export function pointAlong(
+  points: Point[],
+  distance: number,
+  fromEnd = false,
+): { x: number; y: number; dx: number; dy: number } {
+  const path = fromEnd ? [...points].reverse() : points
+  const { total } = lengthsOf(path)
+  // Sur une liaison courte, les deux étiquettes se rejoindraient : on les rapproche.
+  let remaining = Math.min(distance, Math.max(total * 0.4, 1))
+
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const a = path[i]
+    const b = path[i + 1]
+    const length = Math.hypot(b.x - a.x, b.y - a.y)
+    if (length === 0) continue
+    if (remaining <= length) {
+      const ratio = remaining / length
+      return {
+        x: a.x + (b.x - a.x) * ratio,
+        y: a.y + (b.y - a.y) * ratio,
+        dx: (b.x - a.x) / length,
+        dy: (b.y - a.y) / length,
+      }
+    }
+    remaining -= length
+  }
+
+  const a = path[path.length - 2]
+  const b = path[path.length - 1]
+  const length = Math.hypot(b.x - a.x, b.y - a.y) || 1
+  return { x: b.x, y: b.y, dx: (b.x - a.x) / length, dy: (b.y - a.y) / length }
 }
 
 /**

@@ -201,6 +201,47 @@ export function GuideView() {
       ),
     },
     {
+      id: 'modes',
+      title: 'Trois modes de visualisation',
+      keywords:
+        'mode vue architecture technique presentation affichage projection lecture densite rendu',
+      body: (
+        <>
+          <P>
+            Le même schéma se regarde de trois façons, sans jamais toucher au modèle. Le
+            sélecteur est dans la barre d'outils (et dans <i>Mise en page</i>) ; chaque mode
+            règle d'un coup ce qui s'affiche et comment c'est dessiné.
+          </P>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {[
+              {
+                title: 'Architecture',
+                text: 'La lecture d’ensemble : équipements avec leur adresse et leur zone, cadres de groupes, étiquettes utiles. C’est le mode de travail.',
+              },
+              {
+                title: 'Technique',
+                text: 'La documentation d’exploitation : boîtes compactes, modèle et numéro de série, et une étiquette sur chaque liaison même sans vue OSI.',
+              },
+              {
+                title: 'Présentation',
+                text: 'Pour projeter ou coller dans un document : noms seuls en gros, traits épais, ni grille ni détail technique.',
+              },
+            ].map((card) => (
+              <div key={card.title} className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[13px] font-semibold text-slate-800">{card.title}</p>
+                <p className="pt-0.5 text-[12px] leading-relaxed text-slate-600">{card.text}</p>
+              </div>
+            ))}
+          </div>
+          <P>
+            Les cases d'affichage restent modifiables après coup : le mode donne le point de
+            départ, pas une prison. À la voix : « mode présentation », « vue technique »,
+            « mode architecture ».
+          </P>
+        </>
+      ),
+    },
+    {
       id: 'schema',
       title: 'Construire le schéma',
       keywords: 'palette equipement materiel deplacer selection groupes zones sites grappes disposition automatique epingler motifs premier plan arriere plan empilement chevauchement ordre',
@@ -247,7 +288,7 @@ export function GuideView() {
     {
       id: 'liaisons',
       title: 'Liaisons, tracés et couches OSI',
-      keywords: 'liaisons liens cable fibre trunk vlan lacp agregat osi couche niveau 2 3 routage trace point de passage ancrage accroche brancher rebrancher extremite courbe orthogonal',
+      keywords: 'liaisons liens cable fibre trunk vlan lacp agregat osi couche niveau 2 3 routage trace point de passage ancrage accroche brancher rebrancher extremite courbe orthogonal croisement pont saut port stp spanning tree',
       body: (
         <>
           <P>
@@ -286,9 +327,23 @@ export function GuideView() {
                 quand la liaison doit contourner un bloc.
               </>,
               <>
+                <b>Croisements visibles</b> : quand deux liaisons se coupent sans se
+                raccorder, celle du dessus enjambe l'autre par un petit pont — comme sur un
+                schéma électrique. Le compteur en bas à droite du plan indique combien il y en
+                a : c'est un bon indicateur de lisibilité. Se coupe dans <i>Mise en page</i> ou
+                à la voix (« masque les croisements »).
+              </>,
+              <>
                 <b>Vues OSI</b> : <i>Couche 2</i> met en avant le domaine de diffusion et les
                 VLAN, <i>Couche 3</i> les sous-réseaux et le routage. Les liaisons hors couche
                 s'estompent — en mode strict, elles disparaissent.
+              </>,
+              <>
+                <b>Chaque bout de câble, de son côté</b> : en couche 1 et 2, le port et sa
+                configuration (mode, VLAN, VLAN natif, agrégat, rôle spanning-tree) sont écrits
+                à la sortie de l'équipement concerné, pas au milieu du trait ; en couche 3, ce
+                sont les adresses d'interface. L'inspecteur a un bloc par extrémité : ce qui y
+                est laissé vide hérite de la valeur commune à la liaison.
               </>,
               <>
                 <b>VLAN</b> : le panneau VLAN tient la table (identifiant, nom, sous-réseau,

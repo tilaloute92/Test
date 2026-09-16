@@ -5,6 +5,7 @@ import { HaPanel } from './HaPanel'
 import { VlanPanel } from './VlanPanel'
 import { linkLayers } from '../lib/osi'
 import { collapsibleGroups } from '../lib/derive'
+import { modeDefinition, VIEW_MODES } from '../lib/viewModes'
 import { allDevices, LAYER_LABELS, LINKS, ROLES, rankOf } from '../lib/catalog'
 import { useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
@@ -14,11 +15,13 @@ import type {
   HaRole,
   LinkShape,
   LinkKind,
+  NetLink,
   NetNode,
   OsiLayer,
   PortMode,
   RoutingProtocol,
   StpRole,
+  ViewMode,
   ZOrder,
 } from '../types'
 
@@ -295,6 +298,108 @@ function MultiNodeForm({ nodes }: { nodes: NetNode[] }) {
   )
 }
 
+const MODE_OPTIONS = [
+  { value: '', label: 'Non précisé' },
+  { value: 'access', label: 'Accès' },
+  { value: 'trunk', label: 'Trunk' },
+]
+
+const STP_OPTIONS = [
+  { value: '', label: 'Non précisé' },
+  { value: 'root', label: 'Vers la racine' },
+  { value: 'designated', label: 'Désigné' },
+  { value: 'alternate', label: 'Alternatif' },
+  { value: 'blocking', label: 'Bloquant' },
+  { value: 'edge', label: 'Port d’extrémité' },
+]
+
+interface EndPatch {
+  port?: string
+  mode?: PortMode
+  vlans?: string
+  nativeVlan?: string
+  lag?: string
+  stp?: StpRole
+}
+
+/**
+ * Configuration de couche 2 d'un côté de la liaison.
+ *
+ * Les champs laissés vides héritent de la valeur commune — affichée en filigrane — pour
+ * qu'on ne saisisse que ce qui diffère réellement d'un équipement à l'autre : le rôle
+ * spanning-tree, le nom du port-channel local, un trunk plus restreint d'un côté.
+ */
+function EndL2({
+  title,
+  common,
+  port,
+  mode,
+  vlans,
+  nativeVlan,
+  lag,
+  stp,
+  onChange,
+}: {
+  title: string
+  common: NetLink
+  onChange: (patch: EndPatch) => void
+} & EndPatch) {
+  const current: EndPatch = { port, mode, vlans, nativeVlan, lag, stp }
+  const patch = (next: EndPatch) => onChange({ ...current, ...next })
+  const inherited = (value: string | undefined, fallback: string) => (value?.trim() ? `hérité : ${value}` : fallback)
+
+  return (
+    <div className="rounded-lg border border-cyan-200/70 bg-white p-2">
+      <p className="pb-1 text-[11px] font-semibold text-cyan-800">{title}</p>
+      <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Port">
+            <TextInput value={port ?? ''} onChange={(value) => patch({ port: value })} placeholder="Gi1/0/1" />
+          </Field>
+          <Field label="Mode">
+            <Select
+              value={mode ?? ''}
+              onChange={(value) => patch({ mode: value ? (value as PortMode) : undefined })}
+              options={[
+                { value: '', label: common.mode ? `Comme la liaison (${common.mode})` : 'Non précisé' },
+                ...MODE_OPTIONS.slice(1),
+              ]}
+            />
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="VLAN">
+            <TextInput
+              value={vlans ?? ''}
+              onChange={(value) => patch({ vlans: value })}
+              placeholder={inherited(common.vlans, '10,20')}
+            />
+          </Field>
+          <Field label="VLAN natif">
+            <TextInput
+              value={nativeVlan ?? ''}
+              onChange={(value) => patch({ nativeVlan: value })}
+              placeholder={inherited(common.nativeVlan, '1')}
+            />
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Agrégat (LACP)">
+            <TextInput value={lag ?? ''} onChange={(value) => patch({ lag: value })} placeholder="Po1" />
+          </Field>
+          <Field label="Rôle spanning-tree">
+            <Select
+              value={stp ?? ''}
+              onChange={(value) => patch({ stp: value ? (value as StpRole) : undefined })}
+              options={STP_OPTIONS}
+            />
+          </Field>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const ANCHOR_OPTIONS = [
   { value: 'auto', label: 'Automatique' },
   { value: 'top', label: 'Dessus' },
@@ -420,10 +525,10 @@ function LinkForm({ linkId }: { linkId: string }) {
           Niveau 1 — physique
         </p>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Port départ">
+          <Field label={`Port ${nameOf(link.from)}`}>
             <TextInput value={link.portA ?? ''} onChange={(portA) => set({ portA })} placeholder="Gi1/0/1" />
           </Field>
-          <Field label="Port arrivée">
+          <Field label={`Port ${nameOf(link.to)}`}>
             <TextInput value={link.portB ?? ''} onChange={(portB) => set({ portB })} placeholder="Gi1/0/2" />
           </Field>
         </div>
@@ -434,16 +539,16 @@ function LinkForm({ linkId }: { linkId: string }) {
           Niveau 2 — liaison
         </p>
         <div className="flex flex-col gap-2">
+          <p className="text-[11px] leading-snug text-cyan-800/70">
+            Commun aux deux extrémités. Ce qui diffère d’un équipement à l’autre se renseigne
+            juste en dessous, côté par côté.
+          </p>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Mode du port">
               <Select
                 value={link.mode ?? ''}
                 onChange={(mode) => set({ mode: mode ? (mode as PortMode) : undefined })}
-                options={[
-                  { value: '', label: 'Non précisé' },
-                  { value: 'access', label: 'Accès' },
-                  { value: 'trunk', label: 'Trunk' },
-                ]}
+                options={MODE_OPTIONS}
               />
             </Field>
             <Field label="VLAN (10,20,30-39)">
@@ -454,25 +559,6 @@ function LinkForm({ linkId }: { linkId: string }) {
             <Field label="VLAN natif">
               <TextInput value={link.nativeVlan ?? ''} onChange={(nativeVlan) => set({ nativeVlan })} placeholder="1" />
             </Field>
-            <Field label="Agrégat (LACP)">
-              <TextInput value={link.lag ?? ''} onChange={(lag) => set({ lag })} placeholder="Po1" />
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Rôle spanning-tree">
-              <Select
-                value={link.stp ?? ''}
-                onChange={(stp) => set({ stp: stp ? (stp as StpRole) : undefined })}
-                options={[
-                  { value: '', label: 'Non précisé' },
-                  { value: 'root', label: 'Vers la racine' },
-                  { value: 'designated', label: 'Désigné' },
-                  { value: 'alternate', label: 'Alternatif' },
-                  { value: 'blocking', label: 'Bloquant' },
-                  { value: 'edge', label: 'Port d’extrémité' },
-                ]}
-              />
-            </Field>
             <Field label="MTU">
               <TextInput
                 value={link.mtu ? String(link.mtu) : ''}
@@ -481,6 +567,47 @@ function LinkForm({ linkId }: { linkId: string }) {
               />
             </Field>
           </div>
+
+          <EndL2
+            title={`Côté ${nameOf(link.from)}`}
+            common={link}
+            port={link.portA}
+            mode={link.modeA}
+            vlans={link.vlansA}
+            nativeVlan={link.nativeVlanA}
+            lag={link.lagA}
+            stp={link.stpA}
+            onChange={(patch) =>
+              set({
+                portA: patch.port,
+                modeA: patch.mode,
+                vlansA: patch.vlans,
+                nativeVlanA: patch.nativeVlan,
+                lagA: patch.lag,
+                stpA: patch.stp,
+              })
+            }
+          />
+          <EndL2
+            title={`Côté ${nameOf(link.to)}`}
+            common={link}
+            port={link.portB}
+            mode={link.modeB}
+            vlans={link.vlansB}
+            nativeVlan={link.nativeVlanB}
+            lag={link.lagB}
+            stp={link.stpB}
+            onChange={(patch) =>
+              set({
+                portB: patch.port,
+                modeB: patch.mode,
+                vlansB: patch.vlans,
+                nativeVlanB: patch.nativeVlan,
+                lagB: patch.lag,
+                stpB: patch.stp,
+              })
+            }
+          />
         </div>
       </div>
 
@@ -493,10 +620,10 @@ function LinkForm({ linkId }: { linkId: string }) {
             <TextInput value={link.subnet ?? ''} onChange={(subnet) => set({ subnet })} placeholder="10.0.0.0/30" />
           </Field>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="IP départ">
+            <Field label={`IP ${nameOf(link.from)}`}>
               <TextInput value={link.ipA ?? ''} onChange={(ipA) => set({ ipA })} placeholder="10.0.0.1" />
             </Field>
-            <Field label="IP arrivée">
+            <Field label={`IP ${nameOf(link.to)}`}>
               <TextInput value={link.ipB ?? ''} onChange={(ipB) => set({ ipB })} placeholder="10.0.0.2" />
             </Field>
           </div>
@@ -523,7 +650,28 @@ function LinkForm({ linkId }: { linkId: string }) {
         </div>
       </div>
 
-      <Btn onClick={() => set({ from: link.to, to: link.from, ipA: link.ipB, ipB: link.ipA, portA: link.portB, portB: link.portA })}>
+      <Btn
+        onClick={() =>
+          set({
+            from: link.to,
+            to: link.from,
+            ipA: link.ipB,
+            ipB: link.ipA,
+            portA: link.portB,
+            portB: link.portA,
+            modeA: link.modeB,
+            modeB: link.modeA,
+            vlansA: link.vlansB,
+            vlansB: link.vlansA,
+            nativeVlanA: link.nativeVlanB,
+            nativeVlanB: link.nativeVlanA,
+            lagA: link.lagB,
+            lagB: link.lagA,
+            stpA: link.stpB,
+            stpB: link.stpA,
+          })
+        }
+      >
         Inverser le sens
       </Btn>
     </div>
@@ -617,11 +765,22 @@ function LayoutForm() {
   const showClusters = useDiagram((s) => s.showClusters)
   const showLayerLabels = useDiagram((s) => s.showLayerLabels)
   const showDetails = useDiagram((s) => s.showDetails)
+  const showHops = useDiagram((s) => s.showHops)
+  const viewMode = useDiagram((s) => s.viewMode)
+  const setViewMode = useDiagram((s) => s.setViewMode)
 
   return (
     <section>
       <SectionTitle>Mise en page</SectionTitle>
       <div className="flex flex-col gap-2.5">
+        <Field label="Mode de visualisation">
+          <Select
+            value={viewMode}
+            onChange={(value) => setViewMode(value as ViewMode)}
+            options={VIEW_MODES.map((item) => ({ value: item.id, label: item.label }))}
+          />
+        </Field>
+        <p className="-mt-1 text-[11px] leading-snug text-slate-400">{modeDefinition(viewMode).hint}</p>
         <Field label="Sens des couches">
           <Select
             value={layout.direction}
@@ -666,6 +825,11 @@ function LayoutForm() {
           <Checkbox checked={showZones} onChange={(v) => setDisplay({ showZones: v })} label="Afficher les zones" />
           <Checkbox checked={showClusters} onChange={(v) => setDisplay({ showClusters: v })} label="Afficher les grappes HA" />
           <Checkbox checked={showLayerLabels} onChange={(v) => setDisplay({ showLayerLabels: v })} label="Afficher les noms de couches" />
+          <Checkbox
+            checked={showHops}
+            onChange={(v) => setDisplay({ showHops: v })}
+            label="Enjamber les croisements de liaisons"
+          />
           <Checkbox checked={showGrid} onChange={(v) => setDisplay({ showGrid: v })} label="Afficher la grille" />
           <Checkbox checked={snap} onChange={(v) => setDisplay({ snap: v })} label="Aimanter à la grille" />
         </div>

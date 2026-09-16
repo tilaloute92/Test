@@ -146,6 +146,25 @@ export interface NetLink {
   /** Agrégat de liens : nom du port-channel / bundle LACP. */
   lag?: string
   stp?: StpRole
+
+  /**
+   * Configuration propre à chaque extrémité.
+   *
+   * Un câble relie deux équipements qui ne sont pas configurés pareil : le rôle
+   * spanning-tree diffère presque toujours (racine d'un côté, désigné de l'autre), le nom du
+   * port-channel est local à chaque châssis, et un trunk peut n'autoriser qu'un
+   * sous-ensemble de VLAN d'un côté. Vide = la valeur commune ci-dessus s'applique.
+   */
+  modeA?: PortMode
+  modeB?: PortMode
+  vlansA?: string
+  vlansB?: string
+  nativeVlanA?: string
+  nativeVlanB?: string
+  stpA?: StpRole
+  stpB?: StpRole
+  lagA?: string
+  lagB?: string
   /** MTU de la liaison (1500, 9000 pour le jumbo…). */
   mtu?: number
 
@@ -234,6 +253,9 @@ export interface Attach {
   dx: number
   dy: number
 }
+
+/** Mode de visualisation : même schéma, trois lectures. */
+export type ViewMode = 'architecture' | 'technique' | 'presentation'
 
 /** Déplacement d'un équipement dans l'ordre d'empilement. */
 export type ZOrder = 'front' | 'back' | 'forward' | 'backward'

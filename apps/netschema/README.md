@@ -253,6 +253,38 @@ cas qui reviennent : micro refusé, navigateur sans reconnaissance vocale, sché
 après un nettoyage du navigateur, export tronqué par un niveau de détail, import draw.io
 pauvre en types.
 
+## Trois modes de visualisation
+
+Le même schéma ne se montre pas de la même façon selon qu'on le construit, qu'on le
+documente ou qu'on le projette. Le sélecteur de la barre d'outils (également dans
+*Mise en page*) bascule entre trois modes, sans jamais toucher au modèle :
+
+| Mode | Pour quoi faire | Ce qui change |
+| --- | --- | --- |
+| **Architecture** | Le mode de travail | Nom, adresse, VLAN, modèle et zone dans la boîte ; cadres de groupes ; grille et noms de couches |
+| **Technique** | La documentation d'exploitation | Boîtes compactes, numéro de série et responsable en plus, étiquette sur chaque liaison même hors vue OSI, traits fins |
+| **Présentation** | Projeter, coller dans un document | Noms seuls en grand, traits épais, ni grille ni détail technique ni nom de couche |
+
+Chaque mode applique un jeu de réglages d'affichage ; les cases restent modifiables ensuite.
+À la voix : « mode présentation », « vue technique », « mode architecture ».
+
+## Croisements de liaisons
+
+Deux traits qui se coupent sans rien indiquer se lisent comme un raccordement : on croit voir
+une patte là où il n'y a qu'un croisement. NetSchema applique la convention des schémas
+électriques — **la liaison du dessus enjambe l'autre par un petit pont**.
+
+- Les croisements sont recalculés à chaque changement du schéma, segment par segment.
+- Deux liaisons branchées sur le même équipement ne comptent pas comme un croisement à leurs
+  abords : elles se rejoignent, c'est normal.
+- Le pont revient à la liaison dessinée en dernier, celle qui passe visuellement au-dessus :
+  le dessin dit la même chose que l'ordre d'empilement.
+- Tous les ponts bombent du même côté, quel que soit le sens de parcours de la liaison.
+- Le compteur en bas à droite du plan (« 4 croisement(s) enjambé(s) ») est un bon indicateur
+  de lisibilité : moins il y en a, mieux le schéma est rangé.
+- Se coupe dans *Mise en page → Enjamber les croisements de liaisons*, ou à la voix
+  (« masque les croisements »).
+
 ## Tracé des liaisons
 
 Le tracé automatique convient tant que le schéma reste rangé en couches ; dès qu'on veut
@@ -324,12 +356,35 @@ documente les trois et bascule d'une lecture à l'autre **sans redessiner quoi q
 
 Sélecteur dans la barre d'outils (ou `Ctrl+K` → « Vue OSI ») :
 
-| Vue | Ce que portent les libellés des liaisons |
-| --- | --- |
-| **Toutes couches** | Libellé libre et débit — la vue de travail |
-| **L1 — physique** | Débit et interfaces (`Te1/0/1 ↔ port2`) |
-| **L2 — liaison** | Mode et VLAN (`T 20,40,50`, `A 20`), VLAN natif, agrégat LACP, rôle spanning-tree, MTU |
-| **L3 — réseau** | Sous-réseau, adresses des deux extrémités, VRF, protocole de routage |
+| Vue | Au milieu du trait | À chaque extrémité, côté équipement |
+| --- | --- | --- |
+| **Toutes couches** | Libellé libre et débit — la vue de travail | — |
+| **L1 — physique** | Débit | Interface branchée (`Te1/0/1`) |
+| **L2 — liaison** | MTU | Port, mode et VLAN (`T 20,40,50`, `A 20`), VLAN natif, agrégat, rôle spanning-tree |
+| **L3 — réseau** | Sous-réseau, VRF, protocole de routage | Adresse de l'interface |
+
+### Chaque bout de câble, de son côté
+
+Un port et sa configuration n'appartiennent pas à la liaison mais à l'équipement où elle est
+branchée. Au milieu du trait, « Gi1/0/1 ↔ Gi0/1 » oblige à deviner lequel est de quel côté, et
+il n'y a pas de place pour dire que le trunk est racine ici et bloquant là. Chaque extrémité
+porte donc sa propre étiquette, posée à la sortie de la boîte concernée — c'est ainsi que se
+lisent les plans de brassage.
+
+L'inspecteur d'une liaison suit le même découpage : les valeurs **communes aux deux
+extrémités** (mode, VLAN, VLAN natif, MTU), puis un bloc **par côté**, nommé d'après
+l'équipement (« Côté SW-CORE-01 », « Côté SW-DIST-BATA »), avec port, mode, VLAN, VLAN natif,
+agrégat et rôle spanning-tree. Un champ laissé vide **hérite** de la valeur commune — affichée
+en filigrane — de sorte qu'on ne saisit que ce qui diffère vraiment d'un équipement à l'autre :
+
+- le **rôle spanning-tree**, qui diffère presque toujours (racine d'un côté, désigné ou
+  alternatif de l'autre) ;
+- le nom du **port-channel**, local à chaque châssis (`Po10` côté cœur, `Po1` côté
+  distribution) ;
+- un **trunk plus restreint** d'un côté que de l'autre ;
+- le **VLAN natif**, quand il n'est pas symétrique.
+
+*Inverser le sens* échange les deux côtés d'un bloc, configuration comprise.
 
 En vue L2, une liaison qui ne transporte qu'un seul VLAN prend **la couleur de ce VLAN** :
 les domaines de diffusion se lisent d'un coup d'œil.
@@ -349,7 +404,8 @@ puis, couche par couche :
 - **L1** — interfaces de départ et d'arrivée, débit, type de média ;
 - **L2** — mode du port (accès / trunk), VLAN transportés (`10,20,30-39`), VLAN natif,
   agrégat LACP (`Po1`), rôle spanning-tree (racine, désigné, alternatif, bloquant,
-  port d'extrémité), MTU ;
+  port d'extrémité), MTU — chacun de ces champs (sauf le MTU) pouvant être précisé
+  **extrémité par extrémité** ;
 - **L3** — sous-réseau en CIDR, adresse de chaque extrémité, VRF, protocole de routage
   (statique, OSPF, BGP, EIGRP, IS-IS, RIP).
 
@@ -542,6 +598,7 @@ marqués d'une pastille rouge sur le schéma.
 | Dupliquer | `Ctrl+D` |
 | Ouvrir un bloc replié | Double-clic dessus |
 | Premier plan / arrière-plan | `Ctrl+Maj+F` / `Ctrl+Maj+B` · `]` / `[` pour un cran |
+| Changer de mode de visualisation | Sélecteur de la barre d'outils, ou « mode présentation » à la voix |
 | Brancher une liaison où l'on veut | Glisser un carré vert de la liaison sélectionnée sur un équipement |
 | Retrouver comment faire | Onglet **Guide**, ou « ouvre le guide » à la voix |
 
@@ -578,6 +635,8 @@ src/
   lib/ha.ts             analyse haute disponibilité (points d'articulation + règles métier)
   lib/patterns.ts       bibliothèque de modèles d'architectures redondées
   lib/routing.ts        tracé des liaisons : automatique, points de passage, accroches libres, courbes
+  lib/crossings.ts      croisements de liaisons à enjamber (ponts)
+  lib/viewModes.ts      modes de visualisation : architecture, technique, présentation
   lib/exportImage.ts    export SVG / PNG
   lib/storage.ts        sauvegarde locale, lecture/écriture des fichiers projet
   lib/sample.ts         schéma d'exemple (architecture HA siège + site de secours, baies, parc)

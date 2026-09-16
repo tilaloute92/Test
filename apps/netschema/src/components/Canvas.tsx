@@ -6,9 +6,11 @@ import { LINKS } from '../lib/catalog'
 import { deriveDiagram, groupMembers, type DisplayNode } from '../lib/derive'
 import { setDiagramSvg } from '../lib/exportRegistry'
 import { readProjectFile } from '../lib/storage'
-import { linkColorFor, linkLabelFor } from '../lib/osi'
+import { linkColorFor, linkEndLabels, linkLabelFor } from '../lib/osi'
+import { crossingCount, linkCrossings, type Crossing } from '../lib/crossings'
+import { modeStyle } from '../lib/viewModes'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
-import { insertIndexAt, parallelOffsets, pointToAttach, type LinkGeometry } from '../lib/routing'
+import { insertIndexAt, linkGeometry, parallelOffsets, pointToAttach, type LinkGeometry } from '../lib/routing'
 import { GRID, useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
 import { DRAG_MIME } from '../lib/dnd'
@@ -72,6 +74,8 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const showLayerLabels = useDiagram((s) => s.showLayerLabels)
   const showDetails = useDiagram((s) => s.showDetails)
   const linkStyle = useDiagram((s) => s.linkStyle)
+  const showHops = useDiagram((s) => s.showHops)
+  const viewMode = useDiagram((s) => s.viewMode)
   const direction = useDiagram((s) => s.layout.direction)
 
   const collapsed = useDiagram((s) => s.collapsed)
@@ -448,6 +452,55 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     return offsets
   }, [display.links])
 
+  const style = modeStyle(viewMode)
+
+  /**
+   * Tracés calculés une fois pour toutes : les liaisons en ont besoin pour se dessiner, et
+   * la recherche des croisements pour comparer les lignes brisées entre elles.
+   */
+  const geometries = useMemo(() => {
+    const map = new Map<string, LinkGeometry>()
+    for (const link of display.links) {
+      const from = nodeById.get(link.from)
+      const to = nodeById.get(link.to)
+      if (!from || !to) continue
+      map.set(
+        link.id,
+        linkGeometry(from, to, {
+          style: linkStyle,
+          shape: link.shape,
+          offset: linkOffsets.get(link.id) ?? 0,
+          waypoints: link.waypoints,
+          anchorA: link.anchorA,
+          anchorB: link.anchorB,
+          attachA: link.attachA,
+          attachB: link.attachB,
+        }),
+      )
+    }
+    return map
+  }, [display.links, nodeById, linkStyle, linkOffsets])
+
+  const crossings = useMemo(() => {
+    if (!showHops) return new Map<string, Crossing[]>()
+    return linkCrossings(
+      display.links.flatMap((link) => {
+        const geometry = geometries.get(link.id)
+        if (!geometry) return []
+        return [
+          {
+            id: link.id,
+            points: geometry.points,
+            ends: [link.from, link.to] as [string, string],
+            hoppable: geometry.shape !== 'curved',
+          },
+        ]
+      }),
+    )
+  }, [display.links, geometries, showHops])
+
+  const hopCount = crossingCount(crossings)
+
   const source = connectFrom ? nodeById.get(connectFrom) : undefined
   const gridStep = GRID * view.zoom
 
@@ -578,23 +631,23 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
           )}
 
           {display.links.map((link) => {
-            const from = nodeById.get(link.from)
-            const to = nodeById.get(link.to)
-            if (!from || !to) return null
+            const geometry = geometries.get(link.id)
+            if (!geometry) return null
+            const label = linkLabelFor(link, osi)
             return (
               <LinkShape
                 key={link.id}
                 link={link}
-                from={from}
-                to={to}
-                style={linkStyle}
-                offset={linkOffsets.get(link.id) ?? 0}
+                geometry={geometry}
                 selected={selectedLinks.includes(link.id)}
                 showDetails={showDetails}
-                label={linkLabelFor(link, osi)}
+                label={label || (style.labelAlways ? [link.label, link.speed].filter(Boolean).join(' · ') : '')}
+                endLabels={linkEndLabels(link, osi)}
+                hops={crossings.get(link.id) ?? []}
                 color={linkColorFor(link, osi, diagram.vlans) ?? LINKS[link.kind].color}
                 dimmed={display.dimmed.has(link.id)}
                 editable={isRealLink(link.id)}
+                style={style}
                 onPointerDown={onLinkPointerDown}
               />
             )
@@ -623,6 +676,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 showDetails={showDetails}
                 flagged={own.some((id) => flagged.has(id))}
                 dimmed={display.dimmed.has(node.id)}
+                style={style}
                 onPointerDown={onNodePointerDown}
                 onDoubleClick={() => node.group && useDiagram.getState().toggleCollapse(node.group.key)}
               />
@@ -656,12 +710,14 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
         </g>
       </svg>
 
-      {(display.hiddenNodes > 0 || collapsed.length > 0) && (
+      {(display.hiddenNodes > 0 || collapsed.length > 0 || hopCount > 0) && (
         <div className="pointer-events-none absolute bottom-4 right-4 rounded-lg bg-white/90 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm ring-1 ring-slate-200">
           {collapsed.length > 0 && `${collapsed.length} groupe(s) replié(s)`}
           {collapsed.length > 0 && display.hiddenNodes > 0 && ' · '}
           {display.hiddenNodes > 0 && `${display.hiddenNodes} équipement(s) masqué(s)`}
-          {' — double-clic sur un bloc pour l’ouvrir'}
+          {(collapsed.length > 0 || display.hiddenNodes > 0) && ' — double-clic sur un bloc pour l’ouvrir'}
+          {hopCount > 0 && (collapsed.length > 0 || display.hiddenNodes > 0) && ' · '}
+          {hopCount > 0 && `${hopCount} croisement(s) enjambé(s)`}
         </div>
       )}
 
