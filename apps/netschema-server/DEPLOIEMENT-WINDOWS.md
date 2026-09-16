@@ -21,6 +21,7 @@ sur le serveur.
 9. [Exploitation](#9-exploitation)
 10. [Problèmes courants](#10-problèmes-courants)
 11. [Ce qui reste à votre charge](#11-ce-qui-reste-à-votre-charge)
+12. [Annexe — installation derrière IIS, pas à pas](#12-annexe--installation-derrière-iis-pas-à-pas)
 
 ---
 
@@ -348,12 +349,10 @@ Les cookies de session passent automatiquement en `Secure` et l'en-tête HSTS ap
 
 ### Scénario B — IIS en façade
 
-1. Installez les modules IIS **URL Rewrite** et **Application Request Routing**, puis activez
-   le proxy : IIS → *Application Request Routing Cache* → *Server Proxy Settings* →
-   cocher *Enable proxy*.
-2. Créez un site IIS avec votre certificat (binding 443), pointant vers un dossier vide.
-3. Copiez [`deploy/windows/web.config`](deploy/windows/web.config) à la racine de ce site.
-4. Dans `netschema.env` :
+En résumé : IIS termine le TLS sur 443 et relaie vers le service, qui n'écoute plus que sur
+`127.0.0.1:8080`. Il faut les modules **URL Rewrite** et **Application Request Routing**, un
+site IIS portant le certificat, le `web.config` fourni, et ces quatre lignes dans
+`netschema.env` :
 
 ```
 NETSCHEMA_HOST=127.0.0.1
@@ -363,12 +362,8 @@ NETSCHEMA_SECURE_COOKIES=true
 # NETSCHEMA_TLS_CERT / NETSCHEMA_TLS_KEY restent commentés : IIS porte le certificat
 ```
 
-5. Redémarrez le service, puis **refermez son port dans le pare-feu** : il ne doit plus être
-   joignable directement depuis le réseau.
-
-```powershell
-Get-NetFirewallRule -DisplayName "NetSchema (8443/TCP)" | Remove-NetFirewallRule
-```
+La procédure complète, commande par commande, est en
+[annexe](#12-annexe--installation-derrière-iis-pas-à-pas).
 
 ---
 
@@ -528,3 +523,220 @@ La désinstallation retire le service, la règle de pare-feu et — seulement av
   souhaitez l'ajouter plus tard.
 - **Mises à jour de Node.js** : suivre les versions LTS.
 - **Supervision** : surveiller le service et l'URL `/api/health` avec vos outils habituels.
+
+
+---
+
+## 12. Annexe — installation derrière IIS, pas à pas
+
+À suivre **après** les étapes 1 à 4 (le service est installé et fonctionne). IIS ne remplace
+pas le service : il se place devant lui.
+
+```
+Poste client ──443/HTTPS──► IIS (certificat, URL Rewrite + ARR) ──8080/HTTP──► NetSchema
+                                                                  127.0.0.1 uniquement
+```
+
+### 12.1 Installer IIS et ses modules
+
+```powershell
+# IIS et la console de gestion (Windows Server)
+Install-WindowsFeature Web-Server, Web-Mgmt-Console -IncludeManagementTools
+# Sur Windows 10/11 Pro :
+# Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebServerRole, IIS-ManagementConsole -All
+```
+
+Puis deux modules, à télécharger sur <https://www.iis.net/downloads> (ou par Web Platform
+Installer si vous l'avez encore) et à installer dans cet ordre :
+
+1. **URL Rewrite 2.1** (`rewrite_amd64_fr-FR.msi`)
+2. **Application Request Routing 3.0** (`requestRouterAMD64.msi`) — il installe aussi
+   *External Cache*
+
+Sur un serveur isolé, récupérez les deux `.msi` depuis un poste connecté ; ils s'installent
+sans accès Internet. Contrôle :
+
+```powershell
+Get-WebGlobalModule | Where-Object Name -match 'Rewrite|RequestRouter'
+```
+
+### 12.2 Activer le proxy ARR
+
+Installé, ARR ne relaie rien tant que le proxy n'est pas activé. En ligne de commande :
+
+```powershell
+Set-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' `
+    -Filter 'system.webServer/proxy' -Name 'enabled' -Value 'True'
+
+# Ne pas annoncer la version d'ARR dans les réponses.
+Set-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' `
+    -Filter 'system.webServer/proxy' -Name 'reverseRewriteHostInResponseHeaders' -Value 'False'
+```
+
+Équivalent à la souris : console IIS → nœud du **serveur** → *Application Request Routing
+Cache* → panneau de droite *Server Proxy Settings…* → cocher **Enable proxy** → *Appliquer*.
+
+Vérification :
+
+```powershell
+(Get-WebConfiguration -PSPath 'MACHINE/WEBROOT/APPHOST' -Filter 'system.webServer/proxy').enabled
+# True
+```
+
+### 12.3 Importer le certificat
+
+Depuis un `.pfx` :
+
+```powershell
+$pwd = Read-Host 'Mot de passe du PFX' -AsSecureString
+$cert = Import-PfxCertificate -FilePath C:\Certificats\netschema.pfx `
+        -CertStoreLocation Cert:\LocalMachine\My -Password $pwd
+$cert.Thumbprint
+```
+
+*(Ici, pas de conversion PEM : contrairement au scénario A, IIS lit le magasin Windows.)*
+
+### 12.4 Créer le site IIS
+
+Le site ne sert aucun fichier : il ne fait que relayer. Un dossier vide suffit, et le pool
+d'applications n'a besoin d'aucun code managé.
+
+```powershell
+mkdir C:\inetpub\netschema -Force
+
+New-WebAppPool -Name NetSchemaPool
+Set-ItemProperty IIS:\AppPools\NetSchemaPool -Name managedRuntimeVersion -Value ''   # No Managed Code
+
+New-WebSite -Name NetSchema -PhysicalPath C:\inetpub\netschema -ApplicationPool NetSchemaPool `
+    -Port 443 -HostHeader netschema.societe.local -Ssl
+
+# Associer le certificat au binding (SNI activé : plusieurs sites HTTPS peuvent coexister)
+$binding = Get-WebBinding -Name NetSchema -Protocol https
+$binding.AddSslCertificate($cert.Thumbprint, 'My')
+Set-WebBinding -Name NetSchema -BindingInformation "*:443:netschema.societe.local" `
+    -PropertyName sslFlags -Value 1
+```
+
+Si le site par défaut occupe déjà le port 443 sans en-tête d'hôte, arrêtez-le
+(`Stop-WebSite 'Default Web Site'`) ou donnez-lui un en-tête d'hôte distinct.
+
+### 12.5 Déposer le `web.config`
+
+```powershell
+Copy-Item C:\Sources\Test\apps\netschema-server\deploy\windows\web.config `
+          C:\inetpub\netschema\web.config
+```
+
+Il contient trois choses, et rien de plus :
+
+- une **règle entrante** qui relaie tout (`(.*)`) vers `http://127.0.0.1:8080/{R:1}` ;
+- une **limite de taille** de requête alignée sur celle du service (8 Mo) ;
+- le retrait de l'en-tête `X-Powered-By`.
+
+Volontairement, **aucune règle sortante** : c'est le service qui marque ses cookies `Secure`
+(`NETSCHEMA_SECURE_COOKIES=true`) et qui pose les en-têtes de sécurité. Une règle sortante
+serait inutile, et IIS la refuserait sur des réponses compressées — le service comprime les
+siennes.
+
+Si vous changez le port du service, changez-le **aussi** dans cette règle.
+
+### 12.6 Basculer le service en écoute locale
+
+Dans `C:\Apps\NetSchema\netschema.env` :
+
+```
+NETSCHEMA_HOST=127.0.0.1
+NETSCHEMA_PORT=8080
+NETSCHEMA_TRUST_PROXY=true
+NETSCHEMA_SECURE_COOKIES=true
+# NETSCHEMA_TLS_CERT= et NETSCHEMA_TLS_KEY= commentés : IIS porte le certificat
+```
+
+`TRUST_PROXY` fait lire l'adresse réelle du client dans l'`X-Forwarded-For` ajouté par ARR :
+sans elle, le journal d'audit et la limitation des tentatives de connexion verraient tout le
+monde sous l'adresse du serveur — et dix échecs venant d'un seul poste bloqueraient tout le
+monde. `SECURE_COOKIES` remplace la détection automatique, qui ne voit qu'une connexion en
+clair puisque le TLS s'arrête chez IIS.
+
+Avec NSSM, les variables sont recopiées dans la définition du service : rejouez la ligne
+`AppEnvironmentExtra` (étape 4, point 5) ou le script d'installation, puis redémarrez.
+
+```powershell
+Restart-Service NetSchema
+Start-Sleep 2
+Invoke-RestMethod http://127.0.0.1:8080/api/health      # ok = True, en local
+```
+
+### 12.7 Refermer le port du service
+
+Le service ne doit plus être joignable directement depuis le réseau : tout doit passer par
+IIS.
+
+```powershell
+Get-NetFirewallRule -DisplayName "NetSchema (8443/TCP)" -ErrorAction SilentlyContinue |
+    Remove-NetFirewallRule
+# 443 est ouvert par la règle IIS standard « World Wide Web Services (HTTP Traffic-In) » ;
+# sinon :
+New-NetFirewallRule -DisplayName 'NetSchema HTTPS (443/TCP)' -Direction Inbound -Action Allow `
+    -Protocol TCP -LocalPort 443 -Profile Domain, Private
+```
+
+Depuis un autre poste, `Test-NetConnection serveur -Port 8080` doit échouer, et
+`Test-NetConnection serveur -Port 443` réussir.
+
+### 12.8 Rediriger le HTTP vers le HTTPS (facultatif)
+
+Pour que `http://netschema.societe.local` ne tombe pas dans le vide, ajoutez un binding 80 au
+site et, **en première règle** du `web.config`, une redirection :
+
+```xml
+<rule name="HTTPS obligatoire" stopProcessing="true">
+  <match url="(.*)" />
+  <conditions>
+    <add input="{HTTPS}" pattern="off" />
+  </conditions>
+  <action type="Redirect" url="https://{HTTP_HOST}/{R:1}" redirectType="Permanent" />
+</rule>
+```
+
+Elle doit précéder la règle `NetSchema`, sinon le relais l'emporte.
+
+### 12.9 Vérifier
+
+```powershell
+iisreset /noforce
+Get-Website NetSchema                                  # State : Started
+Invoke-RestMethod https://netschema.societe.local/api/health
+```
+
+Puis la recette de l'[étape 8](#8-vérifier-linstallation) depuis un poste client, avec deux
+contrôles propres à IIS :
+
+```powershell
+# Les cookies doivent revenir marqués Secure et HttpOnly
+(Invoke-WebRequest https://netschema.societe.local/api/session -SessionVariable s).Headers['Set-Cookie']
+
+# L'adresse du client doit apparaître dans le journal, pas celle du serveur
+Get-Content C:\ProgramData\NetSchema\data\audit.log -Tail 5 | ConvertFrom-Json |
+    Format-Table at, event, username, ip
+```
+
+### 12.10 Problèmes propres à IIS
+
+| Symptôme | Cause | Correction |
+| --- | --- | --- |
+| **404.4** « aucun gestionnaire configuré » | Proxy ARR non activé | § 12.2 |
+| **500.52** « outbound rewrite … encoded (gzip) » | Une règle sortante a été ajoutée | Les retirer : le service marque déjà ses cookies `Secure` |
+| **500.50** « server variable … not allowed » | Une règle pose une variable non déclarée | Ne pas en poser, ou l'ajouter à `allowedServerVariables` |
+| **502.3** « mauvaise passerelle » / délai dépassé | Service arrêté, mauvais port dans la règle | `Get-Service NetSchema` ; `Invoke-RestMethod http://127.0.0.1:8080/api/health` |
+| **413** « Request Entity Too Large » sur un gros schéma | `requestLimits` d'IIS plus bas que la limite du service | Aligner `maxAllowedContentLength` et `NETSCHEMA_MAX_BODY_BYTES` |
+| Connexion qui « retombe » sur la page de connexion | Cookies non marqués `Secure` | `NETSCHEMA_SECURE_COOKIES=true`, redémarrer le service |
+| Tout le monde sous la même adresse dans le journal | `NETSCHEMA_TRUST_PROXY` resté à `false` | Passer à `true`, redémarrer |
+| Blocages de comptes en cascade | Même cause : les échecs sont comptés par adresse | Idem |
+| Le site ne démarre pas, port 443 occupé | `Default Web Site` sur le même binding | Lui donner un en-tête d'hôte, ou l'arrêter |
+| Avertissement de certificat | Binding sans SNI ou mauvais nom | Vérifier `Get-WebBinding`, le nom DNS et l'en-tête d'hôte |
+
+### 12.11 Mise à jour, avec IIS devant
+
+Rien ne change : le script d'installation recompile et remplace le service, IIS n'est pas
+touché. Le `web.config` n'a à être recopié que s'il a évolué dans le dépôt.
