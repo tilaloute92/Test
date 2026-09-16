@@ -25,20 +25,29 @@ const services = {
 
 const app = createApp(services)
 
-const server =
-  config.tlsCert && config.tlsKey
-    ? createHttpsServer(
-        {
-          cert: readFileSync(config.tlsCert),
-          key: readFileSync(config.tlsKey),
-          minVersion: 'TLSv1.2',
-        },
-        app,
-      )
-    : createHttpServer(app)
+/**
+ * Certificat : soit deux fichiers PEM, soit un PFX exporté du magasin Windows — cette
+ * seconde forme évite une conversion par OpenSSL sur un serveur qui n'en dispose pas.
+ */
+function tlsOptions() {
+  if (config.tlsPfx) {
+    return {
+      pfx: readFileSync(config.tlsPfx),
+      ...(config.tlsPassphrase ? { passphrase: config.tlsPassphrase } : {}),
+      minVersion: 'TLSv1.2' as const,
+    }
+  }
+  return {
+    cert: readFileSync(config.tlsCert!),
+    key: readFileSync(config.tlsKey!),
+    minVersion: 'TLSv1.2' as const,
+  }
+}
+
+const server = config.https ? createHttpsServer(tlsOptions(), app) : createHttpServer(app)
 
 server.listen(config.port, config.host, () => {
-  const scheme = config.tlsCert ? 'https' : 'http'
+  const scheme = config.https ? 'https' : 'http'
   console.log(`[netschema] ${scheme}://${config.host}:${config.port}`)
   console.log(`[netschema] données   : ${config.dataDir}`)
   console.log(`[netschema] interface : ${config.webDir}`)
@@ -48,10 +57,11 @@ server.listen(config.port, config.host, () => {
         '            npm run user -- add <identifiant> --role admin',
     )
   }
-  if (!config.tlsCert && config.host !== '127.0.0.1' && !config.trustProxy) {
+  if (!config.https && config.host !== '127.0.0.1' && !config.trustProxy) {
     console.warn(
       "[netschema] attention : écoute en clair sur le réseau. Fournissez un certificat\n" +
-        '            (NETSCHEMA_TLS_CERT / NETSCHEMA_TLS_KEY) ou placez le service derrière IIS.',
+        '            (NETSCHEMA_TLS_PFX, ou NETSCHEMA_TLS_CERT / NETSCHEMA_TLS_KEY) ou placez\n' +
+        '            le service derrière IIS.',
     )
   }
 })

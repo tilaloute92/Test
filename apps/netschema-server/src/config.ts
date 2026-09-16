@@ -76,6 +76,14 @@ export interface Config {
   /** Certificat TLS : le serveur écoute en HTTPS dès que les deux fichiers sont fournis. */
   tlsCert?: string
   tlsKey?: string
+  /**
+   * Certificat au format PFX/PKCS#12 — celui qu'exporte le magasin Windows.
+   * Il évite la conversion en PEM, qui demande OpenSSL sur un serveur qui n'en a pas.
+   */
+  tlsPfx?: string
+  tlsPassphrase?: string
+  /** Vrai dès qu'un certificat, sous une forme ou l'autre, est configuré. */
+  https: boolean
   /** Derrière IIS/ARR ou un autre reverse proxy : on fait confiance à X-Forwarded-For. */
   trustProxy: boolean
   /** Cookies marqués Secure : automatique en HTTPS, forçable derrière un proxy TLS. */
@@ -95,7 +103,8 @@ export function loadConfig(): Config {
   const webDir = absolute(env('NETSCHEMA_WEB_DIR') ?? '../netschema/dist')
   const tlsCert = env('NETSCHEMA_TLS_CERT')
   const tlsKey = env('NETSCHEMA_TLS_KEY')
-  const https = Boolean(tlsCert && tlsKey)
+  const tlsPfx = env('NETSCHEMA_TLS_PFX')
+  const https = Boolean((tlsCert && tlsKey) || tlsPfx)
 
   return {
     host: env('NETSCHEMA_HOST') ?? '0.0.0.0',
@@ -106,6 +115,9 @@ export function loadConfig(): Config {
     sessionMinutes: envNumber('NETSCHEMA_SESSION_MINUTES', 12 * 60),
     tlsCert,
     tlsKey,
+    tlsPfx,
+    tlsPassphrase: env('NETSCHEMA_TLS_PASSPHRASE'),
+    https,
     trustProxy: envBool('NETSCHEMA_TRUST_PROXY', false),
     secureCookies: envBool('NETSCHEMA_SECURE_COOKIES', https),
     maxBodyBytes: envNumber('NETSCHEMA_MAX_BODY_BYTES', 8 * 1024 * 1024),

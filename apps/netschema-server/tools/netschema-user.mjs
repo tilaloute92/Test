@@ -89,6 +89,38 @@ async function askPassword() {
   return first
 }
 
+/**
+ * Mot de passe lu sur l'entrée standard (`--password-stdin`).
+ *
+ * C'est ainsi que le script d'installation transmet la saisie masquée qu'il a faite lui-même :
+ * un mot de passe passé en argument serait visible de toute la machine dans la liste des
+ * processus, et le masquage maison ci-dessus suppose une console qui comprenne les codes ANSI
+ * — ce qui n'est pas garanti sur les anciens Windows Server.
+ */
+function readStdin() {
+  return new Promise((done, fail) => {
+    let data = ''
+    process.stdin.setEncoding('utf8')
+    process.stdin.on('data', (chunk) => {
+      data += chunk
+    })
+    process.stdin.on('end', () => done(data.replace(/\r?\n$/, '')))
+    process.stdin.on('error', fail)
+  })
+}
+
+/** Mot de passe : argument, entrée standard, ou saisie masquée interactive. */
+async function resolvePassword(args) {
+  const given = option(args, 'password', null)
+  if (given) return given
+  if (args.includes('--password-stdin')) {
+    const value = await readStdin()
+    if (!value) throw new Error('Aucun mot de passe reçu sur l’entrée standard.')
+    return value
+  }
+  return askPassword()
+}
+
 function option(args, name, fallback) {
   const index = args.indexOf(`--${name}`)
   return index >= 0 && args[index + 1] ? args[index + 1] : fallback
@@ -115,7 +147,7 @@ try {
       }
       const role = option(rest, 'role', 'editeur')
       if (!ROLES.includes(role)) throw new Error(`Rôle inconnu : ${role} (${ROLES.join(', ')}).`)
-      const password = option(rest, 'password', null) ?? (await askPassword())
+      const password = await resolvePassword(rest)
       const issue = problem(password)
       if (issue) throw new Error(issue)
       users.push({
@@ -134,7 +166,7 @@ try {
     case 'passwd': {
       if (!target) throw new Error('Identifiant attendu : passwd <identifiant>')
       const index = find(users, target)
-      const password = option(rest, 'password', null) ?? (await askPassword())
+      const password = await resolvePassword(rest)
       const issue = problem(password)
       if (issue) throw new Error(issue)
       users[index] = { ...users[index], password: await hash(password), failures: 0, lockedUntil: undefined }

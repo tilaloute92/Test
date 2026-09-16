@@ -8,6 +8,23 @@ serveur Windows d'entreprise.
 L'application, elle, n'a pas changé : ouverte sans serveur, elle continue de fonctionner
 seule avec le stockage du navigateur. Elle détecte le mode au démarrage, en une requête.
 
+## Installer sur un serveur Windows
+
+Un paquet prêt à installer, un double-clic :
+
+```bash
+node tools/creer-paquet.mjs      # produit paquet/NetSchema-<version>-windows.zip (~1,5 Mo)
+```
+
+Sur le serveur : extraire, **clic droit sur `1-Installer.cmd` → Exécuter en tant
+qu'administrateur**. L'installeur vérifie Node.js (et l'installe au besoin), pose
+l'application, déclare le service, ouvre le pare-feu, crée le premier administrateur, démarre
+et vérifie que la page répond. Le certificat s'ajoute ensuite avec `2-Activer-HTTPS.cmd`.
+
+Voir [`INSTALLATION-RAPIDE.md`](INSTALLATION-RAPIDE.md), et
+[`DEPLOIEMENT-WINDOWS.md`](DEPLOIEMENT-WINDOWS.md) pour tout le reste (IIS, sauvegarde,
+exploitation).
+
 ## En deux minutes (poste de développement)
 
 ```bash
@@ -32,6 +49,7 @@ npm start                                           # http://localhost:8080
 - **Mots de passe** : scrypt (N=16384, r=8, p=1), sel par compte, comparaison à temps
   constant. Paramètres inscrits dans l'empreinte, donc durcissables plus tard sans tout
   invalider. Aucune dépendance native à compiler sur le serveur.
+- **Certificat** : PFX du magasin Windows lu tel quel (ou PEM), sans conversion ni OpenSSL.
 - **Sessions** : cookie `HttpOnly`, `SameSite=Strict`, `Secure` en HTTPS, signé HMAC-SHA256,
   expiration incluse dans la signature. Aucun état en mémoire : redémarrer le service ne
   déconnecte personne.
@@ -120,4 +138,6 @@ traversée de chemin, pollution de prototype, en-têtes de sécurité.
 
 ## Déploiement Windows
 
-Voir [`DEPLOIEMENT-WINDOWS.md`](DEPLOIEMENT-WINDOWS.md).
+- [`INSTALLATION-RAPIDE.md`](INSTALLATION-RAPIDE.md) — le paquet, l'installeur, le certificat.
+- [`DEPLOIEMENT-WINDOWS.md`](DEPLOIEMENT-WINDOWS.md) — le mode opératoire complet : installation
+  manuelle, configuration, HTTPS, IIS, exploitation, dépannage.

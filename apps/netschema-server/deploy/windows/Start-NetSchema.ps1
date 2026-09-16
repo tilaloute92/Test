@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Démarre le serveur NetSchema en chargeant netschema.env.
 

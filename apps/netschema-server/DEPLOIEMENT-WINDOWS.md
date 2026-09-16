@@ -36,7 +36,7 @@ chaque étape.
 | --- | --- | --- |
 | Quand le choisir | Serveur dédié, pas d'IIS, on veut le moins de pièces possible | Le serveur héberge déjà des sites, ou le certificat doit rester dans le magasin Windows |
 | Le service écoute sur | `0.0.0.0:8443`, en HTTPS | `127.0.0.1:8080`, en clair (jamais exposé) |
-| Certificat | Deux fichiers PEM lus par le service | Binding IIS habituel |
+| Certificat | Un PFX (ou deux fichiers PEM) lu par le service | Binding IIS habituel |
 | Pare-feu | Port 8443 ouvert | Rien à ouvrir pour le service (443 par IIS) |
 
 Le scénario A est le plus simple ; on peut passer de A à B plus tard sans rien réinstaller,
@@ -73,7 +73,7 @@ avant d'installer.
 | Node.js | **20.11 LTS ou plus récent**, installé pour toute la machine — <https://nodejs.org> |
 | Droits | Une console PowerShell « exécuter en tant qu'administrateur » |
 | Réseau | Un port libre (8443 par défaut) joignable depuis les postes clients |
-| Certificat | Un certificat serveur pour le nom DNS retenu (interne ou public) |
+| Certificat | Un certificat serveur pour le nom DNS retenu — **pas nécessaire pour démarrer** : on met d'abord en service en HTTP, le certificat s'ajoute ensuite |
 | Facultatif | [`nssm.exe`](https://nssm.cc) — recommandé, voir l'étape 3 |
 
 Vérifications, dans l'ordre :
@@ -100,10 +100,26 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass   # le temps de l'ins
 
 ---
 
-## 2. Récupérer les sources
+## 2. Récupérer le paquet (ou les sources)
 
-Copiez le dépôt sur le serveur, par exemple dans `C:\Sources\Test`. Deux dossiers seulement
-sont nécessaires : `apps\netschema` (l'interface) et `apps\netschema-server` (le service).
+Deux façons d'apporter l'application sur le serveur. **La première est celle à préférer** :
+elle ne demande ni Git, ni compilation, ni accès au registre npm.
+
+### a. Le paquet prêt à installer (recommandé)
+
+Un fichier `NetSchema-<version>-windows.zip` d'environ 1,5 Mo, qui contient l'interface
+compilée, le serveur compilé, ses dépendances et les scripts d'installation. Copiez-le sur le
+serveur, par exemple dans `C:\Temp`, puis **clic droit → Propriétés → Débloquer**, puis
+**Extraire tout…**
+
+Ce paquet se fabrique depuis le dépôt, sur n'importe quelle machine ayant Node.js :
+
+```bash
+cd apps/netschema-server
+node tools/creer-paquet.mjs          # produit paquet/NetSchema-<version>-windows.zip
+```
+
+### b. Le dépôt complet
 
 ```powershell
 mkdir C:\Sources -Force
@@ -113,72 +129,85 @@ cd C:\Sources\Test
 git checkout claude/network-infrastructure-schema-app-hxmk8h
 ```
 
-Sans Git : téléchargez l'archive ZIP du dépôt, faites un clic droit → **Propriétés** →
-**Débloquer** avant de l'extraire (sinon Windows marque les scripts comme « venant
-d'Internet » et refuse de les exécuter), puis extrayez dans `C:\Sources\Test`.
-
-Contrôle :
-
-```powershell
-Test-Path C:\Sources\Test\apps\netschema\package.json          # True
-Test-Path C:\Sources\Test\apps\netschema-server\package.json   # True
-```
+Sans Git : téléchargez l'archive ZIP du dépôt, **clic droit → Propriétés → Débloquer** avant
+de l'extraire (sinon Windows marque les scripts comme « venant d'Internet » et refuse de les
+exécuter). L'installeur compilera alors lui-même, ce qui suppose un accès au registre npm.
 
 ---
 
 ## 3. Installation automatique (voie normale)
 
+Depuis le dossier extrait : **clic droit sur `1-Installer.cmd` → Exécuter en tant
+qu'administrateur**. Un double-clic simple marche aussi, le script demande l'élévation.
+
+En ligne de commande, dans une console administrateur :
+
 ```powershell
-cd C:\Sources\Test\apps\netschema-server\deploy\windows
-.\Install-NetSchema.ps1 -SourceRoot C:\Sources\Test -InstallDir C:\Apps\NetSchema -Port 8443
+cd C:\Temp\NetSchema-1.0.0-windows
+.\Installer-NetSchema.ps1
+
+# depuis le dépôt plutôt que le paquet :
+.\Installer-NetSchema.ps1 -SourceRoot C:\Sources\Test
 ```
 
-### Paramètres du script
+### Paramètres
 
 | Paramètre | Défaut | À quoi il sert |
 | --- | --- | --- |
-| `-SourceRoot` | racine déduite du script | Dépôt contenant `apps\netschema` et `apps\netschema-server` |
+| `-Port` | `8080` | Port d'écoute, aussi ouvert dans le pare-feu |
+| `-Admin` | `admin` | Identifiant proposé pour le premier compte |
 | `-InstallDir` | `C:\Apps\NetSchema` | Où l'application est installée |
 | `-DataDir` | `C:\ProgramData\NetSchema\data` | Comptes, schémas, journal |
 | `-ServiceName` | `NetSchema` | Nom du service Windows |
-| `-Port` | `8443` | Port d'écoute, aussi ouvert dans le pare-feu |
-| `-NssmPath` | `nssm.exe` à côté du script | Gestionnaire de service (voir plus bas) |
-| `-ServiceAccount` | compte virtuel du service | Compte sous lequel tourne le service |
+| `-SourceRoot` | — | Dépôt à compiler, quand on n'utilise pas le paquet |
+| `-NssmPath` | téléchargé si besoin | Gestionnaire de service |
+| `-NodeVersion` | `22.11.0` | Version installée si Node.js est absent |
+| `-SansNode` | — | N'installe pas Node.js : échoue s'il manque |
+| `-Diagnostic` | — | N'installe rien, écrit un rapport d'état |
+| `-Desinstaller` | — | Retire service, pare-feu et fichiers (données conservées) |
+| `-SansPause` | — | Ne demande pas d'appuyer sur Entrée à la fin (installation scriptée) |
 
 ### Ce que le script fait, dans l'ordre
 
-1. **Vérifie Node.js** (refuse en dessous de 20.11) et l'élévation administrateur.
-2. **Compile l'interface web** (`npm ci` puis `npm run build` dans `apps\netschema`).
-3. **Compile le serveur** (`npm ci` puis `npm run build` dans `apps\netschema-server`).
-4. **Copie** `dist`, `node_modules`, `package.json` et `tools` dans `C:\Apps\NetSchema`,
-   l'interface compilée dans `C:\Apps\NetSchema\web`, et crée le dossier de données.
-5. **Écrit `netschema.env`** à partir de l'exemple, avec vos chemins et votre port
-   (HTTPS laissé commenté : c'est l'étape 6). *Un fichier déjà présent n'est jamais écrasé.*
-6. **Déclare le service** et lui passe les variables du fichier de configuration.
-7. **Restreint les droits** du dossier de données au compte de service, aux administrateurs
-   et à SYSTEM — l'héritage est coupé, personne d'autre n'y accède.
-8. **Démarre** le service et contrôle qu'il tourne.
-9. **Ouvre le port** dans le pare-feu (profils Domaine et Privé uniquement — jamais Public).
-10. **Rappelle la commande** de création du premier compte si aucun n'existe.
+1. **Node.js** — vérifie la version (20.11 minimum) et, s'il manque, l'installe : par winget
+   s'il est disponible, sinon en téléchargeant le paquet MSI officiel.
+2. **Fichiers** — utilise le paquet s'il est à côté du script, sinon compile depuis le dépôt.
+3. **Installation** — arrête le service en place, copie dans `C:\Apps\NetSchema`, crée le
+   dossier de données.
+4. **Configuration** — écrit `netschema.env`. *Un fichier déjà présent n'est jamais écrasé.*
+5. **Service** — déclare le service Windows en démarrage automatique (NSSM, téléchargé au
+   besoin ; à défaut une tâche planifiée), et lui passe la configuration.
+6. **Droits et pare-feu** — réserve le dossier de données au compte de service et aux
+   administrateurs, ouvre le port (profils Domaine et Privé uniquement, jamais Public).
+7. **Démarrage** — démarre, puis **attend que `/api/health` réponde** ; en cas d'échec,
+   affiche les dernières lignes du journal du service et les causes les plus fréquentes.
+8. **Premier compte** — demande identifiant et mot de passe (saisie masquée, transmise par
+   l'entrée standard et non en argument de commande), et crée l'administrateur.
+
+Tout est consigné dans `C:\ProgramData\NetSchema\logs\installation-….log`.
+
+Le script est **rejouable sans risque** : une seconde exécution répare ou met à jour
+l'installation sans toucher aux schémas, aux comptes ni à la configuration.
 
 ### NSSM ou tâche planifiée
 
-- **Avec [`nssm.exe`](https://nssm.cc)** (recommandé) placé à côté du script ou désigné par
-  `-NssmPath` : vrai service Windows, **redémarrage automatique en cas de plantage**, journaux
-  du service écrits dans `service.log` avec rotation à 10 Mo, et service tournant sous son
-  **compte virtuel** `NT SERVICE\NetSchema` — aucun mot de passe à gérer ni à renouveler.
-- **Sans NSSM** : repli sur une tâche planifiée au démarrage, exécutée en `SYSTEM`. Cela
-  suffit à un usage interne, mais la tâche ne redémarre pas le serveur s'il s'arrête seul.
+- **Avec [`nssm.exe`](https://nssm.cc)** — vrai service Windows, **redémarrage automatique en
+  cas de plantage**, journaux dans `service.log` avec rotation à 10 Mo, service tournant sous
+  son **compte virtuel** `NT SERVICE\NetSchema` (aucun mot de passe à gérer). L'installeur le
+  télécharge tout seul ; on peut aussi le poser à côté du script ou le désigner par
+  `-NssmPath`.
+- **Sans NSSM** (serveur sans Internet) — repli sur une tâche planifiée au démarrage, exécutée
+  en `SYSTEM`. Utilisable, mais elle ne relance pas le serveur s'il s'arrête seul.
 
-> **Serveur isolé (sans Internet)** — compilez sur un poste qui a accès au réseau :
-> ```powershell
-> cd apps\netschema        ; npm ci ; npm run build
-> cd ..\netschema-server   ; npm ci ; npm run build
-> ```
-> puis copiez sur le serveur `apps\netschema\dist` → `C:\Apps\NetSchema\web`, et
-> `apps\netschema-server\{dist,node_modules,package.json,tools}` → `C:\Apps\NetSchema`.
-> Reprenez ensuite à l'étape 4 à partir du point 3 (configuration), le reste du script n'ayant
-> plus rien à compiler.
+### En cas de problème
+
+```powershell
+.\Installer-NetSchema.ps1 -Diagnostic
+```
+
+Écrit `C:\ProgramData\NetSchema\diagnostic-….txt` : version de Node, état du service, ports
+en écoute, configuration, journaux. Aucun mot de passe n'y figure — c'est le fichier à
+transmettre.
 
 ---
 
@@ -289,7 +318,9 @@ relu à chaque démarrage du service : **toute modification demande un redémarr
 | --- | --- | --- |
 | `NETSCHEMA_HOST` | `0.0.0.0` | Cartes réseau d'écoute. `127.0.0.1` derrière IIS |
 | `NETSCHEMA_PORT` | `8443` en HTTPS, `8080` sinon | Port d'écoute |
-| `NETSCHEMA_TLS_CERT` / `NETSCHEMA_TLS_KEY` | — | Certificat et clé PEM. **Les deux renseignés = HTTPS activé** |
+| `NETSCHEMA_TLS_PFX` | — | Certificat PFX/PKCS#12 du magasin Windows. **Renseigné = HTTPS activé** |
+| `NETSCHEMA_TLS_PASSPHRASE` | — | Mot de passe du PFX |
+| `NETSCHEMA_TLS_CERT` / `NETSCHEMA_TLS_KEY` | — | Variante PEM : certificat et clé. **Les deux renseignés = HTTPS activé** |
 | `NETSCHEMA_DATA_DIR` | `data` | Comptes, schémas, journal. **À sauvegarder** |
 | `NETSCHEMA_WEB_DIR` | `../netschema/dist` | Interface web compilée |
 | `NETSCHEMA_SESSION_SECRET` | tiré au hasard, conservé | Signature des sessions, 32 caractères minimum |
@@ -307,7 +338,7 @@ Redémarrer le service ne déconnecte donc personne.
 
 > Avec NSSM, les variables sont recopiées **dans la définition du service** au moment de
 > l'installation. Après avoir modifié `netschema.env`, rejouez
-> `Install-NetSchema.ps1` ou la ligne `AppEnvironmentExtra` ci-dessus, puis redémarrez.
+> `Installer-NetSchema.ps1` ou la ligne `AppEnvironmentExtra` ci-dessus, puis redémarrez.
 > Avec la tâche planifiée, le fichier est relu à chaque démarrage : un redémarrage suffit.
 
 ---
@@ -316,36 +347,59 @@ Redémarrer le service ne déconnecte donc personne.
 
 ### Scénario A — le service porte le certificat
 
-Le service lit un certificat et une clé au format PEM. Depuis un `.pfx` exporté du magasin
-Windows (OpenSSL est fourni avec Git pour Windows) :
+**Le plus simple : `2-Activer-HTTPS.cmd`**, clic droit → *Exécuter en tant qu'administrateur*.
+Il demande le fichier `.pfx` et son mot de passe, installe le certificat, bascule la
+configuration, redémarre et vérifie.
+
+En ligne de commande, dans une console administrateur :
 
 ```powershell
-mkdir C:\ProgramData\NetSchema\tls -Force
-openssl pkcs12 -in netschema.pfx -clcerts -nokeys -out C:\ProgramData\NetSchema\tls\netschema.crt
-openssl pkcs12 -in netschema.pfx -nocerts -nodes  -out C:\ProgramData\NetSchema\tls\netschema.key
+cd C:\Temp\NetSchema-1.0.0-windows
 
-# La clé privée ne se lit que par le service et les administrateurs.
-icacls C:\ProgramData\NetSchema\tls /inheritance:r `
-    /grant:r "NT SERVICE\NetSchema:(OI)(CI)R" "BUILTIN\Administrators:(OI)(CI)F"
+# depuis un fichier .pfx
+.\Configurer-HTTPS.ps1 -Pfx C:\Certificats\winas.pfx
+
+# ou depuis un certificat déjà présent dans le magasin de l'ordinateur
+Get-ChildItem Cert:\LocalMachine\My | Select-Object Thumbprint, Subject, NotAfter
+.\Configurer-HTTPS.ps1 -Empreinte 9F2C4A…
+```
+
+Le script :
+
+1. vérifie le certificat (clé privée présente, mot de passe correct) et affiche sa date
+   d'expiration ;
+2. le copie dans `C:\ProgramData\NetSchema\data\tls\netschema.pfx`, dont il réserve la lecture
+   au compte de service et aux administrateurs ;
+3. renseigne `NETSCHEMA_TLS_PFX`, `NETSCHEMA_TLS_PASSPHRASE`, le port (8443 par défaut) et
+   `NETSCHEMA_SECURE_COOKIES=true` ; protège aussi `netschema.env`, qui contient désormais le
+   mot de passe du certificat ;
+4. ouvre le nouveau port dans le pare-feu, redémarre le service et **attend que l'application
+   réponde en HTTPS** avant d'afficher la nouvelle adresse.
+
+Le service lit donc **directement le PFX** du magasin Windows : pas de conversion, pas
+d'OpenSSL à installer. Les cookies de session passent en `Secure` et l'en-tête HSTS apparaît.
+
+<details>
+<summary>À la main, ou avec un certificat au format PEM</summary>
+
+Le service accepte aussi deux fichiers PEM — utile quand le certificat vient d'une autorité
+Linux ou d'un Let's Encrypt :
+
+```
+NETSCHEMA_TLS_CERT=C:\ProgramData\NetSchema\data\tls\netschema.crt
+NETSCHEMA_TLS_KEY=C:\ProgramData\NetSchema\data\tls\netschema.key
+NETSCHEMA_SECURE_COOKIES=true
+NETSCHEMA_PORT=8443
 ```
 
 Si la chaîne de certification est fournie à part, concaténez le certificat serveur **puis**
-les intermédiaires dans `netschema.crt` — dans cet ordre.
-
-Puis, dans `C:\Apps\NetSchema\netschema.env`, décommentez :
-
-```
-NETSCHEMA_TLS_CERT=C:\ProgramData\NetSchema\tls\netschema.crt
-NETSCHEMA_TLS_KEY=C:\ProgramData\NetSchema\tls\netschema.key
-```
-
-et redémarrez :
+les intermédiaires dans le `.crt`, dans cet ordre. Puis redémarrez :
 
 ```powershell
-Restart-Service NetSchema     # ou : Stop-ScheduledTask/Start-ScheduledTask -TaskName NetSchema
+Restart-Service NetSchema
 ```
 
-Les cookies de session passent automatiquement en `Secure` et l'en-tête HSTS apparaît.
+</details>
 
 ### Scénario B — IIS en façade
 
@@ -460,10 +514,14 @@ Start-Service NetSchema
 ### Mise à jour
 
 ```powershell
+# Avec le paquet : extraire la nouvelle version, puis
+.\Installer-NetSchema.ps1
+
+# Depuis le dépôt :
 cd C:\Sources\Test
 git pull
 cd apps\netschema-server\deploy\windows
-.\Install-NetSchema.ps1 -SourceRoot C:\Sources\Test -InstallDir C:\Apps\NetSchema -Port 8443
+.\Installer-NetSchema.ps1 -SourceRoot C:\Sources\Test
 ```
 
 Le script recompile et remplace l'installation ; `netschema.env` et le dossier de données sont
@@ -488,11 +546,11 @@ Get-Content C:\ProgramData\NetSchema\data\audit.log | ConvertFrom-Json |
 ```powershell
 Stop-Service NetSchema ; Start-Service NetSchema ; Restart-Service NetSchema
 
-.\Uninstall-NetSchema.ps1 -InstallDir C:\Apps\NetSchema -RemoveFiles
+.\Installer-NetSchema.ps1 -Desinstaller
 ```
 
-La désinstallation retire le service, la règle de pare-feu et — seulement avec `-RemoveFiles`
-— le dossier d'installation. **Le dossier de données n'est jamais supprimé par le script.**
+La désinstallation retire le service, la règle de pare-feu et le dossier d'installation.
+**Le dossier de données n'est jamais supprimé par le script.**
 
 ---
 
@@ -500,7 +558,7 @@ La désinstallation retire le service, la règle de pare-feu et — seulement av
 
 | Symptôme | Cause habituelle | Correction |
 | --- | --- | --- |
-| `.\Install-NetSchema.ps1 : impossible de charger le fichier` | Politique d'exécution, ou archive non débloquée | `Set-ExecutionPolicy -Scope Process Bypass`, et `Unblock-File` sur les scripts |
+| `.\Installer-NetSchema.ps1 : impossible de charger le fichier` | Politique d'exécution, ou archive non débloquée | `Set-ExecutionPolicy -Scope Process Bypass`, et `Unblock-File` sur les scripts |
 | `Node.js x.y est trop ancien` | Version en dessous de 20.11 | Installer la LTS, rouvrir la console (PATH) |
 | Page blanche, erreur 503 « Application web introuvable » | `NETSCHEMA_WEB_DIR` ne pointe pas sur le `dist` copié | Corriger le chemin, redémarrer |
 | Le service démarre puis s'arrête | Port pris, certificat illisible, dossier de données non accessible | `Get-Content …\data\service.log` ; `netstat -ano \| findstr :8443` |
