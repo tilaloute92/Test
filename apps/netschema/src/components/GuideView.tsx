@@ -288,7 +288,7 @@ export function GuideView() {
     {
       id: 'liaisons',
       title: 'Liaisons, tracés et couches OSI',
-      keywords: 'liaisons liens cable fibre trunk vlan lacp agregat osi couche niveau 2 3 routage trace point de passage ancrage accroche brancher rebrancher extremite courbe orthogonal croisement pont saut port stp spanning tree',
+      keywords: 'liaisons liens cable fibre trunk vlan lacp agregat osi couche niveau 2 3 routage trace point de passage ancrage accroche brancher rebrancher extremite courbe orthogonal croisement pont saut port stp spanning tree superposition chevauchement confondues couloir ecarter lisibilite',
       body: (
         <>
           <P>
@@ -325,6 +325,16 @@ export function GuideView() {
               <>
                 <b>Ancrage</b> : forcez le côté de départ ou d'arrivée (haut, bas, gauche, droite)
                 quand la liaison doit contourner un bloc.
+              </>,
+              <>
+                <b>Jamais deux liaisons confondues</b> : les liaisons qui quittent un
+                équipement par le même côté sont réparties le long de l'arête, dans l'ordre de
+                leurs destinations, et celles qui emprunteraient le même couloir sont rangées
+                dans des couloirs voisins — comme des câbles dans un chemin de câbles. Sur le
+                schéma d'exemple, on passe de 79 couples de liaisons superposées à 6. Un tracé
+                que vous avez dessiné (point de passage, accroche libre) n'est jamais déplacé :
+                superposer deux liaisons reste possible, mais c'est alors votre décision. La
+                case <i>Écarter les liaisons superposées</i> (Mise en page) coupe le mécanisme.
               </>,
               <>
                 <b>Croisements visibles</b> : quand deux liaisons se coupent sans se

@@ -7,10 +7,18 @@ import { deriveDiagram, groupMembers, type DisplayNode } from '../lib/derive'
 import { setDiagramSvg } from '../lib/exportRegistry'
 import { readProjectFile } from '../lib/storage'
 import { linkColorFor, linkEndLabels, linkLabelFor } from '../lib/osi'
-import { crossingCount, linkCrossings, type Crossing } from '../lib/crossings'
+import { crossingCount, linkCrossings, overlappingPairs, type Crossing } from '../lib/crossings'
 import { modeStyle } from '../lib/viewModes'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
-import { insertIndexAt, linkGeometry, parallelOffsets, pointToAttach, type LinkGeometry } from '../lib/routing'
+import {
+  insertIndexAt,
+  linkGeometry,
+  parallelOffsets,
+  pointToAttach,
+  resolveSide,
+  type LinkGeometry,
+} from '../lib/routing'
+import { assignLanes, corridorOf, spreadAnchors, type SpreadResult } from '../lib/spread'
 import { GRID, useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
 import { DRAG_MIME } from '../lib/dnd'
@@ -40,6 +48,9 @@ interface EndpointDragState {
   linkId: string
   end: 'a' | 'b'
 }
+
+/** Écart entre deux couloirs voisins quand des liaisons doivent être séparées. */
+const LANE_STEP = 12
 
 interface PanState {
   pointerId: number
@@ -75,6 +86,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const showDetails = useDiagram((s) => s.showDetails)
   const linkStyle = useDiagram((s) => s.linkStyle)
   const showHops = useDiagram((s) => s.showHops)
+  const spreadLinks = useDiagram((s) => s.spreadLinks)
   const viewMode = useDiagram((s) => s.viewMode)
   const direction = useDiagram((s) => s.layout.direction)
 
@@ -455,31 +467,93 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const style = modeStyle(viewMode)
 
   /**
+   * Répartition des accroches : sans elle, toutes les liaisons quittant un équipement par le
+   * même côté partent du même point et se superposent. Les accroches posées à la main sont
+   * laissées telles quelles — c'est la seule façon d'obtenir deux liaisons confondues, et
+   * c'est alors un choix.
+   */
+  const spreads = useMemo(() => {
+    if (!spreadLinks) return new Map<string, SpreadResult>()
+    const inputs = display.links.flatMap((link) => {
+      const from = nodeById.get(link.from)
+      const to = nodeById.get(link.to)
+      if (!from || !to) return []
+      const waypoints = link.waypoints ?? []
+      const towardA = waypoints[0] ?? { x: to.x, y: to.y }
+      const towardB = waypoints[waypoints.length - 1] ?? { x: from.x, y: from.y }
+      // Un tracé dessiné à la main ne se fait pas déplacer, pas même ses accroches.
+      const drawn = waypoints.length > 0
+      return [
+        {
+          id: link.id,
+          a: {
+            nodeId: link.from,
+            side: resolveSide(from, towardA, { forced: link.anchorA, attach: link.attachA }),
+            toward: towardA,
+            fixed: drawn || link.attachA !== undefined,
+          },
+          b: {
+            nodeId: link.to,
+            side: resolveSide(to, towardB, { forced: link.anchorB, attach: link.attachB }),
+            toward: towardB,
+            fixed: drawn || link.attachB !== undefined,
+          },
+        },
+      ]
+    })
+    return spreadAnchors(inputs)
+  }, [display.links, nodeById, spreadLinks])
+
+  /**
    * Tracés calculés une fois pour toutes : les liaisons en ont besoin pour se dessiner, et
    * la recherche des croisements pour comparer les lignes brisées entre elles.
    */
   const geometries = useMemo(() => {
-    const map = new Map<string, LinkGeometry>()
-    for (const link of display.links) {
-      const from = nodeById.get(link.from)
-      const to = nodeById.get(link.to)
-      if (!from || !to) continue
-      map.set(
-        link.id,
-        linkGeometry(from, to, {
-          style: linkStyle,
-          shape: link.shape,
-          offset: linkOffsets.get(link.id) ?? 0,
-          waypoints: link.waypoints,
-          anchorA: link.anchorA,
-          anchorB: link.anchorB,
-          attachA: link.attachA,
-          attachB: link.attachB,
-        }),
-      )
+    const build = (lanes: Map<string, number>) => {
+      const map = new Map<string, LinkGeometry>()
+      for (const link of display.links) {
+        const from = nodeById.get(link.from)
+        const to = nodeById.get(link.to)
+        if (!from || !to) continue
+        map.set(
+          link.id,
+          linkGeometry(from, to, {
+            style: linkStyle,
+            shape: link.shape,
+            offset: linkOffsets.get(link.id) ?? 0,
+            waypoints: link.waypoints,
+            anchorA: link.anchorA,
+            anchorB: link.anchorB,
+            attachA: link.attachA,
+            attachB: link.attachB,
+            offsetA: spreads.get(link.id)?.offsetA,
+            offsetB: spreads.get(link.id)?.offsetB,
+            lane: lanes.get(link.id),
+          }),
+        )
+      }
+      return map
     }
-    return map
-  }, [display.links, nodeById, linkStyle, linkOffsets])
+
+    const map = build(new Map())
+    if (!spreadLinks) return map
+
+    /*
+     * Après la répartition des accroches, deux liaisons peuvent encore emprunter le même
+     * couloir : on les range alors dans des couloirs voisins, comme des câbles dans un
+     * chemin de câbles. Un tracé posé à la main garde le sien — les autres s'écartent
+     * autour de lui.
+     */
+    const fixed = (link: NetLink) => (link.waypoints?.length ?? 0) > 0 || link.shape === 'straight'
+    const corridors = display.links.flatMap((link) => {
+      const geometry = map.get(link.id)
+      if (!geometry) return []
+      const corridor = corridorOf(link.id, geometry.points, fixed(link))
+      return corridor ? [corridor] : []
+    })
+    const lanes = assignLanes(corridors, LANE_STEP)
+    return lanes.size > 0 ? build(lanes) : map
+  }, [display.links, nodeById, linkStyle, linkOffsets, spreads, spreadLinks])
 
   const crossings = useMemo(() => {
     if (!showHops) return new Map<string, Crossing[]>()
@@ -500,6 +574,11 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   }, [display.links, geometries, showHops])
 
   const hopCount = crossingCount(crossings)
+  /** Liaisons encore confondues : c'est la mesure de ce qui reste illisible. */
+  const overlapCount = useMemo(
+    () => overlappingPairs([...geometries].map(([id, geometry]) => ({ id, points: geometry.points }))).length,
+    [geometries],
+  )
 
   const source = connectFrom ? nodeById.get(connectFrom) : undefined
   const gridStep = GRID * view.zoom
@@ -710,14 +789,16 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
         </g>
       </svg>
 
-      {(display.hiddenNodes > 0 || collapsed.length > 0 || hopCount > 0) && (
+      {(display.hiddenNodes > 0 || collapsed.length > 0 || hopCount > 0 || overlapCount > 0) && (
         <div className="pointer-events-none absolute bottom-4 right-4 rounded-lg bg-white/90 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm ring-1 ring-slate-200">
-          {collapsed.length > 0 && `${collapsed.length} groupe(s) replié(s)`}
-          {collapsed.length > 0 && display.hiddenNodes > 0 && ' · '}
-          {display.hiddenNodes > 0 && `${display.hiddenNodes} équipement(s) masqué(s)`}
-          {(collapsed.length > 0 || display.hiddenNodes > 0) && ' — double-clic sur un bloc pour l’ouvrir'}
-          {hopCount > 0 && (collapsed.length > 0 || display.hiddenNodes > 0) && ' · '}
-          {hopCount > 0 && `${hopCount} croisement(s) enjambé(s)`}
+          {[
+            collapsed.length > 0 ? `${collapsed.length} groupe(s) replié(s)` : null,
+            display.hiddenNodes > 0 ? `${display.hiddenNodes} équipement(s) masqué(s)` : null,
+            hopCount > 0 ? `${hopCount} croisement(s) enjambé(s)` : null,
+            overlapCount > 0 ? `${overlapCount} liaison(s) encore superposée(s)` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </div>
       )}
 

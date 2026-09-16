@@ -268,6 +268,27 @@ documente ou qu'on le projette. Le sélecteur de la barre d'outils (également d
 Chaque mode applique un jeu de réglages d'affichage ; les cases restent modifiables ensuite.
 À la voix : « mode présentation », « vue technique », « mode architecture ».
 
+## Liaisons superposées
+
+Deux câbles qui se superposent, c'est pire qu'un croisement : le croisement se voit, la
+superposition se cache — on ne voit qu'un trait là où il y en a quatre, et le schéma ment.
+Par défaut, l'application l'empêche :
+
+- **Répartition des accroches** — les liaisons qui quittent un équipement par le même côté
+  sont réparties le long de l'arête, **dans l'ordre de leurs destinations** : celle qui part le
+  plus à gauche sort le plus à gauche, donc sans se croiser entre elles.
+- **Couloirs** — celles qui emprunteraient malgré tout le même axe sur une portion commune
+  sont rangées dans des couloirs voisins, comme des câbles dans un chemin de câbles. C'est un
+  coloriage de graphe d'intervalles : une liaison qui ne gêne personne garde le couloir
+  central, les autres s'écartent de part et d'autre.
+- **Ce que vous avez tracé ne bouge pas** — une liaison avec des points de passage ou une
+  accroche posée à la main garde exactement son tracé, et les autres s'écartent autour d'elle.
+  Superposer deux liaisons reste donc possible : c'est alors une décision, pas un accident.
+- **Mesure** — le compteur en bas du plan indique combien de couples de liaisons restent
+  confondus. Sur le schéma d'exemple : **79 sans le mécanisme, 6 avec**.
+- La case *Mise en page → Écarter les liaisons superposées* (ou « masque les superpositions »
+  à la voix) rend l'ancien comportement.
+
 ## Croisements de liaisons
 
 Deux traits qui se coupent sans rien indiquer se lisent comme un raccordement : on croit voir
@@ -635,7 +656,8 @@ src/
   lib/ha.ts             analyse haute disponibilité (points d'articulation + règles métier)
   lib/patterns.ts       bibliothèque de modèles d'architectures redondées
   lib/routing.ts        tracé des liaisons : automatique, points de passage, accroches libres, courbes
-  lib/crossings.ts      croisements de liaisons à enjamber (ponts)
+  lib/crossings.ts      croisements à enjamber (ponts) et détection des superpositions
+  lib/spread.ts         répartition des accroches et couloirs, pour ne pas superposer les liaisons
   lib/viewModes.ts      modes de visualisation : architecture, technique, présentation
   lib/exportImage.ts    export SVG / PNG
   lib/storage.ts        sauvegarde locale, lecture/écriture des fichiers projet

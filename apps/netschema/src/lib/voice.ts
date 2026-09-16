@@ -121,6 +121,7 @@ export type ToggleKey =
   | 'showLayerLabels'
   | 'showAudit'
   | 'showHops'
+  | 'spreadLinks'
   | 'snap'
 
 export type QueryKind = 'count' | 'countKind' | 'ha' | 'spof' | 'power' | 'freeUnits' | 'vlans' | 'racks'
@@ -222,6 +223,7 @@ const TOGGLE_WORDS: { pattern: RegExp; key: ToggleKey }[] = [
   { pattern: /couches?|libelles/, key: 'showLayerLabels' },
   { pattern: /alertes?|points critiques|defaillances?/, key: 'showAudit' },
   { pattern: /croisements?|ponts?|sauts?/, key: 'showHops' },
+  { pattern: /superpositions?|chevauchements?|liaisons? superposees?|ecartement/, key: 'spreadLinks' },
   { pattern: /aimant|magnet|grille magnetique/, key: 'snap' },
 ]
 

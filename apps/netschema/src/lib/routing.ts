@@ -149,7 +149,22 @@ function clamp(value: number, limit: number): number {
   return Math.max(-limit, Math.min(limit, value))
 }
 
-type Side = 'top' | 'bottom' | 'left' | 'right'
+export type Side = 'top' | 'bottom' | 'left' | 'right'
+
+/**
+ * Côté par lequel une liaison quitte un équipement : celui imposé, celui du point d'accroche
+ * libre, ou à défaut celui qui fait face au point suivant. Exporté parce que le plan de
+ * travail a besoin de connaître les côtés *avant* de tracer, pour répartir les liaisons qui
+ * se présentent sur la même arête.
+ */
+export function resolveSide(
+  node: NetNode,
+  target: Point,
+  options: { forced?: AnchorSide; attach?: Attach },
+): Side {
+  if (options.attach) return attachSide(options.attach)
+  return sideToward(node, target, options.forced)
+}
 
 /** Côté d'accroche déduit de la direction vers le point suivant, à défaut d'un côté imposé. */
 function sideToward(node: NetNode, target: Point, forced: AnchorSide | undefined): Side {
@@ -265,6 +280,14 @@ export interface RouteOptions {
   /** Points d'accroche libres, prioritaires sur les côtés. */
   attachA?: Attach
   attachB?: Attach
+  /**
+   * Écartement de l'ancre sur son arête, extrémité par extrémité. C'est ce qui évite que
+   * toutes les liaisons d'un même équipement partent du même point et se superposent.
+   */
+  offsetA?: number
+  offsetB?: number
+  /** Décalage du couloir intermédiaire, pour que deux tracés parallèles ne se confondent pas. */
+  lane?: number
 }
 
 /**
@@ -289,8 +312,9 @@ export function linkGeometry(a: NetNode, b: NetNode, options: RouteOptions): Lin
   const sideB = options.attachB
     ? attachSide(options.attachB)
     : sideToward(b, waypoints[waypoints.length - 1] ?? { x: a.x, y: a.y }, options.anchorB)
-  const from = options.attachA ? attachToPoint(a, options.attachA) : anchorPoint(a, sideA, offset)
-  const to = options.attachB ? attachToPoint(b, options.attachB) : anchorPoint(b, sideB, offset)
+  const from = options.attachA ? attachToPoint(a, options.attachA) : anchorPoint(a, sideA, options.offsetA ?? offset)
+  const to = options.attachB ? attachToPoint(b, options.attachB) : anchorPoint(b, sideB, options.offsetB ?? offset)
+  const lane = options.lane ?? 0
   const nodes = [from, ...waypoints, to]
 
   // Un côté choisi à la main mérite une amorce : la liaison sort perpendiculairement à la
@@ -314,10 +338,10 @@ export function linkGeometry(a: NetNode, b: NetNode, options: RouteOptions): Lin
     // Tracé automatique historique : un seul décrochement à mi-parcours, qui donne des
     // schémas lisibles quand les équipements sont rangés en couches.
     if (isVertical(sideA) && isVertical(sideB)) {
-      const mid = (from.y + to.y) / 2 + offset / 2
+      const mid = (from.y + to.y) / 2 + offset / 2 + lane
       points = dedupe([from, { x: from.x, y: mid }, { x: to.x, y: mid }, to])
     } else if (!isVertical(sideA) && !isVertical(sideB)) {
-      const mid = (from.x + to.x) / 2 + offset / 2
+      const mid = (from.x + to.x) / 2 + offset / 2 + lane
       points = dedupe([from, { x: mid, y: from.y }, { x: mid, y: to.y }, to])
     } else {
       points = dedupe([from, ...elbow(from, to, isVertical(sideA)), to])

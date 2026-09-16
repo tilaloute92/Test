@@ -99,6 +99,58 @@ export function linkCrossings(links: CrossingInput[]): Map<string, Crossing[]> {
   return result
 }
 
+/**
+ * Superpositions : deux liaisons qui partagent un bout de trajet, alignées et confondues.
+ *
+ * C'est le défaut de lisibilité le plus trompeur — là où le croisement se voit, la
+ * superposition se cache : deux câbles n'en montrent qu'un. Les compter donne une mesure
+ * objective de ce que la répartition des accroches a corrigé.
+ */
+const OVERLAP_TOLERANCE = 2.5
+const OVERLAP_MIN_LENGTH = 14
+
+function overlapLength(a1: Point, a2: Point, b1: Point, b2: Point): number {
+  const horizontalA = Math.abs(a1.y - a2.y) < 0.5
+  const verticalA = Math.abs(a1.x - a2.x) < 0.5
+  const horizontalB = Math.abs(b1.y - b2.y) < 0.5
+  const verticalB = Math.abs(b1.x - b2.x) < 0.5
+
+  if (horizontalA && horizontalB && Math.abs(a1.y - b1.y) < OVERLAP_TOLERANCE) {
+    const start = Math.max(Math.min(a1.x, a2.x), Math.min(b1.x, b2.x))
+    const end = Math.min(Math.max(a1.x, a2.x), Math.max(b1.x, b2.x))
+    return end - start
+  }
+  if (verticalA && verticalB && Math.abs(a1.x - b1.x) < OVERLAP_TOLERANCE) {
+    const start = Math.max(Math.min(a1.y, a2.y), Math.min(b1.y, b2.y))
+    const end = Math.min(Math.max(a1.y, a2.y), Math.max(b1.y, b2.y))
+    return end - start
+  }
+  return 0
+}
+
+/** Couples de liaisons dont les tracés se confondent sur une longueur visible. */
+export function overlappingPairs(links: { id: string; points: Point[] }[]): [string, string][] {
+  const pairs: [string, string][] = []
+  for (let i = 0; i < links.length; i += 1) {
+    for (let j = i + 1; j < links.length; j += 1) {
+      let found = false
+      for (let s = 0; s < links[i].points.length - 1 && !found; s += 1) {
+        for (let k = 0; k < links[j].points.length - 1 && !found; k += 1) {
+          const length = overlapLength(
+            links[i].points[s],
+            links[i].points[s + 1],
+            links[j].points[k],
+            links[j].points[k + 1],
+          )
+          if (length > OVERLAP_MIN_LENGTH) found = true
+        }
+      }
+      if (found) pairs.push([links[i].id, links[j].id])
+    }
+  }
+  return pairs
+}
+
 /** Nombre total de croisements du schéma. */
 export function crossingCount(crossings: Map<string, Crossing[]>): number {
   let total = 0

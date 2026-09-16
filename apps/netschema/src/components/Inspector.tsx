@@ -766,6 +766,7 @@ function LayoutForm() {
   const showLayerLabels = useDiagram((s) => s.showLayerLabels)
   const showDetails = useDiagram((s) => s.showDetails)
   const showHops = useDiagram((s) => s.showHops)
+  const spreadLinks = useDiagram((s) => s.spreadLinks)
   const viewMode = useDiagram((s) => s.viewMode)
   const setViewMode = useDiagram((s) => s.setViewMode)
 
@@ -825,6 +826,11 @@ function LayoutForm() {
           <Checkbox checked={showZones} onChange={(v) => setDisplay({ showZones: v })} label="Afficher les zones" />
           <Checkbox checked={showClusters} onChange={(v) => setDisplay({ showClusters: v })} label="Afficher les grappes HA" />
           <Checkbox checked={showLayerLabels} onChange={(v) => setDisplay({ showLayerLabels: v })} label="Afficher les noms de couches" />
+          <Checkbox
+            checked={spreadLinks}
+            onChange={(v) => setDisplay({ spreadLinks: v })}
+            label="Écarter les liaisons superposées"
+          />
           <Checkbox
             checked={showHops}
             onChange={(v) => setDisplay({ showHops: v })}

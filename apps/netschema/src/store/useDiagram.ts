@@ -75,6 +75,8 @@ interface DiagramStore {
   showAudit: boolean
   /** Ponts dessinés là où deux liaisons se croisent. */
   showHops: boolean
+  /** Répartition automatique des accroches pour éviter les liaisons superposées. */
+  spreadLinks: boolean
   /** Mode de visualisation : architecture, technique, présentation. */
   viewMode: ViewMode
   /** Module affiché : schéma, inventaire, baies, découverte. */
@@ -170,6 +172,7 @@ interface DiagramStore {
         | 'showDetails'
         | 'showAudit'
         | 'showHops'
+        | 'spreadLinks'
       >
     >,
   ) => void
@@ -209,6 +212,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   showDetails: true,
   showAudit: true,
   showHops: true,
+  spreadLinks: true,
   viewMode: 'architecture',
   appView: 'diagram',
   mode: 'select',
