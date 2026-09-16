@@ -34,8 +34,12 @@ interface Props {
   dimmed?: boolean
   /** Les poignées de tracé ne sont proposées que sur le schéma réel, pas sur une vue dérivée. */
   editable?: boolean
+  /** Étiquettes déplaçables : faux si elles sont verrouillées ou le schéma en lecture seule. */
+  labelsEditable?: boolean
   style: ModeStyle
   onPointerDown: (event: React.PointerEvent<SVGPathElement>, link: NetLink, geometry: LinkGeometry) => void
+  /** Survol du trait : c'est lui qui déclenche l'info-bulle. */
+  onHover: (link: NetLink | null, event?: React.PointerEvent<SVGPathElement>) => void
   onLabelDown: (event: React.PointerEvent<SVGGElement>, link: NetLink, label: PlacedLabel) => void
   onLabelReset: (link: NetLink, label: PlacedLabel) => void
 }
@@ -49,8 +53,10 @@ export function LinkShape({
   color,
   dimmed,
   editable,
+  labelsEditable,
   style,
   onPointerDown,
+  onHover,
   onLabelDown,
   onLabelReset,
 }: Props) {
@@ -82,6 +88,9 @@ export function LinkShape({
         strokeWidth={16}
         style={{ cursor: editable ? 'grab' : 'pointer' }}
         onPointerDown={(event) => onPointerDown(event, link, geometry)}
+        onPointerEnter={(event) => onHover(link, event)}
+        onPointerMove={(event) => onHover(link, event)}
+        onPointerLeave={() => onHover(null)}
       />
 
       {labels.map((label) => {
@@ -104,17 +113,20 @@ export function LinkShape({
             )}
             <g
               transform={`translate(${label.x}, ${label.y})`}
-              style={{ cursor: editable ? 'move' : 'default' }}
-              onPointerDown={(event) => onLabelDown(event, link, label)}
+              style={{ cursor: labelsEditable ? 'move' : 'default' }}
+              onPointerDown={(event) => labelsEditable && onLabelDown(event, link, label)}
               onDoubleClick={(event) => {
+                if (!labelsEditable) return
                 event.stopPropagation()
                 onLabelReset(link, label)
               }}
             >
               <title>
-                {label.manual
-                  ? 'Étiquette déplacée à la main — double-clic pour la replacer automatiquement'
-                  : 'Glisser pour déplacer l’étiquette'}
+                {!labelsEditable
+                  ? 'Étiquettes verrouillées'
+                  : label.manual
+                    ? 'Étiquette déplacée à la main — double-clic pour la replacer automatiquement'
+                    : 'Glisser pour déplacer l’étiquette'}
               </title>
               <rect
                 x={-label.width / 2}

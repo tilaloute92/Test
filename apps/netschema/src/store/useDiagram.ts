@@ -15,7 +15,7 @@ import { auditDiagram } from '../lib/ha'
 import type { DiscoveryResult } from '../lib/discovery'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
 import { getDiagramSvg } from '../lib/exportRegistry'
-import { interpret } from '../lib/voice'
+import { interpret, isEditingIntent } from '../lib/voice'
 import { inventoryFromCsv } from '../lib/inventory'
 import { deduceVlans } from '../lib/osi'
 import { modeDefinition } from '../lib/viewModes'
@@ -126,6 +126,23 @@ interface DiagramStore {
   reorderNodes: (ids: string[], where: ZOrder) => void
   deleteSelection: () => void
 
+  /** Verrouille ou déverrouille le schéma entier : en lecture seule, plus rien ne bouge. */
+  setLocked: (locked: boolean) => void
+  /**
+   * Positions calculées des étiquettes, publiées par le plan de travail.
+   *
+   * Le store ne sait pas dessiner : c'est le canevas qui place les étiquettes. Il dépose ici
+   * le résultat de son calcul, ce qui permet de figer ces positions au verrouillage.
+   */
+  labelPlacements: () => Map<string, { dx: number; dy: number }>
+  publishLabelPlacements: (placements: Map<string, { dx: number; dy: number }>) => void
+  /**
+   * Fige les étiquettes de liaison là où elles sont, ou leur rend le placement automatique.
+   * Le verrouillage inscrit la position calculée de chacune dans le schéma : elle ne bougera
+   * plus, même si le schéma change autour d'elle.
+   */
+  setLabelsLocked: (locked: boolean, placements?: Map<string, { dx: number; dy: number }>) => void
+
   select: (target: { nodes?: string[]; links?: string[] }, additive?: boolean) => void
   clearSelection: () => void
   setAppView: (view: AppView) => void
@@ -198,6 +215,18 @@ function autoLayoutOf(diagram: Diagram, layout: LayoutOptions): Diagram {
   return { ...diagram, nodes: autoLayout(diagram, layout) }
 }
 
+/**
+ * Schéma verrouillé : garde posée à l'entrée de chaque action qui modifie le document.
+ *
+ * Le verrou appartient au schéma, pas à l'interface : le neutraliser en désactivant des
+ * boutons laisserait passer la voix, les raccourcis et les imports. Une seule barrière, au
+ * seul endroit par lequel tout passe.
+ */
+let lockedStore: () => boolean = () => false
+
+/** Dernières positions d'étiquettes calculées par le plan de travail, en décalages. */
+let lastLabelPlacements = new Map<string, { dx: number; dy: number }>()
+
 export const useDiagram = create<DiagramStore>((set, get) => ({
   diagram: initialDiagram,
   past: [],
@@ -265,9 +294,13 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       }
     }),
 
-  setTitle: (title) => set((state) => ({ diagram: { ...state.diagram, title } })),
+  setTitle: (title) => {
+    if (lockedStore()) return
+    set((state) => ({ diagram: { ...state.diagram, title } }))
+  },
 
   addNode: (kind, x, y, seed) => {
+    if (lockedStore()) return ''
     get().pushHistory()
     const id = uid('n')
     const count = get().diagram.nodes.filter((n) => n.kind === kind).length + 1
@@ -288,6 +321,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   updateNode: (id, patch) => {
+    if (lockedStore()) return
     get().pushHistory()
     set((state) => ({
       diagram: {
@@ -298,6 +332,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   updateNodes: (ids, patch) => {
+    if (lockedStore()) return
     get().pushHistory()
     set((state) => ({
       diagram: {
@@ -309,7 +344,8 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   // Appelé en continu pendant un glisser : l'instantané d'historique est pris une seule
   // fois, au début du geste, par le composant Canvas.
-  moveNodes: (ids, dx, dy) =>
+  moveNodes: (ids, dx, dy) => {
+    if (lockedStore()) return
     set((state) => ({
       diagram: {
         ...state.diagram,
@@ -317,17 +353,21 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
           ids.includes(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n,
         ),
       },
-    })),
+    }))
+  },
 
-  setNodePositions: (positions) =>
+  setNodePositions: (positions) => {
+    if (lockedStore()) return
     set((state) => ({
       diagram: {
         ...state.diagram,
         nodes: state.diagram.nodes.map((n) => (positions[n.id] ? { ...n, ...positions[n.id] } : n)),
       },
-    })),
+    }))
+  },
 
   addLink: (from, to, seed) => {
+    if (lockedStore()) return
     if (from === to) return
     const exists = get().diagram.links.some(
       (l) => (l.from === from && l.to === to) || (l.from === to && l.to === from),
@@ -353,6 +393,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   updateLink: (id, patch) => {
+    if (lockedStore()) return
     get().pushHistory()
     set((state) => ({
       diagram: {
@@ -367,7 +408,8 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
    * déplacement en enregistre un seul, à son début (comme pour le déplacement d'un
    * équipement).
    */
-  setLinkWaypoints: (id, waypoints) =>
+  setLinkWaypoints: (id, waypoints) => {
+    if (lockedStore()) return
     set((state) => ({
       diagram: {
         ...state.diagram,
@@ -375,10 +417,12 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
           link.id === id ? { ...link, waypoints: waypoints.length > 0 ? waypoints : undefined } : link,
         ),
       },
-    })),
+    }))
+  },
 
   /** Rend son tracé automatique à une liaison : points de passage et accroches effacés. */
   clearLinkRoute: (id) => {
+    if (lockedStore()) return
     get().pushHistory()
     set((state) => ({
       diagram: {
@@ -407,7 +451,8 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
    * Déplace une extrémité de liaison : elle change d'équipement si on l'a lâchée sur un
    * autre, et retient le point exact de la boîte où elle a été posée.
    */
-  attachLink: (id, end, nodeId, attach) =>
+  attachLink: (id, end, nodeId, attach) => {
+    if (lockedStore()) return
     set((state) => ({
       diagram: {
         ...state.diagram,
@@ -420,13 +465,52 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
             : { ...link, to: nodeId, attachB: attach ?? undefined }
         }),
       },
-    })),
+    }))
+  },
+
+  labelPlacements: () => lastLabelPlacements,
+  publishLabelPlacements: (placements) => {
+    lastLabelPlacements = placements
+  },
+
+  setLocked: (locked) => {
+    get().pushHistory()
+    set((state) => ({
+      diagram: { ...state.diagram, locked: locked || undefined },
+      mode: 'select',
+      selectedNodes: locked ? [] : state.selectedNodes,
+      selectedLinks: locked ? [] : state.selectedLinks,
+      toast: locked ? 'Schéma verrouillé : lecture seule.' : 'Schéma déverrouillé.',
+    }))
+  },
+
+  setLabelsLocked: (locked, placements) => {
+    get().pushHistory()
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        labelsLocked: locked || undefined,
+        // Au verrouillage, la position calculée de chaque étiquette devient sa position
+        // propre : c'est ce qui la rend stable quand le schéma évolue autour d'elle.
+        links: placements
+          ? state.diagram.links.map((link) => ({
+              ...link,
+              labelOffset: placements.get(`${link.id}:mid`) ?? link.labelOffset,
+              labelOffsetA: placements.get(`${link.id}:a`) ?? link.labelOffsetA,
+              labelOffsetB: placements.get(`${link.id}:b`) ?? link.labelOffsetB,
+            }))
+          : state.diagram.links,
+      },
+      toast: locked ? 'Étiquettes verrouillées.' : 'Étiquettes déverrouillées.',
+    }))
+  },
 
   /**
    * Étiquette déplacée à la main. Comme pour un point de passage, l'historique n'enregistre
    * qu'une étape au début du glissement : c'est `pushHistory` de l'appelant qui s'en charge.
    */
-  setLabelOffset: (id, which, offset) =>
+  setLabelOffset: (id, which, offset) => {
+    if (lockedStore()) return
     set((state) => ({
       diagram: {
         ...state.diagram,
@@ -437,9 +521,11 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
           return which === 'a' ? { ...link, labelOffsetA: value } : { ...link, labelOffsetB: value }
         }),
       },
-    })),
+    }))
+  },
 
   clearLinkAttach: (id) => {
+    if (lockedStore()) return
     get().pushHistory()
     set((state) => ({
       diagram: {
@@ -459,6 +545,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
    * sélection multiple se déplace d'un bloc sans se désordonner.
    */
   reorderNodes: (ids, where) => {
+    if (lockedStore()) return
     if (ids.length === 0) return
     const selected = new Set(ids)
     get().pushHistory()
@@ -486,6 +573,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   deleteSelection: () => {
+    if (lockedStore()) return
     const { selectedNodes, selectedLinks } = get()
     if (selectedNodes.length === 0 && selectedLinks.length === 0) return
     get().pushHistory()
@@ -544,6 +632,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   setStrictOsi: (strictOsi) => set({ strictOsi }),
 
   addRack: (rack) => {
+    if (lockedStore()) return ''
     const id = rack?.id ?? uid('r')
     get().pushHistory()
     const racks = get().diagram.racks ?? []
@@ -560,6 +649,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   updateRack: (id, patch) => {
+    if (lockedStore()) return
     get().pushHistory()
     set((state) => ({
       diagram: {
@@ -571,6 +661,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   /** Supprimer une baie ne supprime pas les équipements : ils redeviennent non implantés. */
   removeRack: (id) => {
+    if (lockedStore()) return
     get().pushHistory()
     set((state) => ({
       diagram: {
@@ -588,6 +679,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
    * première hauteur libre en partant du bas, comme on remplit une baie réelle.
    */
   assignToRack: (nodeIds, rackId, startUnit) => {
+    if (lockedStore()) return
     const { diagram } = get()
     const rack = (diagram.racks ?? []).find((item) => item.id === rackId)
     if (!rack) return
@@ -613,6 +705,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   detachFromRack: (nodeIds) => {
+    if (lockedStore()) return
     get().pushHistory()
     set((state) => ({
       diagram: {
@@ -626,6 +719,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   /** Import d'un inventaire CSV : la colonne « Nom » identifie l'équipement. */
   applyInventoryCsv: (text) => {
+    if (lockedStore()) return { updated: 0, created: 0, warnings: ['Schéma verrouillé.'] }
     const { rows, warnings } = inventoryFromCsv(text)
     if (rows.length === 0) return { updated: 0, created: 0, warnings }
     get().pushHistory()
@@ -661,6 +755,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
    * elle ne remplace pas.
    */
   mergeDiscovery: (result) => {
+    if (lockedStore()) return { created: 0, updated: 0, links: 0 }
     const { diagram } = get()
     const normalize = (value: string) => value.trim().toLowerCase()
     const byName = new Map(diagram.nodes.map((node) => [normalize(node.name), node]))
@@ -721,11 +816,13 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   setVlans: (vlans) => {
+    if (lockedStore()) return
     get().pushHistory()
     set((state) => ({ diagram: { ...state.diagram, vlans } }))
   },
 
   upsertVlan: (vlan) => {
+    if (lockedStore()) return
     get().pushHistory()
     set((state) => {
       const vlans = [...(state.diagram.vlans ?? [])]
@@ -737,6 +834,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   removeVlan: (id) => {
+    if (lockedStore()) return
     get().pushHistory()
     set((state) => ({
       diagram: { ...state.diagram, vlans: (state.diagram.vlans ?? []).filter((vlan) => vlan.id !== id) },
@@ -764,6 +862,11 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     const intent = interpret(transcript)
     if (!intent) {
       return { ok: false, message: `Commande non comprise : « ${transcript.trim()} »` }
+    }
+    // Lire, naviguer, interroger et exporter restent permis sur un schéma verrouillé ; le
+    // modifier est refusé avec l'explication, plutôt que de ne rien faire en silence.
+    if (lockedStore() && isEditingIntent(intent)) {
+      return { ok: false, message: 'Schéma verrouillé : dites « déverrouille le schéma » pour le modifier.' }
     }
 
     const state = get()
@@ -1085,6 +1188,19 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         return { ok: true, message: `${ids.length} équipement(s) ${labels[intent.where]}.` }
       }
 
+      case 'lock': {
+        get().setAppView('diagram')
+        if (intent.what === 'labels') {
+          get().setLabelsLocked(intent.locked, intent.locked ? get().labelPlacements() : undefined)
+          return { ok: true, message: intent.locked ? 'Étiquettes verrouillées.' : 'Étiquettes déverrouillées.' }
+        }
+        get().setLocked(intent.locked)
+        return {
+          ok: true,
+          message: intent.locked ? 'Schéma verrouillé : lecture seule.' : 'Schéma déverrouillé.',
+        }
+      }
+
       case 'linkAttach': {
         const id = state.selectedLinks[0]
         if (!id) return { ok: false, message: 'Sélectionnez d’abord une liaison.' }
@@ -1369,6 +1485,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
    * conservés, et les liaisons internes à la sélection sont dupliquées elles aussi.
    */
   duplicateSelection: () => {
+    if (lockedStore()) return
     const { diagram, selectedNodes } = get()
     if (selectedNodes.length === 0) return
     get().pushHistory()
@@ -1398,6 +1515,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   importText: (text, mode) => {
+    if (lockedStore()) return { nodes: 0, links: 0, warnings: ['Schéma verrouillé.'] }
     const base = mode === 'merge' ? get().diagram : emptyDiagram()
     const result = parseQuickImport(text, base)
     if (result.nodes.length === 0 && result.links.length === 0) {
@@ -1435,6 +1553,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   setLayout: (patch) => set((state) => ({ layout: { ...state.layout, ...patch } })),
 
   applyAutoLayout: () => {
+    if (lockedStore()) return
     get().pushHistory()
     set((state) => ({ diagram: autoLayoutOf(state.diagram, state.layout) }))
     get().fitView()
@@ -1454,6 +1573,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
    * du schéma puis replacés automatiquement.
    */
   insertPattern: (pattern) => {
+    if (lockedStore()) return
     get().pushHistory()
     const { view, canvasSize } = get()
     const center = {
@@ -1554,6 +1674,8 @@ function nextName(name: string, taken: Set<string>): string {
   }
   return candidate
 }
+
+lockedStore = () => useDiagram.getState().diagram.locked === true
 
 /** Sauvegarde locale automatique, pour retrouver son travail au prochain lancement. */
 let saveTimer: ReturnType<typeof setTimeout> | undefined

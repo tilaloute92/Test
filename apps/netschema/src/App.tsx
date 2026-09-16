@@ -38,6 +38,16 @@ export default function App() {
       // Les raccourcis d'édition ne valent que dans le module schéma.
       if (store.appView !== 'diagram' && event.key !== 'Escape') return
 
+      // Schéma verrouillé : seuls la recherche et l'échappement restent actifs.
+      const readOnly = store.diagram.locked === true
+      const editing = !((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') && event.key !== 'Escape'
+      if (readOnly && editing) {
+        if (['Delete', 'Backspace', ']', '[', 'l', 'L'].includes(event.key) || event.ctrlKey || event.metaKey) {
+          store.notify('Schéma verrouillé : déverrouillez-le pour le modifier.')
+        }
+        return
+      }
+
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
         store.setCommandOpen(true)

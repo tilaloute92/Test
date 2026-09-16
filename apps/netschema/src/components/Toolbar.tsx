@@ -19,6 +19,8 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
   const detail = useDiagram((s) => s.detail)
   const osi = useDiagram((s) => s.osi)
   const viewMode = useDiagram((s) => s.viewMode)
+  const locked = useDiagram((s) => s.diagram.locked === true)
+  const labelsLocked = useDiagram((s) => s.diagram.labelsLocked === true)
 
   const store = useDiagram.getState
 
@@ -92,17 +94,67 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
       <Btn
         variant={mode === 'connect' ? 'active' : 'default'}
         onClick={() => store().setMode(mode === 'connect' ? 'select' : 'connect')}
+        disabled={locked}
         title="Relier deux équipements (L)"
       >
         Relier
       </Btn>
-      <Btn variant="danger" onClick={() => store().deleteSelection()} disabled={!hasSelection} title="Supprimer (Suppr)">
+      <Btn variant="danger" onClick={() => store().deleteSelection()} disabled={locked || !hasSelection} title="Supprimer (Suppr)">
         Supprimer
       </Btn>
 
       <Separator />
 
-      <Btn variant="primary" onClick={() => store().applyAutoLayout()} title="Replacer automatiquement les équipements">
+      {/* Verrous : celui du schéma protège tout le document, celui des étiquettes fige leur place. */}
+      <button
+        type="button"
+        onClick={() => store().setLocked(!locked)}
+        title={
+          locked
+            ? 'Schéma verrouillé (lecture seule) — cliquer pour déverrouiller'
+            : 'Verrouiller le schéma : plus aucune modification possible'
+        }
+        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[13px] font-medium transition ${
+          locked
+            ? 'border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200'
+            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+        }`}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <rect x="4" y="11" width="16" height="10" rx="2" />
+          {locked ? <path d="M8 11V7a4 4 0 0 1 8 0v4" /> : <path d="M8 11V7a4 4 0 0 1 7.5-2" />}
+        </svg>
+        {locked ? 'Verrouillé' : 'Verrouiller'}
+      </button>
+      <button
+        type="button"
+        onClick={() => store().setLabelsLocked(!labelsLocked, labelsLocked ? undefined : store().labelPlacements())}
+        disabled={locked}
+        title={
+          labelsLocked
+            ? 'Étiquettes figées à leur place — cliquer pour les libérer'
+            : 'Figer les étiquettes de liaison à leur place actuelle'
+        }
+        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[13px] font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+          labelsLocked
+            ? 'border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200'
+            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+        }`}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <path d="M4 7h16M4 12h10M4 17h7" strokeLinecap="round" />
+        </svg>
+        Étiquettes
+      </button>
+
+      <Separator />
+
+      <Btn
+        variant="primary"
+        onClick={() => store().applyAutoLayout()}
+        disabled={locked}
+        title="Replacer automatiquement les équipements"
+      >
         Placement auto
       </Btn>
       <Btn onClick={() => store().fitView()} title="Ajuster à la fenêtre">Ajuster</Btn>
@@ -155,7 +207,7 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
       </select>
 
       <div className="ml-auto flex items-center gap-2">
-        <Btn onClick={() => store().setImportOpen(true)} title="Importer une liste d'équipements (Ctrl+I)">
+        <Btn onClick={() => store().setImportOpen(true)} disabled={locked} title="Importer une liste d'équipements (Ctrl+I)">
           Import rapide
         </Btn>
         <button

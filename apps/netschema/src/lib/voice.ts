@@ -65,6 +65,7 @@ export type VoiceIntent =
   | { type: 'setPinned'; target?: string; pinned: boolean }
   | { type: 'zorder'; target?: string; where: ZOrder }
   | { type: 'linkAttach'; target?: string; reset: true }
+  | { type: 'lock'; what: 'diagram' | 'labels'; locked: boolean }
   | { type: 'duplicate'; target?: string }
   | { type: 'delete'; target?: string }
   | { type: 'selectAll' }
@@ -489,6 +490,14 @@ const RULES: Rule[] = [
     const status = STATUS_WORDS[match[2]]
     return status ? { type: 'setStatus', target: cleanName(match[1]), status } : null
   },
+  // ── Verrous ────────────────────────────────────────────────────────────────
+  (t) => {
+    const match = t.match(/^(verrouille|verrouiller|deverrouille|deverrouiller|bloque|debloque)\s*(?:le |les |la )?(schema|plan|etiquettes?|libelles?|textes?)?$/)
+    if (!match) return null
+    const locked = !/^(deverrouille|deverrouiller|debloque)/.test(match[1])
+    const what = match[2] && /etiquette|libelle|texte/.test(match[2]) ? 'labels' : 'diagram'
+    return { type: 'lock', what, locked }
+  },
   (t) => {
     const match = t.match(/^(?:fige|figer|epingle|verrouille)\s*(?:la position (?:de |du |d')?)?(.*)$/)
     return match ? { type: 'setPinned', target: cleanName(match[1]) || undefined, pinned: true } : null
@@ -524,6 +533,7 @@ const RULES: Rule[] = [
     /(accroches? automatiques?|reinitialise les accroches|accroches? auto)/.test(t)
       ? { type: 'linkAttach', reset: true }
       : null,
+
 
   // ── Baies et plan d'adressage ──────────────────────────────────────────────
   (t) => {
@@ -843,6 +853,43 @@ export function suggestCommands(transcript: string, limit = 3): string[] {
 }
 
 /** Exemples affichés dans le panneau : ce sont de vraies commandes reconnues. */
+/**
+ * Intentions qui modifient le schéma.
+ *
+ * Sert au mode verrouillé : lire, naviguer, exporter et interroger restent permis ; tout ce
+ * qui touche au document est refusé avec une explication, plutôt que d'échouer en silence.
+ */
+const EDITING_INTENTS = new Set<VoiceIntent['type']>([
+  'add',
+  'setKind',
+  'move',
+  'linkEdit',
+  'linkDelete',
+  'setField',
+  'setRole',
+  'setStatus',
+  'setPinned',
+  'zorder',
+  'linkAttach',
+  'duplicate',
+  'delete',
+  'link',
+  'route',
+  'rackAssign',
+  'rackDetach',
+  'vlanAdd',
+  'pattern',
+  'title',
+  'layout',
+  'direction',
+  'undo',
+  'redo',
+])
+
+export function isEditingIntent(intent: VoiceIntent): boolean {
+  return EDITING_INTENTS.has(intent.type)
+}
+
 export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
   {
     title: 'Construire',
@@ -885,6 +932,8 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'Tracé courbe',
       'Réinitialise le tracé',
       'Accroches automatiques',
+      'Verrouille le schéma',
+      'Déverrouille les étiquettes',
       'Mode présentation',
       'Vue technique',
       'Masque les croisements',

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LinkHandles } from './LinkHandles'
 import { LinkShape, type PlacedLabel } from './LinkShape'
+import { LinkTooltip } from './LinkTooltip'
 import { NodeShape } from './NodeShape'
 import { LINKS } from '../lib/catalog'
 import { deriveDiagram, groupMembers, type DisplayNode } from '../lib/derive'
@@ -81,6 +82,9 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   /** Point d'accroche choisi sur l'équipement de départ, en mode « Relier ». */
   const connectAttachRef = useRef<Attach | null>(null)
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
+  /** Liaison survolée et position du pointeur : c'est ce que l'info-bulle affiche. */
+  const [hovered, setHovered] = useState<{ link: NetLink; x: number; y: number } | null>(null)
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const diagram = useDiagram((s) => s.diagram)
   const view = useDiagram((s) => s.view)
@@ -97,6 +101,10 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const showLayerLabels = useDiagram((s) => s.showLayerLabels)
   const showDetails = useDiagram((s) => s.showDetails)
   const linkStyle = useDiagram((s) => s.linkStyle)
+  const canvasSize = useDiagram((s) => s.canvasSize)
+  /** Schéma verrouillé : lecture seule. Étiquettes verrouillées : elles ne se déplacent plus. */
+  const locked = useDiagram((s) => s.diagram.locked === true)
+  const labelsLocked = useDiagram((s) => s.diagram.labelsLocked === true)
   const showHops = useDiagram((s) => s.showHops)
   const spreadLinks = useDiagram((s) => s.spreadLinks)
   const viewMode = useDiagram((s) => s.viewMode)
@@ -174,6 +182,11 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const onNodePointerDown = (event: React.PointerEvent<SVGGElement>, node: DisplayNode) => {
     event.stopPropagation()
     const store = useDiagram.getState()
+    // Schéma verrouillé : on peut encore sélectionner pour consulter la fiche, pas déplacer.
+    if (locked) {
+      store.select({ nodes: node.group ? [] : [node.id] })
+      return
+    }
 
     if (mode === 'connect') {
       // Cliquer près d'un bord fixe le point d'accroche de ce côté ; cliquer au centre
@@ -232,7 +245,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     event.stopPropagation()
     const store = useDiagram.getState()
     store.select({ links: [link.id] }, event.shiftKey)
-    if (!isRealLink(link.id) || event.shiftKey) return
+    if (locked || !isRealLink(link.id) || event.shiftKey) return
 
     // Tirer le trait lui-même pose un point de passage à cet endroit : c'est le geste
     // attendu quand on veut « faire passer la liaison par là ».
@@ -256,7 +269,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     point?: { x: number; y: number },
   ) => {
     event.stopPropagation()
-    if (!isRealLink(link.id)) return
+    if (locked || !isRealLink(link.id)) return
     const store = useDiagram.getState()
     store.select({ links: [link.id] })
     store.pushHistory()
@@ -302,7 +315,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
 
   const beginEndpointDrag = (event: React.PointerEvent<SVGRectElement>, link: NetLink, end: 'a' | 'b') => {
     event.stopPropagation()
-    if (!isRealLink(link.id)) return
+    if (locked || !isRealLink(link.id)) return
     const store = useDiagram.getState()
     store.select({ links: [link.id] })
     store.pushHistory()
@@ -311,7 +324,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   }
 
   const removeWaypoint = (link: NetLink, index: number) => {
-    if (!isRealLink(link.id)) return
+    if (locked || !isRealLink(link.id)) return
     const store = useDiagram.getState()
     store.pushHistory()
     store.setLinkWaypoints(
@@ -417,6 +430,10 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
+    if (locked) {
+      useDiagram.getState().notify('Schéma verrouillé : déverrouillez-le pour le modifier.')
+      return
+    }
 
     // Un fichier lâché sur le plan de travail est un schéma à ouvrir (projet ou draw.io).
     const file = event.dataTransfer.files?.[0]
@@ -673,12 +690,45 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       })
       byLink.set(linkId, list)
     }
+    // Le store a besoin de ces positions pour pouvoir les figer au verrouillage.
+    const offsets = new Map<string, { dx: number; dy: number }>()
+    for (const candidate of candidates) {
+      const placement = placements.get(candidate.id)
+      if (placement) {
+        offsets.set(candidate.id, {
+          dx: Math.round(placement.x - candidate.anchor.x),
+          dy: Math.round(placement.y - candidate.anchor.y),
+        })
+      }
+    }
+    useDiagram.getState().publishLabelPlacements(offsets)
+
     return byLink
   }, [display.links, display.nodes, geometries, osi, showDetails, style])
 
+  /**
+   * Survol d'une liaison. Un court délai évite que l'info-bulle clignote quand on traverse
+   * le schéma, et tout geste en cours (déplacement, tracé) la fait disparaître.
+   */
+  const onLinkHover = (link: NetLink | null, event?: React.PointerEvent<SVGPathElement>) => {
+    clearTimeout(hoverTimer.current)
+    if (!link || !event || dragRef.current || linkDragRef.current || labelDragRef.current || endpointDragRef.current) {
+      setHovered(null)
+      return
+    }
+    const rect = containerRef.current?.getBoundingClientRect()
+    const x = event.clientX - (rect?.left ?? 0)
+    const y = event.clientY - (rect?.top ?? 0)
+    if (hovered?.link.id === link.id) {
+      setHovered({ link, x, y })
+      return
+    }
+    hoverTimer.current = setTimeout(() => setHovered({ link, x, y }), 260)
+  }
+
   const beginLabelDrag = (event: React.PointerEvent<SVGGElement>, link: NetLink, label: PlacedLabel) => {
     event.stopPropagation()
-    if (!isRealLink(link.id)) return
+    if (locked || labelsLocked || !isRealLink(link.id)) return
     const store = useDiagram.getState()
     store.select({ links: [link.id] })
     store.pushHistory()
@@ -840,9 +890,11 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 hops={crossings.get(link.id) ?? []}
                 color={linkColorFor(link, osi, diagram.vlans) ?? LINKS[link.kind].color}
                 dimmed={display.dimmed.has(link.id)}
-                editable={isRealLink(link.id)}
+                editable={!locked && isRealLink(link.id)}
+                labelsEditable={!locked && !labelsLocked}
                 style={style}
                 onPointerDown={onLinkPointerDown}
+                onHover={onLinkHover}
                 onLabelDown={beginLabelDrag}
                 onLabelReset={(target, label) => {
                   const store = useDiagram.getState()
@@ -885,7 +937,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
 
           {/* Poignées de tracé : au-dessus des équipements pour rester attrapables. */}
           {display.links.map((link) => {
-            if (!selectedLinks.includes(link.id) || !isRealLink(link.id)) return null
+            if (locked || !selectedLinks.includes(link.id) || !isRealLink(link.id)) return null
             const from = nodeById.get(link.from)
             const to = nodeById.get(link.to)
             if (!from || !to) return null
@@ -909,6 +961,18 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
           })}
         </g>
       </svg>
+
+      {hovered && (
+        <LinkTooltip
+          link={hovered.link}
+          from={diagram.nodes.find((node) => node.id === hovered.link.from)}
+          to={diagram.nodes.find((node) => node.id === hovered.link.to)}
+          x={hovered.x}
+          y={hovered.y}
+          width={canvasSize.width}
+          height={canvasSize.height}
+        />
+      )}
 
       {(display.hiddenNodes > 0 || collapsed.length > 0 || hopCount > 0 || overlapCount > 0) && (
         <div className="pointer-events-none absolute bottom-4 right-4 rounded-lg bg-white/90 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm ring-1 ring-slate-200">

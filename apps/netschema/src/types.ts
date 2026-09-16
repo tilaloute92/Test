@@ -221,6 +221,13 @@ export interface Diagram {
   vlans?: VlanDef[]
   /** Baies et locaux techniques. */
   racks?: RackDef[]
+  /**
+   * Schéma verrouillé : lecture seule. Les verrous appartiennent au document — un schéma
+   * validé le reste pour qui l'ouvre, sur un autre poste comme après un export/import.
+   */
+  locked?: boolean
+  /** Étiquettes de liaison figées à leur place actuelle. */
+  labelsLocked?: boolean
 }
 
 /** Module affiché : le schéma, l'inventaire, les baies ou la découverte réseau. */

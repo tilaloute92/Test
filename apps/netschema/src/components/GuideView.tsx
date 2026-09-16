@@ -242,6 +242,37 @@ export function GuideView() {
       ),
     },
     {
+      id: 'verrous',
+      title: 'Verrouiller un schéma',
+      keywords: 'verrou verrouiller cadenas lecture seule fige protection etiquettes valider publier',
+      body: (
+        <>
+          <P>
+            Un schéma validé n'a plus à bouger — surtout s'il est ouvert par d'autres personnes.
+            Deux verrous, indépendants, enregistrés <b>avec le schéma</b> : ils suivent le
+            document, y compris après un export et un import sur un autre poste.
+          </P>
+          <List
+            items={[
+              <>
+                <b>Verrouiller le schéma</b> (barre d'outils, ou « verrouille le schéma » à la
+                voix) : lecture seule complète. On peut toujours naviguer, zoomer, replier,
+                changer de vue OSI ou de mode, consulter les fiches, interroger et exporter ;
+                rien ne peut plus être déplacé, ajouté, relié ni supprimé — ni à la souris, ni
+                au clavier, ni à la voix, ni par un import.
+              </>,
+              <>
+                <b>Verrouiller les étiquettes</b> : leur position calculée est inscrite dans le
+                schéma et n'est plus recalculée. Utile quand on a soigné une mise en page et
+                qu'on ne veut plus qu'elle bouge quand le schéma évolue. Déverrouiller les rend
+                de nouveau déplaçables ; <i>Tracé auto</i> les remet au placement automatique.
+              </>,
+            ]}
+          />
+        </>
+      ),
+    },
+    {
       id: 'schema',
       title: 'Construire le schéma',
       keywords: 'palette equipement materiel deplacer selection groupes zones sites grappes disposition automatique epingler motifs premier plan arriere plan empilement chevauchement ordre',
@@ -335,6 +366,12 @@ export function GuideView() {
                 que vous avez dessiné (point de passage, accroche libre) n'est jamais déplacé :
                 superposer deux liaisons reste possible, mais c'est alors votre décision. La
                 case <i>Écarter les liaisons superposées</i> (Mise en page) coupe le mécanisme.
+              </>,
+              <>
+                <b>Tout le détail au survol</b> : passez la souris sur une liaison, une
+                info-bulle donne ce que le schéma ne montre pas — type, débit, sous-réseau,
+                VRF, routage, MTU — et la configuration de chaque extrémité côte à côte (port,
+                mode, VLAN, agrégat, rôle spanning-tree, adresse).
               </>,
               <>
                 <b>Étiquettes lisibles et déplaçables</b> : débits, VLAN, ports et adresses se

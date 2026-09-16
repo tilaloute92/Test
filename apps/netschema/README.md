@@ -289,6 +289,33 @@ Par défaut, l'application l'empêche :
 - La case *Mise en page → Écarter les liaisons superposées* (ou « masque les superpositions »
   à la voix) rend l'ancien comportement.
 
+## Info-bulle et verrous
+
+### Le détail au survol
+
+Le schéma ne montre qu'une partie de ce qu'une liaison documente — c'est ce qui le garde
+lisible. Le survol donne le reste, sans rien ouvrir ni déplacer : type et couches OSI, débit,
+libellé, sous-réseau, VRF, protocole de routage, MTU, liaison de secours, puis **la
+configuration de chaque extrémité côte à côte** (port, mode, VLAN, VLAN natif, agrégat, rôle
+spanning-tree, adresse d'interface). L'info-bulle se place du côté où il reste de la place et
+n'apparaît pas pendant un glisser.
+
+### Deux verrous
+
+Enregistrés **avec le schéma** : ils suivent le document, y compris après un export/import.
+
+| Verrou | Ce qu'il empêche | Ce qui reste possible |
+| --- | --- | --- |
+| **Schéma** (`Verrouiller`) | Tout ce qui modifie le document : déplacer, ajouter, relier, supprimer, importer, disposer — à la souris, au clavier, à la voix | Naviguer, zoomer, replier, changer de mode ou de vue OSI, consulter les fiches, interroger, exporter |
+| **Étiquettes** | Le replacement automatique et le déplacement des étiquettes | Tout le reste |
+
+Le verrou du schéma est une **barrière unique posée dans le magasin d'état**, pas un
+grisage de boutons : la voix, les raccourcis clavier, le glisser-déposer et les imports
+passent tous par là. À la voix : « verrouille le schéma », « déverrouille les étiquettes ».
+
+Verrouiller les étiquettes **inscrit leur position calculée dans le schéma** : elles ne
+bougent plus, même si le schéma change autour d'elles.
+
 ## Étiquettes des liaisons
 
 Une étiquette qui en recouvre une autre ne dit plus rien — et fait pire, elle fait croire
@@ -642,6 +669,8 @@ marqués d'une pastille rouge sur le schéma.
 | Changer de mode de visualisation | Sélecteur de la barre d'outils, ou « mode présentation » à la voix |
 | Brancher une liaison où l'on veut | Glisser un carré vert de la liaison sélectionnée sur un équipement |
 | Déplacer une étiquette | Glisser l'étiquette · double-clic pour la replacer automatiquement |
+| Voir tout le détail d'une liaison | La survoler |
+| Figer le schéma | Bouton **Verrouiller** · « verrouille le schéma » à la voix |
 | Retrouver comment faire | Onglet **Guide**, ou « ouvre le guide » à la voix |
 
 Chaque équipement porte un nom, un type, un modèle, une IP, un VLAN, une zone, un site, des

@@ -157,17 +157,23 @@ function DeviceButton({
   showFamily?: boolean
 }) {
   const meta = deviceMeta(device.id)
+  const locked = useDiagram((s) => s.diagram.locked === true)
   return (
     <button
       type="button"
-      draggable
+      draggable={!locked}
+      disabled={locked}
       onDragStart={(event) => {
         event.dataTransfer.setData(DRAG_MIME, device.id)
         event.dataTransfer.effectAllowed = 'copy'
       }}
       onClick={() => onAdd(device.id)}
-      title={[device.label, ...(device.aliases ?? [])].join(' · ')}
-      className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-left text-[13px] text-slate-700 hover:border-slate-200 hover:bg-slate-50 active:cursor-grabbing"
+      title={
+        locked
+          ? 'Schéma verrouillé : déverrouillez-le pour ajouter un équipement'
+          : [device.label, ...(device.aliases ?? [])].join(' · ')
+      }
+      className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-left text-[13px] text-slate-700 transition hover:border-slate-200 hover:bg-slate-50 active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-transparent disabled:hover:bg-transparent"
     >
       <span
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"

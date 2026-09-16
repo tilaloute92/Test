@@ -4,6 +4,8 @@ import { uid } from './ids'
 import type {
   AnchorSide,
   AssetStatus,
+  Attach,
+  LabelOffset,
   Diagram,
   LinkShape,
   HaRole,
@@ -38,6 +40,27 @@ const ANCHORS = ['auto', 'top', 'bottom', 'left', 'right']
 const STATUSES = ['production', 'stock', 'maintenance', 'retire']
 const STP_ROLES = ['root', 'designated', 'alternate', 'blocking', 'edge']
 const ROUTING = ['static', 'ospf', 'bgp', 'eigrp', 'is-is', 'rip']
+
+function portMode(value: unknown): PortMode | undefined {
+  return value === 'access' || value === 'trunk' ? value : undefined
+}
+
+function stpRole(value: unknown): StpRole | undefined {
+  return STP_ROLES.includes(String(value)) ? (value as StpRole) : undefined
+}
+
+/** Point d'accroche libre : deux fractions bornées à la boîte de l'équipement. */
+function attach(value: unknown): Attach | undefined {
+  if (!isRecord(value) || !Number.isFinite(value.dx) || !Number.isFinite(value.dy)) return undefined
+  const clamp = (n: number) => Math.max(-0.5, Math.min(0.5, n))
+  return { dx: clamp(Number(value.dx)), dy: clamp(Number(value.dy)) }
+}
+
+/** Décalage d'étiquette : deux distances en coordonnées du schéma. */
+function offset(value: unknown): LabelOffset | undefined {
+  if (!isRecord(value) || !Number.isFinite(value.dx) || !Number.isFinite(value.dy)) return undefined
+  return { dx: Number(value.dx), dy: Number(value.dy) }
+}
 
 function roleOf(value: unknown): HaRole | undefined {
   const role = str(value)
@@ -125,14 +148,30 @@ export function parseDiagram(raw: unknown): Diagram {
       shape: SHAPES.includes(String(item.shape)) ? (item.shape as LinkShape) : undefined,
       anchorA: ANCHORS.includes(String(item.anchorA)) ? (item.anchorA as AnchorSide) : undefined,
       anchorB: ANCHORS.includes(String(item.anchorB)) ? (item.anchorB as AnchorSide) : undefined,
+      attachA: attach(item.attachA),
+      attachB: attach(item.attachB),
+      labelOffset: offset(item.labelOffset),
+      labelOffsetA: offset(item.labelOffsetA),
+      labelOffsetB: offset(item.labelOffsetB),
       portA: str(item.portA),
       portB: str(item.portB),
       vlans: str(item.vlans),
-      mode: item.mode === 'access' || item.mode === 'trunk' ? (item.mode as PortMode) : undefined,
+      mode: portMode(item.mode),
       nativeVlan: str(item.nativeVlan),
       lag: str(item.lag),
-      stp: STP_ROLES.includes(String(item.stp)) ? (item.stp as StpRole) : undefined,
+      stp: stpRole(item.stp),
       mtu: Number.isFinite(item.mtu) ? Number(item.mtu) : undefined,
+      // Configuration propre à chaque extrémité (ce qui diffère d'un équipement à l'autre).
+      modeA: portMode(item.modeA),
+      modeB: portMode(item.modeB),
+      vlansA: str(item.vlansA),
+      vlansB: str(item.vlansB),
+      nativeVlanA: str(item.nativeVlanA),
+      nativeVlanB: str(item.nativeVlanB),
+      stpA: stpRole(item.stpA),
+      stpB: stpRole(item.stpB),
+      lagA: str(item.lagA),
+      lagB: str(item.lagB),
       subnet: str(item.subnet),
       ipA: str(item.ipA),
       ipB: str(item.ipB),
@@ -177,7 +216,15 @@ export function parseDiagram(raw: unknown): Diagram {
     })
   }
 
-  return { title: str(source.title) ?? 'Schéma réseau', nodes, links, vlans, racks }
+  return {
+    title: str(source.title) ?? 'Schéma réseau',
+    nodes,
+    links,
+    vlans,
+    racks,
+    locked: source.locked === true,
+    labelsLocked: source.labelsLocked === true,
+  }
 }
 
 export function saveLocal(diagram: Diagram) {
