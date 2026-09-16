@@ -1,5 +1,71 @@
 import { useDiagram } from '../store/useDiagram'
+import { canEdit, useSession } from '../store/useSession'
 import type { AppView } from '../types'
+
+/**
+ * Bandeau serveur : présent seulement quand l'application est servie par le service
+ * NetSchema. Il dit l'essentiel — sous quel compte on travaille, quel schéma est ouvert, et
+ * si le travail est enregistré.
+ */
+function ServerBar() {
+  const mode = useSession((s) => s.mode)
+  const user = useSession((s) => s.user)
+  const saving = useSession((s) => s.saving)
+  const savedAt = useSession((s) => s.savedAt)
+  const conflict = useSession((s) => s.conflict)
+  const currentId = useSession((s) => s.currentId)
+  const save = useSession((s) => s.save)
+  const signOut = useSession((s) => s.signOut)
+  const setProjectsOpen = useSession((s) => s.setProjectsOpen)
+
+  if (mode !== 'server' || !user) return null
+
+  const label = conflict
+    ? 'Conflit : rechargez'
+    : saving
+      ? 'Enregistrement…'
+      : savedAt
+        ? `Enregistré ${new Date(savedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+        : 'Non enregistré'
+
+  return (
+    <div className="ml-auto flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => setProjectsOpen(true)}
+        className="rounded-md px-2.5 py-1.5 text-[12px] font-medium text-slate-300 transition hover:bg-white/10"
+        title="Schémas du serveur"
+      >
+        Schémas
+      </button>
+      {canEdit(user) && (
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={!currentId || saving}
+          className={`rounded-md px-2.5 py-1.5 text-[12px] font-medium transition disabled:opacity-40 ${
+            conflict ? 'bg-red-500/20 text-red-200 hover:bg-red-500/30' : 'text-slate-300 hover:bg-white/10'
+          }`}
+          title="Enregistrer sur le serveur (Ctrl+S)"
+        >
+          {label}
+        </button>
+      )}
+      <span className="flex items-center gap-1.5 rounded-md bg-white/10 px-2 py-1 text-[11px] text-white">
+        {user.displayName}
+        <span className="text-slate-400">· {user.role}</span>
+      </span>
+      <button
+        type="button"
+        onClick={() => void signOut()}
+        className="rounded-md px-2 py-1.5 text-[12px] text-slate-400 transition hover:bg-white/10 hover:text-white"
+        title="Se déconnecter"
+      >
+        Quitter
+      </button>
+    </div>
+  )
+}
 
 const TABS: { id: AppView; label: string; hint: string }[] = [
   { id: 'diagram', label: 'Schéma', hint: 'Cartographie et architecture' },
@@ -42,7 +108,7 @@ export function AppTabs() {
         type="button"
         onClick={() => setVoiceOpen(!voiceOpen)}
         title="Commande vocale"
-        className={`ml-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition ${
+        className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition ${
           voiceOpen ? 'bg-white text-slate-900' : 'text-slate-300 hover:bg-white/10'
         }`}
       >
@@ -52,6 +118,8 @@ export function AppTabs() {
         </svg>
         Voix
       </button>
+      <ServerBar />
+
       <span className="text-[11px] text-slate-400">
         {nodes} équipement(s) · {racks} baie(s)
       </span>

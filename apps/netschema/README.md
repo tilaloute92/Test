@@ -678,6 +678,30 @@ notes et ses attributs de haute disponibilité (grappe, rôle, VIP, double alime
 chaque liaison un type, un libellé, un débit, un indicateur « liaison de secours » et ses
 attributs de niveau 1, 2 et 3 (voir *Niveaux 2 et 3 du modèle OSI*).
 
+## Mode client/serveur
+
+L'application fonctionne de deux façons, sans configuration ni bascule manuelle : elle
+interroge `/api/session` au démarrage et se règle sur la réponse.
+
+| | **Mode local** (fichiers statiques) | **Mode serveur** (`apps/netschema-server`) |
+| --- | --- | --- |
+| Accès | Ouvrir `dist/index.html` | Page de connexion, comptes et rôles |
+| Schémas | Dans le navigateur, un par poste | Sur le serveur, partagés, un fichier par schéma |
+| Enregistrement | localStorage + fichiers `.json` | Automatique (2,5 s après la dernière action) et `Ctrl+S` |
+| Concurrence | — | Numéro de version : la seconde écriture reçoit un conflit au lieu d'écraser |
+
+En mode serveur, un bandeau apparaît en haut : **Schémas** (ouvrir, créer, supprimer), l'état
+de l'enregistrement, le compte connecté avec son rôle, et **Quitter**.
+
+Trois rôles : `lecteur` consulte, `editeur` modifie, `admin` gère les comptes et les
+suppressions. Un compte `lecteur` ouvre le schéma dans l'état verrouillé décrit plus haut :
+navigation, recherche et exports restent disponibles, l'édition non.
+
+Le serveur, son installation sur un serveur Windows (service, HTTPS, pare-feu, sauvegarde) et
+ce qu'il sécurise sont documentés dans
+[`apps/netschema-server/README.md`](../netschema-server/README.md) et
+[`DEPLOIEMENT-WINDOWS.md`](../netschema-server/DEPLOIEMENT-WINDOWS.md).
+
 ## Exports et sauvegarde
 
 - **SVG** — vectoriel, réutilisable dans Visio, Illustrator, Word, un wiki…
@@ -712,6 +736,7 @@ src/
   lib/viewModes.ts      modes de visualisation : architecture, technique, présentation
   lib/exportImage.ts    export SVG / PNG
   lib/storage.ts        sauvegarde locale, lecture/écriture des fichiers projet
+  lib/api.ts            dialogue avec le serveur : session, jeton CSRF, schémas partagés
   lib/sample.ts         schéma d'exemple (architecture HA siège + site de secours, baies, parc)
   lib/discovery.ts      reconnaissance et analyse des relevés LLDP/CDP, nmap et ARP
   lib/inventory.ts      colonnes de l'inventaire, export et import CSV
@@ -722,8 +747,10 @@ src/
   lib/drawio.ts         import des schémas draw.io / diagrams.net
   store/useDiagram.ts   état global (zustand) : schéma, sélection, vue, historique
   store/useAudit.ts     analyse HA mémorisée sur la version courante du schéma
+  store/useSession.ts   mode local ou serveur, compte connecté, enregistrement automatique
   components/           barre d'outils, palette, plan de travail, inspecteur, panneaux HA,
-                        L2/L3 et catalogue, palette de commandes, import rapide, guide intégré
+                        L2/L3 et catalogue, palette de commandes, import rapide, guide intégré,
+                        page de connexion et liste des schémas du serveur
 public/catalog/         lots chargés au démarrage — la voie de mise à jour sans recompilation
 tools/collector/        collecteur de découverte réseau (Node, sans dépendance) et exemples
 ```

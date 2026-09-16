@@ -273,6 +273,50 @@ export function GuideView() {
       ),
     },
     {
+      id: 'serveur',
+      title: 'Travailler à plusieurs (mode serveur)',
+      keywords: 'serveur client compte connexion identifiant mot de passe session role lecteur editeur admin partage enregistrement automatique conflit deconnexion windows',
+      body: (
+        <>
+          <P>
+            L'application fonctionne de deux façons et choisit toute seule au démarrage. Posée
+            comme fichiers statiques, elle travaille <b>en local</b> : les schémas restent dans
+            le navigateur du poste. Servie par le serveur NetSchema, elle demande d'abord une
+            <b> connexion</b> et range les schémas sur le serveur, où l'équipe les partage.
+          </P>
+          <P>
+            En mode serveur, un bandeau apparaît en haut de la fenêtre :
+          </P>
+          <List
+            items={[
+              <>
+                <b>Schémas</b> : la liste de ceux du serveur — ouvrir, créer, supprimer (la
+                suppression est réservée aux administrateurs).
+              </>,
+              <>
+                <b>État de l'enregistrement</b> : tout est enregistré automatiquement quelques
+                secondes après la dernière modification. <Keys>Ctrl</Keys> <Keys>S</Keys> force
+                l'enregistrement sans attendre.
+              </>,
+              <>
+                <b>Compte et rôle</b>, puis <b>Quitter</b> pour fermer la session.
+              </>,
+            ]}
+          />
+          <P>
+            Trois rôles : <i>lecteur</i> consulte, <i>éditeur</i> modifie, <i>admin</i> gère les
+            comptes et les suppressions. Un lecteur retrouve le schéma dans l'état verrouillé
+            décrit plus haut : navigation, recherche et exports restent ouverts, l'édition non.
+          </P>
+          <Note>
+            Si deux personnes modifient le même schéma en même temps, la seconde à enregistrer
+            est prévenue d'un conflit plutôt que d'écraser le travail de l'autre : rouvrez le
+            schéma pour repartir de la version du serveur.
+          </Note>
+        </>
+      ),
+    },
+    {
       id: 'schema',
       title: 'Construire le schéma',
       keywords: 'palette equipement materiel deplacer selection groupes zones sites grappes disposition automatique epingler motifs premier plan arriere plan empilement chevauchement ordre',
