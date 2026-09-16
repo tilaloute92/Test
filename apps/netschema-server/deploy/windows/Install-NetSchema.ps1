@@ -33,8 +33,9 @@ param(
     [string]$ServiceName = 'NetSchema',
     [int]$Port = 8443,
     [string]$NssmPath,
-    # Compte de service. Par défaut : un compte de service géré, sans mot de passe.
-    [string]$ServiceAccount = 'NT SERVICE\NetSchema'
+    # Compte sous lequel tourne le service. Vide = compte virtuel « NT SERVICE\<service> »
+    # avec NSSM (aucun mot de passe à gérer), SYSTEM avec la tâche planifiée.
+    [string]$ServiceAccount = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -107,21 +108,18 @@ if (-not (Test-Path $envFile)) {
 
 Copy-Item (Join-Path $PSScriptRoot 'Start-NetSchema.ps1') $InstallDir -Force
 
-# ── 4. Droits ─────────────────────────────────────────────────────────────────
-Write-Step 'Droits sur le dossier de données'
-# Le service écrit dans les données ; personne d'autre n'a besoin d'y toucher.
-& icacls $DataDir /inheritance:r /grant:r "$ServiceAccount:(OI)(CI)M" 'BUILTIN\Administrators:(OI)(CI)F' 'SYSTEM:(OI)(CI)F' | Out-Null
-& icacls $InstallDir /grant:r "$ServiceAccount:(OI)(CI)RX" | Out-Null
-
-# ── 5. Service ────────────────────────────────────────────────────────────────
+# ── 4. Service ────────────────────────────────────────────────────────────────
 if (-not $NssmPath) {
     $candidate = Join-Path $PSScriptRoot 'nssm.exe'
     if (Test-Path $candidate) { $NssmPath = $candidate }
 }
 
 $starter = Join-Path $InstallDir 'Start-NetSchema.ps1'
+$useNssm = [bool]($NssmPath -and (Test-Path $NssmPath))
+# Le compte n'est réglable que par NSSM : une tâche planifiée au démarrage tourne en SYSTEM.
+$runAs = if ($ServiceAccount) { $ServiceAccount } elseif ($useNssm) { "NT SERVICE\$ServiceName" } else { 'NT AUTHORITY\SYSTEM' }
 
-if ($NssmPath -and (Test-Path $NssmPath)) {
+if ($useNssm) {
     Write-Step "Déclaration du service via NSSM ($ServiceName)"
     if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
         & $NssmPath stop $ServiceName confirm | Out-Null
@@ -139,8 +137,19 @@ if ($NssmPath -and (Test-Path $NssmPath)) {
     # Les variables du fichier .env sont passées au service.
     $pairs = Get-Content $envFile | Where-Object { $_ -match '^[A-Z]' } | ForEach-Object { $_.Trim() }
     if ($pairs) { & $NssmPath set $ServiceName AppEnvironmentExtra $pairs | Out-Null }
-    & $NssmPath start $ServiceName | Out-Null
-    Write-Host "    Service $ServiceName démarré." -ForegroundColor Green
+
+    # Compte de service : le compte virtuel du service suffit et n'a pas de mot de passe à
+    # renouveler. Il n'existe qu'une fois le service déclaré — d'où cet ordre.
+    if ($runAs -ne 'NT AUTHORITY\SYSTEM') {
+        # sidtype : sans cela, le SID du service n'entre pas dans son jeton et les droits
+        # posés plus bas resteraient sans effet.
+        & sc.exe sidtype $ServiceName unrestricted | Out-Null
+        & $NssmPath set $ServiceName ObjectName $runAs | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn "Le compte $runAs n'a pas pu être appliqué : le service tournera en SYSTEM."
+            $runAs = 'NT AUTHORITY\SYSTEM'
+        }
+    }
 } else {
     Write-Step "NSSM absent : installation en tâche planifiée au démarrage ($ServiceName)"
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
@@ -151,18 +160,41 @@ if ($NssmPath -and (Test-Path $NssmPath)) {
         -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
     Register-ScheduledTask -TaskName $ServiceName -Action $action -Trigger $trigger -Settings $settings `
         -User 'SYSTEM' -RunLevel Highest -Force | Out-Null
-    Start-ScheduledTask -TaskName $ServiceName
     Write-Warn 'Pour un redémarrage automatique en cas de plantage, préférez NSSM (-NssmPath).'
 }
 
-# ── 6. Pare-feu ───────────────────────────────────────────────────────────────
+# ── 5. Droits ─────────────────────────────────────────────────────────────────
+Write-Step "Droits sur le dossier de données (compte de service : $runAs)"
+# Le service écrit dans les données ; personne d'autre n'a besoin d'y toucher.
+& icacls $DataDir /inheritance:r /grant:r "$($runAs):(OI)(CI)M" 'BUILTIN\Administrators:(OI)(CI)F' 'NT AUTHORITY\SYSTEM:(OI)(CI)F' | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Warn "Les droits n'ont pas pu être restreints sur $DataDir — à vérifier à la main (icacls)."
+} elseif ($runAs -ne 'NT AUTHORITY\SYSTEM') {
+    & icacls $InstallDir /grant:r "$($runAs):(OI)(CI)RX" | Out-Null
+}
+
+# ── 6. Démarrage ──────────────────────────────────────────────────────────────
+Write-Step 'Démarrage'
+if ($useNssm) {
+    & $NssmPath start $ServiceName | Out-Null
+    Start-Sleep -Seconds 2
+    $state = (Get-Service -Name $ServiceName).Status
+    if ($state -ne 'Running') { Write-Warn "Service $ServiceName : état $state — voir $DataDir\service.log" }
+    else { Write-Host "    Service $ServiceName démarré." -ForegroundColor Green }
+} else {
+    Start-ScheduledTask -TaskName $ServiceName
+    Start-Sleep -Seconds 2
+    Write-Host '    Tâche planifiée démarrée.' -ForegroundColor Green
+}
+
+# ── 7. Pare-feu ───────────────────────────────────────────────────────────────
 Write-Step "Ouverture du port $Port dans le pare-feu"
 $ruleName = "NetSchema ($Port/TCP)"
 Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Action Allow -Protocol TCP `
     -LocalPort $Port -Profile Domain, Private | Out-Null
 
-# ── 7. Premier compte ─────────────────────────────────────────────────────────
+# ── 8. Premier compte ─────────────────────────────────────────────────────────
 $usersFile = Join-Path $DataDir 'users.json'
 if (-not (Test-Path $usersFile)) {
     Write-Host ''
