@@ -298,6 +298,11 @@ export interface RouteOptions {
  * posé à la main, c'est lui qui commande — la liaison passe par où on lui dit, et les côtés
  * d'accroche peuvent être imposés de part et d'autre.
  */
+/** Longueur totale d'une ligne brisée. */
+export function pathLength(points: Point[]): number {
+  return lengthsOf(points).total
+}
+
 export function linkGeometry(a: NetNode, b: NetNode, options: RouteOptions): LinkGeometry {
   const offset = options.offset ?? 0
   const waypoints = (options.waypoints ?? []).map((point) => ({ x: point.x, y: point.y }))
@@ -402,11 +407,17 @@ export function pointAlong(
   points: Point[],
   distance: number,
   fromEnd = false,
+  /** Part maximale du tracé que l'on peut parcourir : 0,4 laisse la place aux deux bouts. */
+  limit = 0.4,
 ): { x: number; y: number; dx: number; dy: number } {
   const path = fromEnd ? [...points].reverse() : points
+  // Un tracé dégénéré (deux équipements au même endroit, le temps d'un placement) n'a pas
+  // de direction : on renvoie son unique point plutôt que de lire au-delà du tableau.
+  if (path.length === 0) return { x: 0, y: 0, dx: 1, dy: 0 }
+  if (path.length === 1) return { x: path[0].x, y: path[0].y, dx: 1, dy: 0 }
   const { total } = lengthsOf(path)
   // Sur une liaison courte, les deux étiquettes se rejoindraient : on les rapproche.
-  let remaining = Math.min(distance, Math.max(total * 0.4, 1))
+  let remaining = Math.min(distance, Math.max(total * limit, 1))
 
   for (let i = 0; i < path.length - 1; i += 1) {
     const a = path[i]

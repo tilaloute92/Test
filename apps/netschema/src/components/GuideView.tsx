@@ -288,7 +288,7 @@ export function GuideView() {
     {
       id: 'liaisons',
       title: 'Liaisons, tracés et couches OSI',
-      keywords: 'liaisons liens cable fibre trunk vlan lacp agregat osi couche niveau 2 3 routage trace point de passage ancrage accroche brancher rebrancher extremite courbe orthogonal croisement pont saut port stp spanning tree superposition chevauchement confondues couloir ecarter lisibilite',
+      keywords: 'liaisons liens cable fibre trunk vlan lacp agregat osi couche niveau 2 3 routage trace point de passage ancrage accroche brancher rebrancher extremite courbe orthogonal croisement pont saut port stp spanning tree superposition chevauchement confondues couloir ecarter lisibilite etiquette libelle deplacer debit texte',
       body: (
         <>
           <P>
@@ -335,6 +335,14 @@ export function GuideView() {
                 que vous avez dessiné (point de passage, accroche libre) n'est jamais déplacé :
                 superposer deux liaisons reste possible, mais c'est alors votre décision. La
                 case <i>Écarter les liaisons superposées</i> (Mise en page) coupe le mécanisme.
+              </>,
+              <>
+                <b>Étiquettes lisibles et déplaçables</b> : débits, VLAN, ports et adresses se
+                posent à côté du trait, à un endroit libre — jamais sur une boîte ni sur une
+                autre étiquette. Une qui ne vous convient pas se <b>glisse</b> où vous voulez ;
+                un trait de rappel la relie alors à sa liaison, elle suit l'équipement quand il
+                se déplace, et les autres s'arrangent autour d'elle. Double-clic dessus pour
+                revenir au placement automatique.
               </>,
               <>
                 <b>Croisements visibles</b> : quand deux liaisons se coupent sans se

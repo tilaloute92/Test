@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LinkHandles } from './LinkHandles'
-import { LinkShape } from './LinkShape'
+import { LinkShape, type PlacedLabel } from './LinkShape'
 import { NodeShape } from './NodeShape'
 import { LINKS } from '../lib/catalog'
 import { deriveDiagram, groupMembers, type DisplayNode } from '../lib/derive'
@@ -14,10 +14,13 @@ import {
   insertIndexAt,
   linkGeometry,
   parallelOffsets,
+  pathLength,
+  pointAlong,
   pointToAttach,
   resolveSide,
   type LinkGeometry,
 } from '../lib/routing'
+import { labelSize, placeLabels, type LabelCandidate, type Rect } from '../lib/labels'
 import { assignLanes, corridorOf, spreadAnchors, type SpreadResult } from '../lib/spread'
 import { GRID, useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
@@ -49,6 +52,14 @@ interface EndpointDragState {
   end: 'a' | 'b'
 }
 
+/** Glissement d'une étiquette de liaison. */
+interface LabelDragState {
+  pointerId: number
+  linkId: string
+  which: 'mid' | 'a' | 'b'
+  anchor: { x: number; y: number }
+}
+
 /** Écart entre deux couloirs voisins quand des liaisons doivent être séparées. */
 const LANE_STEP = 12
 
@@ -66,6 +77,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const panRef = useRef<PanState | null>(null)
   const linkDragRef = useRef<LinkDragState | null>(null)
   const endpointDragRef = useRef<EndpointDragState | null>(null)
+  const labelDragRef = useRef<LabelDragState | null>(null)
   /** Point d'accroche choisi sur l'équipement de départ, en mode « Relier ». */
   const connectAttachRef = useRef<Attach | null>(null)
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
@@ -325,6 +337,16 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     if (mode === 'connect' && connectFrom) setCursor(toDiagram(event.clientX, event.clientY))
 
+    const labelDrag = labelDragRef.current
+    if (labelDrag) {
+      const point = toDiagram(event.clientX, event.clientY)
+      useDiagram.getState().setLabelOffset(labelDrag.linkId, labelDrag.which, {
+        dx: Math.round(point.x - labelDrag.anchor.x),
+        dy: Math.round(point.y - labelDrag.anchor.y),
+      })
+      return
+    }
+
     const endpointDrag = endpointDragRef.current
     if (endpointDrag) {
       const point = toDiagram(event.clientX, event.clientY)
@@ -390,6 +412,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     panRef.current = null
     linkDragRef.current = null
     endpointDragRef.current = null
+    labelDragRef.current = null
   }
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
@@ -573,6 +596,101 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     )
   }, [display.links, geometries, showHops])
 
+  /**
+   * Étiquettes : leur position est calculée ici, où l'on voit à la fois toutes les liaisons
+   * et toutes les boîtes. Chacune se pose au plus près de son point d'ancrage, sans recouvrir
+   * ni une autre étiquette ni un équipement ; celles que l'on a déplacées à la main gardent
+   * leur place et les autres s'arrangent autour.
+   */
+  const labels = useMemo(() => {
+    const byLink = new Map<string, PlacedLabel[]>()
+    if (!showDetails) return byLink
+
+    const size = style.labelSize
+    const candidates: LabelCandidate[] = []
+    const content = new Map<string, { lines: string[]; width: number; height: number; anchor: { x: number; y: number } }>()
+
+    for (const link of display.links) {
+      const geometry = geometries.get(link.id)
+      if (!geometry) continue
+
+      const middle = linkLabelFor(link, osi) || (style.labelAlways ? [link.label, link.speed].filter(Boolean).join(' · ') : '')
+      const ends = linkEndLabels(link, osi)
+      const entries: { which: 'mid' | 'a' | 'b'; lines: string[]; manual?: { dx: number; dy: number } }[] = []
+      if (middle) entries.push({ which: 'mid', lines: [middle], manual: link.labelOffset })
+      if (ends.a && ends.a.length > 0) entries.push({ which: 'a', lines: ends.a, manual: link.labelOffsetA })
+      if (ends.b && ends.b.length > 0) entries.push({ which: 'b', lines: ends.b, manual: link.labelOffsetB })
+
+      for (const entry of entries) {
+        const spot =
+          entry.which === 'mid'
+            ? pointAlong(geometry.points, pathLength(geometry.points) / 2, false, 0.5)
+            : pointAlong(geometry.points, 30, entry.which === 'b')
+        const { width, height } = labelSize(entry.lines, entry.which === 'mid' ? size : size - 1)
+        // Toutes les étiquettes se posent *à côté* du trait, jamais dessus : le trait reste
+        // lisible, et l'étiquette ne se retrouve pas sous une poignée de tracé.
+        const across = (entry.which === 'mid' ? 3 : 6) + height / 2
+        const base = { dx: -spot.dy * across, dy: spot.dx * across }
+        const id = `${link.id}:${entry.which}`
+        candidates.push({
+          id,
+          anchor: { x: spot.x, y: spot.y },
+          dir: { dx: spot.dx, dy: spot.dy },
+          width,
+          height,
+          base,
+          manual: entry.manual,
+          priority: entry.which === 'mid' ? 1 : 0,
+        })
+        content.set(id, { lines: entry.lines, width, height, anchor: { x: spot.x, y: spot.y } })
+      }
+    }
+
+    const obstacles: Rect[] = display.nodes.map((node) => ({
+      x: node.x,
+      y: node.y,
+      width: NODE_W + 4,
+      height: NODE_H + 4,
+    }))
+    const placements = placeLabels(candidates, obstacles)
+
+    for (const candidate of candidates) {
+      const placement = placements.get(candidate.id)
+      const info = content.get(candidate.id)
+      if (!placement || !info) continue
+      const [linkId, which] = [candidate.id.slice(0, candidate.id.lastIndexOf(':')), candidate.id.slice(candidate.id.lastIndexOf(':') + 1)]
+      const list = byLink.get(linkId) ?? []
+      list.push({
+        which: which as 'mid' | 'a' | 'b',
+        lines: info.lines,
+        x: placement.x,
+        y: placement.y,
+        width: info.width,
+        height: info.height,
+        size: which === 'mid' ? style.labelSize : style.labelSize - 1,
+        anchor: info.anchor,
+        manual: candidate.manual !== undefined,
+      })
+      byLink.set(linkId, list)
+    }
+    return byLink
+  }, [display.links, display.nodes, geometries, osi, showDetails, style])
+
+  const beginLabelDrag = (event: React.PointerEvent<SVGGElement>, link: NetLink, label: PlacedLabel) => {
+    event.stopPropagation()
+    if (!isRealLink(link.id)) return
+    const store = useDiagram.getState()
+    store.select({ links: [link.id] })
+    store.pushHistory()
+    labelDragRef.current = {
+      pointerId: event.pointerId,
+      linkId: link.id,
+      which: label.which,
+      anchor: label.anchor,
+    }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
   const hopCount = crossingCount(crossings)
   /** Liaisons encore confondues : c'est la mesure de ce qui reste illisible. */
   const overlapCount = useMemo(
@@ -712,22 +830,25 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
           {display.links.map((link) => {
             const geometry = geometries.get(link.id)
             if (!geometry) return null
-            const label = linkLabelFor(link, osi)
             return (
               <LinkShape
                 key={link.id}
                 link={link}
                 geometry={geometry}
                 selected={selectedLinks.includes(link.id)}
-                showDetails={showDetails}
-                label={label || (style.labelAlways ? [link.label, link.speed].filter(Boolean).join(' · ') : '')}
-                endLabels={linkEndLabels(link, osi)}
+                labels={labels.get(link.id) ?? []}
                 hops={crossings.get(link.id) ?? []}
                 color={linkColorFor(link, osi, diagram.vlans) ?? LINKS[link.kind].color}
                 dimmed={display.dimmed.has(link.id)}
                 editable={isRealLink(link.id)}
                 style={style}
                 onPointerDown={onLinkPointerDown}
+                onLabelDown={beginLabelDrag}
+                onLabelReset={(target, label) => {
+                  const store = useDiagram.getState()
+                  store.pushHistory()
+                  store.setLabelOffset(target.id, label.which, null)
+                }}
               />
             )
           })}

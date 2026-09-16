@@ -124,6 +124,12 @@ export interface NetLink {
   attachA?: Attach
   /** Point d'accroche libre à l'arrivée. */
   attachB?: Attach
+  /** Étiquette du milieu déplacée à la main. */
+  labelOffset?: LabelOffset
+  /** Étiquette de l'extrémité de départ déplacée à la main. */
+  labelOffsetA?: LabelOffset
+  /** Étiquette de l'extrémité d'arrivée déplacée à la main. */
+  labelOffsetB?: LabelOffset
 
   /**
    * Couches OSI documentées pour cette liaison. Absent = couches par défaut du type de
@@ -250,6 +256,15 @@ export type AnchorSide = 'auto' | 'top' | 'bottom' | 'left' | 'right'
  * suit ainsi l'équipement quand on le déplace, et reste juste si la boîte change de taille.
  */
 export interface Attach {
+  dx: number
+  dy: number
+}
+
+/**
+ * Étiquette déplacée à la main : décalage, en coordonnées du schéma, depuis le point du
+ * tracé auquel elle se rattache. Le décalage suit donc la liaison quand elle bouge.
+ */
+export interface LabelOffset {
   dx: number
   dy: number
 }

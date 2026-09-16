@@ -289,6 +289,26 @@ Par défaut, l'application l'empêche :
 - La case *Mise en page → Écarter les liaisons superposées* (ou « masque les superpositions »
   à la voix) rend l'ancien comportement.
 
+## Étiquettes des liaisons
+
+Une étiquette qui en recouvre une autre ne dit plus rien — et fait pire, elle fait croire
+qu'on lit la valeur d'une liaison alors qu'on lit celle d'à côté. Elles sont donc placées,
+pas seulement posées :
+
+- chaque étiquette (débit, VLAN, port, adresse) se pose **à côté du trait**, au plus près de
+  son point d'ancrage, à un emplacement qui ne recouvre **ni une boîte ni une autre
+  étiquette** — l'application essaie des positions de plus en plus éloignées, de part et
+  d'autre du trait puis le long de celui-ci, et retient la première libre ;
+- quand la place manque vraiment, elle retient le moindre recouvrement plutôt que d'empiler ;
+- **glissez une étiquette** pour la mettre où vous voulez : un trait de rappel en pointillés
+  la relie à sa liaison, elle suit l'équipement quand il se déplace, et les autres se replacent
+  autour d'elle (une étiquette déplacée à la main est posée en premier) ;
+- **double-clic** dessus pour revenir au placement automatique ; *Tracé auto* remet aussi les
+  étiquettes de la liaison à leur place.
+
+Sur le schéma d'exemple : **0 recouvrement** sur les 30 étiquettes de la vue d'ensemble, 6 sur
+les 66 de la vue L2 (contre 41 avant).
+
 ## Croisements de liaisons
 
 Deux traits qui se coupent sans rien indiquer se lisent comme un raccordement : on croit voir
@@ -621,6 +641,7 @@ marqués d'une pastille rouge sur le schéma.
 | Premier plan / arrière-plan | `Ctrl+Maj+F` / `Ctrl+Maj+B` · `]` / `[` pour un cran |
 | Changer de mode de visualisation | Sélecteur de la barre d'outils, ou « mode présentation » à la voix |
 | Brancher une liaison où l'on veut | Glisser un carré vert de la liaison sélectionnée sur un équipement |
+| Déplacer une étiquette | Glisser l'étiquette · double-clic pour la replacer automatiquement |
 | Retrouver comment faire | Onglet **Guide**, ou « ouvre le guide » à la voix |
 
 Chaque équipement porte un nom, un type, un modèle, une IP, un VLAN, une zone, un site, des
@@ -658,6 +679,7 @@ src/
   lib/routing.ts        tracé des liaisons : automatique, points de passage, accroches libres, courbes
   lib/crossings.ts      croisements à enjamber (ponts) et détection des superpositions
   lib/spread.ts         répartition des accroches et couloirs, pour ne pas superposer les liaisons
+  lib/labels.ts         placement des étiquettes de liaison sans recouvrement
   lib/viewModes.ts      modes de visualisation : architecture, technique, présentation
   lib/exportImage.ts    export SVG / PNG
   lib/storage.ts        sauvegarde locale, lecture/écriture des fichiers projet

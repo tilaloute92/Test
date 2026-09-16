@@ -24,6 +24,7 @@ import type {
   AppView,
   Attach,
   DetailLevel,
+  LabelOffset,
   Diagram,
   DeviceKind,
   LayoutOptions,
@@ -119,6 +120,8 @@ interface DiagramStore {
   attachLink: (id: string, end: 'a' | 'b', nodeId: string, attach: Attach | null) => void
   /** Rend leur accroche automatique aux deux extrémités d'une liaison. */
   clearLinkAttach: (id: string) => void
+  /** Déplace une étiquette de liaison à la main ; `null` la rend au placement automatique. */
+  setLabelOffset: (id: string, which: 'mid' | 'a' | 'b', offset: LabelOffset | null) => void
   /** Ordre d'empilement des équipements : premier plan, arrière-plan, d'un cran. */
   reorderNodes: (ids: string[], where: ZOrder) => void
   deleteSelection: () => void
@@ -389,6 +392,9 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
                 anchorB: undefined,
                 attachA: undefined,
                 attachB: undefined,
+                labelOffset: undefined,
+                labelOffsetA: undefined,
+                labelOffsetB: undefined,
                 shape: undefined,
               }
             : link,
@@ -412,6 +418,23 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
           return end === 'a'
             ? { ...link, from: nodeId, attachA: attach ?? undefined }
             : { ...link, to: nodeId, attachB: attach ?? undefined }
+        }),
+      },
+    })),
+
+  /**
+   * Étiquette déplacée à la main. Comme pour un point de passage, l'historique n'enregistre
+   * qu'une étape au début du glissement : c'est `pushHistory` de l'appelant qui s'en charge.
+   */
+  setLabelOffset: (id, which, offset) =>
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        links: state.diagram.links.map((link) => {
+          if (link.id !== id) return link
+          const value = offset ?? undefined
+          if (which === 'mid') return { ...link, labelOffset: value }
+          return which === 'a' ? { ...link, labelOffsetA: value } : { ...link, labelOffsetB: value }
         }),
       },
     })),
