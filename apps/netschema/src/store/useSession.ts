@@ -1,8 +1,7 @@
 import { create } from 'zustand'
 import * as api from '../lib/api'
-import { emptyDiagram } from '../lib/storage'
+import { classeurJson, emptyDiagram, parseClasseur } from '../lib/storage'
 import { useDiagram } from './useDiagram'
-import type { Diagram } from '../types'
 
 /**
  * Séance de travail côté serveur.
@@ -113,11 +112,13 @@ export const useSession = create<SessionState>((set, get) => ({
   open: async (id) => {
     try {
       const loaded = await api.fetchDiagram(id)
-      const diagram = loaded.diagram as Diagram
-      useDiagram.getState().loadDiagram({
-        ...diagram,
-        // Un lecteur ne doit rien pouvoir modifier : le schéma s'ouvre verrouillé.
-        locked: diagram.locked || !canEdit(get().user) || undefined,
+      // Le serveur rend le document tel qu'il a été enregistré : une page ou plusieurs.
+      const classeur = parseClasseur(loaded.diagram)
+      const lecteur = !canEdit(get().user)
+      useDiagram.getState().loadClasseur({
+        ...classeur,
+        // Un lecteur ne doit rien pouvoir modifier : toutes les pages s'ouvrent verrouillées.
+        pages: classeur.pages.map((page) => ({ ...page, locked: page.locked || lecteur || undefined })),
       })
       localStorage.setItem(LAST_PROJECT_KEY, id)
       set({ currentId: id, version: loaded.version, conflict: false, error: null, savedAt: loaded.updatedAt })
@@ -128,14 +129,17 @@ export const useSession = create<SessionState>((set, get) => ({
 
   createProject: async (title, from = 'empty') => {
     try {
-      const base = from === 'current' ? useDiagram.getState().diagram : emptyDiagram()
-      const diagram = { ...base, title }
-      const created = await api.createDiagram(title, diagram)
+      const base =
+        from === 'current'
+          ? useDiagram.getState().classeur()
+          : { title, pages: [emptyDiagram()], activePage: 0 }
+      const classeur = { ...base, title, pages: base.pages.map((page) => ({ ...page, title })) }
+      const created = await api.createDiagram(title, classeurJson(classeur))
       await get().refreshProjects()
       set({ currentId: created.id, version: created.version, conflict: false, savedAt: new Date().toISOString() })
       localStorage.setItem(LAST_PROJECT_KEY, created.id)
       // Le plan de travail suit ce que l'on vient de créer, vide ou repris.
-      useDiagram.getState().loadDiagram(diagram)
+      useDiagram.getState().loadClasseur(classeur)
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Création impossible.' })
     }
@@ -160,7 +164,11 @@ export const useSession = create<SessionState>((set, get) => ({
     if (!currentId || !canEdit(user)) return
     set({ saving: true, error: null })
     try {
-      const result = await api.saveDiagram(currentId, useDiagram.getState().diagram, options?.force ? null : version)
+      const result = await api.saveDiagram(
+        currentId,
+        classeurJson(useDiagram.getState().classeur()),
+        options?.force ? null : version,
+      )
       set({ version: result.version, savedAt: result.updatedAt, saving: false, conflict: false })
     } catch (error) {
       if (error instanceof api.ApiError && error.status === 409) {

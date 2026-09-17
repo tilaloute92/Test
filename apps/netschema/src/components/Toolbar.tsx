@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { Btn } from './ui'
 import { downloadBlob, downloadPng, downloadSvg, slugify, svgMarkup } from '../lib/exportImage'
-import { pageInteractive, type VueExportee } from '../lib/exportHtml'
+import { pageInteractive, type PageExportee, type VueExportee } from '../lib/exportHtml'
 import { diagramFileContent, readProjectFile } from '../lib/storage'
 import { useDiagram } from '../store/useDiagram'
 import { VIEW_MODES } from '../lib/viewModes'
@@ -49,49 +49,72 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
   const exportPage = async () => {
     const svg = svgRef.current
     if (!svg) return
+    const pageInitiale = store().activePage
     const modeInitial = store().viewMode
-    const vues: VueExportee[] = []
+    // La bascule de page efface l'historique : on le met de côté et on le remet en place,
+    // un export ne doit rien coûter à ce qui est en cours.
+    const { past, future } = store()
+    const pagesExportees: PageExportee[] = []
     try {
-      for (const definition of VIEW_MODES) {
-        store().setViewMode(definition.id)
-        await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-        })
-        vues.push({
-          id: definition.id,
-          label: definition.label,
-          hint: definition.hint,
-          svg: svgMarkup(svg),
+      const pages = store().pagesCompletes()
+      for (let index = 0; index < pages.length; index += 1) {
+        store().selectPage(index)
+        const vues: VueExportee[] = []
+        for (const definition of VIEW_MODES) {
+          store().setViewMode(definition.id)
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+          })
+          vues.push({
+            id: definition.id,
+            label: definition.label,
+            hint: definition.hint,
+            svg: svgMarkup(svg),
+          })
+        }
+        pagesExportees.push({
+          nom: pages[index].pageName ?? `Schéma ${index + 1}`,
+          diagram: store().diagram,
+          vues,
         })
       }
-      const html = pageInteractive(store().diagram, vues)
+      const html = pageInteractive(store().diagram.title, pagesExportees)
       downloadBlob(
         new Blob([html], { type: 'text/html;charset=utf-8' }),
         `${slugify(store().diagram.title)}.html`,
       )
-      store().notify('Page interactive générée : les trois vues dans un seul fichier.')
+      store().notify(
+        pagesExportees.length > 1
+          ? `Page interactive générée : ${pagesExportees.length} pages × 3 vues dans un seul fichier.`
+          : 'Page interactive générée : les trois vues dans un seul fichier.',
+      )
     } catch (error) {
       store().notify(error instanceof Error ? error.message : "L'export a échoué.")
     } finally {
+      store().selectPage(pageInitiale)
       store().setViewMode(modeInitial)
+      useDiagram.setState({ past, future })
     }
   }
 
   const saveProject = () => {
-    const diagram = store().diagram
+    // Le fichier porte le document entier : toutes les pages, pas seulement celle affichée.
     downloadBlob(
-      new Blob([diagramFileContent(diagram)], { type: 'application/json' }),
-      `${slugify(diagram.title)}.json`,
+      new Blob([diagramFileContent(store().classeur())], { type: 'application/json' }),
+      `${slugify(store().diagram.title)}.json`,
     )
   }
 
   const openProject = async (file: File | undefined) => {
     if (!file) return
     try {
-      const { diagram, warnings } = await readProjectFile(file)
-      store().loadDiagram(diagram)
+      const { classeur, warnings } = await readProjectFile(file)
+      store().loadClasseur(classeur)
+      const equipements = classeur.pages.reduce((total, page) => total + page.nodes.length, 0)
+      const liaisons = classeur.pages.reduce((total, page) => total + page.links.length, 0)
       store().notify(
-        `« ${file.name} » chargé : ${diagram.nodes.length} équipement(s), ${diagram.links.length} liaison(s).` +
+        `« ${file.name} » chargé : ${equipements} équipement(s), ${liaisons} liaison(s), ` +
+          `${classeur.pages.length} page(s).` +
           (warnings.length > 0 ? ` ${warnings[0]}` : ''),
       )
     } catch (error) {

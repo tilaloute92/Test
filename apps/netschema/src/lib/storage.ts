@@ -3,6 +3,7 @@ import { looksLikeDrawio, parseDrawio } from './drawio'
 import { uid } from './ids'
 import type {
   AnchorSide,
+  Classeur,
   AssetStatus,
   Attach,
   LabelOffset,
@@ -24,7 +25,18 @@ const STORAGE_KEY = 'netschema:diagram:v1'
 const FILE_VERSION = 1
 
 export function emptyDiagram(): Diagram {
-  return { title: 'Nouveau schéma réseau', nodes: [], links: [], vlans: [], racks: [] }
+  return { title: 'Nouveau schéma réseau', pageName: 'Schéma', nodes: [], links: [], vlans: [], racks: [] }
+}
+
+/** Nom de page libre : « Schéma 2 », « Schéma 3 »… */
+export function nomDePageLibre(pages: Diagram[], base = 'Schéma'): string {
+  const pris = new Set(pages.map((page) => (page.pageName ?? '').toLowerCase()))
+  if (!pris.has(base.toLowerCase())) return base
+  for (let index = 2; index < 500; index += 1) {
+    const candidat = `${base} ${index}`
+    if (!pris.has(candidat.toLowerCase())) return candidat
+  }
+  return `${base} ${Date.now()}`
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -218,6 +230,7 @@ export function parseDiagram(raw: unknown): Diagram {
 
   return {
     title: str(source.title) ?? 'Schéma réseau',
+    pageName: str(source.pageName),
     nodes,
     links,
     vlans,
@@ -227,20 +240,55 @@ export function parseDiagram(raw: unknown): Diagram {
   }
 }
 
-export function saveLocal(diagram: Diagram) {
+/**
+ * Relit un document, quel que soit son âge.
+ *
+ * Les fichiers d'avant les onglets ne contiennent qu'un schéma : ils deviennent un document
+ * d'une seule page. Personne n'a de conversion à faire, et un fichier enregistré aujourd'hui
+ * reste lisible par la version d'hier — elle y verra sa première page.
+ */
+export function parseClasseur(raw: unknown): Classeur {
+  const source = isRecord(raw) && isRecord(raw.diagram) ? raw.diagram : raw
+  const conteneur = isRecord(raw) ? raw : {}
+  const brutes = Array.isArray((source as Record<string, unknown>)?.pages)
+    ? ((source as Record<string, unknown>).pages as unknown[])
+    : Array.isArray(conteneur.pages)
+      ? (conteneur.pages as unknown[])
+      : null
+
+  if (!brutes || brutes.length === 0) {
+    const page = parseDiagram(raw)
+    return { title: page.title, pages: [{ ...page, pageName: page.pageName ?? 'Schéma' }], activePage: 0 }
+  }
+
+  const pages = brutes.map((page, index) => {
+    const lue = parseDiagram(page)
+    return { ...lue, pageName: lue.pageName ?? `Schéma ${index + 1}` }
+  })
+  const titre =
+    str((source as Record<string, unknown>)?.title) ?? str(conteneur.title) ?? pages[0].title
+  const active = Number((source as Record<string, unknown>)?.activePage ?? conteneur.activePage ?? 0)
+  return {
+    title: titre,
+    pages: pages.map((page) => ({ ...page, title: titre })),
+    activePage: Number.isFinite(active) ? Math.max(0, Math.min(pages.length - 1, active)) : 0,
+  }
+}
+
+export function saveLocal(classeur: Classeur) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: FILE_VERSION, diagram }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: FILE_VERSION, ...classeurJson(classeur) }))
   } catch {
     // Stockage plein ou désactivé (navigation privée) : l'application reste utilisable,
     // seule la reprise automatique au prochain lancement est perdue.
   }
 }
 
-export function loadLocal(): Diagram | null {
+export function loadLocal(): Classeur | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
-    return parseDiagram(JSON.parse(raw))
+    return parseClasseur(JSON.parse(raw))
   } catch {
     return null
   }
@@ -254,8 +302,24 @@ export function clearLocal() {
   }
 }
 
-export function diagramFileContent(diagram: Diagram): string {
-  return JSON.stringify({ version: FILE_VERSION, diagram }, null, 2)
+/**
+ * Forme enregistrée d'un document.
+ *
+ * La première page est aussi recopiée à la racine : un lecteur qui ne connaît pas les onglets
+ * (une version plus ancienne, un outil tiers) y retrouve un schéma complet et exploitable.
+ */
+export function classeurJson(classeur: Classeur): Record<string, unknown> {
+  const premiere = classeur.pages[0] ?? emptyDiagram()
+  return {
+    ...premiere,
+    title: classeur.title,
+    activePage: classeur.activePage ?? 0,
+    pages: classeur.pages.map((page) => ({ ...page, title: classeur.title })),
+  }
+}
+
+export function diagramFileContent(classeur: Classeur): string {
+  return JSON.stringify({ version: FILE_VERSION, diagram: classeurJson(classeur) }, null, 2)
 }
 
 export async function readDiagramFile(file: File): Promise<Diagram> {
@@ -266,13 +330,14 @@ export async function readDiagramFile(file: File): Promise<Diagram> {
  * Ouverture d'un fichier de schéma, quel qu'en soit le format : projet NetSchema (.json)
  * ou schéma draw.io / diagrams.net (.drawio, .xml), compressé ou non.
  */
-export async function readProjectFile(file: File): Promise<{ diagram: Diagram; warnings: string[] }> {
+export async function readProjectFile(file: File): Promise<{ classeur: Classeur; warnings: string[] }> {
   const text = await file.text()
   if (looksLikeDrawio(text)) {
-    return parseDrawio(text, file.name.replace(/\.[^.]+$/, ''))
+    const { diagram, warnings } = await parseDrawio(text, file.name.replace(/\.[^.]+$/, ""))
+    return { classeur: { title: diagram.title, pages: [{ ...diagram, pageName: 'Schéma' }], activePage: 0 }, warnings }
   }
   try {
-    return { diagram: parseDiagram(JSON.parse(text)), warnings: [] }
+    return { classeur: parseClasseur(JSON.parse(text)), warnings: [] }
   } catch (error) {
     if (error instanceof SyntaxError) {
       throw new Error('Fichier non reconnu : attendu un projet NetSchema (.json) ou un schéma draw.io.')

@@ -439,11 +439,12 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     const file = event.dataTransfer.files?.[0]
     if (file) {
       void readProjectFile(file)
-        .then(({ diagram: loaded, warnings }) => {
+        .then(({ classeur, warnings }) => {
           const store = useDiagram.getState()
-          store.loadDiagram(loaded)
+          store.loadClasseur(classeur)
+          const equipements = classeur.pages.reduce((total, page) => total + page.nodes.length, 0)
           store.notify(
-            `« ${file.name} » chargé : ${loaded.nodes.length} équipement(s).` +
+            `« ${file.name} » chargé : ${equipements} équipement(s), ${classeur.pages.length} page(s).` +
               (warnings.length > 0 ? ` ${warnings[0]}` : ''),
           )
         })

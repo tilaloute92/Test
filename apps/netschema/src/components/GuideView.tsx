@@ -246,6 +246,58 @@ export function GuideView() {
       ),
     },
     {
+      id: 'pages',
+      title: 'Plusieurs pages dans un même document',
+      keywords: 'page onglet classeur document plusieurs schemas siege agence vue logique physique migration renommer verrouiller dupliquer supprimer bas',
+      body: (
+        <>
+          <P>
+            Un dossier réseau tient rarement sur un seul schéma : le siège et l'agence, la vue
+            logique et la vue physique, l'avant et l'après d'une migration. La barre d'onglets,
+            en bas de la fenêtre, permet de les garder dans <b>un même document</b> — un seul
+            fichier, un seul enregistrement sur le serveur.
+          </P>
+          <List
+            items={[
+              <>
+                <b>Ajouter</b> : le bouton <b>+</b> à droite des onglets, ou « ajoute une page
+                Agence Lyon » à la voix.
+              </>,
+              <>
+                <b>Renommer</b> : double-clic sur l'onglet, ou « renomme la page en Vue
+                physique ». <Keys>Entrée</Keys> valide, <Keys>Échap</Keys> annule.
+              </>,
+              <>
+                <b>Verrouiller</b> : clic droit sur l'onglet → <i>Verrouiller la page</i>. Un
+                cadenas apparaît ; la page passe en lecture seule, les autres restent
+                modifiables. Le verrou est enregistré avec le document.
+              </>,
+              <>
+                <b>Dupliquer, déplacer, supprimer</b> : le même menu au clic droit. Une page
+                verrouillée ne peut être ni renommée ni supprimée, et un document garde
+                toujours au moins une page.
+              </>,
+              <>
+                <b>Naviguer</b> : clic sur un onglet, ou « page suivante », « va à la page 2 »,
+                « ouvre la page Agence Lyon ».
+              </>,
+            ]}
+          />
+          <Note>
+            Chaque page est un schéma complet et indépendant : ses équipements, ses liaisons,
+            son plan d'adressage, ses baies. L'inventaire et les baies affichent la page
+            ouverte. L'export <b>HTML</b>, lui, embarque <b>toutes les pages</b> — chacune dans
+            ses trois vues.
+          </Note>
+          <Note>
+            L'annulation (<Keys>Ctrl</Keys> <Keys>Z</Keys>) ne traverse pas les pages : changer
+            d'onglet repart d'un historique vierge, pour qu'un « annuler » ne modifie jamais une
+            page que vous ne voyez pas.
+          </Note>
+        </>
+      ),
+    },
+    {
       id: 'export',
       title: 'Exporter : SVG, PNG, page interactive',
       keywords: 'export svg png html page interactive partager transmettre document imprimer navigation autonome hors ligne',
@@ -266,7 +318,8 @@ export function GuideView() {
                 une diapositive.
               </>,
               <>
-                <b>HTML</b> — une <b>page autonome</b> qui contient <b>les trois vues</b>,
+                <b>HTML</b> — une <b>page autonome</b> qui contient <b>toutes les pages du
+                document</b>, chacune dans <b>ses trois vues</b>,
                 toutes les informations saisies et de quoi s'y déplacer. Un seul fichier, qui
                 s'ouvre d'un double-clic sur n'importe quel poste : ni serveur, ni Internet, ni
                 NetSchema.

@@ -31,6 +31,12 @@ export interface SessionInfo {
   setupRequired: boolean
 }
 
+/**
+ * Document tel qu'il voyage sur le réseau : une ou plusieurs pages, mises en forme par
+ * `storage.ts`. L'API ne cherche pas à en connaître la structure.
+ */
+export type DocumentJson = Record<string, unknown>
+
 export interface DiagramSummary {
   id: string
   title: string
@@ -39,6 +45,8 @@ export interface DiagramSummary {
   version: string
   nodes: number
   links: number
+  /** Nombre de pages du document. */
+  pages?: number
   locked: boolean
 }
 
@@ -137,13 +145,16 @@ export async function fetchDiagram(id: string): Promise<{ diagram: Diagram; vers
   return request(`/diagrams/${encodeURIComponent(id)}`)
 }
 
-export async function createDiagram(title: string, diagram: Diagram): Promise<{ id: string; version: string }> {
+export async function createDiagram(
+  title: string,
+  diagram: DocumentJson,
+): Promise<{ id: string; version: string }> {
   return request('/diagrams', { method: 'POST', body: JSON.stringify({ title, diagram }) })
 }
 
 export async function saveDiagram(
   id: string,
-  diagram: Diagram,
+  diagram: DocumentJson,
   version: string | null,
 ): Promise<{ version: string; updatedAt: string; updatedBy: string }> {
   return request(`/diagrams/${encodeURIComponent(id)}`, {

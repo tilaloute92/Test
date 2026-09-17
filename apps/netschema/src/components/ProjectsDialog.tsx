@@ -80,6 +80,7 @@ export function ProjectsDialog() {
                   {project.locked && <span className="pl-2 text-[11px] text-amber-700">verrouillé</span>}
                 </p>
                 <p className="truncate text-[11px] text-slate-500">
+                  {project.pages && project.pages > 1 ? `${project.pages} pages · ` : ''}
                   {project.nodes} équipement(s) · {project.links} liaison(s) — {project.updatedBy}, {when(project.updatedAt)}
                 </p>
               </button>

@@ -8,7 +8,13 @@ import { uid } from '../lib/ids'
 import { HA_PATTERNS, instantiatePattern, type HaPattern } from '../lib/patterns'
 import { suggestLinkKind } from '../lib/linkRules'
 import { parseQuickImport } from '../lib/quickImport'
-import { diagramFileContent, emptyDiagram, loadLocal, saveLocal } from '../lib/storage'
+import {
+  diagramFileContent,
+  emptyDiagram,
+  loadLocal,
+  nomDePageLibre,
+  saveLocal,
+} from '../lib/storage'
 import { sampleDiagram } from '../lib/sample'
 import { collapsibleGroups } from '../lib/derive'
 import { auditDiagram } from '../lib/ha'
@@ -23,6 +29,7 @@ import { firstFreeUnit, heightOf, rackOccupancy } from '../lib/racks'
 import type {
   AppView,
   Attach,
+  Classeur,
   DetailLevel,
   LabelOffset,
   Diagram,
@@ -59,7 +66,14 @@ export interface ViewState {
 export type Mode = 'select' | 'connect'
 
 interface DiagramStore {
+  /** Page ouverte. Tout le reste de l'application ne connaît qu'elle. */
   diagram: Diagram
+  /**
+   * Les autres pages du document, la page ouverte comprise (sa copie y est remise à chaque
+   * bascule). `pagesCompletes()` donne à tout moment l'état vrai des pages.
+   */
+  pages: Diagram[]
+  activePage: number
   past: Diagram[]
   future: Diagram[]
   selectedNodes: string[]
@@ -204,12 +218,33 @@ interface DiagramStore {
   fitView: () => void
 
   loadDiagram: (diagram: Diagram) => void
+  loadClasseur: (classeur: Classeur) => void
+  /** Toutes les pages, page ouverte à jour : ce qu'on enregistre ou exporte. */
+  pagesCompletes: () => Diagram[]
+  classeur: () => Classeur
+  addPage: (name?: string) => void
+  duplicatePage: (index?: number) => void
+  removePage: (index: number) => void
+  renamePage: (index: number, name: string) => void
+  selectPage: (index: number) => void
+  movePage: (index: number, direction: -1 | 1) => void
+  setPageLocked: (index: number, locked: boolean) => void
   newDiagram: () => void
   loadSample: () => void
   notify: (message: string | null) => void
 }
 
-const initialDiagram = loadLocal() ?? autoLayoutOf(sampleDiagram(), DEFAULT_LAYOUT)
+const classeurInitial = loadLocal() ?? {
+  title: 'Architecture réseau',
+  pages: [autoLayoutOf(sampleDiagram(), DEFAULT_LAYOUT)],
+  activePage: 0,
+}
+const pagesInitiales = classeurInitial.pages.map((page) => ({
+  ...page,
+  title: classeurInitial.title,
+  pageName: page.pageName ?? 'Schéma',
+}))
+const indexInitial = Math.max(0, Math.min(pagesInitiales.length - 1, classeurInitial.activePage ?? 0))
 
 function autoLayoutOf(diagram: Diagram, layout: LayoutOptions): Diagram {
   return { ...diagram, nodes: autoLayout(diagram, layout) }
@@ -228,7 +263,9 @@ let lockedStore: () => boolean = () => false
 let lastLabelPlacements = new Map<string, { dx: number; dy: number }>()
 
 export const useDiagram = create<DiagramStore>((set, get) => ({
-  diagram: initialDiagram,
+  diagram: pagesInitiales[indexInitial],
+  pages: pagesInitiales,
+  activePage: indexInitial,
   past: [],
   future: [],
   selectedNodes: [],
@@ -296,7 +333,11 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   setTitle: (title) => {
     if (lockedStore()) return
-    set((state) => ({ diagram: { ...state.diagram, title } }))
+    // Le titre appartient au document : les onglets portent des noms, pas des titres.
+    set((state) => ({
+      diagram: { ...state.diagram, title },
+      pages: state.pages.map((page) => ({ ...page, title })),
+    }))
   },
 
   addNode: (kind, x, y, seed) => {
@@ -1201,6 +1242,60 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         }
       }
 
+      case 'page': {
+        get().setAppView('diagram')
+        const pages = get().pagesCompletes()
+        const nomDe = (index: number) => pages[index]?.pageName ?? `Schéma ${index + 1}`
+        const cherche = (nom: string) => {
+          const voulu = nom.toLowerCase()
+          return pages.findIndex((page) => (page.pageName ?? '').toLowerCase().includes(voulu))
+        }
+
+        switch (intent.action) {
+          case 'add':
+            get().addPage(intent.name)
+            return { ok: true, message: `Page « ${get().diagram.pageName} » ajoutée.` }
+
+          case 'duplicate':
+            get().duplicatePage()
+            return { ok: true, message: `Page « ${get().diagram.pageName} » créée.` }
+
+          case 'remove': {
+            const index = intent.name ? cherche(intent.name) : get().activePage
+            if (index < 0) return { ok: false, message: `Page « ${intent.name} » introuvable.` }
+            const nom = nomDe(index)
+            get().removePage(index)
+            return { ok: true, message: `Page « ${nom} » supprimée.` }
+          }
+
+          case 'rename': {
+            if (!intent.name) return { ok: false, message: 'Dites : « renomme la page en Agence Lyon ».' }
+            get().renamePage(get().activePage, intent.name)
+            return { ok: true, message: `Page renommée : ${intent.name}.` }
+          }
+
+          case 'next':
+          case 'previous': {
+            const pas = intent.action === 'next' ? 1 : -1
+            const cible = get().activePage + pas
+            if (cible < 0 || cible >= pages.length) {
+              return { ok: false, message: intent.action === 'next' ? 'Dernière page.' : 'Première page.' }
+            }
+            get().selectPage(cible)
+            return { ok: true, message: `Page ${nomDe(cible)}.` }
+          }
+
+          default: {
+            const index = intent.number !== undefined ? intent.number - 1 : cherche(intent.name ?? '')
+            if (index < 0 || index >= pages.length) {
+              return { ok: false, message: `Page ${intent.name ?? intent.number} introuvable.` }
+            }
+            get().selectPage(index)
+            return { ok: true, message: `Page ${nomDe(index)}.` }
+          }
+        }
+      }
+
       case 'linkAttach': {
         const id = state.selectedLinks[0]
         if (!id) return { ok: false, message: 'Sélectionnez d’abord une liaison.' }
@@ -1283,10 +1378,9 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
           get().loadSample()
           return { ok: true, message: 'Schéma d’exemple chargé.' }
         }
-        const diagram = get().diagram
         downloadBlob(
-          new Blob([diagramFileContent(diagram)], { type: 'application/json' }),
-          `${slugify(diagram.title)}.json`,
+          new Blob([diagramFileContent(get().classeur())], { type: 'application/json' }),
+          `${slugify(get().diagram.title)}.json`,
         )
         return { ok: true, message: 'Projet enregistré.' }
       }
@@ -1640,8 +1734,137 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   loadDiagram: (diagram) => {
     get().pushHistory()
-    set({ diagram, selectedNodes: [], selectedLinks: [], connectFrom: null })
+    set((state) => ({
+      diagram,
+      pages: state.pages.map((page, index) => (index === state.activePage ? diagram : page)),
+      selectedNodes: [],
+      selectedLinks: [],
+      connectFrom: null,
+    }))
     get().fitView()
+  },
+
+  loadClasseur: (classeur) => {
+    const pages = classeur.pages.length > 0 ? classeur.pages : [emptyDiagram()]
+    const index = Math.max(0, Math.min(pages.length - 1, classeur.activePage ?? 0))
+    const completes = pages.map((page, position) => ({
+      ...page,
+      title: classeur.title,
+      pageName: page.pageName ?? `Schéma ${position + 1}`,
+    }))
+    // Un autre document : l'historique de l'ancien n'a plus de sens.
+    set({
+      diagram: completes[index],
+      pages: completes,
+      activePage: index,
+      past: [],
+      future: [],
+      selectedNodes: [],
+      selectedLinks: [],
+      connectFrom: null,
+    })
+    get().fitView()
+  },
+
+  pagesCompletes: () => {
+    const { pages, activePage, diagram } = get()
+    return pages.map((page, index) => (index === activePage ? diagram : page))
+  },
+
+  classeur: () => ({
+    title: get().diagram.title,
+    pages: get().pagesCompletes(),
+    activePage: get().activePage,
+  }),
+
+  addPage: (name) => {
+    const pages = get().pagesCompletes()
+    const page: Diagram = {
+      ...emptyDiagram(),
+      title: get().diagram.title,
+      pageName: name?.trim() || nomDePageLibre(pages),
+    }
+    set({ pages: [...pages, page], activePage: pages.length, diagram: page, past: [], future: [], selectedNodes: [], selectedLinks: [] })
+    get().fitView()
+    get().notify(`Page « ${page.pageName} » ajoutée.`)
+  },
+
+  duplicatePage: (index) => {
+    const pages = get().pagesCompletes()
+    const position = index ?? get().activePage
+    const source = pages[position]
+    if (!source) return
+    // Copie complète : les identifiants restent valables, la page est indépendante.
+    const copie: Diagram = {
+      ...structuredClone(source),
+      pageName: nomDePageLibre(pages, `${source.pageName ?? 'Schéma'} (copie)`),
+    }
+    const suivantes = [...pages.slice(0, position + 1), copie, ...pages.slice(position + 1)]
+    set({ pages: suivantes, activePage: position + 1, diagram: copie, past: [], future: [] })
+    get().notify(`Page « ${copie.pageName} » créée.`)
+  },
+
+  removePage: (index) => {
+    const pages = get().pagesCompletes()
+    if (pages.length <= 1) {
+      get().notify('Un document garde au moins une page.')
+      return
+    }
+    if (pages[index]?.locked) {
+      get().notify('Page verrouillée : déverrouillez-la avant de la supprimer.')
+      return
+    }
+    const nom = pages[index]?.pageName ?? 'Schéma'
+    const suivantes = pages.filter((_, position) => position !== index)
+    const active = Math.max(0, Math.min(suivantes.length - 1, get().activePage > index ? get().activePage - 1 : get().activePage))
+    set({ pages: suivantes, activePage: active, diagram: suivantes[active], past: [], future: [], selectedNodes: [], selectedLinks: [] })
+    get().notify(`Page « ${nom} » supprimée.`)
+  },
+
+  renamePage: (index, name) => {
+    const propre = name.trim()
+    if (!propre) return
+    const pages = get().pagesCompletes()
+    if (pages[index]?.locked) {
+      get().notify('Page verrouillée : son nom ne peut pas changer.')
+      return
+    }
+    const suivantes = pages.map((page, position) => (position === index ? { ...page, pageName: propre } : page))
+    set({
+      pages: suivantes,
+      diagram: index === get().activePage ? suivantes[index] : get().diagram,
+    })
+  },
+
+  selectPage: (index) => {
+    const pages = get().pagesCompletes()
+    if (index < 0 || index >= pages.length || index === get().activePage) return
+    // L'historique suit la page : annuler ne doit jamais modifier une page qu'on ne voit pas.
+    set({ pages, activePage: index, diagram: pages[index], past: [], future: [], selectedNodes: [], selectedLinks: [], connectFrom: null })
+    get().fitView()
+  },
+
+  movePage: (index, direction) => {
+    const pages = get().pagesCompletes()
+    const cible = index + direction
+    if (cible < 0 || cible >= pages.length) return
+    const suivantes = [...pages]
+    const [page] = suivantes.splice(index, 1)
+    suivantes.splice(cible, 0, page)
+    const active = get().activePage === index ? cible : get().activePage === cible ? index : get().activePage
+    set({ pages: suivantes, activePage: active, diagram: suivantes[active] })
+  },
+
+  setPageLocked: (index, locked) => {
+    const pages = get().pagesCompletes()
+    const suivantes = pages.map((page, position) =>
+      position === index ? { ...page, locked: locked || undefined } : page,
+    )
+    set({
+      pages: suivantes,
+      diagram: index === get().activePage ? suivantes[index] : get().diagram,
+    })
+    get().notify(locked ? 'Page verrouillée.' : 'Page déverrouillée.')
   },
 
   newDiagram: () => {
@@ -1682,5 +1905,5 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined
 useDiagram.subscribe((state, previous) => {
   if (state.diagram === previous.diagram) return
   clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => saveLocal(useDiagram.getState().diagram), 400)
+  saveTimer = setTimeout(() => saveLocal(useDiagram.getState().classeur()), 400)
 })

@@ -5,6 +5,7 @@ import { VoicePanel } from './components/VoicePanel'
 import { CommandPalette } from './components/CommandPalette'
 import { QuickImportDialog } from './components/QuickImportDialog'
 import { Inspector } from './components/Inspector'
+import { PageTabs } from './components/PageTabs'
 import { Palette } from './components/Palette'
 import { Toolbar } from './components/Toolbar'
 import { LoginView } from './components/LoginView'
@@ -175,6 +176,7 @@ export default function App() {
             </main>
             <Inspector />
           </div>
+          <PageTabs />
         </>
       )}
       {appView !== 'diagram' && (

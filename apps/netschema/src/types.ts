@@ -214,7 +214,13 @@ export interface RackDef {
 }
 
 export interface Diagram {
+  /** Titre du document. Toutes les pages d'un même document le partagent. */
   title: string
+  /**
+   * Nom de l'onglet. Une page reste un schéma complet : exportée seule, elle s'ouvre comme
+   * n'importe quel autre fichier NetSchema.
+   */
+  pageName?: string
   nodes: NetNode[]
   links: NetLink[]
   /** Plan d'adressage : VLAN, sous-réseaux et passerelles. */
@@ -228,6 +234,20 @@ export interface Diagram {
   locked?: boolean
   /** Étiquettes de liaison figées à leur place actuelle. */
   labelsLocked?: boolean
+}
+
+/**
+ * Document : une ou plusieurs pages, comme les onglets d'un classeur.
+ *
+ * Un même dossier réseau demande rarement un seul schéma — le siège, une agence, la vue
+ * logique, la vue physique, l'avant et l'après d'une migration. Les garder dans un même
+ * document évite de jongler avec cinq fichiers qui divergent.
+ */
+export interface Classeur {
+  title: string
+  pages: Diagram[]
+  /** Index de la page ouverte à la réouverture du document. */
+  activePage?: number
 }
 
 /** Module affiché : le schéma, l'inventaire, les baies ou la découverte réseau. */

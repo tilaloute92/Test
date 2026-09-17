@@ -23,8 +23,16 @@ export interface VueExportee {
   svg: string
 }
 
+/** Une page du document, dans ses trois vues. */
+export interface PageExportee {
+  nom: string
+  diagram: Diagram
+  vues: VueExportee[]
+}
+
 interface LigneEquipement {
   id: string
+  page: string
   nom: string
   type: string
   modele: string
@@ -41,6 +49,7 @@ interface LigneEquipement {
 
 interface LigneLiaison {
   id: string
+  page: string
   de: string
   vers: string
   type: string
@@ -83,9 +92,10 @@ function resumeBout(link: NetLink, bout: 'a' | 'b'): string {
   return morceaux.filter((part) => texte(part) !== '').join(' · ')
 }
 
-function lignesEquipements(diagram: Diagram): LigneEquipement[] {
+function lignesEquipements(diagram: Diagram, page: string): LigneEquipement[] {
   return diagram.nodes.map((node: NetNode) => ({
     id: node.id,
+    page,
     nom: texte(node.name),
     type: deviceMeta(node.kind).label,
     modele: texte(node.model),
@@ -101,10 +111,11 @@ function lignesEquipements(diagram: Diagram): LigneEquipement[] {
   }))
 }
 
-function lignesLiaisons(diagram: Diagram): LigneLiaison[] {
+function lignesLiaisons(diagram: Diagram, page: string): LigneLiaison[] {
   const noms = new Map(diagram.nodes.map((node) => [node.id, texte(node.name)]))
   return diagram.links.map((link) => ({
     id: link.id,
+    page,
     de: noms.get(link.from) ?? '—',
     vers: noms.get(link.to) ?? '—',
     type: LINKS[link.kind].label,
@@ -136,6 +147,8 @@ header h1{margin:0;font-size:16px;font-weight:600}
 header .meta{color:#94a3b8;font-size:12px}
 header .grandit{flex:1}
 nav.onglets{display:flex;gap:6px;background:#e2e8f0;padding:6px 20px;border-bottom:1px solid #cbd5e1;flex-wrap:wrap;align-items:center}
+nav.onglets.pages{background:#cbd5e1;padding:5px 20px}
+nav.onglets.pages .onglet{font-size:12.5px;padding:4px 12px}
 button{font:inherit;cursor:pointer}
 .onglet{border:1px solid transparent;background:transparent;border-radius:8px;padding:6px 14px;font-size:13px;color:#334155}
 .onglet:hover{background:#f8fafc}
@@ -199,49 +212,63 @@ const SCRIPT = `
   var scene = document.getElementById('scene');
   var bulle = document.getElementById('bulle');
   var fiche = document.getElementById('fiche');
-  var vues = {};
-  var vueActive = donnees.vues[0].id;
+  var pageActive = 0;
+  var modeActif = donnees.pages[0].vues[0].id;
   var etat = {};
 
-  donnees.vues.forEach(function (vue) {
-    var element = document.getElementById('vue-' + vue.id);
-    vues[vue.id] = element;
-    etat[vue.id] = { echelle: 1, x: 0, y: 0, ajuste: false };
+  function cle(page, mode) { return 'vue-' + page + '-' + mode; }
+  function element(page, mode) { return document.getElementById(cle(page, mode)); }
+
+  donnees.pages.forEach(function (page) {
+    page.vues.forEach(function (vue) {
+      etat[cle(page.index, vue.id)] = { echelle: 1, x: 0, y: 0, ajuste: false };
+    });
   });
 
-  function svgDe(id) { return vues[id].querySelector('svg'); }
-
-  function appliquer(id) {
-    var e = etat[id];
-    var svg = svgDe(id);
-    if (svg) svg.style.transform = 'translate(' + e.x + 'px,' + e.y + 'px) scale(' + e.echelle + ')';
+  function svgCourant() {
+    var bloc = element(pageActive, modeActif);
+    return bloc ? bloc.querySelector('svg') : null;
   }
 
-  function ajuster(id) {
-    var svg = svgDe(id);
-    if (!svg) return;
+  function appliquer() {
+    var e = etat[cle(pageActive, modeActif)];
+    var svg = svgCourant();
+    if (svg && e) svg.style.transform = 'translate(' + e.x + 'px,' + e.y + 'px) scale(' + e.echelle + ')';
+  }
+
+  function ajuster() {
+    var svg = svgCourant();
+    var e = etat[cle(pageActive, modeActif)];
+    if (!svg || !e) return;
     var largeur = parseFloat(svg.getAttribute('width')) || 1200;
     var hauteur = parseFloat(svg.getAttribute('height')) || 800;
     var zone = scene.getBoundingClientRect();
     var facteur = Math.min((zone.width - 40) / largeur, (zone.height - 40) / hauteur);
     if (!isFinite(facteur) || facteur <= 0) facteur = 1;
-    etat[id].echelle = facteur;
-    etat[id].x = (zone.width - largeur * facteur) / 2;
-    etat[id].y = (zone.height - hauteur * facteur) / 2;
-    etat[id].ajuste = true;
-    appliquer(id);
+    e.echelle = facteur;
+    e.x = (zone.width - largeur * facteur) / 2;
+    e.y = (zone.height - hauteur * facteur) / 2;
+    e.ajuste = true;
+    appliquer();
   }
 
-  function montrerVue(id) {
-    vueActive = id;
-    donnees.vues.forEach(function (vue) {
-      vues[vue.id].classList.toggle('actif', vue.id === id);
-      var bouton = document.getElementById('onglet-' + vue.id);
-      if (bouton) bouton.classList.toggle('actif', vue.id === id);
+  function montrer(page, mode) {
+    pageActive = page;
+    modeActif = mode;
+    donnees.pages.forEach(function (p) {
+      var bouton = document.getElementById('onglet-page-' + p.index);
+      if (bouton) bouton.classList.toggle('actif', p.index === page);
+      p.vues.forEach(function (vue) {
+        var bloc = element(p.index, vue.id);
+        if (bloc) bloc.classList.toggle('actif', p.index === page && vue.id === mode);
+      });
     });
-    var aide = document.getElementById('aide-vue');
-    donnees.vues.forEach(function (vue) { if (vue.id === id) aide.textContent = vue.hint; });
-    if (!etat[id].ajuste) ajuster(id); else appliquer(id);
+    donnees.pages[0].vues.forEach(function (vue) {
+      var bouton = document.getElementById('onglet-' + vue.id);
+      if (bouton) bouton.classList.toggle('actif', vue.id === mode);
+      if (vue.id === mode) document.getElementById('aide-vue').textContent = vue.hint;
+    });
+    if (!etat[cle(page, mode)].ajuste) ajuster(); else appliquer();
     filtrer();
   }
 
@@ -253,7 +280,7 @@ const SCRIPT = `
       if (bouton) bouton.classList.toggle('actif', page === nom);
     });
     document.getElementById('colonne-options').style.display = nom === 'plan' ? 'block' : 'none';
-    if (nom === 'plan') { ajuster(vueActive); }
+    if (nom === 'plan') { ajuster(); }
   }
 
   // ── Options d'affichage ────────────────────────────────────────────────────
@@ -275,7 +302,7 @@ const SCRIPT = `
   // ── Zoom et déplacement ────────────────────────────────────────────────────
   scene.addEventListener('wheel', function (event) {
     event.preventDefault();
-    var e = etat[vueActive];
+    var e = etat[cle(pageActive, modeActif)];
     var zone = scene.getBoundingClientRect();
     var sx = event.clientX - zone.left, sy = event.clientY - zone.top;
     var facteur = event.deltaY < 0 ? 1.12 : 1 / 1.12;
@@ -284,47 +311,58 @@ const SCRIPT = `
     e.x = sx - (sx - e.x) * rapport;
     e.y = sy - (sy - e.y) * rapport;
     e.echelle = prochaine;
-    appliquer(vueActive);
+    appliquer();
   }, { passive: false });
 
   var glisse = null;
   scene.addEventListener('pointerdown', function (event) {
     if (event.target.closest('[data-noeud]')) return;
-    glisse = { x: event.clientX, y: event.clientY, ox: etat[vueActive].x, oy: etat[vueActive].y };
+    var e = etat[cle(pageActive, modeActif)];
+    glisse = { x: event.clientX, y: event.clientY, ox: e.x, oy: e.y };
     scene.classList.add('attrape');
     scene.setPointerCapture(event.pointerId);
   });
   scene.addEventListener('pointermove', function (event) {
     if (!glisse) return;
-    etat[vueActive].x = glisse.ox + (event.clientX - glisse.x);
-    etat[vueActive].y = glisse.oy + (event.clientY - glisse.y);
-    appliquer(vueActive);
+    var e = etat[cle(pageActive, modeActif)];
+    e.x = glisse.ox + (event.clientX - glisse.x);
+    e.y = glisse.oy + (event.clientY - glisse.y);
+    appliquer();
   });
   function relacher() { glisse = null; scene.classList.remove('attrape'); }
   scene.addEventListener('pointerup', relacher);
   scene.addEventListener('pointercancel', relacher);
 
   document.getElementById('zoom-plus').addEventListener('click', function () {
-    etat[vueActive].echelle = Math.min(6, etat[vueActive].echelle * 1.2); appliquer(vueActive);
+    var e = etat[cle(pageActive, modeActif)];
+    e.echelle = Math.min(6, e.echelle * 1.2); appliquer();
   });
   document.getElementById('zoom-moins').addEventListener('click', function () {
-    etat[vueActive].echelle = Math.max(0.08, etat[vueActive].echelle / 1.2); appliquer(vueActive);
+    var e = etat[cle(pageActive, modeActif)];
+    e.echelle = Math.max(0.08, e.echelle / 1.2); appliquer();
   });
-  document.getElementById('zoom-ajuste').addEventListener('click', function () { ajuster(vueActive); });
+  document.getElementById('zoom-ajuste').addEventListener('click', function () { ajuster(); });
 
   // ── Fiche d'un équipement ──────────────────────────────────────────────────
-  var parNom = {};
-  donnees.equipements.forEach(function (ligne) { parNom[ligne.id] = ligne; });
+  var parId = {};
+  donnees.equipements.forEach(function (ligne) { parId[ligne.id] = ligne; });
+
+  function echapper(valeur) {
+    return String(valeur).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
 
   function ouvrirFiche(id) {
-    var ligne = parNom[id];
+    var ligne = parId[id];
     if (!ligne) return;
     var champs = [
+      ['Page', donnees.pages.length > 1 ? ligne.page : ''],
       ['Type', ligne.type], ['Modèle', ligne.modele], ['Adresse IP', ligne.ip], ['VLAN', ligne.vlan],
       ['N° de série', ligne.serie], ['Site', ligne.site], ['Zone', ligne.zone], ['Grappe', ligne.grappe],
       ['Baie', ligne.baie], ['Rôle HA', ligne.role], ['Note', ligne.note]
     ];
-    var liaisons = donnees.liaisons.filter(function (l) { return l.de === ligne.nom || l.vers === ligne.nom; });
+    var liaisons = donnees.liaisons.filter(function (l) {
+      return l.page === ligne.page && (l.de === ligne.nom || l.vers === ligne.nom);
+    });
     var html = '<button class="fermer" id="fermer-fiche">&times;</button><h3></h3><div class="type"></div><dl>';
     champs.forEach(function (champ) {
       if (!champ[1]) return;
@@ -345,10 +383,6 @@ const SCRIPT = `
     fiche.querySelector('.type').textContent = ligne.type;
     fiche.classList.add('visible');
     document.getElementById('fermer-fiche').addEventListener('click', function () { fiche.classList.remove('visible'); });
-  }
-
-  function echapper(valeur) {
-    return String(valeur).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   scene.addEventListener('click', function (event) {
@@ -387,7 +421,7 @@ const SCRIPT = `
   var champ = document.getElementById('recherche');
   function filtrer() {
     var terme = champ.value.trim().toLowerCase();
-    var svg = svgDe(vueActive);
+    var svg = svgCourant();
     if (!svg) return;
     var gardes = {};
     donnees.equipements.forEach(function (ligne) {
@@ -408,8 +442,13 @@ const SCRIPT = `
   champ.addEventListener('input', filtrer);
 
   // ── Raccordements ──────────────────────────────────────────────────────────
-  donnees.vues.forEach(function (vue) {
-    document.getElementById('onglet-' + vue.id).addEventListener('click', function () { montrerVue(vue.id); });
+  donnees.pages.forEach(function (page) {
+    var bouton = document.getElementById('onglet-page-' + page.index);
+    if (bouton) bouton.addEventListener('click', function () { montrer(page.index, modeActif); });
+  });
+  donnees.pages[0].vues.forEach(function (vue) {
+    var bouton = document.getElementById('onglet-' + vue.id);
+    if (bouton) bouton.addEventListener('click', function () { montrer(pageActive, vue.id); });
   });
   ['plan', 'equipements', 'liaisons'].forEach(function (page) {
     var bouton = document.getElementById('page-onglet-' + page);
@@ -418,10 +457,10 @@ const SCRIPT = `
   document.addEventListener('keydown', function (event) {
     if (event.key === 'Escape') { fiche.classList.remove('visible'); bulle.style.display = 'none'; }
   });
-  window.addEventListener('resize', function () { ajuster(vueActive); });
+  window.addEventListener('resize', function () { ajuster(); });
 
   montrerPage('plan');
-  montrerVue(vueActive);
+  montrer(0, modeActif);
 })();
 `
 
@@ -434,8 +473,8 @@ function tableau(entetes: string[], lignes: string[][]): string {
 }
 
 /** Types de liaisons réellement présents : une légende ne liste pas ce qui n'existe pas. */
-function legende(diagram: Diagram): string {
-  const kinds = Array.from(new Set(diagram.links.map((link) => link.kind)))
+function legende(pages: PageExportee[]): string {
+  const kinds = Array.from(new Set(pages.flatMap((page) => page.diagram.links.map((link) => link.kind))))
   if (kinds.length === 0) return ''
   const lignes = kinds
     .map((kind) => {
@@ -447,12 +486,17 @@ function legende(diagram: Diagram): string {
   return `<h2>Types de liaisons</h2><div class="legende">${lignes}</div>`
 }
 
-export function pageInteractive(diagram: Diagram, vues: VueExportee[]): string {
-  const equipements = lignesEquipements(diagram)
-  const liaisons = lignesLiaisons(diagram)
+export function pageInteractive(titre: string, pages: PageExportee[]): string {
+  const equipements = pages.flatMap((page) => lignesEquipements(page.diagram, page.nom))
+  const liaisons = pages.flatMap((page) => lignesLiaisons(page.diagram, page.nom))
+  const multi = pages.length > 1
   const donnees = {
-    titre: diagram.title,
-    vues: vues.map((vue) => ({ id: vue.id, label: vue.label, hint: vue.hint })),
+    titre,
+    pages: pages.map((page, index) => ({
+      index,
+      nom: page.nom,
+      vues: page.vues.map((vue) => ({ id: vue.id, label: vue.label, hint: vue.hint })),
+    })),
     equipements,
     liaisons,
   }
@@ -460,35 +504,52 @@ export function pageInteractive(diagram: Diagram, vues: VueExportee[]): string {
   const json = JSON.stringify(donnees).replace(/<\//g, '<\\/')
   const date = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
 
-  const ongletsVues = vues
-    .map(
-      (vue) =>
-        `<button class="onglet" id="onglet-${vue.id}" type="button">${echapper(vue.label)}</button>`,
-    )
+  const ongletsPages = multi
+    ? `<nav class="onglets pages">${pages
+        .map(
+          (page, index) =>
+            `<button class="onglet page" id="onglet-page-${index}" type="button">${echapper(page.nom)}</button>`,
+        )
+        .join('')}</nav>`
+    : ''
+
+  const ongletsVues = (pages[0]?.vues ?? [])
+    .map((vue) => `<button class="onglet" id="onglet-${vue.id}" type="button">${echapper(vue.label)}</button>`)
     .join('')
 
-  const svgVues = vues
-    .map((vue) => `<div class="vue" id="vue-${vue.id}">${svgPropre(vue.svg)}</div>`)
+  const svgVues = pages
+    .map((page, index) =>
+      page.vues
+        .map(
+          (vue) =>
+            `<div class="vue" id="vue-${index}-${vue.id}" data-page="${index}" data-mode="${vue.id}">${svgPropre(vue.svg)}</div>`,
+        )
+        .join('\n'),
+    )
     .join('\n')
+
+  const colonnesEquipements = ['Nom', 'Type', 'Modèle', 'Adresse IP', 'VLAN', 'N° de série', 'Site', 'Zone', 'Grappe', 'Baie', 'Rôle']
+  const colonnesLiaisons = ['De', 'Vers', 'Type', 'Couches', 'Débit', 'Libellé', 'Sous-réseau', 'VRF', 'Routage', 'MTU', 'Côté départ', 'Côté arrivée']
 
   return `<!doctype html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${echapper(diagram.title)} — schéma réseau</title>
+<title>${echapper(titre)} — schéma réseau</title>
 <style>${STYLE}</style>
 </head>
 <body>
 <header>
-  <h1>${echapper(diagram.title)}</h1>
-  <span class="meta">${equipements.length} équipement(s) · ${liaisons.length} liaison(s) · ${echapper(date)}</span>
+  <h1>${echapper(titre)}</h1>
+  <span class="meta">${pages.length} page(s) · ${equipements.length} équipement(s) · ${liaisons.length} liaison(s) · ${echapper(date)}</span>
   <span class="grandit"></span>
   <button class="onglet actif" id="page-onglet-plan" type="button">Schéma</button>
   <button class="onglet" id="page-onglet-equipements" type="button">Équipements</button>
   <button class="onglet" id="page-onglet-liaisons" type="button">Liaisons</button>
 </header>
 
+${ongletsPages}
 <nav class="onglets">${ongletsVues}</nav>
 
 <main>
@@ -507,7 +568,7 @@ export function pageInteractive(diagram: Diagram, vues: VueExportee[]): string {
       Molette pour zoomer, glisser pour déplacer. Clic sur un équipement : sa fiche.
       Survol d'une liaison : son détail. <b>Échap</b> referme.
     </div>
-    ${legende(diagram)}
+    ${legende(pages)}
   </aside>
 
   <section class="plan" id="page-plan">
@@ -524,46 +585,52 @@ ${svgVues}
 
   <div class="tableau" id="page-equipements" style="display:none">
     ${tableau(
-      ['Nom', 'Type', 'Modèle', 'Adresse IP', 'VLAN', 'N° de série', 'Site', 'Zone', 'Grappe', 'Baie', 'Rôle'],
-      equipements.map((ligne) => [
-        ligne.nom,
-        ligne.type,
-        ligne.modele,
-        ligne.ip,
-        ligne.vlan,
-        ligne.serie,
-        ligne.site,
-        ligne.zone,
-        ligne.grappe,
-        ligne.baie,
-        ligne.role,
-      ]),
+      multi ? ['Page', ...colonnesEquipements] : colonnesEquipements,
+      equipements.map((ligne) => {
+        const cellules = [
+          ligne.nom,
+          ligne.type,
+          ligne.modele,
+          ligne.ip,
+          ligne.vlan,
+          ligne.serie,
+          ligne.site,
+          ligne.zone,
+          ligne.grappe,
+          ligne.baie,
+          ligne.role,
+        ]
+        return multi ? [ligne.page, ...cellules] : cellules
+      }),
     )}
   </div>
 
   <div class="tableau" id="page-liaisons" style="display:none">
     ${tableau(
-      ['De', 'Vers', 'Type', 'Couches', 'Débit', 'Libellé', 'Sous-réseau', 'VRF', 'Routage', 'MTU', 'Côté départ', 'Côté arrivée'],
-      liaisons.map((ligne) => [
-        ligne.de,
-        ligne.vers,
-        ligne.type,
-        ligne.couches,
-        ligne.debit,
-        ligne.libelle,
-        ligne.sousReseau,
-        ligne.vrf,
-        ligne.routage,
-        ligne.mtu,
-        ligne.boutA,
-        ligne.boutB,
-      ]),
+      multi ? ['Page', ...colonnesLiaisons] : colonnesLiaisons,
+      liaisons.map((ligne) => {
+        const cellules = [
+          ligne.de,
+          ligne.vers,
+          ligne.type,
+          ligne.couches,
+          ligne.debit,
+          ligne.libelle,
+          ligne.sousReseau,
+          ligne.vrf,
+          ligne.routage,
+          ligne.mtu,
+          ligne.boutA,
+          ligne.boutB,
+        ]
+        return multi ? [ligne.page, ...cellules] : cellules
+      }),
     )}
   </div>
 </main>
 
 <div id="bulle"></div>
-<footer>Page autonome produite par NetSchema — aucune connexion requise. Les trois vues et toutes les informations du schéma sont dans ce seul fichier.</footer>
+<footer>Page autonome produite par NetSchema — aucune connexion requise. Toutes les pages, leurs trois vues et l'intégralité des informations sont dans ce seul fichier.</footer>
 
 <script type="application/json" id="donnees">${json}</script>
 <script>${SCRIPT}</script>

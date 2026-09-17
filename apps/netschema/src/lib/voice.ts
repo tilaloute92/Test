@@ -66,6 +66,14 @@ export type VoiceIntent =
   | { type: 'zorder'; target?: string; where: ZOrder }
   | { type: 'linkAttach'; target?: string; reset: true }
   | { type: 'lock'; what: 'diagram' | 'labels'; locked: boolean }
+  | {
+      type: 'page'
+      action: 'add' | 'select' | 'next' | 'previous' | 'rename' | 'remove' | 'duplicate'
+      /** Nom de la page visée, ou nouveau nom pour un renommage. */
+      name?: string
+      /** Numéro de page, à partir de 1. */
+      number?: number
+    }
   | { type: 'duplicate'; target?: string }
   | { type: 'delete'; target?: string }
   | { type: 'selectAll' }
@@ -362,6 +370,56 @@ function rawValue(raw: string, pattern: RegExp, group: number, fallback: string)
  * pour qu'« ajoute FW-01 à la grappe FW-HA » ne soit pas lu comme « ajoute un équipement ».
  */
 const RULES: Rule[] = [
+  // ── Pages du document ──────────────────────────────────────────────────────
+  (t, raw) => {
+    const match = t.match(/^(?:ajoute|ajouter|cree|creer|nouvelle|nouveau|nouvel)\s+(?:une\s+|un\s+)?(?:page|onglet)\s*(.*)$/)
+    if (!match) return null
+    // Le nom garde la casse saisie : un onglet « Agence Lyon » ne s'écrit pas « agence lyon ».
+    const nom = rawValue(
+      raw,
+      /^(?:ajoute|ajouter|cree|creer|nouvelle|nouveau|nouvel)\s+(?:une\s+|un\s+)?(?:page|onglet)\s*(.*)$/i,
+      1,
+      cleanName(match[1]),
+    )
+    return { type: 'page', action: 'add', name: nom || undefined }
+  },
+  (t) => {
+    const match = t.match(/^(?:duplique|dupliquer|copie|copier)\s+(?:la\s+|cette\s+)?(?:page|onglet)$/)
+    return match ? { type: 'page', action: 'duplicate' } : null
+  },
+  (t) => {
+    const match = t.match(/^(?:supprime|supprimer|efface|effacer|ferme|fermer)\s+(?:la\s+|cette\s+)?(?:page|onglet)\s*(.*)$/)
+    return match ? { type: 'page', action: 'remove', name: cleanName(match[1]) || undefined } : null
+  },
+  (t, raw) => {
+    const match = t.match(/^(?:renomme|renommer|appelle|appeler)\s+(?:la\s+|cette\s+)?(?:page|onglet)\s+(?:en\s+|:\s*)?(.+)$/)
+    if (!match) return null
+    const name = rawValue(
+      raw,
+      /^(?:renomme|renommer|appelle|appeler)\s+(?:la\s+|cette\s+)?(?:page|onglet)\s+(?:en\s+|:\s*)?(.+)$/i,
+      1,
+      cleanName(match[1]),
+    )
+    return name ? { type: 'page', action: 'rename', name } : null
+  },
+  (t) => {
+    const match = t.match(/^(?:page|onglet)\s+(?:suivante?|d'apres|apres)$/)
+    return match ? { type: 'page', action: 'next' } : null
+  },
+  (t) => {
+    const match = t.match(/^(?:page|onglet)\s+(?:precedente?|d'avant|avant)$/)
+    return match ? { type: 'page', action: 'previous' } : null
+  },
+  (t) => {
+    const match = t.match(/^(?:va (?:a|sur) la |ouvre la |affiche la |montre la )?(?:page|onglet)\s+(\d{1,2})$/)
+    return match ? { type: 'page', action: 'select', number: Number(match[1]) } : null
+  },
+  (t) => {
+    const match = t.match(/^(?:va (?:a|sur) la |ouvre la |affiche la |montre la )(?:page|onglet)\s+(.+)$/)
+    const name = match ? cleanName(match[1]) : ''
+    return name ? { type: 'page', action: 'select', name } : null
+  },
+
   // ── Questions ──────────────────────────────────────────────────────────────
   (t) => (/^(aide|aide moi|aidez moi|commandes|au secours|que sais tu faire|que peux tu faire|comment ca marche)$/.test(t) ? { type: 'help' } : null),
   (t) => {
@@ -884,6 +942,9 @@ const EDITING_INTENTS = new Set<VoiceIntent['type']>([
   'direction',
   'undo',
   'redo',
+  // Les commandes de page ne sont pas gardées ici : un verrou porte sur une page, il ne doit
+  // pas empêcher d'en créer une autre ni d'aller la voir. Le magasin refuse de lui seul de
+  // renommer ou de supprimer une page verrouillée.
 ])
 
 export function isEditingIntent(intent: VoiceIntent): boolean {
@@ -891,6 +952,17 @@ export function isEditingIntent(intent: VoiceIntent): boolean {
 }
 
 export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
+  {
+    title: 'Pages',
+    examples: [
+      'Ajoute une page Agence Lyon',
+      'Va à la page 2',
+      'Page suivante',
+      'Renomme la page en Vue physique',
+      'Duplique la page',
+      'Verrouille le schéma',
+    ],
+  },
   {
     title: 'Construire',
     examples: [

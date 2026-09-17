@@ -253,6 +253,33 @@ cas qui reviennent : micro refusé, navigateur sans reconnaissance vocale, sché
 après un nettoyage du navigateur, export tronqué par un niveau de détail, import draw.io
 pauvre en types.
 
+## Plusieurs pages dans un même document
+
+Un dossier réseau tient rarement sur un seul schéma. La barre d'onglets, en bas de la fenêtre,
+garde plusieurs pages dans **un même document** — un seul fichier `.json`, un seul
+enregistrement sur le serveur.
+
+| | |
+| --- | --- |
+| Ajouter | Le bouton **+**, ou « ajoute une page Agence Lyon » |
+| Renommer | Double-clic sur l'onglet, ou « renomme la page en Vue physique » |
+| Verrouiller | Clic droit → *Verrouiller la page* : cadenas, lecture seule, **page par page** |
+| Dupliquer, déplacer, supprimer | Même menu au clic droit |
+| Naviguer | Clic, ou « page suivante », « va à la page 2 », « ouvre la page Agence Lyon » |
+
+Chaque page est un **schéma complet et indépendant** : ses équipements, ses liaisons, son plan
+d'adressage, ses baies. Le verrou appartient à la page, pas au document : on fige le schéma
+validé du siège en continuant de travailler l'agence à côté.
+
+Deux détails qui comptent :
+
+- **L'annulation ne traverse pas les pages.** Changer d'onglet repart d'un historique vierge :
+  un `Ctrl+Z` ne peut jamais modifier une page que l'on ne regarde pas.
+- **Les fichiers restent compatibles dans les deux sens.** Un document enregistré aujourd'hui
+  recopie sa première page à la racine du fichier : une version antérieure, ou un outil tiers,
+  y retrouve un schéma exploitable. Et un fichier d'avant les onglets s'ouvre comme un document
+  d'une seule page, sans conversion.
+
 ## Trois modes de visualisation
 
 Le même schéma se lit de trois façons, sans jamais toucher au modèle. Le mode règle d'un coup
@@ -707,7 +734,8 @@ ce qu'il sécurise sont documentés dans
 
 ## Exports et sauvegarde
 
-- **Page interactive `.html`** — un **seul fichier autonome** contenant **les trois vues**,
+- **Page interactive `.html`** — un **seul fichier autonome** contenant **toutes les pages du
+  document**, chacune dans **ses trois vues**,
   toutes les informations saisies et de quoi naviguer : onglets de vue, cases à cocher
   (étiquettes de liaison, ports et adresses des extrémités, détails des équipements, cadres de
   groupes, noms de couches), zoom à la molette, fiche d'un équipement au clic, détail d'une
@@ -731,7 +759,7 @@ liaison en cours sont marqués `data-export="false"` et retirés du fichier prod
 
 ```
 src/
-  types.ts              modèle de données (équipements, liaisons, options de mise en page)
+  types.ts              modèle de données (équipements, liaisons, pages, options de mise en page)
   lib/catalogData.ts    lots d'équipements embarqués (données pures, pas de code)
   lib/catalog.ts        registre du catalogue : lots chargés, recherche, couleurs, liaisons
   lib/catalogSource.ts  mise à jour du catalogue (dossier catalog/, source distante, lots locaux)
@@ -749,7 +777,8 @@ src/
   lib/labels.ts         placement des étiquettes de liaison sans recouvrement
   lib/viewModes.ts      modes de visualisation : architecture, technique, présentation
   lib/exportImage.ts    export SVG / PNG
-  lib/exportHtml.ts     export « page interactive » : les trois vues dans un fichier autonome
+  lib/exportHtml.ts     export « page interactive » : toutes les pages, leurs trois vues, dans
+                        un fichier autonome
   lib/storage.ts        sauvegarde locale, lecture/écriture des fichiers projet
   lib/api.ts            dialogue avec le serveur : session, jeton CSRF, schémas partagés
   lib/sample.ts         schéma d'exemple (architecture HA siège + site de secours, baies, parc)
@@ -763,7 +792,7 @@ src/
   store/useDiagram.ts   état global (zustand) : schéma, sélection, vue, historique
   store/useAudit.ts     analyse HA mémorisée sur la version courante du schéma
   store/useSession.ts   mode local ou serveur, compte connecté, enregistrement automatique
-  components/           barre d'outils, palette, plan de travail, inspecteur, panneaux HA,
+  components/           barre d'outils, onglets de pages, palette, plan de travail, inspecteur, panneaux HA,
                         L2/L3 et catalogue, palette de commandes, import rapide, guide intégré,
                         page de connexion et liste des schémas du serveur
 public/catalog/         lots chargés au démarrage — la voie de mise à jour sans recompilation

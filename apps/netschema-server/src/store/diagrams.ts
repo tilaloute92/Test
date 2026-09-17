@@ -32,11 +32,14 @@ export interface DiagramSummary {
   nodes: number
   links: number
   locked: boolean
+  /** Nombre de pages du document (1 pour un schéma d'avant les onglets). */
+  pages: number
 }
 
 /** Limites de garde : un schéma légitime reste très en deçà. */
 const MAX_NODES = 5000
 const MAX_LINKS = 10000
+const MAX_PAGES = 50
 
 /**
  * Nettoyage d'une valeur venue du réseau.
@@ -76,14 +79,37 @@ export function checkDiagram(raw: unknown): { ok: true; diagram: Record<string, 
     return { ok: false, error: 'Schéma attendu : un objet JSON.' }
   }
   const diagram = sanitize(raw) as Record<string, unknown>
-  const nodes = diagram.nodes
-  const links = diagram.links
-  if (!Array.isArray(nodes) || !Array.isArray(links)) {
-    return { ok: false, error: 'Schéma invalide : « nodes » et « links » sont attendus.' }
+
+  // Un document porte une ou plusieurs pages ; les fichiers d'avant les onglets n'en ont pas
+  // et valent pour une page unique. Dans les deux cas, on compte l'ensemble.
+  const pages = Array.isArray(diagram.pages) ? (diagram.pages as unknown[]) : [diagram]
+  if (pages.length > MAX_PAGES) return { ok: false, error: `Trop de pages (${MAX_PAGES} au plus).` }
+
+  let nodes = 0
+  let links = 0
+  for (const page of pages) {
+    if (typeof page !== 'object' || page === null || Array.isArray(page)) {
+      return { ok: false, error: 'Document invalide : chaque page doit être un objet JSON.' }
+    }
+    const contenu = page as Record<string, unknown>
+    if (!Array.isArray(contenu.nodes) || !Array.isArray(contenu.links)) {
+      return { ok: false, error: 'Schéma invalide : « nodes » et « links » sont attendus.' }
+    }
+    nodes += contenu.nodes.length
+    links += contenu.links.length
   }
-  if (nodes.length > MAX_NODES) return { ok: false, error: `Trop d'équipements (${MAX_NODES} au plus).` }
-  if (links.length > MAX_LINKS) return { ok: false, error: `Trop de liaisons (${MAX_LINKS} au plus).` }
+  if (nodes > MAX_NODES) return { ok: false, error: `Trop d'équipements (${MAX_NODES} au plus).` }
+  if (links > MAX_LINKS) return { ok: false, error: `Trop de liaisons (${MAX_LINKS} au plus).` }
   return { ok: true, diagram }
+}
+
+/** Compte les équipements (ou les liaisons) de toutes les pages d'un document. */
+function total(diagram: Record<string, unknown>, champ: 'nodes' | 'links'): number {
+  const pages = Array.isArray(diagram.pages) ? (diagram.pages as unknown[]) : [diagram]
+  return pages.reduce<number>((somme, page) => {
+    const contenu = (page ?? {}) as Record<string, unknown>
+    return somme + (Array.isArray(contenu[champ]) ? (contenu[champ] as unknown[]).length : 0)
+  }, 0)
 }
 
 export class DiagramStore {
@@ -113,9 +139,10 @@ export class DiagramStore {
         updatedAt: record.updatedAt,
         updatedBy: record.updatedBy,
         version: version(record.diagram),
-        nodes: Array.isArray(diagram.nodes) ? diagram.nodes.length : 0,
-        links: Array.isArray(diagram.links) ? diagram.links.length : 0,
+        nodes: total(diagram, 'nodes'),
+        links: total(diagram, 'links'),
         locked: diagram.locked === true,
+        pages: Array.isArray(diagram.pages) ? diagram.pages.length : 1,
       })
     }
     return summaries.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
