@@ -237,7 +237,19 @@ export function parseDiagram(raw: unknown): Diagram {
     racks,
     locked: source.locked === true,
     labelsLocked: source.labelsLocked === true,
+    layerNames: layerNames(source.layerNames),
   }
+}
+
+/** Noms de couches personnalisés : des rangs numériques vers des libellés courts. */
+function layerNames(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) return undefined
+  const noms: Record<string, string> = {}
+  for (const [rang, nom] of Object.entries(value)) {
+    const texte = str(nom)
+    if (/^\d{1,2}$/.test(rang) && texte) noms[rang] = texte.slice(0, 40)
+  }
+  return Object.keys(noms).length > 0 ? noms : undefined
 }
 
 /**

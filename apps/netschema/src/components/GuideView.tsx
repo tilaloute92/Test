@@ -246,6 +246,48 @@ export function GuideView() {
       ),
     },
     {
+      id: 'zones',
+      title: 'Info-bulles, bandeaux, zones et couches',
+      keywords: 'info bulle infobulle survol fiche equipement bandeau palette inspecteur masquer cacher plein ecran zone site grappe couche renommer libelle bande perimetre distribution coeur de reseau',
+      body: (
+        <>
+          <P>
+            Trois façons de gagner en confort sur un grand schéma.
+          </P>
+          <List
+            items={[
+              <>
+                <b>Survoler un équipement</b> affiche sa fiche : type, adresse, VLAN, matériel
+                et numéro de série, site, zone, grappe, baie, responsable, état, puissance, fin
+                de support (en rouge si elle est passée), note, et <b>la liste de ses
+                liaisons</b> avec le débit et le port de chaque côté. Rien à ouvrir, rien à
+                déplacer. Survoler une liaison donne de la même façon son détail.
+              </>,
+              <>
+                <b>Masquer les bandeaux</b> : les deux boutons <i>Palette</i> et{' '}
+                <i>Inspecteur</i> de la barre d'outils replient le bandeau de gauche et celui de
+                droite — sur un portable, le plan de travail y gagne la moitié de sa largeur.
+                Une languette sur le bord les ramène, et le réglage est retenu d'une séance à
+                l'autre (il appartient au poste, pas au document).
+              </>,
+              <>
+                <b>Renommer une zone, un site, une grappe ou une couche</b> : double-clic sur
+                son libellé, directement sur le schéma. <Keys>Entrée</Keys> valide,{' '}
+                <Keys>Échap</Keys> annule. Renommer une zone met à jour tous les équipements qui
+                en font partie ; renommer une couche (« Cœur de réseau », « Distribution »…) ne
+                touche qu'à son nom d'affichage, propre à ce schéma.
+              </>,
+            ]}
+          />
+          <Note>
+            À la voix : « renomme la zone DMZ en Périmètre public », « renomme la couche Accès
+            en Étage 2 », « renomme le site Siège en Paris », « renomme la grappe FW-HA en
+            Pare-feu Paris ».
+          </Note>
+        </>
+      ),
+    },
+    {
       id: 'pages',
       title: 'Plusieurs pages dans un même document',
       keywords: 'page onglet classeur document plusieurs schemas siege agence vue logique physique migration renommer verrouiller dupliquer supprimer bas',

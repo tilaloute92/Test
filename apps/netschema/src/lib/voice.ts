@@ -67,6 +67,12 @@ export type VoiceIntent =
   | { type: 'linkAttach'; target?: string; reset: true }
   | { type: 'lock'; what: 'diagram' | 'labels'; locked: boolean }
   | {
+      type: 'groupRename'
+      what: 'site' | 'zone' | 'cluster' | 'layer'
+      from: string
+      to: string
+    }
+  | {
       type: 'page'
       action: 'add' | 'select' | 'next' | 'previous' | 'rename' | 'remove' | 'duplicate'
       /** Nom de la page visée, ou nouveau nom pour un renommage. */
@@ -418,6 +424,29 @@ const RULES: Rule[] = [
     const match = t.match(/^(?:va (?:a|sur) la |ouvre la |affiche la |montre la )(?:page|onglet)\s+(.+)$/)
     const name = match ? cleanName(match[1]) : ''
     return name ? { type: 'page', action: 'select', name } : null
+  },
+
+  // ── Zones, sites, grappes et couches du schéma ─────────────────────────────
+  (t, raw) => {
+    const match = t.match(
+      /^(?:renomme|renommer|rebaptise)\s+(?:la |le |l')?(zone|site|grappe|cluster|couche|bande)\s+(.+?)\s+(?:en|par)\s+(.+)$/,
+    )
+    if (!match) return null
+    const what =
+      match[1] === 'site'
+        ? 'site'
+        : match[1] === 'grappe' || match[1] === 'cluster'
+          ? 'cluster'
+          : match[1] === 'zone'
+            ? 'zone'
+            : 'layer'
+    const to = rawValue(
+      raw,
+      /^(?:renomme|renommer|rebaptise)\s+(?:la |le |l')?(?:zone|site|grappe|cluster|couche|bande)\s+.+?\s+(?:en|par)\s+(.+)$/i,
+      1,
+      cleanName(match[3]),
+    )
+    return to ? { type: 'groupRename', what, from: cleanName(match[2]), to } : null
   },
 
   // ── Questions ──────────────────────────────────────────────────────────────
@@ -942,6 +971,7 @@ const EDITING_INTENTS = new Set<VoiceIntent['type']>([
   'direction',
   'undo',
   'redo',
+  'groupRename',
   // Les commandes de page ne sont pas gardées ici : un verrou porte sur une page, il ne doit
   // pas empêcher d'en créer une autre ni d'aller la voir. Le magasin refuse de lui seul de
   // renommer ou de supprimer une page verrouillée.
@@ -959,6 +989,8 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'Va à la page 2',
       'Page suivante',
       'Renomme la page en Vue physique',
+      'Renomme la zone DMZ en Périmètre',
+      'Renomme la couche Accès en Étage 2',
       'Duplique la page',
       'Verrouille le schéma',
     ],

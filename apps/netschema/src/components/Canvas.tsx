@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LinkHandles } from './LinkHandles'
 import { LinkShape, type PlacedLabel } from './LinkShape'
 import { LinkTooltip } from './LinkTooltip'
+import { NodeTooltip } from './NodeTooltip'
 import { NodeShape } from './NodeShape'
 import { LINKS } from '../lib/catalog'
 import { deriveDiagram, groupMembers, type DisplayNode } from '../lib/derive'
@@ -86,8 +87,25 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
   /** Boîte survolée pendant qu'on pose une accroche, et repère retenu : c'est l'aide visuelle. */
   const [accroche, setAccroche] = useState<{ nodeId: string; attach: Attach } | null>(null)
+  /**
+   * Renommage sur le schéma : couche, site, zone ou grappe. Le champ est posé en HTML par
+   * dessus le plan — un champ de saisie dans du SVG ne se comporte pas pareil d'un navigateur
+   * à l'autre.
+   */
+  const [edition, setEdition] = useState<{
+    type: 'layer' | 'site' | 'zone' | 'cluster'
+    cle: string
+    valeur: string
+    x: number
+    y: number
+  } | null>(null)
+  /** Le second clic d'un double-clic vole le focus au champ à peine affiché : on l'ignore. */
+  const editionFraiche = useRef(false)
   /** Liaison survolée et position du pointeur : c'est ce que l'info-bulle affiche. */
   const [hovered, setHovered] = useState<{ link: NetLink; x: number; y: number } | null>(null)
+  /** Équipement survolé : même mécanique que pour les liaisons, même délai. */
+  const [hoveredNode, setHoveredNode] = useState<{ node: DisplayNode; x: number; y: number } | null>(null)
+  const nodeHoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const diagram = useDiagram((s) => s.diagram)
@@ -459,6 +477,8 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     endpointDragRef.current = null
     labelDragRef.current = null
     setAccroche(null)
+    clearTimeout(nodeHoverTimer.current)
+    setHoveredNode(null)
   }
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
@@ -516,7 +536,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   // un groupe replié est déjà représenté par son bloc, inutile de l'encadrer.
   const framed = display.nodes.filter((node) => !node.group)
   const bounds = diagramBounds(display.nodes)
-  const bands = showLayerLabels ? layerBands(display.nodes, direction) : []
+  const bands = showLayerLabels ? layerBands(display.nodes, direction, diagram.layerNames) : []
   const sites = showSites ? groupBoxes(framed, (n) => n.site, 50, 28, direction) : []
   const zones = showZones ? groupBoxes(framed, (n) => n.zone, 26, 14, direction) : []
   const clusters = showClusters ? groupBoxes(framed, (n) => n.cluster, 11, 13, direction) : []
@@ -752,6 +772,10 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
    */
   const onLinkHover = (link: NetLink | null, event?: React.PointerEvent<SVGPathElement>) => {
     clearTimeout(hoverTimer.current)
+    if (link) {
+      clearTimeout(nodeHoverTimer.current)
+      setHoveredNode(null)
+    }
     if (!link || !event || dragRef.current || linkDragRef.current || labelDragRef.current || endpointDragRef.current) {
       setHovered(null)
       return
@@ -764,6 +788,66 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       return
     }
     hoverTimer.current = setTimeout(() => setHovered({ link, x, y }), 260)
+  }
+
+  /**
+   * Survol d'un équipement. Un bloc replié n'a pas de fiche : il en contient plusieurs, et
+   * c'est son contenu qu'on veut voir — un double-clic l'ouvre.
+   */
+  const onNodeHover = (node: DisplayNode | null, event?: React.PointerEvent<SVGGElement>) => {
+    clearTimeout(nodeHoverTimer.current)
+    if (
+      !node ||
+      !event ||
+      node.group ||
+      dragRef.current ||
+      linkDragRef.current ||
+      labelDragRef.current ||
+      endpointDragRef.current
+    ) {
+      setHoveredNode(null)
+      return
+    }
+    const rect = containerRef.current?.getBoundingClientRect()
+    const x = event.clientX - (rect?.left ?? 0)
+    const y = event.clientY - (rect?.top ?? 0)
+    if (hoveredNode?.node.id === node.id) {
+      setHoveredNode({ node, x, y })
+      return
+    }
+    nodeHoverTimer.current = setTimeout(() => setHoveredNode({ node, x, y }), 320)
+  }
+
+  /** Ouvre le champ de renommage à l'endroit du libellé double-cliqué. */
+  const ouvrirEdition = (
+    type: 'layer' | 'site' | 'zone' | 'cluster',
+    cle: string,
+    valeur: string,
+    point: { x: number; y: number },
+  ) => {
+    if (locked) {
+      useDiagram.getState().notify('Schéma verrouillé : déverrouillez-le pour le modifier.')
+      return
+    }
+    setEdition({
+      type,
+      cle,
+      valeur,
+      x: point.x * view.zoom + view.tx,
+      y: point.y * view.zoom + view.ty,
+    })
+    editionFraiche.current = true
+    setTimeout(() => {
+      editionFraiche.current = false
+    }, 350)
+  }
+
+  const validerEdition = (valeur: string) => {
+    if (!edition) return
+    const store = useDiagram.getState()
+    if (edition.type === 'layer') store.setLayerName(Number(edition.cle), valeur)
+    else store.renameGroup(edition.type, edition.cle, valeur)
+    setEdition(null)
   }
 
   const beginLabelDrag = (event: React.PointerEvent<SVGGElement>, link: NetLink, label: PlacedLabel) => {
@@ -836,7 +920,23 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 strokeWidth={1.6 * style.groupStrength}
               />
               {site.label && (
-                <text data-couche="groupe" x={site.x + 18} y={site.y + 22} fontSize={12.5} fontWeight={700} fill="#64748b">
+                <text
+                  data-couche="groupe"
+                  data-renommer={`site:${site.label}`}
+                  x={site.x + 18}
+                  y={site.y + 22}
+                  fontSize={12.5}
+                  fontWeight={700}
+                  fill="#64748b"
+                  pointerEvents="all"
+                  style={{ cursor: 'text' }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation()
+                    ouvrirEdition('site', site.label, site.label, { x: site.x + 18, y: site.y + 10 })
+                  }}
+                >
+                  <title>Double-clic pour renommer ce site</title>
                   {`SITE — ${site.label.toUpperCase()}`}
                 </text>
               )}
@@ -858,7 +958,23 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 strokeDasharray="7 6"
               />
               {zone.label && (
-                <text data-couche="groupe" x={zone.x + 14} y={zone.y + 17} fontSize={11} fontWeight={700} fill="#64748b">
+                <text
+                  data-couche="groupe"
+                  data-renommer={`zone:${zone.label}`}
+                  x={zone.x + 14}
+                  y={zone.y + 17}
+                  fontSize={11}
+                  fontWeight={700}
+                  fill="#64748b"
+                  pointerEvents="all"
+                  style={{ cursor: 'text' }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation()
+                    ouvrirEdition('zone', zone.label, zone.label, { x: zone.x + 14, y: zone.y + 6 })
+                  }}
+                >
+                  <title>Double-clic pour renommer cette zone</title>
                   {zone.label.toUpperCase()}
                 </text>
               )}
@@ -880,7 +996,23 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 strokeDasharray="4 4"
               />
               {cluster.label && (
-                <text data-couche="groupe" x={cluster.x + 12} y={cluster.y + 16} fontSize={9.5} fontWeight={700} fill="#db2777">
+                <text
+                  data-couche="groupe"
+                  data-renommer={`cluster:${cluster.label}`}
+                  x={cluster.x + 12}
+                  y={cluster.y + 16}
+                  fontSize={9.5}
+                  fontWeight={700}
+                  fill="#db2777"
+                  pointerEvents="all"
+                  style={{ cursor: 'text' }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation()
+                    ouvrirEdition('cluster', cluster.label, cluster.label, { x: cluster.x + 12, y: cluster.y + 6 })
+                  }}
+                >
+                  <title>Double-clic pour renommer cette grappe</title>
                   {/* L'adresse virtuelle est une donnée d'exploitation : elle n'a rien à faire
                       sur une vue de présentation. */}
                   {`GRAPPE ${cluster.label}${
@@ -898,26 +1030,50 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
               <text
                 key={band.rank}
                 data-couche="bande"
+                data-renommer={`layer:${band.rank}`}
                 x={bounds.minX - 28}
                 y={band.main + 4}
                 textAnchor="end"
                 fontSize={11}
                 fontWeight={700}
                 fill="#94a3b8"
+                pointerEvents="all"
+                style={{ cursor: 'text' }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onDoubleClick={(event) => {
+                  event.stopPropagation()
+                  ouvrirEdition('layer', String(band.rank), band.label, {
+                    x: bounds.minX - 150,
+                    y: band.main - 8,
+                  })
+                }}
               >
+                <title>Double-clic pour renommer cette couche</title>
                 {band.label}
               </text>
             ) : (
               <text
                 key={band.rank}
                 data-couche="bande"
+                data-renommer={`layer:${band.rank}`}
                 x={band.main}
                 y={bounds.minY - 30}
                 textAnchor="middle"
                 fontSize={11}
                 fontWeight={700}
                 fill="#94a3b8"
+                pointerEvents="all"
+                style={{ cursor: 'text' }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onDoubleClick={(event) => {
+                  event.stopPropagation()
+                  ouvrirEdition('layer', String(band.rank), band.label, {
+                    x: band.main - 60,
+                    y: bounds.minY - 44,
+                  })
+                }}
               >
+                <title>Double-clic pour renommer cette couche</title>
                 {band.label}
               </text>
             ),
@@ -977,6 +1133,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 style={style}
                 onPointerDown={onNodePointerDown}
                 onDoubleClick={() => node.group && useDiagram.getState().toggleCollapse(node.group.key)}
+                onHover={onNodeHover}
               />
             )
           })}
@@ -1069,6 +1226,44 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
             })()}
         </g>
       </svg>
+
+      {/* Renommage sur le schéma : couche, site, zone ou grappe. */}
+      {edition && (
+        <input
+          data-export="false"
+          autoFocus
+          value={edition.valeur}
+          onChange={(event) => setEdition({ ...edition, valeur: event.target.value })}
+          onBlur={(event) => {
+            // Ce premier retrait de focus n'est pas une validation : il vient du double-clic.
+            if (editionFraiche.current) {
+              event.currentTarget.focus()
+              return
+            }
+            validerEdition(edition.valeur)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') validerEdition(edition.valeur)
+            if (event.key === 'Escape') setEdition(null)
+            event.stopPropagation()
+          }}
+          placeholder={edition.type === 'layer' ? 'Nom de la couche' : 'Nouveau nom'}
+          className="absolute z-40 h-7 w-52 rounded-lg border border-blue-500 bg-white px-2 text-[12.5px] shadow-lg outline-none"
+          style={{ left: Math.max(4, edition.x), top: Math.max(4, edition.y) }}
+        />
+      )}
+
+      {hoveredNode && !hovered && (
+        <NodeTooltip
+          node={hoveredNode.node}
+          links={diagram.links}
+          nodes={diagram.nodes}
+          x={hoveredNode.x}
+          y={hoveredNode.y}
+          width={canvasSize.width}
+          height={canvasSize.height}
+        />
+      )}
 
       {hovered && (
         <LinkTooltip

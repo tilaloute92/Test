@@ -21,6 +21,8 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
   const osi = useDiagram((s) => s.osi)
   const viewMode = useDiagram((s) => s.viewMode)
   const locked = useDiagram((s) => s.diagram.locked === true)
+  const paletteOpen = useDiagram((s) => s.paletteOpen)
+  const inspectorOpen = useDiagram((s) => s.inspectorOpen)
   const labelsLocked = useDiagram((s) => s.diagram.labelsLocked === true)
 
   const store = useDiagram.getState
@@ -221,6 +223,30 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
         Placement auto
       </Btn>
       <Btn onClick={() => store().fitView()} title="Ajuster à la fenêtre">Ajuster</Btn>
+
+      {/* Bandeaux latéraux : sur un portable, les masquer double la surface de travail. */}
+      <div className="flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5">
+        <button
+          type="button"
+          title={paletteOpen ? 'Masquer la palette (bandeau de gauche)' : 'Afficher la palette'}
+          onClick={() => store().setPanelOpen('palette', !paletteOpen)}
+          className={`rounded-md px-2 py-1 text-[12.5px] font-medium transition ${
+            paletteOpen ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          ▤ Palette
+        </button>
+        <button
+          type="button"
+          title={inspectorOpen ? 'Masquer l’inspecteur (bandeau de droite)' : 'Afficher l’inspecteur'}
+          onClick={() => store().setPanelOpen('inspecteur', !inspectorOpen)}
+          className={`rounded-md px-2 py-1 text-[12.5px] font-medium transition ${
+            inspectorOpen ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          Inspecteur ▤
+        </button>
+      </div>
       <div className="flex items-center gap-1">
         <Btn variant="ghost" onClick={() => zoomFromCenter(0.85)} title="Dézoomer">−</Btn>
         <span className="w-11 text-center text-[12px] tabular-nums text-slate-500">

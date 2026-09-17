@@ -21,6 +21,8 @@ interface Props {
   style: ModeStyle
   onPointerDown: (event: React.PointerEvent<SVGGElement>, node: DisplayNode) => void
   onDoubleClick?: () => void
+  /** Survol : l'info-bulle de l'équipement. */
+  onHover?: (node: DisplayNode | null, event?: React.PointerEvent<SVGGElement>) => void
 }
 
 export function NodeShape({
@@ -33,6 +35,7 @@ export function NodeShape({
   style,
   onPointerDown,
   onDoubleClick,
+  onHover,
 }: Props) {
   const meta = deviceMeta(node.kind)
   const group = node.group
@@ -60,6 +63,9 @@ export function NodeShape({
       transform={`translate(${node.x - NODE_W / 2}, ${node.y - NODE_H / 2})`}
       onPointerDown={(event) => onPointerDown(event, node)}
       onDoubleClick={onDoubleClick}
+      onPointerEnter={(event) => onHover?.(node, event)}
+      onPointerMove={(event) => onHover?.(node, event)}
+      onPointerLeave={() => onHover?.(null)}
       opacity={dimmed ? 0.22 : 1}
       style={{ cursor: group ? 'pointer' : 'grab' }}
     >

@@ -253,6 +253,25 @@ cas qui reviennent : micro refusé, navigateur sans reconnaissance vocale, sché
 après un nettoyage du navigateur, export tronqué par un niveau de détail, import draw.io
 pauvre en types.
 
+## Lire et ranger le schéma
+
+**Info-bulles.** Survoler un équipement affiche sa fiche — type, adresse, VLAN, matériel et
+numéro de série, site, zone, grappe, baie, responsable, état, puissance, fin de support (en
+rouge si elle est passée), note — et **la liste de ses liaisons**, avec le débit et le port de
+chaque côté. Survoler une liaison donne son détail et la configuration de ses deux extrémités.
+Le schéma peut donc rester lisible : ce qu'il ne montre pas est à un survol.
+
+**Bandeaux masquables.** Les boutons *Palette* et *Inspecteur* de la barre d'outils replient le
+bandeau de gauche et celui de droite ; une languette sur le bord les ramène. Sur un portable,
+le plan de travail passe de 972 à 1468 px de large. Le réglage est retenu d'une séance à
+l'autre — il appartient au poste, pas au document.
+
+**Zones et couches renommables sur le schéma.** Double-clic sur le libellé d'un site, d'une
+zone, d'une grappe ou d'une couche (« Cœur de réseau », « Distribution »…) : un champ s'ouvre
+sur place. Renommer une zone met à jour tous les équipements qui en font partie ; renommer une
+couche ne touche qu'à son nom d'affichage, mémorisé dans le schéma. À la voix : « renomme la
+zone DMZ en Périmètre public », « renomme la couche Accès en Étage 2 ».
+
 ## Plusieurs pages dans un même document
 
 Un dossier réseau tient rarement sur un seul schéma. La barre d'onglets, en bas de la fenêtre,
@@ -795,7 +814,8 @@ src/
   store/useDiagram.ts   état global (zustand) : schéma, sélection, vue, historique
   store/useAudit.ts     analyse HA mémorisée sur la version courante du schéma
   store/useSession.ts   mode local ou serveur, compte connecté, enregistrement automatique
-  components/           barre d'outils, onglets de pages, palette, plan de travail, inspecteur, panneaux HA,
+  components/           barre d'outils, onglets de pages, palette, plan de travail, inspecteur,
+                        info-bulles d'équipement et de liaison, panneaux HA,
                         L2/L3 et catalogue, palette de commandes, import rapide, guide intégré,
                         page de connexion et liste des schémas du serveur
 public/catalog/         lots chargés au démarrage — la voie de mise à jour sans recompilation

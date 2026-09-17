@@ -20,6 +20,22 @@ const RackView = lazy(() => import('./components/RackView').then((m) => ({ defau
 const DiscoveryView = lazy(() => import('./components/DiscoveryView').then((m) => ({ default: m.DiscoveryView })))
 const GuideView = lazy(() => import('./components/GuideView').then((m) => ({ default: m.GuideView })))
 
+/** Languette de réouverture d'un bandeau masqué. */
+function Languette({ cote, onClick }: { cote: 'gauche' | 'droite'; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`Afficher le bandeau de ${cote}`}
+      className={`flex w-4 flex-none items-center justify-center border-slate-200 bg-slate-100 text-[10px] text-slate-500 transition hover:bg-slate-200 ${
+        cote === 'gauche' ? 'border-r' : 'border-l'
+      }`}
+    >
+      {cote === 'gauche' ? '›' : '‹'}
+    </button>
+  )
+}
+
 function ModuleEnChargement() {
   return <div className="flex flex-1 items-center justify-center text-[13px] text-slate-500">Chargement du module…</div>
 }
@@ -28,6 +44,8 @@ export default function App() {
   const svgRef = useRef<SVGSVGElement>(null)
   const toast = useDiagram((s) => s.toast)
   const appView = useDiagram((s) => s.appView)
+  const paletteOpen = useDiagram((s) => s.paletteOpen)
+  const inspectorOpen = useDiagram((s) => s.inspectorOpen)
   const sessionReady = useSession((s) => s.ready)
   const sessionMode = useSession((s) => s.mode)
   const user = useSession((s) => s.user)
@@ -170,11 +188,18 @@ export default function App() {
         <>
           <Toolbar svgRef={svgRef} />
           <div className="flex min-h-0 flex-1">
-            <Palette />
+            {paletteOpen && <Palette />}
+            {/* Bandeau replié : une languette le ramène, sans avoir à retrouver le bouton. */}
+            {!paletteOpen && (
+              <Languette cote="gauche" onClick={() => useDiagram.getState().setPanelOpen('palette', true)} />
+            )}
             <main className="min-w-0 flex-1">
               <Canvas svgRef={svgRef} />
             </main>
-            <Inspector />
+            {!inspectorOpen && (
+              <Languette cote="droite" onClick={() => useDiagram.getState().setPanelOpen('inspecteur', true)} />
+            )}
+            {inspectorOpen && <Inspector />}
           </div>
           <PageTabs />
         </>

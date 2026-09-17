@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { autoLayout, diagramBounds } from '../lib/layout'
+import { autoLayout, diagramBounds, layerBands } from '../lib/layout'
 import { deviceMeta, findDevice, ROLES } from '../lib/catalog'
 import { bestMatch } from '../lib/speech'
 import { searchModels } from '../lib/vendors'
@@ -16,7 +16,7 @@ import {
   saveLocal,
 } from '../lib/storage'
 import { sampleDiagram } from '../lib/sample'
-import { collapsibleGroups } from '../lib/derive'
+import { collapsibleGroups, groupKey } from '../lib/derive'
 import { auditDiagram } from '../lib/ha'
 import type { DiscoveryResult } from '../lib/discovery'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
@@ -46,6 +46,33 @@ import type {
   Waypoint,
   ZOrder,
 } from '../types'
+
+/**
+ * Bandeaux latéraux : un réglage de confort, propre au poste et à son écran — il n'a rien à
+ * faire dans le document, que l'on partage.
+ */
+const CLE_PANNEAUX = 'netschema:panneaux'
+
+function lirePanneau(nom: 'palette' | 'inspecteur'): boolean {
+  try {
+    const brut = localStorage.getItem(CLE_PANNEAUX)
+    if (!brut) return true
+    const etat = JSON.parse(brut) as Record<string, unknown>
+    return etat[nom] !== false
+  } catch {
+    return true
+  }
+}
+
+function ecrirePanneau(nom: 'palette' | 'inspecteur', ouvert: boolean) {
+  try {
+    const brut = localStorage.getItem(CLE_PANNEAUX)
+    const etat = brut ? (JSON.parse(brut) as Record<string, unknown>) : {}
+    localStorage.setItem(CLE_PANNEAUX, JSON.stringify({ ...etat, [nom]: ouvert }))
+  } catch {
+    // Stockage indisponible : le réglage vaut pour la session, sans plus.
+  }
+}
 
 const DEFAULT_LAYOUT: LayoutOptions = {
   direction: 'TB',
@@ -108,6 +135,9 @@ interface DiagramStore {
   osi: OsiView
   /** Masquer au lieu d'estomper ce qui n'appartient pas à la couche regardée. */
   strictOsi: boolean
+  /** Bandeaux latéraux : la palette à gauche, l'inspecteur à droite. */
+  paletteOpen: boolean
+  inspectorOpen: boolean
   commandOpen: boolean
   importOpen: boolean
   /** Panneau de commande vocale ouvert. */
@@ -142,6 +172,10 @@ interface DiagramStore {
   deleteSelection: () => void
 
   /** Verrouille ou déverrouille le schéma entier : en lecture seule, plus rien ne bouge. */
+  /** Renomme une couche pour ce schéma seulement ; un nom vide rend le nom par défaut. */
+  setLayerName: (rank: number, name: string) => void
+  /** Renomme un site, une zone ou une grappe : tous ses équipements suivent. */
+  renameGroup: (type: 'site' | 'zone' | 'cluster', from: string, to: string) => void
   setLocked: (locked: boolean) => void
   /**
    * Positions calculées des étiquettes, publiées par le plan de travail.
@@ -180,6 +214,8 @@ interface DiagramStore {
   upsertVlan: (vlan: VlanDef) => void
   removeVlan: (id: string) => void
   deduceVlansFromDiagram: () => number
+  /** Afficher ou masquer un bandeau latéral. Le choix est propre au poste, pas au document. */
+  setPanelOpen: (panneau: 'palette' | 'inspecteur', ouvert: boolean) => void
   setCommandOpen: (open: boolean) => void
   setImportOpen: (open: boolean) => void
   setVoiceOpen: (open: boolean) => void
@@ -292,6 +328,8 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   detail: 'full',
   osi: 'all',
   strictOsi: false,
+  paletteOpen: lirePanneau('palette'),
+  inspectorOpen: lirePanneau('inspecteur'),
   commandOpen: false,
   importOpen: false,
   voiceOpen: false,
@@ -513,6 +551,40 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   labelPlacements: () => lastLabelPlacements,
   publishLabelPlacements: (placements) => {
     lastLabelPlacements = placements
+  },
+
+  setLayerName: (rank, name) => {
+    if (lockedStore()) return
+    get().pushHistory()
+    set((state) => {
+      const noms = { ...(state.diagram.layerNames ?? {}) }
+      const propre = name.trim().slice(0, 40)
+      if (propre) noms[String(rank)] = propre
+      else delete noms[String(rank)]
+      return {
+        diagram: { ...state.diagram, layerNames: Object.keys(noms).length > 0 ? noms : undefined },
+      }
+    })
+  },
+
+  renameGroup: (type, from, to) => {
+    if (lockedStore()) return
+    const propre = to.trim()
+    if (!propre || propre === from) return
+    get().pushHistory()
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        nodes: state.diagram.nodes.map((node) => (node[type] === from ? { ...node, [type]: propre } : node)),
+      },
+    }))
+    const collapsedKey = groupKey(type === 'cluster' ? 'cluster' : type, from)
+    // Un groupe replié garde son repli sous son nouveau nom.
+    set((state) => ({
+      collapsed: state.collapsed.map((key) =>
+        key === collapsedKey ? groupKey(type === 'cluster' ? 'cluster' : type, propre) : key,
+      ),
+    }))
   },
 
   setLocked: (locked) => {
@@ -892,6 +964,11 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     set((state) => ({ diagram: { ...state.diagram, vlans } }))
     return vlans.length - before
   },
+  setPanelOpen: (panneau, ouvert) => {
+    ecrirePanneau(panneau === 'palette' ? 'palette' : 'inspecteur', ouvert)
+    set(panneau === 'palette' ? { paletteOpen: ouvert } : { inspectorOpen: ouvert })
+  },
+
   setCommandOpen: (commandOpen) => set({ commandOpen }),
   setImportOpen: (importOpen) => set({ importOpen }),
   setVoiceOpen: (voiceOpen) => set({ voiceOpen }),
@@ -1268,6 +1345,35 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
           ok: true,
           message: intent.locked ? 'Schéma verrouillé : lecture seule.' : 'Schéma déverrouillé.',
         }
+      }
+
+      case 'groupRename': {
+        get().setAppView('diagram')
+        if (intent.what === 'layer') {
+          // « couche Accès » : on retrouve le rang par son nom courant, personnalisé ou non.
+          const courants = layerBands(get().diagram.nodes, get().layout.direction, get().diagram.layerNames)
+          const voulu = plain(intent.from)
+          const bande =
+            courants.find((item) => plain(item.label) === voulu) ??
+            courants.find((item) => plain(item.label).includes(voulu))
+          if (!bande) return { ok: false, message: `Couche « ${intent.from} » introuvable.` }
+          get().setLayerName(bande.rank, intent.to)
+          return { ok: true, message: `Couche « ${bande.label} » renommée : ${intent.to}.` }
+        }
+
+        const champ = intent.what
+        const valeurs = [...new Set(get().diagram.nodes.map((node) => node[champ]).filter(Boolean))] as string[]
+        const voulu = plain(intent.from)
+        const trouve =
+          valeurs.find((valeur) => plain(valeur) === voulu) ??
+          valeurs.find((valeur) => plain(valeur).includes(voulu))
+        if (!trouve) {
+          const noms = { site: 'Site', zone: 'Zone', cluster: 'Grappe' }[champ]
+          return { ok: false, message: `${noms} « ${intent.from} » introuvable.` }
+        }
+        get().renameGroup(champ, trouve, intent.to)
+        const combien = get().diagram.nodes.filter((node) => node[champ] === intent.to).length
+        return { ok: true, message: `« ${trouve} » renommé en ${intent.to} (${combien} équipement(s)).` }
       }
 
       case 'page': {

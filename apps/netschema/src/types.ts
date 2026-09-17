@@ -234,6 +234,11 @@ export interface Diagram {
   locked?: boolean
   /** Étiquettes de liaison figées à leur place actuelle. */
   labelsLocked?: boolean
+  /**
+   * Noms de couches propres au schéma, par rang : « Périmètre » devient « DMZ », « Accès »
+   * devient « Étage 2 ». Absent = le nom par défaut de la couche.
+   */
+  layerNames?: Record<string, string>
 }
 
 /**

@@ -166,7 +166,11 @@ export interface LayerBand {
  * Bandes de couches déduites des positions réelles (et pas du dernier placement auto),
  * afin que les libellés restent justes même après un déplacement à la main.
  */
-export function layerBands(nodes: NetNode[], direction: LayoutOptions['direction']): LayerBand[] {
+export function layerBands(
+  nodes: NetNode[],
+  direction: LayoutOptions['direction'],
+  noms?: Record<string, string>,
+): LayerBand[] {
   const buckets = new Map<number, number[]>()
   for (const node of nodes) {
     const rank = rankOf(node.kind, node.rank)
@@ -179,7 +183,7 @@ export function layerBands(nodes: NetNode[], direction: LayoutOptions['direction
     .sort((a, b) => a[0] - b[0])
     .map(([rank, values]) => ({
       rank,
-      label: LAYER_LABELS[rank] ?? `Couche ${rank}`,
+      label: noms?.[String(rank)] ?? LAYER_LABELS[rank] ?? `Couche ${rank}`,
       main: values.reduce((acc, v) => acc + v, 0) / values.length,
     }))
 }
