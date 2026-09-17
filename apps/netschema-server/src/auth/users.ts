@@ -29,6 +29,12 @@ export interface User {
   failures?: number
   lockedUntil?: string
   lastLoginAt?: string
+  /**
+   * Génération de session : incrémentée à chaque changement de mot de passe ou désactivation.
+   * Les cookies émis avant ne valent plus rien — c'est ce qui permet de fermer la porte à
+   * quelqu'un sans attendre l'expiration de sa session.
+   */
+  sessionGeneration?: number
 }
 
 export interface PublicUser {
@@ -100,7 +106,13 @@ export class UserStore {
     const problem = passwordProblem(password)
     if (problem) throw new Error(problem)
     const hash = await hashPassword(password)
-    this.update(username, (user) => ({ ...user, password: hash, failures: 0, lockedUntil: undefined }))
+    this.update(username, (user) => ({
+      ...user,
+      password: hash,
+      failures: 0,
+      lockedUntil: undefined,
+      sessionGeneration: (user.sessionGeneration ?? 0) + 1,
+    }))
   }
 
   setRole(username: string, role: Role): void {
@@ -108,7 +120,13 @@ export class UserStore {
   }
 
   setDisabled(username: string, disabled: boolean): void {
-    this.update(username, (user) => ({ ...user, disabled: disabled || undefined }))
+    // Désactiver ferme aussi les sessions ouvertes : sans cela, la personne continuerait de
+    // travailler jusqu'à l'expiration de son cookie.
+    this.update(username, (user) => ({
+      ...user,
+      disabled: disabled || undefined,
+      sessionGeneration: (user.sessionGeneration ?? 0) + 1,
+    }))
   }
 
   remove(username: string): void {

@@ -136,6 +136,44 @@ export async function changePassword(current: string, next: string): Promise<voi
   await request('/password', { method: 'POST', body: JSON.stringify({ current, next }) })
 }
 
+
+// ── Comptes (administrateurs) ────────────────────────────────────────────────
+
+export interface CompteAdmin {
+  id: string
+  username: string
+  displayName: string
+  role: 'lecteur' | 'editeur' | 'admin'
+  disabled: boolean
+  lastLoginAt: string | null
+  lockedUntil: string | null
+}
+
+export async function listUsers(): Promise<CompteAdmin[]> {
+  const data = await request<{ users: CompteAdmin[] }>('/users')
+  return data.users
+}
+
+export async function createUser(payload: {
+  username: string
+  password: string
+  displayName?: string
+  role: 'lecteur' | 'editeur' | 'admin'
+}): Promise<void> {
+  await request('/users', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function updateUser(
+  username: string,
+  patch: { role?: 'lecteur' | 'editeur' | 'admin'; disabled?: boolean; password?: string },
+): Promise<void> {
+  await request(`/users/${encodeURIComponent(username)}`, { method: 'PATCH', body: JSON.stringify(patch) })
+}
+
+export async function deleteUser(username: string): Promise<void> {
+  await request(`/users/${encodeURIComponent(username)}`, { method: 'DELETE' })
+}
+
 export async function listDiagrams(): Promise<DiagramSummary[]> {
   const result = await request<{ diagrams: DiagramSummary[] }>('/diagrams')
   return result.diagrams

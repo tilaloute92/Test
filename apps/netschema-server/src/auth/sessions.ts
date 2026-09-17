@@ -23,14 +23,25 @@ export interface SessionPayload {
   sub: string
   /** Date d'expiration, en millisecondes epoch. */
   exp: number
+  /**
+   * Génération de session du compte. Changer le mot de passe ou désactiver un compte
+   * l'incrémente : les cookies émis avant cessent aussitôt d'être acceptés, sans quoi un
+   * mot de passe compromis resterait exploitable jusqu'à l'expiration.
+   */
+  gen?: number
 }
 
 function sign(value: string, secret: string): string {
   return createHmac('sha256', secret).update(value).digest('base64url')
 }
 
-export function createSessionCookie(userId: string, secret: string, minutes: number): string {
-  const payload: SessionPayload = { sub: userId, exp: Date.now() + minutes * 60_000 }
+export function createSessionCookie(
+  userId: string,
+  secret: string,
+  minutes: number,
+  generation = 0,
+): string {
+  const payload: SessionPayload = { sub: userId, exp: Date.now() + minutes * 60_000, gen: generation }
   const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
   return `${body}.${sign(body, secret)}`
 }

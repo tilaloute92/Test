@@ -46,6 +46,16 @@ function tlsOptions() {
 
 const server = config.https ? createHttpsServer(tlsOptions(), app) : createHttpServer(app)
 
+/**
+ * Délais de garde : une connexion qui envoie ses en-têtes au compte-gouttes immobilise un
+ * socket pour rien (attaque dite « slowloris »). Node ne borne pas cela par défaut sur toutes
+ * les versions ; on le fixe explicitement.
+ */
+server.headersTimeout = 20_000
+server.requestTimeout = 60_000
+server.keepAliveTimeout = 15_000
+server.maxHeadersCount = 100
+
 server.listen(config.port, config.host, () => {
   const scheme = config.https ? 'https' : 'http'
   console.log(`[netschema] ${scheme}://${config.host}:${config.port}`)

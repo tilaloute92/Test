@@ -1,4 +1,4 @@
-import type { ViewMode } from '../types'
+import type { OsiView, ViewMode } from '../types'
 
 /**
  * Modes de visualisation.
@@ -57,6 +57,10 @@ export interface ModeDefinition {
     showClusters: boolean
   }
   style: ModeStyle
+  /** Couche OSI imposée par le mode, quand il en suppose une (vue logique). */
+  osi?: OsiView
+  /** Masquer — plutôt qu'estomper — ce qui n'appartient pas à cette couche. */
+  strictOsi?: boolean
 }
 
 export const VIEW_MODES: ModeDefinition[] = [
@@ -114,6 +118,39 @@ export const VIEW_MODES: ModeDefinition[] = [
       linkLabels: true,
       groupStrength: 0.55,
       fill: 'blanc',
+      shadow: false,
+      annotations: true,
+    },
+  },
+  {
+    id: 'logique',
+    label: 'Logique',
+    hint: 'La vue du routage : seuls les équipements et liens de niveau 3, avec sous-réseaux, VRF et adresses aux deux bouts — ni câbles, ni baies, ni alimentation.',
+    display: {
+      showDetails: true,
+      showGrid: false,
+      showLayerLabels: true,
+      showZones: true,
+      showSites: true,
+      showClusters: true,
+    },
+    // La vue logique n'est pas qu'un habillage : elle écarte du schéma tout ce qui ne
+    // participe pas au niveau 3 — câblage, alimentation, administration hors bande.
+    osi: 'l3',
+    strictOsi: true,
+    style: {
+      nameSize: 12.5,
+      details: true,
+      dense: false,
+      linkWidth: 1.2,
+      labelSize: 9.4,
+      labelAlways: true,
+      radius: 10,
+      stroke: 1.5,
+      endLabels: true,
+      linkLabels: true,
+      groupStrength: 1.4,
+      fill: 'teinte',
       shadow: false,
       annotations: true,
     },

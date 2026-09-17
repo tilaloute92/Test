@@ -302,7 +302,7 @@ export interface LabelOffset {
 }
 
 /** Mode de visualisation : même schéma, trois lectures. */
-export type ViewMode = 'architecture' | 'technique' | 'presentation'
+export type ViewMode = 'architecture' | 'technique' | 'presentation' | 'logique'
 
 /** Déplacement d'un équipement dans l'ordre d'empilement. */
 export type ZOrder = 'front' | 'back' | 'forward' | 'backward'

@@ -10,6 +10,7 @@ import { Palette } from './components/Palette'
 import { Toolbar } from './components/Toolbar'
 import { LoginView } from './components/LoginView'
 import { ProjectsDialog } from './components/ProjectsDialog'
+import { UsersDialog } from './components/UsersDialog'
 import { useDiagram } from './store/useDiagram'
 import { canEdit, useSession } from './store/useSession'
 
@@ -180,6 +181,7 @@ export default function App() {
     <div className="flex h-screen w-screen flex-col bg-slate-100 text-slate-900">
       <AppTabs />
       <ProjectsDialog />
+      <UsersDialog />
       <CommandPalette svgRef={svgRef} />
       <QuickImportDialog />
       <VoicePanel />

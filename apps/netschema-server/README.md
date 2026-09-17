@@ -52,7 +52,9 @@ npm start                                           # http://localhost:8080
 - **Certificat** : PFX du magasin Windows lu tel quel (ou PEM), sans conversion ni OpenSSL.
 - **Sessions** : cookie `HttpOnly`, `SameSite=Strict`, `Secure` en HTTPS, signé HMAC-SHA256,
   expiration incluse dans la signature. Aucun état en mémoire : redémarrer le service ne
-  déconnecte personne.
+  déconnecte personne. Chaque cookie porte la **génération de session** du compte : changer un
+  mot de passe ou désactiver un compte l'incrémente, et tout ce qui a été émis avant cesse
+  aussitôt d'être accepté — sans attendre l'expiration.
 - **CSRF** : double soumission — un cookie lisible par l'application, répété dans l'en-tête
   `X-CSRF-Token`, exigé sur toute écriture.
 - **Force brute** : 10 tentatives par quart d'heure et par adresse, puis blocage temporaire
@@ -60,7 +62,10 @@ npm start                                           # http://localhost:8080
   le même message et le même temps de réponse.
 - **En-têtes** : CSP stricte (`default-src 'self'`, `frame-ancestors 'none'`, pas de script
   en ligne), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: same-origin`, HSTS en
-  HTTPS, `X-Powered-By` retiré.
+  HTTPS, `X-Powered-By` retiré, `Permissions-Policy` n'autorisant que le microphone (la dictée)
+  et refusant caméra, position, capteurs et paiement, `X-Permitted-Cross-Domain-Policies: none`.
+- **Connexions** : délais de garde sur les en-têtes (20 s), la requête (60 s) et le
+  maintien en vie (15 s), contre les connexions ouvertes au compte-gouttes.
 - **Entrées** : corps limité à 8 Mo, JSON nettoyé en profondeur (clés `__proto__`,
   `constructor`, `prototype` écartées), nombre d'équipements et de liaisons borné,
   identifiants de schéma restreints à `[A-Za-z0-9_-]` **et** vérifiés comme restant dans le
@@ -69,8 +74,21 @@ npm start                                           # http://localhost:8080
   à moitié écrit. Contrôle de version : deux personnes sur le même schéma ne s'écrasent pas
   en silence, la seconde reçoit un conflit.
 
-Ce qui **n'est pas** couvert et relève de l'installation : chiffrement du disque, sauvegarde
-du dossier de données, annuaire d'entreprise (les comptes sont locaux), et le certificat TLS.
+- **Corps malformé** : un JSON illisible ou trop gros reçoit un 400 ou un 413, jamais une pile
+  d'exception.
+
+Ce qui **n'est pas** couvert et relève de l'installation : chiffrement du disque, sauvegarde du
+dossier de données, annuaire d'entreprise (les comptes sont locaux), et le certificat TLS.
+
+Deux points à connaître, plutôt que de les découvrir :
+
+- **La dictée passe par le navigateur.** La reconnaissance vocale de Chrome et d'Edge envoie
+  l'audio aux services de l'éditeur du navigateur ; l'application ne le fait pas elle-même et
+  n'y a pas accès. Le champ de saisie du panneau vocal permet de s'en passer entièrement, et le
+  microphone reste une permission que le navigateur demande site par site.
+- **Le journal d'audit grossit sans limite.** Une ligne par connexion et par enregistrement :
+  quelques mégaoctets par an pour une équipe, mais il n'y a pas de rotation automatique. À
+  archiver avec le reste du dossier de données.
 
 ## Comptes
 
@@ -113,6 +131,8 @@ Toutes les routes sont préfixées par `/api`. Les écritures exigent l'en-tête
 | `DELETE` | `/diagrams/:id` | admin | Supprime |
 | `GET` | `/users` | admin | Liste des comptes |
 | `POST` | `/users` | admin | Crée un compte |
+| `PATCH` | `/users/:nom` | admin | Rôle, activation, mot de passe |
+| `DELETE` | `/users/:nom` | admin | Supprime un compte |
 
 ## Données
 
@@ -132,9 +152,13 @@ Sauvegarder NetSchema = copier ce dossier. Restaurer = le remettre en place.
 npm run build && npm test
 ```
 
-Les tests démarrent le vrai serveur sur un dossier jetable et parlent HTTP : session absente,
-CSRF manquant, indistinction compte inconnu / mot de passe faux, rôles, conflit de version,
-traversée de chemin, pollution de prototype, en-têtes de sécurité.
+Dix-neuf tests démarrent le vrai serveur sur un dossier jetable et parlent HTTP : session
+absente, CSRF manquant (y compris un jeton venu d'une autre session), indistinction compte
+inconnu / mot de passe faux, rôles, conflit de version, traversée de chemin, pollution de
+prototype, en-têtes de sécurité et politique de permissions, corps JSON invalide, création d'un
+compte en lecture seule et refus de toute écriture de sa part, fermeture immédiate des sessions
+à la désactivation d'un compte ou au changement de son mot de passe, et impossibilité pour un
+administrateur de se retirer ses propres droits.
 
 ## Déploiement Windows
 

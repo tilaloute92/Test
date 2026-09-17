@@ -87,15 +87,51 @@ export function createApp(services: Services) {
       hsts: config.secureCookies ? { maxAge: 31536000, includeSubDomains: true } : false,
     }),
   )
+  /**
+   * Permissions-Policy : l'application dicte des commandes, elle a donc besoin du microphone.
+   * Tout le reste — caméra, position, capteurs, paiement — lui est refusé, y compris à un
+   * script qui aurait trouvé le moyen de s'y exécuter.
+   */
+  app.use((_req, res, next) => {
+    res.setHeader(
+      'Permissions-Policy',
+      'microphone=(self), camera=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), interest-cohort=()',
+    )
+    res.setHeader('X-Permitted-Cross-Domain-Policies', 'none')
+    next()
+  })
+
   app.use(compression())
   app.use(express.json({ limit: config.maxBodyBytes }))
+
+  /**
+   * Un corps annoncé en JSON mais illisible est une requête forgée, pas une panne : on répond
+   * proprement plutôt que de laisser remonter une pile d'exception.
+   */
+  app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
+    if (error && typeof error === 'object' && 'type' in error) {
+      const type = (error as { type?: string }).type
+      if (type === 'entity.too.large') {
+        res.status(413).json({ error: 'Contenu trop volumineux.' })
+        return
+      }
+      if (type === 'entity.parse.failed') {
+        res.status(400).json({ error: 'JSON invalide.' })
+        return
+      }
+    }
+    next(error)
+  })
 
   // ── Session ────────────────────────────────────────────────────────────────
   app.use((req, _res, next) => {
     const payload = readSessionCookie(cookies(req)[SESSION_COOKIE], config.sessionSecret)
     if (payload) {
       const user = users.findById(payload.sub)
-      if (user && !user.disabled) req.user = user
+      // Le cookie ne vaut que pour la génération de session en cours : un mot de passe changé
+      // ou un compte désactivé invalident aussitôt ce qui a été émis avant.
+      const generation = user?.sessionGeneration ?? 0
+      if (user && !user.disabled && (payload.gen ?? 0) === generation) req.user = user
     }
     next()
   })
@@ -205,7 +241,12 @@ export function createApp(services: Services) {
     const csrf = newCsrfToken()
     setSessionCookies(
       res,
-      createSessionCookie(result.user.id, config.sessionSecret, config.sessionMinutes),
+      createSessionCookie(
+        result.user.id,
+        config.sessionSecret,
+        config.sessionMinutes,
+        result.user.sessionGeneration ?? 0,
+      ),
       csrf,
       { secure: config.secureCookies, minutes: config.sessionMinutes },
     )
@@ -352,6 +393,75 @@ export function createApp(services: Services) {
       res.status(201).json({ user: publicUser(created) })
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : 'Création refusée.' })
+    }
+  })
+
+  /**
+   * Modification d'un compte : rôle, activation, mot de passe.
+   *
+   * Un administrateur ne peut ni se retirer son propre rôle ni se désactiver : c'est la façon
+   * la plus courante de se fermer la porte d'un serveur, et elle se répare mal.
+   */
+  api.patch('/users/:username', requireAuth, requireRole('admin'), async (req, res) => {
+    const cible = String(req.params.username ?? '')
+    const { role, disabled, password } = (req.body ?? {}) as Record<string, unknown>
+    const soiMeme = cible.toLowerCase() === req.user!.username.toLowerCase()
+    try {
+      if (typeof role === 'string') {
+        if (!ROLES.includes(role as Role)) {
+          res.status(400).json({ error: 'Rôle inconnu.' })
+          return
+        }
+        if (soiMeme && role !== 'admin') {
+          res.status(400).json({ error: 'Un administrateur ne peut pas se retirer son propre rôle.' })
+          return
+        }
+        users.setRole(cible, role as Role)
+      }
+      if (typeof disabled === 'boolean') {
+        if (soiMeme && disabled) {
+          res.status(400).json({ error: 'Un administrateur ne peut pas désactiver son propre compte.' })
+          return
+        }
+        users.setDisabled(cible, disabled)
+      }
+      if (typeof password === 'string') await users.setPassword(cible, password)
+
+      audit.write('compte-modifie', {
+        username: cible,
+        by: req.user!.username,
+        ip: clientIp(req),
+        action: [
+          typeof role === 'string' ? `role:${role}` : null,
+          typeof disabled === 'boolean' ? (disabled ? 'desactivation' : 'activation') : null,
+          typeof password === 'string' ? 'mot-de-passe' : null,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      })
+      res.json({ ok: true })
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Modification refusée.' })
+    }
+  })
+
+  api.delete('/users/:username', requireAuth, requireRole('admin'), (req, res) => {
+    const cible = String(req.params.username ?? '')
+    if (cible.toLowerCase() === req.user!.username.toLowerCase()) {
+      res.status(400).json({ error: 'Un administrateur ne peut pas supprimer son propre compte.' })
+      return
+    }
+    try {
+      users.remove(cible)
+      audit.write('compte-modifie', {
+        username: cible,
+        by: req.user!.username,
+        ip: clientIp(req),
+        action: 'suppression',
+      })
+      res.json({ ok: true })
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Suppression refusée.' })
     }
   })
 

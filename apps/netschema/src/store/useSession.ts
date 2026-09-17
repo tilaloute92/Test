@@ -26,6 +26,8 @@ export interface SessionState {
   /** Conflit détecté : quelqu'un d'autre a enregistré entre-temps. */
   conflict: boolean
   projectsOpen: boolean
+  /** Fenêtre de gestion des comptes (administrateurs). */
+  usersOpen: boolean
 
   start: () => Promise<void>
   signIn: (username: string, password: string) => Promise<void>
@@ -37,6 +39,7 @@ export interface SessionState {
   removeProject: (id: string) => Promise<void>
   save: (options?: { force?: boolean }) => Promise<void>
   setProjectsOpen: (open: boolean) => void
+  setUsersOpen: (open: boolean) => void
   dismissError: () => void
 }
 
@@ -60,6 +63,7 @@ export const useSession = create<SessionState>((set, get) => ({
   error: null,
   conflict: false,
   projectsOpen: false,
+  usersOpen: false,
 
   start: async () => {
     const info = await api.detectSession()
@@ -180,5 +184,6 @@ export const useSession = create<SessionState>((set, get) => ({
   },
 
   setProjectsOpen: (projectsOpen) => set({ projectsOpen }),
+  setUsersOpen: (usersOpen) => set({ usersOpen }),
   dismissError: () => set({ error: null }),
 }))

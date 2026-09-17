@@ -67,6 +67,12 @@ export type VoiceIntent =
   | { type: 'linkAttach'; target?: string; reset: true }
   | { type: 'lock'; what: 'diagram' | 'labels'; locked: boolean }
   | {
+      type: 'impact'
+      action: 'fail' | 'unplug' | 'reset' | 'open'
+      target?: string
+      to?: string
+    }
+  | {
       type: 'groupRename'
       what: 'site' | 'zone' | 'cluster' | 'layer'
       from: string
@@ -425,6 +431,36 @@ const RULES: Rule[] = [
     const name = match ? cleanName(match[1]) : ''
     return name ? { type: 'page', action: 'select', name } : null
   },
+
+  // ── Analyse d'impact ───────────────────────────────────────────────────────
+  (t) => {
+    const match = t.match(
+      /^(?:simule|simuler|teste|tester)\s+(?:la\s+)?(?:panne|coupure|perte|arret)\s+(?:de |du |d'|de la )?(.+)$/,
+    )
+    return match ? { type: 'impact', action: 'fail', target: cleanName(match[1]) } : null
+  },
+  (t) => {
+    const match = t.match(/^(?:arrete|arreter|eteins|eteindre|coupe|couper)\s+(?:le |la |l')?(.+?)\s*$/)
+    if (!match) return null
+    // « coupe la liaison entre A et B » relève du débranchement, pas de l'arrêt d'un boîtier.
+    if (/^(liaison|lien|cable|câble)/.test(match[1])) return null
+    if (/^(schema|simulation|analyse)/.test(match[1])) return { type: 'impact', action: 'reset' }
+    return { type: 'impact', action: 'fail', target: cleanName(match[1]) }
+  },
+  (t) => {
+    const match = t.match(
+      /^(?:debranche|debrancher|coupe|couper)\s+(?:la\s+|le\s+)?(?:liaison|lien|cable|câble)\s+(?:entre\s+)?(.+?)\s+(?:et|vers|a)\s+(.+)$/,
+    )
+    return match ? { type: 'impact', action: 'unplug', target: cleanName(match[1]), to: cleanName(match[2]) } : null
+  },
+  (t) =>
+    /^(?:retablis|retablir|remets|reinitialise|arrete la simulation|fin de simulation|tout va bien)$/.test(t)
+      ? { type: 'impact', action: 'reset' }
+      : null,
+  (t) =>
+    /^(?:analyse d'impact|impact|ouvre l'impact|montre l'impact|que se passe t il|quel est l'impact)$/.test(t)
+      ? { type: 'impact', action: 'open' }
+      : null,
 
   // ── Zones, sites, grappes et couches du schéma ─────────────────────────────
   (t, raw) => {

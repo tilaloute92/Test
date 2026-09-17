@@ -202,17 +202,17 @@ export function GuideView() {
     },
     {
       id: 'modes',
-      title: 'Trois modes de visualisation',
+      title: 'Quatre modes de visualisation',
       keywords:
         'mode vue architecture technique presentation affichage projection lecture densite rendu',
       body: (
         <>
           <P>
-            Le même schéma se regarde de trois façons, sans jamais toucher au modèle. Le
+            Le même schéma se regarde de quatre façons, sans jamais toucher au modèle. Le
             sélecteur est dans la barre d'outils (et dans <i>Mise en page</i>) ; chaque mode
             règle d'un coup ce qui s'affiche et comment c'est dessiné.
           </P>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             {[
               {
                 title: 'Architecture',
@@ -221,6 +221,10 @@ export function GuideView() {
               {
                 title: 'Technique',
                 text: 'La documentation d’exploitation. Boîtes blanches et compactes portant adresse, modèle et numéro de série ; ports, VLAN, agrégat et rôle STP aux deux bouts de chaque liaison ; cadres de groupes effacés pour laisser lire les textes.',
+              },
+              {
+                title: 'Logique',
+                text: 'La vue du routage : seuls les équipements et liens de niveau 3, avec sous-réseaux, VRF et adresses aux deux bouts. Câblage, baies, alimentation et administration hors bande disparaissent du schéma.',
               },
               {
                 title: 'Présentation',
@@ -242,6 +246,49 @@ export function GuideView() {
             L'export <b>HTML</b> embarque les trois vues dans un seul fichier : on passe de
             l'une à l'autre sans NetSchema, chez le destinataire.
           </Note>
+        </>
+      ),
+    },
+    {
+      id: 'impact',
+      title: 'Analyse d’impact : « que se passe-t-il si… »',
+      keywords: 'impact panne simulation coupure arret switch cable debranche isole fragile redondance continuite pra pca criticite risque que se passe t il',
+      body: (
+        <>
+          <P>
+            Onglet <b>Impact</b> de l'inspecteur. On y désigne ce qui tombe — un switch, un
+            câble, plusieurs à la fois — et le schéma répond aussitôt. Rien n'est modifié : la
+            simulation vit à côté du document et s'efface d'un clic sur <i>Rétablir</i>.
+          </P>
+          <List
+            items={[
+              <>
+                <b>Rouge</b> : déclaré en panne. <b>Orange</b> : isolé — plus aucun chemin vers
+                le réseau. <b>Ambre</b> : ne tient plus qu'à un fil — encore joignable, mais la
+                prochaine panne l'emporte.
+              </>,
+              <>
+                Le panneau donne le compte, la part d'équipements encore joignables, la liste
+                des isolés et, pour chaque équipement fragile, <b>le point de passage dont il
+                dépend désormais</b>.
+              </>,
+              <>
+                <b>Par quoi commencer</b> : le classement des équipements par l'effet de leur
+                arrêt, pris un par un. Le haut de la liste est ce qu'il faut doubler en premier.
+                Un clic sur un nom simule directement sa panne.
+              </>,
+            ]}
+          />
+          <Note>
+            Les liaisons de service — battement de cœur, réplication, administration hors bande,
+            alimentation — ne comptent pas comme chemin de données : un onduleur relié par son
+            seul câble d'alimentation n'est pas « isolé du réseau ». Les points de référence
+            sont les accès opérateur et le périmètre.
+          </Note>
+          <P>
+            À la voix : « simule la panne de SW-CORE-01 », « débranche la liaison entre
+            SW-CORE-01 et FW-01 », « quel est l'impact », « rétablis ».
+          </P>
         </>
       ),
     },

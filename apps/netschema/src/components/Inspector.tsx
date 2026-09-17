@@ -2,6 +2,7 @@ import { Btn, Checkbox, Field, Select, Slider, TextInput } from './ui'
 import { CatalogPanel } from './CatalogPanel'
 import { ModelPicker } from './ModelPicker'
 import { HaPanel } from './HaPanel'
+import { ImpactPanel } from './ImpactPanel'
 import { VlanPanel } from './VlanPanel'
 import { linkLayers } from '../lib/osi'
 import { collapsibleGroups } from '../lib/derive'
@@ -61,20 +62,23 @@ export function Inspector() {
 
   return (
     <aside className="flex w-72 shrink-0 flex-col gap-5 overflow-y-auto border-l border-slate-200 bg-white p-4">
-      <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+      {/* Cinq onglets ne tiennent pas sur une ligne dans un bandeau de 288 px : on les laisse
+          passer à la ligne plutôt que de les rogner. */}
+      <div className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
         {(
           [
             ['properties', 'Propriétés'],
             ['ha', 'HA'],
             ['osi', 'L2/L3'],
             ['catalog', 'Catalogue'],
+            ['impact', 'Impact'],
           ] as const
         ).map(([id, label]) => (
           <button
             key={id}
             type="button"
             onClick={() => setPanel(id)}
-            className={`flex flex-1 items-center justify-center gap-1 rounded-md px-1.5 py-1.5 text-[11px] font-medium transition ${
+            className={`flex min-w-[52px] flex-1 items-center justify-center gap-1 rounded-md px-1.5 py-1.5 text-[11px] font-medium transition ${
               panel === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -94,6 +98,7 @@ export function Inspector() {
       {panel === 'ha' && <HaPanel />}
       {panel === 'osi' && <VlanPanel />}
       {panel === 'catalog' && <CatalogPanel />}
+      {panel === 'impact' && <ImpactPanel />}
 
       {panel === 'properties' && (
       <>

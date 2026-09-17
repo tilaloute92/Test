@@ -17,6 +17,7 @@ function ServerBar() {
   const save = useSession((s) => s.save)
   const signOut = useSession((s) => s.signOut)
   const setProjectsOpen = useSession((s) => s.setProjectsOpen)
+  const setUsersOpen = useSession((s) => s.setUsersOpen)
 
   if (mode !== 'server' || !user) return null
 
@@ -38,6 +39,16 @@ function ServerBar() {
       >
         Schémas
       </button>
+      {user.role === 'admin' && (
+        <button
+          type="button"
+          onClick={() => setUsersOpen(true)}
+          className="rounded-md px-2.5 py-1.5 text-[12px] font-medium text-slate-300 transition hover:bg-white/10"
+          title="Gérer les comptes"
+        >
+          Comptes
+        </button>
+      )}
       {canEdit(user) && (
         <button
           type="button"

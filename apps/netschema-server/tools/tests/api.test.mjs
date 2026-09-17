@@ -74,6 +74,9 @@ before(async () => {
       NETSCHEMA_HOST: '127.0.0.1',
       NETSCHEMA_PORT: '8123',
       NETSCHEMA_WEB_DIR: resolve(dataDir, 'aucune-interface'),
+      // Les tests se connectent des dizaines de fois depuis la même adresse : la limitation
+      // par adresse est relevée ici, le blocage de compte après échecs reste, lui, testé.
+      NETSCHEMA_LOGIN_ATTEMPTS: '500',
     },
     stdio: 'ignore',
   })
@@ -242,5 +245,133 @@ describe('en-têtes de sécurité', () => {
     assert.equal(response.headers.get('x-frame-options'), 'DENY')
     assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
     assert.equal(response.headers.get('x-powered-by'), null)
+  })
+})
+
+describe('comptes', () => {
+  it('permet à un administrateur de créer un compte en lecture seule, qui ne peut rien modifier', async () => {
+    const chef = makeClient()
+    await chef.call('/api/session')
+    await chef.call('/api/login', { method: 'POST', body: { username: 'chef', password: PASSWORD } })
+
+    const cree = await chef.call('/api/users', {
+      method: 'POST',
+      body: { username: 'consultation', password: PASSWORD, role: 'lecteur', displayName: 'Consultation' },
+    })
+    assert.equal(cree.status, 201)
+
+    const lecteur = makeClient()
+    await lecteur.call('/api/session')
+    const connexion = await lecteur.call('/api/login', {
+      method: 'POST',
+      body: { username: 'consultation', password: PASSWORD },
+    })
+    assert.equal(connexion.status, 200)
+    assert.equal(connexion.body.user.role, 'lecteur')
+
+    // Il voit les schémas…
+    const liste = await lecteur.call('/api/diagrams')
+    assert.equal(liste.status, 200)
+    // … et n'en crée ni n'en modifie aucun.
+    const refus = await lecteur.call('/api/diagrams', { method: 'POST', body: { title: 'Interdit' } })
+    assert.equal(refus.status, 403)
+    const refusComptes = await lecteur.call('/api/users')
+    assert.equal(refusComptes.status, 403)
+  })
+
+  it('désactive un compte et ferme aussitôt sa session', async () => {
+    const chef = makeClient()
+    await chef.call('/api/session')
+    await chef.call('/api/login', { method: 'POST', body: { username: 'chef', password: PASSWORD } })
+    await chef.call('/api/users', {
+      method: 'POST',
+      body: { username: 'partant', password: PASSWORD, role: 'editeur' },
+    })
+
+    const partant = makeClient()
+    await partant.call('/api/session')
+    await partant.call('/api/login', { method: 'POST', body: { username: 'partant', password: PASSWORD } })
+    assert.equal((await partant.call('/api/diagrams')).status, 200)
+
+    await chef.call('/api/users/partant', { method: 'PATCH', body: { disabled: true } })
+    // La session ouverte ne vaut plus rien, sans attendre son expiration.
+    assert.equal((await partant.call('/api/diagrams')).status, 401)
+  })
+
+  it('invalide les sessions ouvertes quand le mot de passe change', async () => {
+    const chef = makeClient()
+    await chef.call('/api/session')
+    await chef.call('/api/login', { method: 'POST', body: { username: 'chef', password: PASSWORD } })
+    await chef.call('/api/users', {
+      method: 'POST',
+      body: { username: 'vole', password: PASSWORD, role: 'editeur' },
+    })
+
+    const ancienne = makeClient()
+    await ancienne.call('/api/session')
+    await ancienne.call('/api/login', { method: 'POST', body: { username: 'vole', password: PASSWORD } })
+    assert.equal((await ancienne.call('/api/diagrams')).status, 200)
+
+    await chef.call('/api/users/vole', { method: 'PATCH', body: { password: 'Nouveau-Motdepasse-2026!' } })
+    assert.equal((await ancienne.call('/api/diagrams')).status, 401)
+  })
+
+  it('empêche un administrateur de se retirer ses droits ou de se supprimer', async () => {
+    const chef = makeClient()
+    await chef.call('/api/session')
+    await chef.call('/api/login', { method: 'POST', body: { username: 'chef', password: PASSWORD } })
+
+    const role = await chef.call('/api/users/chef', { method: 'PATCH', body: { role: 'lecteur' } })
+    assert.equal(role.status, 400)
+    const desactivation = await chef.call('/api/users/chef', { method: 'PATCH', body: { disabled: true } })
+    assert.equal(desactivation.status, 400)
+    const suppression = await chef.call('/api/users/chef', { method: 'DELETE' })
+    assert.equal(suppression.status, 400)
+    assert.equal((await chef.call('/api/diagrams')).status, 200)
+  })
+
+  it('refuse un mot de passe trop faible', async () => {
+    const chef = makeClient()
+    await chef.call('/api/session')
+    await chef.call('/api/login', { method: 'POST', body: { username: 'chef', password: PASSWORD } })
+    const faible = await chef.call('/api/users', {
+      method: 'POST',
+      body: { username: 'faible', password: 'motdepasse', role: 'lecteur' },
+    })
+    assert.equal(faible.status, 400)
+  })
+})
+
+describe('durcissement', () => {
+  it('annonce une politique de permissions restrictive', async () => {
+    const client = makeClient()
+    const reponse = await client.call('/api/health')
+    const politique = reponse.headers.get('permissions-policy') ?? ''
+    assert.match(politique, /microphone=\(self\)/)
+    assert.match(politique, /camera=\(\)/)
+    assert.equal(reponse.headers.get('x-permitted-cross-domain-policies'), 'none')
+  })
+
+  it('répond proprement à un corps JSON invalide', async () => {
+    const reponse = await fetch(`${base}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{ceci n’est pas du JSON',
+    })
+    assert.equal(reponse.status, 400)
+    const corps = await reponse.json()
+    assert.equal(typeof corps.error, 'string')
+  })
+
+  it('refuse une écriture dont le jeton anti-CSRF vient d’une autre session', async () => {
+    const chef = makeClient()
+    await chef.call('/api/session')
+    await chef.call('/api/login', { method: 'POST', body: { username: 'chef', password: PASSWORD } })
+    const refus = await chef.call('/api/diagrams', {
+      method: 'POST',
+      body: { title: 'Forgé' },
+      csrf: 'jeton-d-une-autre-session',
+    })
+    assert.equal(refus.status, 403)
   })
 })

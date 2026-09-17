@@ -11,6 +11,7 @@ import { readProjectFile } from '../lib/storage'
 import { linkColorFor, linkEndLabels, linkLabelFor } from '../lib/osi'
 import { crossingCount, linkCrossings, overlappingPairs, type Crossing } from '../lib/crossings'
 import { modeStyle } from '../lib/viewModes'
+import { analyseImpact, COULEURS_IMPACT } from '../lib/impact'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
 import {
   insertIndexAt,
@@ -126,6 +127,8 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const canvasSize = useDiagram((s) => s.canvasSize)
   /** Schéma verrouillé : lecture seule. Étiquettes verrouillées : elles ne se déplacent plus. */
   const locked = useDiagram((s) => s.diagram.locked === true)
+  const panel = useDiagram((s) => s.panel)
+  const pannes = useDiagram((s) => s.pannes)
   const labelsLocked = useDiagram((s) => s.diagram.labelsLocked === true)
   const showHops = useDiagram((s) => s.showHops)
   const spreadLinks = useDiagram((s) => s.spreadLinks)
@@ -204,6 +207,12 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const onNodePointerDown = (event: React.PointerEvent<SVGGElement>, node: DisplayNode) => {
     event.stopPropagation()
     const store = useDiagram.getState()
+
+    // Analyse d'impact : le clic déclare une panne. Le schéma n'est pas modifié.
+    if (panel === 'impact' && !node.group) {
+      store.togglePanne('node', node.id)
+      return
+    }
     // Schéma verrouillé : on peut encore sélectionner pour consulter la fiche, pas déplacer.
     if (locked) {
       store.select({ nodes: node.group ? [] : [node.id] })
@@ -266,6 +275,13 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   ) => {
     event.stopPropagation()
     const store = useDiagram.getState()
+
+    // Analyse d'impact : cliquer une liaison la débranche, le temps de la simulation.
+    if (panel === 'impact' && isRealLink(link.id)) {
+      store.togglePanne('link', link.id)
+      return
+    }
+
     store.select({ links: [link.id] }, event.shiftKey)
     if (locked || !isRealLink(link.id) || event.shiftKey) return
 
@@ -559,6 +575,15 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   }, [display.links])
 
   const style = modeStyle(viewMode)
+
+  /**
+   * Analyse d'impact : elle ne s'affiche que lorsque son panneau est ouvert — c'est une
+   * lecture du schéma, pas un état permanent, et le calcul a un coût.
+   */
+  const impact = useMemo(
+    () => (panel === 'impact' ? analyseImpact(diagram, pannes) : null),
+    [panel, diagram, pannes],
+  )
 
   /**
    * Répartition des accroches : sans elle, toutes les liaisons quittant un équipement par le
@@ -1162,6 +1187,66 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
               />
             )
           })}
+
+          {/*
+            Analyse d'impact : un halo dit l'état de chaque équipement, sans toucher au dessin
+            du schéma lui-même — on doit pouvoir lire les deux en même temps.
+          */}
+          {impact && (
+            <g data-export="false" pointerEvents="none">
+              {display.nodes.map((node) => {
+                if (node.group) return null
+                const etat = impact.etats.get(node.id)
+                if (!etat || etat === 'intact') return null
+                return (
+                  <rect
+                    key={`impact-${node.id}`}
+                    x={node.x - NODE_W / 2 - 4}
+                    y={node.y - NODE_H / 2 - 4}
+                    width={NODE_W + 8}
+                    height={NODE_H + 8}
+                    rx={12}
+                    fill={COULEURS_IMPACT[etat]}
+                    fillOpacity={etat === 'panne' ? 0.2 : 0.11}
+                    stroke={COULEURS_IMPACT[etat]}
+                    strokeWidth={etat === 'panne' ? 2.4 : 1.8}
+                    strokeDasharray={etat === 'fragile' ? '6 4' : undefined}
+                  />
+                )
+              })}
+              {/* Liaisons hors service : marquées d'une croix à mi-parcours. */}
+              {display.links.map((link) => {
+                if (!impact.liensCoupes.has(link.id)) return null
+                const geometry = geometries.get(link.id)
+                if (!geometry) return null
+                const milieu = pointAlong(geometry.points, pathLength(geometry.points) / 2, false, 0.5)
+                return (
+                  <g
+                    key={`coupe-${link.id}`}
+                    stroke={COULEURS_IMPACT.panne}
+                    strokeWidth={2.4}
+                    strokeLinecap="round"
+                    transform={`translate(${milieu.x}, ${milieu.y})`}
+                  >
+                    <circle r={8} fill="#ffffff" stroke={COULEURS_IMPACT.panne} strokeWidth={1.6} />
+                    <path d="M -4 -4 l 8 8" />
+                    <path d="M 4 -4 l -8 8" />
+                  </g>
+                )
+              })}
+
+              {/* Croix sur ce qui est déclaré en panne : l'état le plus fort se voit de loin. */}
+              {display.nodes.map((node) => {
+                if (node.group || impact.etats.get(node.id) !== 'panne') return null
+                return (
+                  <g key={`croix-${node.id}`} stroke={COULEURS_IMPACT.panne} strokeWidth={3} strokeLinecap="round">
+                    <path d={`M ${node.x - 14} ${node.y - 14} l 28 28`} />
+                    <path d={`M ${node.x + 14} ${node.y - 14} l -28 28`} />
+                  </g>
+                )
+              })}
+            </g>
+          )}
 
           {/*
             Repères d'accroche : ils n'apparaissent qu'au moment utile — quand on tire une

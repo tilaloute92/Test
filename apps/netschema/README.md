@@ -299,23 +299,29 @@ Deux détails qui comptent :
   y retrouve un schéma exploitable. Et un fichier d'avant les onglets s'ouvre comme un document
   d'une seule page, sans conversion.
 
-## Trois modes de visualisation
+## Quatre modes de visualisation
 
-Le même schéma se lit de trois façons, sans jamais toucher au modèle. Le mode règle d'un coup
+Le même schéma se lit de quatre façons, sans jamais toucher au modèle. Le mode règle d'un coup
 ce qui s'affiche **et** comment c'est dessiné.
 
-| | **Architecture** | **Technique** | **Présentation** |
-| --- | --- | --- | --- |
-| Question posée | Qui parle à qui ? | Comment est-ce câblé et adressé ? | Comment le montrer ? |
-| Boîtes | Colorées par type, arrondies | Blanches, compactes, anguleuses | Colorées, très arrondies, ombrées |
-| Sur la boîte | Nom, rôle HA | Nom **+ adresse, modèle, n° de série, propriétaire** | Nom seul, en très gros |
-| Sur les liaisons | Débit et libellé | Débit **+ ports, VLAN, agrégat, rôle STP aux deux bouts** | Rien |
-| Cadres de groupes | Marqués | Effacés, pour laisser lire les textes | Marqués |
-| Annotations | VIP des grappes, noms des couches | Tout, plus la grille de repérage | Aucune |
-| Traits | Épais | Fins | Très épais |
+| | **Architecture** | **Technique** | **Logique** | **Présentation** |
+| --- | --- | --- | --- | --- |
+| Question posée | Qui parle à qui ? | Comment est-ce câblé et adressé ? | Comment ça route ? | Comment le montrer ? |
+| Contenu | Tous les équipements | Tous les équipements | **Niveau 3 seulement** | Tous les équipements |
+| Boîtes | Colorées par type | Blanches, compactes | Colorées, avec l'adressage | Colorées, ombrées |
+| Sur la boîte | Nom, rôle HA | Nom + adresse, modèle, série | Nom + adresse, VLAN | Nom seul, en très gros |
+| Sur les liaisons | Débit et libellé | Ports, VLAN, agrégat, STP aux deux bouts | Sous-réseau, VRF, adresses aux deux bouts | Rien |
+| Écarté du schéma | — | — | **Câblage, baies, alimentation, hors bande** | — |
+| Traits | Épais | Fins | Moyens | Très épais |
+
+La **vue logique** n'est pas qu'un habillage : elle applique la couche 3 en mode strict, donc
+elle retire du schéma les équipements et les liens qui n'y participent pas. Sur le schéma
+d'exemple, on passe de 29 équipements et 48 liaisons à 13 et 13 — ce qui reste est exactement
+ce qu'un routeur voit.
 
 Les cases d'affichage restent modifiables après coup : le mode donne le point de départ, pas
-une prison. À la voix : « mode présentation », « vue technique », « mode architecture ».
+une prison. À la voix : « mode présentation », « vue technique », « mode architecture »,
+« vue logique ».
 
 ## Liaisons superposées
 
@@ -552,6 +558,21 @@ Les contrôles de cohérence tournent en continu :
 
 Un clic sur un constat sélectionne les équipements et les liaisons concernés.
 
+## Marques constructeurs
+
+Chaque boîte porte le **monogramme de son constructeur**, dès que le champ *Constructeur* ou le
+modèle permet de le reconnaître — une soixantaine de fabricants sont connus, des équipementiers
+réseau aux onduleurs et aux opérateurs français, avec la couleur de la marque.
+
+Ce sont volontairement des **initiales dessinées par l'application**, pas les logos officiels :
+un logo est une marque déposée que l'on n'a pas le droit de redistribuer dans un logiciel, et
+un schéma exporté circule — vers un client, un prestataire, un appel d'offres. Si vous tenez
+aux logos officiels, ils se posent en image dans le catalogue d'équipements, et c'est alors
+votre licence d'utilisation qui s'applique.
+
+La reconnaissance marche aussi sans le champ *Constructeur* : « Catalyst C9300-48P » donne
+Cisco, « FortiGate 100F » donne Fortinet, « Smart-UPS SRT 5000 » donne APC.
+
 ## Catalogue d'équipements
 
 Le catalogue est décrit **en données, pas en code** : un type d'équipement est une ligne
@@ -651,6 +672,33 @@ Les outils pensés pour que trente ou cent équipements restent lisibles :
   internes à la sélection sont dupliquées.
 - **Modèles d'architecture** — sept blocs HA prêts à insérer (voir plus bas).
 
+## Analyse d'impact : « que se passe-t-il si… »
+
+Onglet **Impact** de l'inspecteur. On désigne ce qui tombe — un switch, un câble, plusieurs à
+la fois — et le schéma répond aussitôt. Rien n'est modifié : la simulation vit à côté du
+document et s'efface d'un clic.
+
+| Couleur | État | Sens |
+| --- | --- | --- |
+| Rouge | **En panne** | Déclaré hors service dans l'hypothèse en cours |
+| Orange | **Isolé** | Plus aucun chemin vers le réseau |
+| Ambre | **Ne tient qu'à un fil** | Encore joignable, mais la prochaine panne l'emporte |
+
+Le panneau donne le compte, la part d'équipements encore joignables, la liste des isolés, et
+pour chaque équipement fragile **le point de passage dont il dépend désormais**. Une dernière
+section, *Par quoi commencer*, classe les équipements par l'effet de leur arrêt pris un par un :
+le haut de la liste est ce qu'il faut doubler en premier.
+
+Le calcul suit la pratique des réseaux : des **points de référence** (les accès opérateur et le
+périmètre, à défaut le cœur), une **joignabilité** calculée sur le graphe amputé, puis, pour
+chaque équipement encore joignable, l'essai de chaque autre équipement comme panne suivante —
+c'est ce qui fait ressortir les points de passage uniques d'un réseau déjà entamé. Les liaisons
+de service (battement de cœur, réplication, administration hors bande, alimentation) ne
+comptent pas comme chemin de données.
+
+À la voix : « simule la panne de SW-CORE-01 », « débranche la liaison entre SW-CORE-01 et
+FW-01 », « quel est l'impact », « rétablis ».
+
 ## Haute disponibilité
 
 ### Ce que le modèle sait décrire
@@ -747,7 +795,15 @@ de l'enregistrement, le compte connecté avec son rôle, et **Quitter**.
 
 Trois rôles : `lecteur` consulte, `editeur` modifie, `admin` gère les comptes et les
 suppressions. Un compte `lecteur` ouvre le schéma dans l'état verrouillé décrit plus haut :
-navigation, recherche et exports restent disponibles, l'édition non.
+navigation, recherche, survol, analyse d'impact et exports restent disponibles, l'édition non —
+et le serveur refuse ses écritures, indépendamment de ce que l'interface propose.
+
+Un administrateur gère les comptes **depuis l'application** : bouton *Comptes* du bandeau
+serveur. Créer un compte en lecture seule y tient en trois champs. Il peut changer un rôle,
+réinitialiser un mot de passe, désactiver ou supprimer un compte — mais pas se retirer ses
+propres droits ni se supprimer lui-même, la façon la plus courante de se fermer la porte du
+serveur. Désactiver un compte ou changer son mot de passe **ferme aussitôt ses sessions
+ouvertes**.
 
 Le serveur, son installation sur un serveur Windows (service, HTTPS, pare-feu, sauvegarde) et
 ce qu'il sécurise sont documentés dans
@@ -792,6 +848,8 @@ src/
   lib/quickImport.ts    import rapide par collage de texte
   lib/layout.ts         placement automatique par couches, cadres de groupes, cadrage
   lib/ha.ts             analyse haute disponibilité (points d'articulation + règles métier)
+  lib/impact.ts         analyse d'impact : joignabilité après panne, fragilité, criticité
+  lib/vendorMarks.ts    monogrammes des constructeurs (dessinés, pas des logos déposés)
   lib/patterns.ts       bibliothèque de modèles d'architectures redondées
   lib/routing.ts        tracé des liaisons : automatique, points de passage, accroches libres, courbes
   lib/crossings.ts      croisements à enjamber (ponts) et détection des superpositions

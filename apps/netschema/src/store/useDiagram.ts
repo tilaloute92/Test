@@ -18,6 +18,7 @@ import {
 import { sampleDiagram } from '../lib/sample'
 import { collapsibleGroups, groupKey } from '../lib/derive'
 import { auditDiagram } from '../lib/ha'
+import { analyseImpact } from '../lib/impact'
 import type { DiscoveryResult } from '../lib/discovery'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
 import { getDiagramSvg } from '../lib/exportRegistry'
@@ -125,7 +126,12 @@ interface DiagramStore {
   /** Module affiché : schéma, inventaire, baies, découverte. */
   appView: AppView
   mode: Mode
-  panel: 'properties' | 'ha' | 'osi' | 'catalog'
+  panel: 'properties' | 'ha' | 'osi' | 'catalog' | 'impact'
+  /**
+   * Analyse d'impact : équipements arrêtés et câbles débranchés pour la simulation en cours.
+   * Elle ne modifie jamais le schéma — c'est une hypothèse de travail, pas une édition.
+   */
+  pannes: { nodes: string[]; links: string[] }
   /** Incrémenté à chaque modification du catalogue, pour rafraîchir les listes de types. */
   catalogRevision: number
   /** Clés des groupes repliés (« zone:Bâtiment A »). */
@@ -196,7 +202,11 @@ interface DiagramStore {
   clearSelection: () => void
   setAppView: (view: AppView) => void
   setMode: (mode: Mode) => void
-  setPanel: (panel: 'properties' | 'ha' | 'osi' | 'catalog') => void
+  setPanel: (panel: 'properties' | 'ha' | 'osi' | 'catalog' | 'impact') => void
+  /** Bascule l'état « en panne » d'un équipement ou d'une liaison. */
+  togglePanne: (type: 'node' | 'link', id: string) => void
+  /** Rétablit tout : la simulation repart d'un réseau intact. */
+  clearPannes: () => void
   bumpCatalog: () => void
   toggleCollapse: (key: string) => void
   setCollapsed: (keys: string[]) => void
@@ -330,6 +340,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   strictOsi: false,
   paletteOpen: lirePanneau('palette'),
   inspectorOpen: lirePanneau('inspecteur'),
+  pannes: { nodes: [], links: [] },
   commandOpen: false,
   importOpen: false,
   voiceOpen: false,
@@ -969,6 +980,18 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     set(panneau === 'palette' ? { paletteOpen: ouvert } : { inspectorOpen: ouvert })
   },
 
+  togglePanne: (type, id) =>
+    set((state) => {
+      const champ = type === 'node' ? 'nodes' : 'links'
+      const courant = state.pannes[champ]
+      const suivant = courant.includes(id)
+        ? courant.filter((item) => item !== id)
+        : [...courant, id]
+      return { pannes: { ...state.pannes, [champ]: suivant } }
+    }),
+
+  clearPannes: () => set({ pannes: { nodes: [], links: [] } }),
+
   setCommandOpen: (commandOpen) => set({ commandOpen }),
   setImportOpen: (importOpen) => set({ importOpen }),
   setVoiceOpen: (voiceOpen) => set({ voiceOpen }),
@@ -1344,6 +1367,60 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         return {
           ok: true,
           message: intent.locked ? 'Schéma verrouillé : lecture seule.' : 'Schéma déverrouillé.',
+        }
+      }
+
+      case 'impact': {
+        get().setAppView('diagram')
+        get().setPanel('impact')
+        if (intent.action === 'open') {
+          const rapport = analyseImpact(get().diagram, get().pannes)
+          return {
+            ok: true,
+            message:
+              rapport.compte.panne === 0
+                ? `Réseau intact : ${rapport.compte.fragile} équipement(s) ne tiennent qu'à un fil.`
+                : `${rapport.compte.isole} isolé(s), ${rapport.compte.fragile} à un fil, ${rapport.disponibilite} % joignable.`,
+          }
+        }
+        if (intent.action === 'reset') {
+          get().clearPannes()
+          return { ok: true, message: 'Simulation remise à zéro : réseau intact.' }
+        }
+        if (intent.action === 'unplug') {
+          const from = findNode(intent.target ?? '')
+          const to = findNode(intent.to ?? '')
+          if (!from || !to) return { ok: false, message: 'Les deux équipements de la liaison sont attendus.' }
+          const lien = get().diagram.links.find(
+            (link) =>
+              (link.from === from.id && link.to === to.id) || (link.from === to.id && link.to === from.id),
+          )
+          if (!lien) return { ok: false, message: `Aucune liaison entre ${from.name} et ${to.name}.` }
+          get().togglePanne('link', lien.id)
+          const coupee = get().pannes.links.includes(lien.id)
+          const rapport = analyseImpact(get().diagram, get().pannes)
+          return {
+            ok: true,
+            message: coupee
+              ? `Liaison ${from.name} ↔ ${to.name} débranchée : ${rapport.compte.isole} isolé(s), ${rapport.compte.fragile} à un fil.`
+              : `Liaison ${from.name} ↔ ${to.name} rebranchée.`,
+          }
+        }
+
+        const cible = findNode(intent.target ?? '')
+        if (!cible) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
+        get().togglePanne('node', cible.id)
+        const rapport = analyseImpact(get().diagram, get().pannes)
+        if (!get().pannes.nodes.includes(cible.id)) {
+          return { ok: true, message: `${cible.name} rétabli.` }
+        }
+        const detail =
+          rapport.isoles.length > 0
+            ? ` Isolés : ${rapport.isoles.slice(0, 4).map((item) => item.nom).join(', ')}${rapport.isoles.length > 4 ? '…' : ''}.`
+            : ' Aucun équipement isolé.'
+        return {
+          ok: true,
+          message: `Panne de ${cible.name} : ${rapport.compte.isole} isolé(s), ${rapport.compte.fragile} à un fil, ${rapport.disponibilite} % joignable.${detail}`,
         }
       }
 
@@ -1793,7 +1870,19 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
    * Un mode n'est pas qu'un habillage : il règle aussi ce que l'on montre. Les cases
    * d'affichage restent modifiables ensuite — le mode donne le point de départ.
    */
-  setViewMode: (mode) => set({ viewMode: mode, ...modeDefinition(mode).display }),
+  setViewMode: (mode) =>
+    set((state) => {
+      const definition = modeDefinition(mode)
+      const precedent = modeDefinition(state.viewMode)
+      return {
+        viewMode: mode,
+        ...definition.display,
+        // Un mode qui suppose une couche l'impose ; en le quittant, on rend la vue OSI au
+        // choix de l'utilisateur plutôt que de la laisser figée sur la couche du mode.
+        osi: definition.osi ?? (precedent.osi ? 'all' : state.osi),
+        strictOsi: definition.strictOsi ?? (precedent.osi ? false : state.strictOsi),
+      }
+    }),
 
   /**
    * Insertion d'un modèle haute disponibilité : les équipements arrivent au centre de la
