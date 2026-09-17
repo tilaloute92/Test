@@ -42,6 +42,43 @@ function Etape([string]$t) { Write-Host "  → $t" -ForegroundColor Cyan }
 function Ok([string]$t) { Write-Host "    $t" -ForegroundColor Green }
 function Info([string]$t) { Write-Host "    $t" -ForegroundColor Gray }
 
+function Invoke-Externe {
+    <# Lance un programme externe sans laisser sa sortie d'erreur interrompre le script. #>
+    param([string]$Fichier, [string[]]$Arguments)
+    $precedent = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $sortie = & $Fichier @Arguments 2>&1 | ForEach-Object { "$_" }
+        return [pscustomobject]@{ Code = $LASTEXITCODE; Sortie = ($sortie -join [Environment]::NewLine) }
+    } catch {
+        return [pscustomobject]@{ Code = -1; Sortie = $_.Exception.Message }
+    } finally { $ErrorActionPreference = $precedent }
+}
+
+function Nom-Compte {
+    <#
+        Nom local d'un compte à partir de son identifiant de sécurité : sur un Windows
+        français, les administrateurs s'appellent « BUILTIN\Administrateurs ».
+    #>
+    param([string]$Sid)
+    try {
+        return (New-Object Security.Principal.SecurityIdentifier($Sid)).Translate(
+            [Security.Principal.NTAccount]).Value
+    } catch { return $null }
+}
+
+function Compte-Du-Service {
+    param([string]$Nom)
+    try {
+        $service = Get-CimInstance Win32_Service -Filter "Name='$Nom'" -ErrorAction SilentlyContinue
+        if ($service -and $service.StartName) {
+            if ($service.StartName -match '^(LocalSystem|\.\\LocalSystem)$') { return (Nom-Compte 'S-1-5-18') }
+            return $service.StartName
+        }
+    } catch { }
+    return $null
+}
+
 function Ecrire-Fichier {
     param([string]$Chemin, [string[]]$Lignes)
     [IO.File]::WriteAllLines($Chemin, $Lignes, (New-Object Text.UTF8Encoding $false))
@@ -117,10 +154,18 @@ if ($Empreinte) {
 }
 
 # Lecture réservée : la clé privée est dans ce fichier.
-$compte = "NT SERVICE\$ServiceName"
-if (-not (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) { $compte = 'NT AUTHORITY\SYSTEM' }
-& icacls $dossierTls /inheritance:r /grant:r "$($compte):(OI)(CI)R" `
-    'BUILTIN\Administrators:(OI)(CI)F' 'NT AUTHORITY\SYSTEM:(OI)(CI)F' 2>&1 | Out-Null
+$compte = Compte-Du-Service -Nom $ServiceName
+if (-not $compte) { $compte = (Nom-Compte 'S-1-5-18') }
+$administrateurs = Nom-Compte 'S-1-5-32-544'
+$systeme = Nom-Compte 'S-1-5-18'
+
+$droits = @($dossierTls, '/inheritance:r', '/grant:r', "$($compte):(OI)(CI)R")
+if ($administrateurs) { $droits += "$($administrateurs):(OI)(CI)F" }
+if ($systeme -and $systeme -ne $compte) { $droits += "$($systeme):(OI)(CI)F" }
+$resultat = Invoke-Externe -Fichier 'icacls' -Arguments $droits
+if ($resultat.Code -ne 0) {
+    Write-Host "    Droits non restreints sur $dossierTls : à vérifier." -ForegroundColor Yellow
+}
 Ok "Certificat installé : $destination"
 
 # ── 2. Configuration ─────────────────────────────────────────────────────────
@@ -133,8 +178,10 @@ $lignes = Definir-Variable -Lignes $lignes -Nom 'NETSCHEMA_SECURE_COOKIES' -Vale
 Ecrire-Fichier -Chemin $fichierEnv -Lignes $lignes
 
 # Le mot de passe du certificat est dans ce fichier : il ne se lit plus que par le service.
-& icacls $fichierEnv /inheritance:r /grant:r "$($compte):R" `
-    'BUILTIN\Administrators:F' 'NT AUTHORITY\SYSTEM:F' 2>&1 | Out-Null
+$droitsEnv = @($fichierEnv, '/inheritance:r', '/grant:r', "$($compte):R")
+if ($administrateurs) { $droitsEnv += "$($administrateurs):F" }
+if ($systeme -and $systeme -ne $compte) { $droitsEnv += "$($systeme):F" }
+Invoke-Externe -Fichier 'icacls' -Arguments $droitsEnv | Out-Null
 Ok "Port $Port, cookies « Secure », certificat déclaré."
 
 # ── 3. Service ───────────────────────────────────────────────────────────────
@@ -142,7 +189,7 @@ $nssm = Join-Path $InstallDir 'nssm.exe'
 if (Test-Path $nssm) {
     Etape 'Mise à jour des variables du service'
     $variables = Get-Content $fichierEnv | Where-Object { $_ -match '^[A-Z][A-Z_]*=' } | ForEach-Object { $_.Trim() }
-    & $nssm set $ServiceName AppEnvironmentExtra $variables | Out-Null
+    Invoke-Externe -Fichier $nssm -Arguments (@('set', $ServiceName, 'AppEnvironmentExtra') + $variables) | Out-Null
 }
 
 Etape 'Ouverture du port dans le pare-feu'

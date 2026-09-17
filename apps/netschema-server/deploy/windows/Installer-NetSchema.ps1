@@ -145,17 +145,68 @@ Ce serveur n'a probablement pas d'accès Internet. Installez Node.js à la main 
 
 $script:DerniereSortieNpm = ''
 
+function Invoke-Externe {
+    <#
+        Lance un programme externe et rend son code de sortie.
+
+        Indispensable : quand un programme écrit sur sa sortie d'erreur, PowerShell en fait
+        une erreur à part entière, et le script s'arrêterait net sur un simple avertissement
+        d'icacls ou de sc.exe. Ici, la sortie est ramassée et c'est l'appelant qui décide.
+    #>
+    param([string]$Fichier, [string[]]$Arguments, [string]$Dossier)
+    $precedent = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    if ($Dossier) { Push-Location $Dossier }
+    try {
+        $sortie = & $Fichier @Arguments 2>&1 | ForEach-Object { "$_" }
+        return [pscustomobject]@{
+            Code = $LASTEXITCODE
+            Sortie = ($sortie -join [Environment]::NewLine)
+        }
+    } catch {
+        return [pscustomobject]@{ Code = -1; Sortie = $_.Exception.Message }
+    } finally {
+        if ($Dossier) { Pop-Location }
+        $ErrorActionPreference = $precedent
+    }
+}
+
+function Nom-Compte {
+    <#
+        Nom local d'un compte à partir de son identifiant de sécurité.
+
+        Sur un Windows français, le groupe des administrateurs s'appelle
+        « BUILTIN\Administrateurs » : un nom écrit en dur en anglais fait échouer icacls avec
+        « Le mappage entre les noms de compte et les ID de sécurité n'a pas été effectué ».
+        L'identifiant de sécurité, lui, est le même partout.
+    #>
+    param([string]$Sid)
+    try {
+        return (New-Object Security.Principal.SecurityIdentifier($Sid)).Translate(
+            [Security.Principal.NTAccount]).Value
+    } catch { return $null }
+}
+
+function Compte-Du-Service {
+    <# Compte sous lequel le service tourne réellement, tel que Windows le rapporte. #>
+    param([string]$Nom)
+    try {
+        $service = Get-CimInstance Win32_Service -Filter "Name='$Nom'" -ErrorAction SilentlyContinue
+        if ($service -and $service.StartName) {
+            if ($service.StartName -match '^(LocalSystem|\.\\LocalSystem)$') { return (Nom-Compte 'S-1-5-18') }
+            return $service.StartName
+        }
+    } catch { }
+    return $null
+}
+
 function Invoke-Npm {
     param([string]$Dossier, [string[]]$Arguments)
-    Push-Location $Dossier
-    try {
-        # La sortie de npm est gardée de côté : inutile à l'écran quand tout va bien,
-        # indispensable dans le journal quand la compilation échoue.
-        $sortie = & npm @Arguments 2>&1
-        $script:DerniereSortieNpm = ($sortie | Out-String)
-        if ($LASTEXITCODE -ne 0) { return $false }
-        return $true
-    } finally { Pop-Location }
+    # La sortie de npm est gardée de côté : inutile à l'écran quand tout va bien,
+    # indispensable dans le journal quand la compilation échoue.
+    $resultat = Invoke-Externe -Fichier 'npm' -Arguments $Arguments -Dossier $Dossier
+    $script:DerniereSortieNpm = $resultat.Sortie
+    return ($resultat.Code -eq 0)
 }
 
 function Detail-Npm {
@@ -265,7 +316,7 @@ function Rapport-Diagnostic {
     Bloc 'Dossier installé' { Get-ChildItem $InstallDir -ErrorAction SilentlyContinue | Select-Object Name, Length, LastWriteTime }
     Bloc 'Configuration' { Get-Content (Join-Path $InstallDir 'netschema.env') -ErrorAction SilentlyContinue }
     Bloc 'Dossier de données' { Get-ChildItem $DataDir -ErrorAction SilentlyContinue | Select-Object Name, Length, LastWriteTime }
-    Bloc 'Ports en écoute' { netstat -ano | Select-String ":$Port" }
+    Bloc 'Ports en écoute' { (Invoke-Externe -Fichier 'netstat' -Arguments @('-ano')).Sortie -split "`r?`n" | Select-String ":$Port" }
     Bloc 'Santé du service' { try { Invoke-RestMethod "http://127.0.0.1:$Port/api/health" -TimeoutSec 5 } catch { $_.Exception.Message } }
     Bloc 'Pare-feu' { Get-NetFirewallRule -DisplayName 'NetSchema*' -ErrorAction SilentlyContinue | Select-Object DisplayName, Enabled, Direction }
     Bloc 'Journal du service (50 dernières lignes)' { Get-Content (Join-Path $DataDir 'service.log') -Tail 50 -ErrorAction SilentlyContinue }
@@ -291,8 +342,8 @@ function Desinstallation {
 
     if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
         $nssm = Join-Path $InstallDir 'nssm.exe'
-        if (Test-Path $nssm) { & $nssm remove $ServiceName confirm | Out-Null }
-        else { & sc.exe delete $ServiceName | Out-Null }
+        if (Test-Path $nssm) { Invoke-Externe -Fichier $nssm -Arguments @('remove', $ServiceName, 'confirm') | Out-Null }
+        else { Invoke-Externe -Fichier 'sc.exe' -Arguments @('delete', $ServiceName) | Out-Null }
         Ok 'Service retiré.'
     }
     if (Tache-Planifiee) {
@@ -454,20 +505,26 @@ Ou bien indiquez le dépôt : .\Installer-NetSchema.ps1 -SourceRoot C:\Sources\T
 
     if ($avecNssm) {
         if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
-            & $NssmPath remove $ServiceName confirm | Out-Null
+            Invoke-Externe -Fichier $NssmPath -Arguments @('remove', $ServiceName, 'confirm') | Out-Null
             Start-Sleep -Seconds 1
         }
-        & $NssmPath install $ServiceName $node (Join-Path $InstallDir 'dist\index.js') | Out-Null
-        & $NssmPath set $ServiceName AppDirectory $InstallDir | Out-Null
-        & $NssmPath set $ServiceName DisplayName 'NetSchema — schémas d''infrastructure' | Out-Null
-        & $NssmPath set $ServiceName Description 'Serveur NetSchema : interface web et API authentifiée.' | Out-Null
-        & $NssmPath set $ServiceName Start SERVICE_AUTO_START | Out-Null
-        & $NssmPath set $ServiceName AppStdout (Join-Path $DataDir 'service.log') | Out-Null
-        & $NssmPath set $ServiceName AppStderr (Join-Path $DataDir 'service.log') | Out-Null
-        & $NssmPath set $ServiceName AppRotateFiles 1 | Out-Null
-        & $NssmPath set $ServiceName AppRotateBytes 10485760 | Out-Null
+        $pose = Invoke-Externe -Fichier $NssmPath -Arguments @('install', $ServiceName, $node, (Join-Path $InstallDir 'dist\index.js'))
+        if ($pose.Code -ne 0) { throw "Le service n'a pas pu être déclaré :`n$($pose.Sortie)" }
+        foreach ($reglage in @(
+                @('AppDirectory', $InstallDir),
+                @('DisplayName', 'NetSchema — schémas d''infrastructure'),
+                @('Description', 'Serveur NetSchema : interface web et API authentifiée.'),
+                @('Start', 'SERVICE_AUTO_START'),
+                @('AppStdout', (Join-Path $DataDir 'service.log')),
+                @('AppStderr', (Join-Path $DataDir 'service.log')),
+                @('AppRotateFiles', '1'),
+                @('AppRotateBytes', '10485760'))) {
+            Invoke-Externe -Fichier $NssmPath -Arguments (@('set', $ServiceName) + $reglage) | Out-Null
+        }
         $variables = Get-Content $fichierEnv | Where-Object { $_ -match '^[A-Z][A-Z_]*=' } | ForEach-Object { $_.Trim() }
-        if ($variables) { & $NssmPath set $ServiceName AppEnvironmentExtra $variables | Out-Null }
+        if ($variables) {
+            Invoke-Externe -Fichier $NssmPath -Arguments (@('set', $ServiceName, 'AppEnvironmentExtra') + $variables) | Out-Null
+        }
         Ok "Service « $ServiceName » déclaré (redémarrage automatique en cas d'arrêt)."
     } else {
         Avert "NSSM indisponible : repli sur une tâche planifiée (pas de relance après un plantage)."
@@ -500,22 +557,36 @@ Ou bien indiquez le dépôt : .\Installer-NetSchema.ps1 -SourceRoot C:\Sources\T
 
     # ── 6. Droits et pare-feu ─────────────────────────────────────────────────
     Titre '6/8  Droits et pare-feu'
-    $compte = if ($avecNssm) { "NT SERVICE\$ServiceName" } else { 'NT AUTHORITY\SYSTEM' }
-    if ($avecNssm) {
-        & sc.exe sidtype $ServiceName unrestricted | Out-Null
-        & $NssmPath set $ServiceName ObjectName $compte | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Avert "Le compte $compte n'a pas pu être appliqué : le service tournera en SYSTEM."
-            $compte = 'NT AUTHORITY\SYSTEM'
+
+    # Le service tourne sous le compte système local, celui que Windows donne par défaut aux
+    # services. Un compte dédié serait plus fin, mais il se paie cher : compte virtuel refusé
+    # par certains gestionnaires, droit « ouvrir une session en tant que service » à accorder
+    # à part, service qui refuse alors de démarrer. Ce qui protège vraiment les schémas et les
+    # comptes, c'est la restriction d'accès posée juste en dessous.
+    #
+    # On demande à Windows sous quel compte le service tourne réellement, plutôt que de le
+    # supposer : les droits posés ensuite portent alors forcément sur le bon.
+    $compte = Compte-Du-Service -Nom $ServiceName
+    if (-not $compte) { $compte = (Nom-Compte 'S-1-5-18') }
+    if (-not $compte) { $compte = 'NT AUTHORITY\SYSTEM' }
+
+    $administrateurs = Nom-Compte 'S-1-5-32-544'
+    $systeme = Nom-Compte 'S-1-5-18'
+
+    $droits = @($DataDir, '/inheritance:r', '/grant:r', "$($compte):(OI)(CI)M")
+    if ($administrateurs) { $droits += "$($administrateurs):(OI)(CI)F" }
+    if ($systeme -and $systeme -ne $compte) { $droits += "$($systeme):(OI)(CI)F" }
+
+    $resultat = Invoke-Externe -Fichier 'icacls' -Arguments $droits
+    if ($resultat.Code -ne 0) {
+        Avert "Les droits n'ont pas pu être restreints sur $DataDir (voir le journal)."
+        Write-Verbose $resultat.Sortie
+    } else {
+        Ok "Dossier de données réservé à $compte et aux administrateurs."
+        if ($compte -ne $systeme) {
+            Invoke-Externe -Fichier 'icacls' -Arguments @($InstallDir, '/grant:r', "$($compte):(OI)(CI)RX") | Out-Null
         }
     }
-    & icacls $DataDir /inheritance:r /grant:r "$($compte):(OI)(CI)M" `
-        'BUILTIN\Administrators:(OI)(CI)F' 'NT AUTHORITY\SYSTEM:(OI)(CI)F' 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { Avert "Les droits n'ont pas pu être restreints sur $DataDir." }
-    elseif ($compte -ne 'NT AUTHORITY\SYSTEM') {
-        & icacls $InstallDir /grant:r "$($compte):(OI)(CI)RX" 2>&1 | Out-Null
-    }
-    Ok "Dossier de données réservé à $compte et aux administrateurs."
 
     try {
         Get-NetFirewallRule -DisplayName 'NetSchema*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
@@ -575,10 +646,17 @@ Ou bien indiquez le dépôt : .\Installer-NetSchema.ps1 -SourceRoot C:\Sources\T
             $env:NETSCHEMA_DATA_DIR = $DataDir
             # Le mot de passe passe par l'entrée standard : en argument, il serait lisible
             # dans la liste des processus par n'importe qui sur la machine.
+            # L'outil refuse un mot de passe trop faible en écrivant sur sa sortie d'erreur :
+            # il faut donc désarmer l'arrêt sur erreur, sinon l'installation s'interromprait
+            # sur une simple faute de frappe.
+            $precedent = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
             $sortie = $a | & node (Join-Path $InstallDir 'tools\netschema-user.mjs') `
                 add $identifiant --role admin --password-stdin 2>&1
+            $code = $LASTEXITCODE
+            $ErrorActionPreference = $precedent
             $a = $null; $b = $null
-            if ($LASTEXITCODE -eq 0) {
+            if ($code -eq 0) {
                 Ok "Compte « $identifiant » créé (administrateur)."
                 $cree = $true
             } else {

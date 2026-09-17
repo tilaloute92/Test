@@ -177,8 +177,10 @@ cd C:\Temp\NetSchema-1.0.0-windows
 4. **Configuration** — écrit `netschema.env`. *Un fichier déjà présent n'est jamais écrasé.*
 5. **Service** — déclare le service Windows en démarrage automatique (NSSM, téléchargé au
    besoin ; à défaut une tâche planifiée), et lui passe la configuration.
-6. **Droits et pare-feu** — réserve le dossier de données au compte de service et aux
-   administrateurs, ouvre le port (profils Domaine et Privé uniquement, jamais Public).
+6. **Droits et pare-feu** — réserve le dossier de données au compte du service et aux
+   administrateurs (dont les noms sont retrouvés par identifiant de sécurité, pour valoir sur
+   un Windows de n'importe quelle langue), ouvre le port (profils Domaine et Privé uniquement,
+   jamais Public).
 7. **Démarrage** — démarre, puis **attend que `/api/health` réponde** ; en cas d'échec,
    affiche les dernières lignes du journal du service et les causes les plus fréquentes.
 8. **Premier compte** — demande identifiant et mot de passe (saisie masquée, transmise par
@@ -193,9 +195,15 @@ l'installation sans toucher aux schémas, aux comptes ni à la configuration.
 
 - **Avec [`nssm.exe`](https://nssm.cc)** — vrai service Windows, **redémarrage automatique en
   cas de plantage**, journaux dans `service.log` avec rotation à 10 Mo, service tournant sous
-  son **compte virtuel** `NT SERVICE\NetSchema` (aucun mot de passe à gérer). L'installeur le
-  télécharge tout seul ; on peut aussi le poser à côté du script ou le désigner par
+  le compte système local — celui que Windows donne par défaut aux services. L'installeur
+  télécharge NSSM tout seul ; on peut aussi le poser à côté du script ou le désigner par
   `-NssmPath`.
+
+  > Un compte de service dédié serait plus fin, mais il se paie cher sur une installation
+  > qu'on veut sans surprise : NSSM refuse un compte virtuel (`ObjectName` exige un mot de
+  > passe), et un compte créé à la main doit recevoir le droit « ouvrir une session en tant
+  > que service », faute de quoi le service ne démarre pas. Ce qui protège réellement les
+  > schémas et les comptes, c'est la restriction d'accès posée sur le dossier de données.
 - **Sans NSSM** (serveur sans Internet) — repli sur une tâche planifiée au démarrage, exécutée
   en `SYSTEM`. Utilisable, mais elle ne relance pas le serveur s'il s'arrête seul.
 
@@ -274,9 +282,6 @@ C:\Outils\nssm.exe set NetSchema AppRotateFiles 1
 C:\Outils\nssm.exe set NetSchema AppRotateBytes 10485760
 # Variables d'environnement : une ligne NOM=valeur par variable du fichier .env
 C:\Outils\nssm.exe set NetSchema AppEnvironmentExtra (Get-Content C:\Apps\NetSchema\netschema.env | Where-Object { $_ -match '^[A-Z]' })
-# Compte virtuel du service : à faire après la création du service
-sc.exe sidtype NetSchema unrestricted
-C:\Outils\nssm.exe set NetSchema ObjectName "NT SERVICE\NetSchema"
 ```
 
 Sans NSSM, tâche planifiée au démarrage :
@@ -291,13 +296,23 @@ Register-ScheduledTask -TaskName NetSchema -Action $action `
 
 **6. Droits sur les données** (après la création du service : le compte virtuel n'existe pas avant)
 
-```powershell
-icacls C:\ProgramData\NetSchema\data /inheritance:r `
-    /grant:r "NT SERVICE\NetSchema:(OI)(CI)M" "BUILTIN\Administrators:(OI)(CI)F" "NT AUTHORITY\SYSTEM:(OI)(CI)F"
-icacls C:\Apps\NetSchema /grant:r "NT SERVICE\NetSchema:(OI)(CI)RX"
-```
+Attention aux noms de comptes : ils sont **traduits**. Sur un Windows français, le groupe des
+administrateurs s'appelle `BUILTIN\Administrateurs` et le compte système `AUTORITE NT\Système`
+— un nom anglais écrit en dur fait échouer `icacls` avec « Le mappage entre les noms de compte
+et les ID de sécurité n'a pas été effectué ». Le plus sûr est de les retrouver par leur
+identifiant de sécurité, qui, lui, est le même partout :
 
-*(Avec la tâche planifiée, remplacez `NT SERVICE\NetSchema` par `NT AUTHORITY\SYSTEM`.)*
+```powershell
+function Nom-Compte($sid) {
+    (New-Object Security.Principal.SecurityIdentifier($sid)).Translate(
+        [Security.Principal.NTAccount]).Value
+}
+$systeme = Nom-Compte 'S-1-5-18'          # compte du service
+$admins  = Nom-Compte 'S-1-5-32-544'      # administrateurs locaux
+
+icacls C:\ProgramData\NetSchema\data /inheritance:r `
+    /grant:r "$($systeme):(OI)(CI)F" "$($admins):(OI)(CI)F"
+```
 
 **7. Pare-feu, puis démarrage**
 

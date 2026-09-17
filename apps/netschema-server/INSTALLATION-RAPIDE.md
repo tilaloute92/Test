@@ -91,6 +91,7 @@ Les trois causes les plus fréquentes :
 
 | Ce que vous voyez | Ce qu'il faut faire |
 | --- | --- |
+| Une erreur pendant l'installation, quelle qu'elle soit | Relancez `1-Installer.cmd` : le script reprend et répare, il ne casse rien |
 | « Ce script doit être lancé en administrateur » | Clic droit → *Exécuter en tant qu'administrateur* |
 | « Node.js n'a pas pu être téléchargé » | Le serveur n'a pas Internet : installez Node.js LTS à la main depuis <https://nodejs.org>, puis relancez |
 | « Le service ne répond pas encore » | Le port est déjà pris : relancez avec un autre port, `.\Installer-NetSchema.ps1 -Port 8081` |
