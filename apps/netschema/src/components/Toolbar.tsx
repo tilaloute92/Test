@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { Btn } from './ui'
-import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
+import { downloadBlob, downloadPng, downloadSvg, slugify, svgMarkup } from '../lib/exportImage'
+import { pageInteractive, type VueExportee } from '../lib/exportHtml'
 import { diagramFileContent, readProjectFile } from '../lib/storage'
 import { useDiagram } from '../store/useDiagram'
 import { VIEW_MODES } from '../lib/viewModes'
@@ -34,6 +35,45 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
       store().notify(`Export ${format.toUpperCase()} généré.`)
     } catch (error) {
       store().notify(error instanceof Error ? error.message : "L'export a échoué.")
+    }
+  }
+
+  /**
+   * Export « page interactive ».
+   *
+   * Les trois vues sont capturées telles que l'application les dessine : on bascule le mode,
+   * on laisse le navigateur repeindre, on relève le SVG, et on remet le mode d'origine. Ce
+   * détour vaut mieux qu'un second moteur de rendu — la page exportée montre exactement ce
+   * que montre l'écran.
+   */
+  const exportPage = async () => {
+    const svg = svgRef.current
+    if (!svg) return
+    const modeInitial = store().viewMode
+    const vues: VueExportee[] = []
+    try {
+      for (const definition of VIEW_MODES) {
+        store().setViewMode(definition.id)
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        })
+        vues.push({
+          id: definition.id,
+          label: definition.label,
+          hint: definition.hint,
+          svg: svgMarkup(svg),
+        })
+      }
+      const html = pageInteractive(store().diagram, vues)
+      downloadBlob(
+        new Blob([html], { type: 'text/html;charset=utf-8' }),
+        `${slugify(store().diagram.title)}.html`,
+      )
+      store().notify('Page interactive générée : les trois vues dans un seul fichier.')
+    } catch (error) {
+      store().notify(error instanceof Error ? error.message : "L'export a échoué.")
+    } finally {
+      store().setViewMode(modeInitial)
     }
   }
 
@@ -253,6 +293,12 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
 
         <Btn onClick={() => void exportImage('svg')} title="Exporter en SVG vectoriel">SVG</Btn>
         <Btn onClick={() => void exportImage('png')} title="Exporter en PNG (×2)">PNG</Btn>
+        <Btn
+          onClick={() => void exportPage()}
+          title="Page HTML autonome : les trois vues, toutes les informations, navigation et options d’affichage"
+        >
+          HTML
+        </Btn>
       </div>
     </header>
   )

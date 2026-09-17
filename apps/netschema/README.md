@@ -255,18 +255,21 @@ pauvre en types.
 
 ## Trois modes de visualisation
 
-Le même schéma ne se montre pas de la même façon selon qu'on le construit, qu'on le
-documente ou qu'on le projette. Le sélecteur de la barre d'outils (également dans
-*Mise en page*) bascule entre trois modes, sans jamais toucher au modèle :
+Le même schéma se lit de trois façons, sans jamais toucher au modèle. Le mode règle d'un coup
+ce qui s'affiche **et** comment c'est dessiné.
 
-| Mode | Pour quoi faire | Ce qui change |
-| --- | --- | --- |
-| **Architecture** | Le mode de travail | Nom, adresse, VLAN, modèle et zone dans la boîte ; cadres de groupes ; grille et noms de couches |
-| **Technique** | La documentation d'exploitation | Boîtes compactes, numéro de série et responsable en plus, étiquette sur chaque liaison même hors vue OSI, traits fins |
-| **Présentation** | Projeter, coller dans un document | Noms seuls en grand, traits épais, ni grille ni détail technique ni nom de couche |
+| | **Architecture** | **Technique** | **Présentation** |
+| --- | --- | --- | --- |
+| Question posée | Qui parle à qui ? | Comment est-ce câblé et adressé ? | Comment le montrer ? |
+| Boîtes | Colorées par type, arrondies | Blanches, compactes, anguleuses | Colorées, très arrondies, ombrées |
+| Sur la boîte | Nom, rôle HA | Nom **+ adresse, modèle, n° de série, propriétaire** | Nom seul, en très gros |
+| Sur les liaisons | Débit et libellé | Débit **+ ports, VLAN, agrégat, rôle STP aux deux bouts** | Rien |
+| Cadres de groupes | Marqués | Effacés, pour laisser lire les textes | Marqués |
+| Annotations | VIP des grappes, noms des couches | Tout, plus la grille de repérage | Aucune |
+| Traits | Épais | Fins | Très épais |
 
-Chaque mode applique un jeu de réglages d'affichage ; les cases restent modifiables ensuite.
-À la voix : « mode présentation », « vue technique », « mode architecture ».
+Les cases d'affichage restent modifiables après coup : le mode donne le point de départ, pas
+une prison. À la voix : « mode présentation », « vue technique », « mode architecture ».
 
 ## Liaisons superposées
 
@@ -704,7 +707,13 @@ ce qu'il sécurise sont documentés dans
 
 ## Exports et sauvegarde
 
-- **SVG** — vectoriel, réutilisable dans Visio, Illustrator, Word, un wiki…
+- **Page interactive `.html`** — un **seul fichier autonome** contenant **les trois vues**,
+  toutes les informations saisies et de quoi naviguer : onglets de vue, cases à cocher
+  (étiquettes de liaison, ports et adresses des extrémités, détails des équipements, cadres de
+  groupes, noms de couches), zoom à la molette, fiche d'un équipement au clic, détail d'une
+  liaison au survol, recherche, et deux tableaux (équipements, liaisons). Il s'ouvre d'un
+  double-clic sur n'importe quel poste — ni serveur, ni Internet, ni NetSchema — et s'imprime.
+- **SVG** — vectoriel, une vue, réutilisable dans Visio, Illustrator, Word, un wiki…
 - **PNG** — bitmap ×2 sur fond blanc.
 - **Projet `.json`** — *Enregistrer* / *Ouvrir…*, pour reprendre ou versionner un schéma.
 - **Reprise automatique** — le schéma courant est sauvegardé dans le navigateur (localStorage)
@@ -712,6 +721,11 @@ ce qu'il sécurise sont documentés dans
 
 Les exports ne contiennent que le schéma : la grille, les poignées de sélection et l'aperçu de
 liaison en cours sont marqués `data-export="false"` et retirés du fichier produit.
+
+> Un **SVG interactif** aurait pu tenir le même rôle, mais la plupart des visionneuses en
+> ignorent le script : le fichier s'ouvrirait sans que rien ne réponde. La page HTML se
+> comporte partout de la même façon, et le SVG reste disponible pour ce à quoi il est bon —
+> une image que l'on retouche.
 
 ## Organisation du code
 
@@ -735,6 +749,7 @@ src/
   lib/labels.ts         placement des étiquettes de liaison sans recouvrement
   lib/viewModes.ts      modes de visualisation : architecture, technique, présentation
   lib/exportImage.ts    export SVG / PNG
+  lib/exportHtml.ts     export « page interactive » : les trois vues dans un fichier autonome
   lib/storage.ts        sauvegarde locale, lecture/écriture des fichiers projet
   lib/api.ts            dialogue avec le serveur : session, jeton CSRF, schémas partagés
   lib/sample.ts         schéma d'exemple (architecture HA siège + site de secours, baies, parc)

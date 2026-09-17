@@ -67,7 +67,7 @@ export function LinkShape({
   const d = hops.length > 0 ? pathFrom(points, geometry.shape, hops) : geometry.d
 
   return (
-    <g opacity={dimmed ? 0.16 : 1}>
+    <g data-liaison={link.id} opacity={dimmed ? 0.16 : 1}>
       {selected && (
         <path data-export="false" d={d} fill="none" stroke="#bfdbfe" strokeWidth={width + 8} strokeLinecap="round" />
       )}
@@ -97,7 +97,7 @@ export function LinkShape({
         const distance = Math.hypot(label.x - label.anchor.x, label.y - label.anchor.y)
         const lineHeight = label.size + 2.5
         return (
-          <g key={label.which}>
+          <g key={label.which} data-couche={label.which === 'mid' ? 'etiquette' : 'bout'}>
             {/* Trait de rappel : une étiquette écartée dit encore à quelle liaison elle est. */}
             {distance > label.height / 2 + 14 && (
               <line

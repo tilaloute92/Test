@@ -56,6 +56,7 @@ export function NodeShape({
 
   return (
     <g
+      data-noeud={node.id}
       transform={`translate(${node.x - NODE_W / 2}, ${node.y - NODE_H / 2})`}
       onPointerDown={(event) => onPointerDown(event, node)}
       onDoubleClick={onDoubleClick}
@@ -85,11 +86,16 @@ export function NodeShape({
         </>
       )}
 
+      {/* L'ombre portée n'existe qu'en présentation : dessinée en dur plutôt que par un
+          filtre, elle survit à l'export comme au copier-coller dans un traitement de texte. */}
+      {style.shadow && (
+        <rect x={3} y={4} width={NODE_W} height={NODE_H} rx={style.radius} fill="#0f172a" opacity={0.1} />
+      )}
       <rect
         width={NODE_W}
         height={NODE_H}
         rx={style.radius}
-        fill={meta.fill}
+        fill={style.fill === 'blanc' ? '#ffffff' : meta.fill}
         stroke={flagged ? '#dc2626' : meta.accent}
         strokeWidth={flagged ? Math.max(2.2, style.stroke) : style.stroke}
       />
@@ -127,12 +133,12 @@ export function NodeShape({
       ) : (
         <>
           {details && (
-            <text x={50} y={41} fontSize={style.dense ? 9.5 : 10} fill="#475569">
+            <text data-couche="details" x={50} y={41} fontSize={style.dense ? 9.5 : 10} fill="#475569">
               {truncate(details, style.dense ? 22 : 18)}
             </text>
           )}
           {context && (
-            <text x={50} y={53} fontSize={9} fill={meta.accent} fontWeight={600}>
+            <text data-couche="details" x={50} y={53} fontSize={9} fill={meta.accent} fontWeight={600}>
               {truncate(context, 20)}
             </text>
           )}

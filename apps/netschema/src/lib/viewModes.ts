@@ -26,6 +26,21 @@ export interface ModeStyle {
   radius: number
   /** Épaisseur du contour des boîtes. */
   stroke: number
+  /** Étiquettes de bout (ports, adresses des deux côtés) : la documentation, pas la lecture. */
+  endLabels: boolean
+  /** Étiquettes de liaison, tout court. La vue de présentation n'en porte aucune. */
+  linkLabels: boolean
+  /** Force des cadres de groupes : marqués pour l'architecture, discrets pour la technique. */
+  groupStrength: number
+  /** Remplissage des boîtes : teinté par type, ou blanc pour laisser lire les textes. */
+  fill: 'teinte' | 'blanc'
+  /** Ombre portée sous les boîtes (présentation). */
+  shadow: boolean
+  /**
+   * Annotations techniques portées par les cadres : adresse virtuelle d'une grappe, par
+   * exemple. Une vue de présentation s'en passe, les deux autres en vivent.
+   */
+  annotations: boolean
 }
 
 export interface ModeDefinition {
@@ -48,30 +63,36 @@ export const VIEW_MODES: ModeDefinition[] = [
   {
     id: 'architecture',
     label: 'Architecture',
-    hint: 'Lecture d’ensemble : équipements, groupes, liaisons et leurs informations utiles.',
+    hint: 'Lecture d’ensemble : qui parle à qui. Boîtes colorées par type, groupes marqués, liaisons épaisses annotées du débit — ni adressage, ni ports.',
     display: {
       showDetails: true,
-      showGrid: true,
+      showGrid: false,
       showLayerLabels: true,
       showZones: true,
       showSites: true,
       showClusters: true,
     },
     style: {
-      nameSize: 12.5,
-      details: true,
+      nameSize: 13.5,
+      details: false,
       dense: false,
-      linkWidth: 1,
-      labelSize: 9.5,
-      labelAlways: false,
-      radius: 10,
-      stroke: 1.6,
+      linkWidth: 1.4,
+      labelSize: 10,
+      labelAlways: true,
+      radius: 12,
+      stroke: 1.8,
+      endLabels: false,
+      linkLabels: true,
+      groupStrength: 1.8,
+      fill: 'teinte',
+      shadow: false,
+      annotations: true,
     },
   },
   {
     id: 'technique',
     label: 'Technique',
-    hint: 'Documentation d’exploitation : adressage, modèles, ports, débits et VLAN sur chaque liaison.',
+    hint: 'Documentation d’exploitation : adressage, modèle, numéro de série sur chaque boîte, ports et VLAN aux deux bouts de chaque liaison, grille de repérage.',
     display: {
       showDetails: true,
       showGrid: true,
@@ -81,20 +102,26 @@ export const VIEW_MODES: ModeDefinition[] = [
       showClusters: true,
     },
     style: {
-      nameSize: 11.5,
+      nameSize: 11,
       details: true,
       dense: true,
       linkWidth: 0.85,
-      labelSize: 8.8,
+      labelSize: 8.6,
       labelAlways: true,
-      radius: 6,
-      stroke: 1.2,
+      radius: 4,
+      stroke: 1.1,
+      endLabels: true,
+      linkLabels: true,
+      groupStrength: 0.55,
+      fill: 'blanc',
+      shadow: false,
+      annotations: true,
     },
   },
   {
     id: 'presentation',
     label: 'Présentation',
-    hint: 'Pour projeter ou coller dans un document : noms seuls, traits épais, aucun détail technique.',
+    hint: 'Pour projeter ou coller dans un document : noms seuls, très lisibles, traits épais, aucune étiquette technique.',
     display: {
       showDetails: false,
       showGrid: false,
@@ -104,14 +131,20 @@ export const VIEW_MODES: ModeDefinition[] = [
       showClusters: true,
     },
     style: {
-      nameSize: 14.5,
+      nameSize: 15,
       details: false,
       dense: false,
-      linkWidth: 1.5,
+      linkWidth: 2.2,
       labelSize: 11,
       labelAlways: false,
-      radius: 14,
-      stroke: 2.2,
+      radius: 16,
+      stroke: 2.4,
+      endLabels: false,
+      linkLabels: false,
+      groupStrength: 1.2,
+      fill: 'teinte',
+      shadow: true,
+      annotations: false,
     },
   },
 ]

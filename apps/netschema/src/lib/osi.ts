@@ -222,7 +222,18 @@ function l2Summary(config: LinkEndConfig): string {
  * à la sortie de chaque boîte, chaque bout se lit sans ambiguïté — c'est ainsi que se lisent
  * les plans de brassage. Même logique en couche 3 avec les adresses d'interface.
  */
-export function linkEndLabels(link: NetLink, view: OsiView): { a?: string[]; b?: string[] } {
+/**
+ * Ce qui s'écrit à chaque bout d'une liaison.
+ *
+ * En vue « toutes couches », on n'écrit rien par défaut : le schéma serait illisible. Le mode
+ * technique, lui, demande justement tout — d'où `complet`, qui réunit alors port, résumé de
+ * niveau 2 et adresse.
+ */
+export function linkEndLabels(
+  link: NetLink,
+  view: OsiView,
+  complet = false,
+): { a?: string[]; b?: string[] } {
   if (view === 'l1') {
     return { a: [link.portA?.trim()].filter(Boolean) as string[], b: [link.portB?.trim()].filter(Boolean) as string[] }
   }
@@ -238,6 +249,13 @@ export function linkEndLabels(link: NetLink, view: OsiView): { a?: string[]; b?:
       a: [linkEnd(link, 'a').ip].filter(Boolean) as string[],
       b: [linkEnd(link, 'b').ip].filter(Boolean) as string[],
     }
+  }
+  if (complet) {
+    const lignes = (end: 'a' | 'b') => {
+      const config = linkEnd(link, end)
+      return [config.port, l2Summary(config), config.ip].filter(Boolean) as string[]
+    }
+    return { a: lignes('a'), b: lignes('b') }
   }
   return {}
 }

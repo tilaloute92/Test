@@ -631,8 +631,14 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       const geometry = geometries.get(link.id)
       if (!geometry) continue
 
-      const middle = linkLabelFor(link, osi) || (style.labelAlways ? [link.label, link.speed].filter(Boolean).join(' · ') : '')
-      const ends = linkEndLabels(link, osi)
+      // Chaque mode montre ce qu'on vient y chercher : l'architecture, le débit ; la
+      // documentation, les ports des deux bouts ; la présentation, rien du tout.
+      const middle = style.linkLabels
+        ? linkLabelFor(link, osi) || (style.labelAlways ? [link.label, link.speed].filter(Boolean).join(' · ') : '')
+        : ''
+      // Deux raisons d'écrire aux extrémités : le mode technique, qui documente tout, et une
+      // couche OSI choisie explicitement — on y vient pour voir les ports ou les adresses.
+      const ends = style.endLabels || osi !== 'all' ? linkEndLabels(link, osi, style.endLabels) : {}
       const entries: { which: 'mid' | 'a' | 'b'; lines: string[]; manual?: { dx: number; dy: number } }[] = []
       if (middle) entries.push({ which: 'mid', lines: [middle], manual: link.labelOffset })
       if (ends.a && ends.a.length > 0) entries.push({ which: 'a', lines: ends.a, manual: link.labelOffsetA })
@@ -783,7 +789,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
 
         <g data-export-root transform={`translate(${view.tx}, ${view.ty}) scale(${view.zoom})`}>
           {sites.map((site) => (
-            <g key={`site-${site.key}`}>
+            <g key={`site-${site.key}`} data-couche="groupe">
               <rect
                 x={site.x}
                 y={site.y}
@@ -791,12 +797,12 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 height={site.height}
                 rx={22}
                 fill="#0f172a"
-                fillOpacity={0.03}
-                stroke="#cbd5e1"
-                strokeWidth={1.6}
+                fillOpacity={0.03 * style.groupStrength}
+                stroke={style.groupStrength > 1 ? '#94a3b8' : '#cbd5e1'}
+                strokeWidth={1.6 * style.groupStrength}
               />
               {site.label && (
-                <text x={site.x + 18} y={site.y + 22} fontSize={12.5} fontWeight={700} fill="#64748b">
+                <text data-couche="groupe" x={site.x + 18} y={site.y + 22} fontSize={12.5} fontWeight={700} fill="#64748b">
                   {`SITE — ${site.label.toUpperCase()}`}
                 </text>
               )}
@@ -804,7 +810,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
           ))}
 
           {zones.map((zone) => (
-            <g key={`zone-${zone.key}`}>
+            <g key={`zone-${zone.key}`} data-couche="groupe">
               <rect
                 x={zone.x}
                 y={zone.y}
@@ -812,13 +818,13 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 height={zone.height}
                 rx={16}
                 fill="#0f172a"
-                fillOpacity={0.025}
+                fillOpacity={0.025 * style.groupStrength}
                 stroke="#94a3b8"
-                strokeWidth={1.2}
+                strokeWidth={1.2 * style.groupStrength}
                 strokeDasharray="7 6"
               />
               {zone.label && (
-                <text x={zone.x + 14} y={zone.y + 17} fontSize={11} fontWeight={700} fill="#64748b">
+                <text data-couche="groupe" x={zone.x + 14} y={zone.y + 17} fontSize={11} fontWeight={700} fill="#64748b">
                   {zone.label.toUpperCase()}
                 </text>
               )}
@@ -826,7 +832,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
           ))}
 
           {clusters.map((cluster) => (
-            <g key={`cluster-${cluster.key}`}>
+            <g key={`cluster-${cluster.key}`} data-couche="groupe">
               <rect
                 x={cluster.x}
                 y={cluster.y}
@@ -834,15 +840,19 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 height={cluster.height}
                 rx={12}
                 fill="#db2777"
-                fillOpacity={0.04}
+                fillOpacity={0.04 * style.groupStrength}
                 stroke="#db2777"
-                strokeWidth={1.2}
+                strokeWidth={1.2 * style.groupStrength}
                 strokeDasharray="4 4"
               />
               {cluster.label && (
-                <text x={cluster.x + 12} y={cluster.y + 16} fontSize={9.5} fontWeight={700} fill="#db2777">
+                <text data-couche="groupe" x={cluster.x + 12} y={cluster.y + 16} fontSize={9.5} fontWeight={700} fill="#db2777">
+                  {/* L'adresse virtuelle est une donnée d'exploitation : elle n'a rien à faire
+                      sur une vue de présentation. */}
                   {`GRAPPE ${cluster.label}${
-                    clusterVips.get(cluster.label) ? ` · VIP ${clusterVips.get(cluster.label)}` : ''
+                    style.annotations && clusterVips.get(cluster.label)
+                      ? ` · VIP ${clusterVips.get(cluster.label)}`
+                      : ''
                   }`}
                 </text>
               )}
@@ -853,6 +863,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
             direction === 'TB' ? (
               <text
                 key={band.rank}
+                data-couche="bande"
                 x={bounds.minX - 28}
                 y={band.main + 4}
                 textAnchor="end"
@@ -865,6 +876,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
             ) : (
               <text
                 key={band.rank}
+                data-couche="bande"
                 x={band.main}
                 y={bounds.minY - 30}
                 textAnchor="middle"

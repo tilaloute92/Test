@@ -216,15 +216,15 @@ export function GuideView() {
             {[
               {
                 title: 'Architecture',
-                text: 'La lecture d’ensemble : équipements avec leur adresse et leur zone, cadres de groupes, étiquettes utiles. C’est le mode de travail.',
+                text: 'Qui parle à qui. Boîtes colorées par type, cadres de sites et de zones bien marqués, liaisons épaisses portant leur débit — ni adressage, ni ports, ni numéros de série.',
               },
               {
                 title: 'Technique',
-                text: 'La documentation d’exploitation : boîtes compactes, modèle et numéro de série, et une étiquette sur chaque liaison même sans vue OSI.',
+                text: 'La documentation d’exploitation. Boîtes blanches et compactes portant adresse, modèle et numéro de série ; ports, VLAN, agrégat et rôle STP aux deux bouts de chaque liaison ; cadres de groupes effacés pour laisser lire les textes.',
               },
               {
                 title: 'Présentation',
-                text: 'Pour projeter ou coller dans un document : noms seuls en gros, traits épais, ni grille ni détail technique.',
+                text: 'Pour projeter ou coller dans un document. Noms seuls en très gros, traits épais, boîtes ombrées, aucune étiquette technique — pas même l’adresse virtuelle des grappes.',
               },
             ].map((card) => (
               <div key={card.title} className="rounded-xl border border-slate-200 bg-white p-3">
@@ -238,6 +238,65 @@ export function GuideView() {
             départ, pas une prison. À la voix : « mode présentation », « vue technique »,
             « mode architecture ».
           </P>
+          <Note>
+            L'export <b>HTML</b> embarque les trois vues dans un seul fichier : on passe de
+            l'une à l'autre sans NetSchema, chez le destinataire.
+          </Note>
+        </>
+      ),
+    },
+    {
+      id: 'export',
+      title: 'Exporter : SVG, PNG, page interactive',
+      keywords: 'export svg png html page interactive partager transmettre document imprimer navigation autonome hors ligne',
+      body: (
+        <>
+          <P>
+            Trois formats, trois usages. Les boutons sont à droite de la barre d'outils.
+          </P>
+          <List
+            items={[
+              <>
+                <b>SVG</b> — une image vectorielle de la vue courante, à reprendre dans Visio,
+                Illustrator, Word ou un wiki. Elle ne contient qu'une vue et ne se manipule
+                pas : c'est une image.
+              </>,
+              <>
+                <b>PNG</b> — la même chose en points, ×2, sur fond blanc. Pour un courriel ou
+                une diapositive.
+              </>,
+              <>
+                <b>HTML</b> — une <b>page autonome</b> qui contient <b>les trois vues</b>,
+                toutes les informations saisies et de quoi s'y déplacer. Un seul fichier, qui
+                s'ouvre d'un double-clic sur n'importe quel poste : ni serveur, ni Internet, ni
+                NetSchema.
+              </>,
+            ]}
+          />
+          <P>Dans la page exportée, le destinataire retrouve :</P>
+          <List
+            items={[
+              <>les <b>trois vues</b> en onglets — architecture, technique, présentation ;</>,
+              <>
+                des <b>cases à cocher</b> pour montrer ou masquer les étiquettes de liaison,
+                les ports et adresses des extrémités, les détails des équipements, les cadres
+                de groupes et les noms de couches ;
+              </>,
+              <>le <b>zoom</b> à la molette, le déplacement en glissant, un bouton <i>Ajuster</i> ;</>,
+              <>la <b>fiche</b> d'un équipement d'un clic, le <b>détail d'une liaison</b> au survol ;</>,
+              <>une <b>recherche</b> qui estompe tout ce qui ne correspond pas ;</>,
+              <>
+                deux <b>tableaux</b> — équipements et liaisons — avec l'intégralité des
+                informations, y compris ce que le schéma ne montre pas.
+              </>,
+            ]}
+          />
+          <Note>
+            Pourquoi pas un SVG interactif ? Parce que la plupart des visionneuses de SVG en
+            ignorent le script : le fichier s'ouvrirait, mais rien ne répondrait. Une page HTML
+            se comporte partout de la même façon — et s'imprime correctement, la vue affichée
+            tenant sur la feuille.
+          </Note>
         </>
       ),
     },
