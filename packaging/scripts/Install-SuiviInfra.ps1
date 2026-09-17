@@ -19,8 +19,19 @@
     Nom du site dans IIS. Défaut : "Suivi Infra & Reseau".
 
 .PARAMETER HostName
-    Nom DNS par lequel l'application sera jointe (ex. suivi-infra.monentreprise.local).
-    Doit correspondre au certificat et à une entrée DNS pointant vers ce serveur.
+    Nom par lequel l'application sera jointe. Défaut : winas (le nom du serveur).
+    En HTTPS, il doit correspondre au certificat et à une entrée DNS.
+
+.PARAMETER Protocol
+    http (défaut) ou https.
+      http  : installation immédiate, sans certificat. L'application est servie en clair
+              sur le réseau interne — voir l'avertissement affiché en fin d'installation.
+      https : exige un certificat pour -HostName dans Ordinateur local\Personnel.
+    Pour passer de http à https plus tard, utilisez Enable-SuiviInfraHttps.ps1 : il bascule
+    la liaison, le pare-feu et la configuration du service sans toucher aux données.
+
+.PARAMETER Port
+    Port d'écoute du site IIS. Défaut : 8081.
 
 .PARAMETER SitePath
     Dossier de publication du site. Défaut : C:\inetpub\suivi-infra.
@@ -47,17 +58,24 @@
     N'ajoute pas la règle de pare-feu (si vos règles sont gérées par GPO).
 
 .EXAMPLE
-    .\Install-SuiviInfra.ps1 -HostName suivi-infra.monentreprise.local
+    .\Install-SuiviInfra.ps1
+    Installation par défaut : http://winas:8081, site seul.
 
 .EXAMPLE
-    .\Install-SuiviInfra.ps1 -HostName suivi-infra.monentreprise.local `
-        -WithService -NssmPath C:\outils\nssm.exe
+    .\Install-SuiviInfra.ps1 -WithService -NssmPath C:\outils\nssm.exe
+    http://winas:8081 avec le service (comptes locaux/LDAP, données partagées, envoi de mail).
+
+.EXAMPLE
+    .\Install-SuiviInfra.ps1 -Protocol https -HostName winas.monentreprise.local -Port 443 -WithService
+    Installation directement en HTTPS, si le certificat est déjà en place.
 #>
 
 [CmdletBinding()]
 param(
     [string] $SiteName = 'Suivi Infra & Reseau',
-    [Parameter(Mandatory = $true)][string] $HostName,
+    [string] $HostName = 'winas',
+    [ValidateSet('http', 'https')][string] $Protocol = 'http',
+    [int]    $Port = 8081,
     [string] $SitePath = 'C:\inetpub\suivi-infra',
     [string] $CertificateThumbprint,
     [switch] $WithService,
@@ -72,6 +90,9 @@ Set-StrictMode -Version Latest
 
 $PackageRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ServiceName = 'SuiviInfraAuth'
+$IsHttps     = $Protocol -eq 'https'
+$BaseUrl     = "${Protocol}://${HostName}" + $(if (($IsHttps -and $Port -eq 443) -or (-not $IsHttps -and $Port -eq 80)) { '' } else { ":$Port" })
+$FirewallRule = "Suivi Infra - $($Protocol.ToUpper()) $Port"
 
 function Write-Step { param([string] $Message) Write-Host "`n==> $Message" -ForegroundColor Cyan }
 function Write-Ok   { param([string] $Message) Write-Host "    [OK] $Message" -ForegroundColor Green }
@@ -102,32 +123,37 @@ if (-not (Get-WindowsFeature -Name Web-Server).Installed) {
 Import-Module WebAdministration -ErrorAction Stop
 Write-Ok 'IIS présent'
 
-# Certificat : on le résout maintenant, avant de créer quoi que ce soit.
-if ($CertificateThumbprint) {
-    $cert = Get-ChildItem Cert:\LocalMachine\My |
-        Where-Object { $_.Thumbprint -eq $CertificateThumbprint.Replace(' ', '') }
-    if (-not $cert) { throw "Aucun certificat avec l'empreinte '$CertificateThumbprint' dans Ordinateur local\Personnel." }
-} else {
-    $candidates = @(Get-ChildItem Cert:\LocalMachine\My | Where-Object {
-        $_.NotAfter -gt (Get-Date) -and (
-            $_.Subject -like "*$HostName*" -or
-            ($_.DnsNameList | ForEach-Object { $_.Unicode }) -contains $HostName
-        )
-    })
-    if ($candidates.Count -eq 1) {
-        $cert = $candidates[0]
-    } elseif ($candidates.Count -eq 0) {
-        throw @"
+# Certificat : uniquement en HTTPS, et résolu maintenant — avant de créer quoi que ce soit.
+$cert = $null
+if ($IsHttps) {
+    if ($CertificateThumbprint) {
+        $cert = Get-ChildItem Cert:\LocalMachine\My |
+            Where-Object { $_.Thumbprint -eq $CertificateThumbprint.Replace(' ', '') }
+        if (-not $cert) { throw "Aucun certificat avec l'empreinte '$CertificateThumbprint' dans Ordinateur local\Personnel." }
+    } else {
+        $candidates = @(Get-ChildItem Cert:\LocalMachine\My | Where-Object {
+            $_.NotAfter -gt (Get-Date) -and (
+                $_.Subject -like "*$HostName*" -or
+                ($_.DnsNameList | ForEach-Object { $_.Unicode }) -contains $HostName
+            )
+        })
+        if ($candidates.Count -eq 1) {
+            $cert = $candidates[0]
+        } elseif ($candidates.Count -eq 0) {
+            throw @"
 Aucun certificat valide trouvé pour '$HostName' dans Ordinateur local\Personnel.
 Importez-le d'abord (certlm.msc → Personnel → Certificats), puis relancez.
 Voir DEPLOYMENT-reference.md, section 4.1.
 "@
-    } else {
-        $list = ($candidates | ForEach-Object { "  $($_.Thumbprint)  $($_.Subject)  (expire le $($_.NotAfter.ToString('yyyy-MM-dd')))" }) -join "`n"
-        throw "Plusieurs certificats correspondent à '$HostName'. Relancez avec -CertificateThumbprint :`n$list"
+        } else {
+            $list = ($candidates | ForEach-Object { "  $($_.Thumbprint)  $($_.Subject)  (expire le $($_.NotAfter.ToString('yyyy-MM-dd')))" }) -join "`n"
+            throw "Plusieurs certificats correspondent à '$HostName'. Relancez avec -CertificateThumbprint :`n$list"
+        }
     }
+    Write-Ok "Certificat : $($cert.Subject) (expire le $($cert.NotAfter.ToString('yyyy-MM-dd')))"
+} else {
+    Write-Warn "Installation en HTTP : l'application sera servie EN CLAIR sur $BaseUrl. Acceptable pour une mise en service sur réseau interne ; basculez en HTTPS avec Enable-SuiviInfraHttps.ps1 dès que le certificat est disponible."
 }
-Write-Ok "Certificat : $($cert.Subject) (expire le $($cert.NotAfter.ToString('yyyy-MM-dd')))"
 
 if ($WithService) {
     $node = (Get-Command node.exe -ErrorAction SilentlyContinue)
@@ -189,39 +215,52 @@ Write-Ok 'Fichiers du site publiés'
 Write-Step "Configuration du site IIS « $SiteName »"
 
 if (-not (Test-Path "IIS:\Sites\$SiteName")) {
-    New-Website -Name $SiteName -PhysicalPath $SitePath -Port 443 -HostHeader $HostName -Ssl | Out-Null
+    if ($IsHttps) {
+        New-Website -Name $SiteName -PhysicalPath $SitePath -Port $Port -HostHeader $HostName -Ssl | Out-Null
+    } else {
+        New-Website -Name $SiteName -PhysicalPath $SitePath -Port $Port -HostHeader $HostName | Out-Null
+    }
     Write-Ok 'Site créé'
 } else {
     Set-ItemProperty "IIS:\Sites\$SiteName" -Name physicalPath -Value $SitePath
     Write-Ok 'Site existant réutilisé'
 }
 
-$binding = Get-WebBinding -Name $SiteName -Protocol https -ErrorAction SilentlyContinue
-if (-not $binding) {
-    New-WebBinding -Name $SiteName -Protocol https -Port 443 -HostHeader $HostName -SslFlags 1
-    $binding = Get-WebBinding -Name $SiteName -Protocol https
+# On repart d'une liaison propre : relancer le script en changeant de port ou de protocole
+# doit remplacer l'ancienne liaison, pas en empiler une deuxième qui resterait joignable.
+foreach ($b in @(Get-WebBinding -Name $SiteName -ErrorAction SilentlyContinue)) {
+    $info = $b.bindingInformation   # "*:443:winas"
+    $bPort = ($info -split ':')[1]
+    if ($b.protocol -ne $Protocol -or $bPort -ne "$Port") {
+        Remove-WebBinding -Name $SiteName -Protocol $b.protocol -Port $bPort -HostHeader (($info -split ':')[2]) -ErrorAction SilentlyContinue
+        Write-Ok "Ancienne liaison $($b.protocol) $bPort retirée"
+    }
 }
-# SNI (SslFlags 1) : permet plusieurs sites HTTPS avec des noms d'hôte différents sur la
-# même IP — le cas courant quand ce serveur héberge déjà autre chose.
-$binding.AddSslCertificate($cert.Thumbprint, 'My')
-Write-Ok "Liaison HTTPS 443 sur $HostName"
 
-# HTTP en clair : on retire la liaison pour que l'application ne soit jamais servie
-# sans chiffrement (recommandation de DEPLOYMENT.md, étape 5).
-$httpBinding = Get-WebBinding -Name $SiteName -Protocol http -ErrorAction SilentlyContinue
-if ($httpBinding) {
-    Remove-WebBinding -Name $SiteName -Protocol http -Port 80 -ErrorAction SilentlyContinue
-    Write-Ok 'Liaison HTTP (port 80) retirée — accès en HTTPS uniquement'
+$binding = Get-WebBinding -Name $SiteName -Protocol $Protocol -Port $Port -ErrorAction SilentlyContinue
+if (-not $binding) {
+    if ($IsHttps) {
+        # SNI (SslFlags 1) : permet plusieurs sites HTTPS avec des noms d'hôte différents sur
+        # la même IP — le cas courant quand ce serveur héberge déjà autre chose.
+        New-WebBinding -Name $SiteName -Protocol https -Port $Port -HostHeader $HostName -SslFlags 1
+    } else {
+        New-WebBinding -Name $SiteName -Protocol http -Port $Port -HostHeader $HostName
+    }
+    $binding = Get-WebBinding -Name $SiteName -Protocol $Protocol -Port $Port
 }
+if ($IsHttps) {
+    $binding.AddSslCertificate($cert.Thumbprint, 'My')
+}
+Write-Ok "Liaison $($Protocol.ToUpper()) $Port sur $HostName"
 
 Start-Website -Name $SiteName -ErrorAction SilentlyContinue
 Write-Ok 'Site démarré'
 
 if (-not $SkipFirewall) {
-    if (-not (Get-NetFirewallRule -DisplayName 'Suivi Infra - HTTPS' -ErrorAction SilentlyContinue)) {
-        New-NetFirewallRule -DisplayName 'Suivi Infra - HTTPS' -Direction Inbound -Protocol TCP `
-            -LocalPort 443 -Action Allow -Profile Domain | Out-Null
-        Write-Ok 'Règle de pare-feu 443/TCP (profil Domaine) ajoutée'
+    if (-not (Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue)) {
+        New-NetFirewallRule -DisplayName $FirewallRule -Direction Inbound -Protocol TCP `
+            -LocalPort $Port -Action Allow -Profile Domain | Out-Null
+        Write-Ok "Règle de pare-feu $Port/TCP (profil Domaine) ajoutée"
     } else {
         Write-Ok 'Règle de pare-feu déjà présente'
     }
@@ -263,8 +302,8 @@ if ($WithService) {
             "# Voir .env.example pour la description de chaque valeur.",
             "PORT=$ServicePort",
             "JWT_SECRET=$jwtSecret",
-            "COOKIE_SECURE=true",
-            "CORS_ORIGIN=https://$HostName",
+            "COOKIE_SECURE=$(if ($IsHttps) { 'true' } else { 'false' })",
+            "CORS_ORIGIN=$BaseUrl",
             "",
             "# SSO Microsoft (facultatif) — mêmes valeurs que dans l'onglet Paramètres :",
             "# ENTRA_TENANT_ID=",
@@ -278,7 +317,31 @@ if ($WithService) {
         ) | Set-Content -Path $envPath -Encoding UTF8
         Write-Ok '.env généré (secret de session aléatoire)'
     } else {
-        Write-Ok '.env existant conservé (secret et configuration LDAP inchangés)'
+        # Le .env existant n'est jamais réécrit — il porte le secret de session et la
+        # configuration LDAP/SMTP saisies à la main. Deux valeurs font exception : elles
+        # décrivent l'adresse du site, qui vient de changer si on a rejoué le script avec
+        # un autre protocole ou un autre port. Les laisser périmées casserait la connexion
+        # (cookie refusé) sans message clair.
+        $envLines = Get-Content $envPath
+        $wanted = @{ 'COOKIE_SECURE' = $(if ($IsHttps) { 'true' } else { 'false' }); 'CORS_ORIGIN' = $BaseUrl }
+        $changed = $false
+        foreach ($key in $wanted.Keys) {
+            $line = "$key=$($wanted[$key])"
+            if ($envLines -notcontains $line) {
+                $changed = $true
+                if ($envLines -match "^$key=") {
+                    $envLines = $envLines -replace "^$key=.*$", $line
+                } else {
+                    $envLines += $line
+                }
+            }
+        }
+        if ($changed) {
+            $envLines | Set-Content -Path $envPath -Encoding UTF8
+            Write-Ok ".env conservé ; COOKIE_SECURE et CORS_ORIGIN alignés sur $BaseUrl"
+        } else {
+            Write-Ok '.env existant conservé (secret, LDAP et SMTP inchangés)'
+        }
     }
 
     # Le dossier data\ contient des secrets (hachages de mots de passe) et les données
@@ -362,7 +425,7 @@ fonctionneront pas : le navigateur ne pourra pas joindre /api.
 # 4. Résumé
 # ---------------------------------------------------------------------------------------
 Write-Step 'Installation terminée'
-Write-Host "    Application : https://$HostName" -ForegroundColor White
+Write-Host "    Application : $BaseUrl" -ForegroundColor White
 Write-Host "    Fichiers    : $SitePath"
 if ($WithService) {
     Write-Host "    Service     : $ServiceName ($ServicePath), port local $ServicePort"
@@ -373,8 +436,13 @@ if ($WithService) {
 }
 Write-Host ""
 Write-Host "    Vérification :" -ForegroundColor Yellow
-Write-Host "      Invoke-WebRequest https://$HostName -UseBasicParsing | Select-Object StatusCode"
-if ($WithService) {
-    Write-Host "      Invoke-RestMethod https://$HostName/api/health   # doit répondre ok = True"
-}
+Write-Host "      .\Test-SuiviInfra.ps1 -HostName $HostName -Protocol $Protocol -Port $Port$(if ($WithService) { ' -WithService' })"
 Write-Host ""
+
+if (-not $IsHttps) {
+    Write-Host "    ATTENTION — l'application est servie EN CLAIR." -ForegroundColor Red
+    Write-Host "    Mots de passe et données d'équipe circulent sans chiffrement sur le réseau." -ForegroundColor Yellow
+    Write-Host "    Dès que le certificat pour $HostName est importé dans Ordinateur local\Personnel :" -ForegroundColor Yellow
+    Write-Host "      .\Enable-SuiviInfraHttps.ps1 -HostName $HostName$(if ($WithService) { ' -WithService' })"
+    Write-Host ""
+}

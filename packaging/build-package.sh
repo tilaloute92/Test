@@ -63,6 +63,9 @@ mkdir -p "$STAGE/service/data"
 
 # 3. Scripts d'installation et documentation.
 cp packaging/scripts/*.ps1 "$STAGE/"
+# Le lanceur double-clic, qui appelle Install-SuiviInfra.ps1 en contournant la stratégie
+# d'exécution PowerShell : c'est lui la porte d'entrée pour une installation sans console.
+cp packaging/scripts/*.cmd "$STAGE/"
 cp packaging/INSTALL.md "$STAGE/"
 cp DEPLOYMENT.md "$STAGE/DEPLOYMENT-reference.md"
 cp README.md "$STAGE/README-application.md"

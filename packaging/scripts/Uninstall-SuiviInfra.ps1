@@ -59,8 +59,12 @@ if (Test-Path $SitePath) {
 }
 
 Write-Step 'Pare-feu'
-$rule = Get-NetFirewallRule -DisplayName 'Suivi Infra - HTTPS' -ErrorAction SilentlyContinue
-if ($rule) { $rule | Remove-NetFirewallRule; Write-Ok 'Règle 443/TCP supprimée' }
+# Les règles portent le protocole et le port dans leur nom : on les retire toutes, quelle
+# que soit la combinaison utilisée à l'installation (HTTP 8081, HTTPS 443...).
+$rules = @(Get-NetFirewallRule -DisplayName 'Suivi Infra - HTTP*' -ErrorAction SilentlyContinue)
+if ($rules.Count -gt 0) {
+    foreach ($r in $rules) { $r | Remove-NetFirewallRule; Write-Ok "Règle de pare-feu « $($r.DisplayName) » supprimée" }
+}
 else { Write-Warn 'Règle absente' }
 
 Write-Step 'Service Windows'

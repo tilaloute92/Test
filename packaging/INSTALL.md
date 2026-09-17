@@ -9,7 +9,9 @@ installation complète.
 > | --- | --- |
 > | `site\` | L'application, déjà construite (HTML/CSS/JS) — publiée par IIS |
 > | `service\` | Le service optionnel (Node.js), **dépendances déjà installées** — données d'équipe, authentification, envoi du programme du jour par mail |
-> | `Install-SuiviInfra.ps1` | Installation automatisée |
+> | `Installer-SuiviInfra.cmd` | **Installation par double-clic** (pose 4 questions, puis lance le script ci-dessous) |
+> | `Install-SuiviInfra.ps1` | Installation automatisée, si vous préférez la ligne de commande |
+> | `Enable-SuiviInfraHttps.ps1` | Bascule de HTTP vers HTTPS, une fois le certificat disponible |
 > | `Test-SuiviInfra.ps1` | Vérification de l'installation |
 > | `Backup-SuiviInfra.ps1` | Sauvegarde des données (vérifiée et cohérente) |
 > | `Register-SuiviInfraBackup.ps1` | Met la sauvegarde en tâche planifiée quotidienne |
@@ -113,37 +115,81 @@ Get-ChildItem -Recurse | Unblock-File
 
 ## 4. Installer
 
-Ouvrez PowerShell **en tant qu'administrateur**, dans le dossier décompressé.
+### Le plus simple : double-clic
 
-**Scénario A — site seul :**
+Clic droit sur **`Installer-SuiviInfra.cmd`** → *Exécuter en tant qu'administrateur*.
 
-```powershell
-.\Install-SuiviInfra.ps1 -HostName suivi-infra.monentreprise.local
+Le lanceur pose quatre questions, avec les bonnes valeurs par défaut :
+
+```
+  Nom du serveur [winas] :
+  Port IIS [8081] :
+  Mode :  1) HTTP (par defaut)   2) HTTPS
+  Service : 1) Non   2) Oui (client/serveur)
 ```
 
-**Scénario B — site + service :**
+Appuyer sur Entrée à chaque question installe **`http://winas:8081`**, site seul. C'est la
+mise en service la plus rapide : aucun certificat, aucun prérequis en dehors d'IIS, que le
+script installe lui-même s'il manque.
+
+### En ligne de commande
+
+PowerShell **administrateur**, dans le dossier décompressé :
 
 ```powershell
-.\Install-SuiviInfra.ps1 -HostName suivi-infra.monentreprise.local `
-    -WithService -NssmPath C:\outils\nssm.exe
+# HTTP, site seul — équivalent du double-clic avec les valeurs par défaut
+.\Install-SuiviInfra.ps1
+
+# HTTP, avec le service (comptes locaux/LDAP, données partagées, envoi de mail)
+.\Install-SuiviInfra.ps1 -WithService -NssmPath C:\outils\nssm.exe
+
+# Directement en HTTPS, si le certificat est déjà importé
+.\Install-SuiviInfra.ps1 -Protocol https -HostName winas.monentreprise.local -Port 443 -WithService
 ```
 
 > Si PowerShell refuse d'exécuter le script (stratégie d'exécution), lancez-le ainsi :
-> `powershell -ExecutionPolicy Bypass -File .\Install-SuiviInfra.ps1 -HostName ...`
+> `powershell -ExecutionPolicy Bypass -File .\Install-SuiviInfra.ps1`
+> C'est exactement ce que fait le lanceur `.cmd`.
 
 Le script vérifie **tous** les prérequis avant de modifier quoi que ce soit, puis :
 
 - publie le site dans `C:\inetpub\suivi-infra` ;
-- crée le site IIS, la liaison **HTTPS 443** avec votre certificat, et **retire la
-  liaison HTTP** (l'application n'est jamais servie en clair) ;
-- ajoute une règle de pare-feu 443/TCP (profil Domaine) ;
-- en scénario B : installe le service `SuiviInfraAuth`, génère un `.env` avec un secret
-  de session aléatoire, restreint les droits sur le dossier de données, et configure le
-  relais `/api` dans IIS.
+- crée le site IIS et la liaison demandée (**HTTP 8081** par défaut), en remplaçant une
+  liaison précédente plutôt qu'en empilant une seconde ;
+- ajoute une règle de pare-feu sur le port choisi (profil Domaine) ;
+- en scénario B : installe le service `SuiviInfraAuth`, génère un `.env` avec un secret de
+  session aléatoire, restreint les droits sur le dossier de données, et configure le relais
+  `/api` dans IIS.
 
-Options utiles : `-SitePath`, `-ServicePath`, `-ServicePort`, `-CertificateThumbprint`
-(si plusieurs certificats correspondent au nom), `-SkipFirewall` (si vos règles sont
-gérées par GPO). Détail : `Get-Help .\Install-SuiviInfra.ps1 -Full`.
+Options utiles : `-SiteName`, `-SitePath`, `-ServicePath`, `-ServicePort`,
+`-CertificateThumbprint`, `-SkipFirewall`. Détail : `Get-Help .\Install-SuiviInfra.ps1 -Full`.
+
+> ### ⚠ Ce qu'implique le mode HTTP
+>
+> En HTTP, **tout circule en clair sur le réseau** : mots de passe de connexion, données
+> d'équipe, contenu des tâches. C'est acceptable pour une mise en service sur un réseau
+> interne maîtrisé, le temps d'obtenir un certificat — ce n'est pas un état durable.
+> Le script vous le rappelle en fin d'installation.
+
+### Passer en HTTPS ensuite
+
+Dès que le certificat pour votre nom DNS est importé dans *Ordinateur local → Personnel* :
+
+```powershell
+.\Enable-SuiviInfraHttps.ps1 -HostName winas -WithService
+```
+
+Le script remplace la liaison HTTP par une liaison HTTPS, déplace la règle de pare-feu, et
+aligne la configuration du service (`COOKIE_SECURE=true`, `CORS_ORIGIN`) — deux valeurs sans
+lesquelles la connexion cesserait de fonctionner sans message clair. Ni les fichiers du site,
+ni les données d'équipe, ni le secret de session ne sont touchés.
+
+Les sessions ouvertes en HTTP sont invalidées : chacun devra se reconnecter une fois.
+
+> Avec un nom court comme `winas`, un certificat d'AC interne (AD CS) est indispensable :
+> aucune autorité publique n'émet pour un nom sans domaine. Si vous n'en avez pas, restez en
+> HTTP ou faites émettre un certificat pour le nom complet (`winas.monentreprise.local`) et
+> passez-le à `-HostName`.
 
 ## 5. Créer le premier compte (scénario B uniquement)
 
@@ -188,16 +234,16 @@ lui-même : il remet le message à votre relais SMTP.
 ## 6. Vérifier
 
 ```powershell
-.\Test-SuiviInfra.ps1 -HostName suivi-infra.monentreprise.local
+.\Test-SuiviInfra.ps1 -HostName winas -Protocol http -Port 8081
 # scénario B :
-.\Test-SuiviInfra.ps1 -HostName suivi-infra.monentreprise.local -WithService
+.\Test-SuiviInfra.ps1 -HostName winas -Protocol http -Port 8081 -WithService
 ```
 
 Tous les contrôles doivent être au vert. Le script vérifie notamment que les données
 d'équipe sont bien **refusées sans session authentifiée** (401) — un contrôle de
 sécurité, pas seulement de bon fonctionnement.
 
-Puis, depuis un poste du domaine, ouvrez `https://suivi-infra.monentreprise.local` :
+Puis, depuis un poste du domaine, ouvrez `http://winas:8081` (ou votre adresse HTTPS) :
 le cadenas doit s'afficher sans avertissement (avec un certificat d'AC interne, l'AC
 doit être déployée sur les postes par GPO).
 
