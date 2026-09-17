@@ -492,18 +492,26 @@ export function GuideView() {
               </>,
               <>
                 <b>Choisir où la liaison se branche</b> : sélectionnez-la, puis glissez l'un des
-                deux carrés verts — ses extrémités — à l'endroit voulu sur la boîte d'un
-                équipement. Le point d'accroche est libre tout autour de la boîte, suit
-                l'équipement quand on le déplace, et la liaison sort perpendiculairement avant
-                de repartir. Double-clic sur un carré : retour à l'accroche calculée.
+                deux carrés verts — ses extrémités — sur la boîte d'un équipement.{' '}
+                <b>Seize repères apparaissent tout autour</b> : les quatre coins, le milieu et
+                les quarts de chaque côté. Le plus proche s'allume, et c'est là que la liaison
+                se branche. Elle en sort perpendiculairement avant de repartir, et le point suit
+                l'équipement quand on le déplace.
+              </>,
+              <>
+                <b>Se poser entre deux repères</b> : gardez <Keys>Alt</Keys> enfoncé pendant la
+                glisse — l'aimant se désactive et l'accroche se pose exactement sous le pointeur.
+                Sans lui, deux liaisons voisines arriveraient à trois pixels l'une de l'autre.
+                <b> Double-clic</b> sur une poignée : retour à l'accroche calculée.
               </>,
               <>
                 <b>Rebrancher ailleurs</b> : lâchez cette même extrémité sur un <i>autre</i>
                 équipement et la liaison change de destination, sans avoir à la supprimer.
               </>,
               <>
-                <b>À la création</b> : en mode <Keys>L</Keys>, un clic près d'un bord fixe
-                l'accroche de ce côté ; un clic au centre laisse l'application choisir.
+                <b>À la création</b> : en mode <Keys>L</Keys>, les repères s'affichent au survol
+                de la boîte visée — cliquer dessus fixe l'accroche, cliquer au centre laisse
+                l'application choisir.
               </>,
               <>
                 <b>Forme</b> : automatique, orthogonale, droite ou courbe, au choix dans

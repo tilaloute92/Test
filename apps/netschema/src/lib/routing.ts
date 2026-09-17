@@ -205,9 +205,8 @@ export function attachToPoint(node: Point, attach: Attach): Point {
 /**
  * Point d'accroche libre correspondant à un endroit désigné à la souris.
  *
- * Le point est ramené sur le pourtour de la boîte — une liaison doit toucher l'équipement,
- * pas finir en son milieu — et aimanté au centre de l'arête quand on en passe tout près,
- * pour retrouver facilement l'accroche « propre » d'un tracé rangé.
+ * Le point est ramené sur le pourtour de la boîte : une liaison doit toucher l'équipement,
+ * pas finir en son milieu.
  */
 export function pointToAttach(node: Point, point: Point): Attach {
   let dx = Math.max(-0.5, Math.min(0.5, (point.x - node.x) / NODE_W))
@@ -217,11 +216,55 @@ export function pointToAttach(node: Point, point: Point): Attach {
   if (Math.abs(dx) >= Math.abs(dy)) dx = dx >= 0 ? 0.5 : -0.5
   else dy = dy >= 0 ? 0.5 : -0.5
 
-  const magnet = 0.07
-  if (Math.abs(dx) < magnet) dx = 0
-  if (Math.abs(dy) < magnet) dy = 0
-
   return { dx: Math.round(dx * 1000) / 1000, dy: Math.round(dy * 1000) / 1000 }
+}
+
+/**
+ * Points d'accroche remarquables, tout autour de la boîte.
+ *
+ * Seize repères — les quatre coins, le milieu et les quarts de chaque côté — qui donnent des
+ * branchements alignés d'un équipement à l'autre sans avoir à viser au pixel. On peut toujours
+ * se poser entre deux : c'est ce que fait la touche Alt.
+ */
+export const ANCHOR_RING: Attach[] = (() => {
+  const points: Attach[] = []
+  for (const dx of [-0.5, -0.25, 0, 0.25, 0.5]) {
+    points.push({ dx, dy: -0.5 })
+    points.push({ dx, dy: 0.5 })
+  }
+  for (const dy of [-0.25, 0, 0.25]) {
+    points.push({ dx: -0.5, dy })
+    points.push({ dx: 0.5, dy })
+  }
+  return points
+})()
+
+/** Distance, en pixels du schéma, en deçà de laquelle on s'aimante à un repère. */
+const SNAP_RADIUS = 11
+
+/**
+ * Accroche choisie à la souris : projetée sur le bord, puis aimantée au repère le plus proche.
+ *
+ * L'aimant est ce qui rend l'accroche « fixable » : sans lui, deux liaisons voisines arrivent
+ * à trois pixels l'une de l'autre et le schéma part de travers. `libre` (touche Alt) le
+ * désactive pour les cas où l'on veut vraiment se poser entre deux repères.
+ */
+export function snapAttach(node: Point, point: Point, libre = false): Attach {
+  const brut = pointToAttach(node, point)
+  if (libre) return brut
+
+  const cible = attachToPoint(node, brut)
+  let meilleur: Attach | null = null
+  let distance = SNAP_RADIUS
+  for (const repere of ANCHOR_RING) {
+    const candidat = attachToPoint(node, repere)
+    const ecart = Math.hypot(candidat.x - cible.x, candidat.y - cible.y)
+    if (ecart <= distance) {
+      distance = ecart
+      meilleur = repere
+    }
+  }
+  return meilleur ?? brut
 }
 
 /** Côté de la boîte sur lequel se trouve un point d'accroche libre. */

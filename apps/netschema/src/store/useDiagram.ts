@@ -24,6 +24,7 @@ import { getDiagramSvg } from '../lib/exportRegistry'
 import { interpret, isEditingIntent } from '../lib/voice'
 import { inventoryFromCsv } from '../lib/inventory'
 import { deduceVlans } from '../lib/osi'
+import { NODE_H, NODE_W } from '../types'
 import { modeDefinition } from '../lib/viewModes'
 import { firstFreeUnit, heightOf, rackOccupancy } from '../lib/racks'
 import type {
@@ -911,15 +912,42 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     }
 
     const state = get()
+    /**
+     * Point de dépose d'un équipement ajouté à la voix : le centre de la vue, décalé jusqu'à
+     * trouver une place libre.
+     *
+     * Sans cela, dicter deux équipements de suite les empile exactement l'un sur l'autre — on
+     * croit n'en avoir ajouté qu'un, et la liaison entre eux n'a nulle part où passer.
+     */
     const center = () => {
-      const { view, canvasSize, snap } = get()
+      const { view, canvasSize, snap, diagram } = get()
       const raw = {
         x: (canvasSize.width / 2 - view.tx) / view.zoom,
         y: (canvasSize.height / 2 - view.ty) / view.zoom,
       }
-      return snap
-        ? { x: Math.round(raw.x / GRID) * GRID, y: Math.round(raw.y / GRID) * GRID }
-        : { x: Math.round(raw.x), y: Math.round(raw.y) }
+      const arrondi = (point: { x: number; y: number }) =>
+        snap
+          ? { x: Math.round(point.x / GRID) * GRID, y: Math.round(point.y / GRID) * GRID }
+          : { x: Math.round(point.x), y: Math.round(point.y) }
+
+      const occupe = (point: { x: number; y: number }) =>
+        diagram.nodes.some(
+          (node) => Math.abs(node.x - point.x) < NODE_W * 0.8 && Math.abs(node.y - point.y) < NODE_H * 1.2,
+        )
+
+      // Balayage en carrés concentriques : on reste près du centre de la vue.
+      const pasX = NODE_W + 40
+      const pasY = NODE_H + 40
+      for (let anneau = 0; anneau < 8; anneau += 1) {
+        for (let dy = -anneau; dy <= anneau; dy += 1) {
+          for (let dx = -anneau; dx <= anneau; dx += 1) {
+            if (anneau > 0 && Math.abs(dx) !== anneau && Math.abs(dy) !== anneau) continue
+            const candidat = arrondi({ x: raw.x + dx * pasX, y: raw.y + dy * pasY })
+            if (!occupe(candidat)) return candidat
+          }
+        }
+      }
+      return arrondi(raw)
     }
     // La dictée arrive sans accents ni casse : la comparaison doit l'être aussi.
     const plain = (value: string) =>

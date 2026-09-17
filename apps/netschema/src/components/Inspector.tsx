@@ -481,7 +481,7 @@ function LinkForm({ linkId }: { linkId: string }) {
           <p className="text-[11px] leading-snug text-slate-400">
             {link.attachA || link.attachB
               ? `Accroche libre ${link.attachA && link.attachB ? 'aux deux extrémités' : link.attachA ? 'au départ' : 'à l’arrivée'} : la liaison arrive à l’endroit choisi sur la boîte.`
-              : 'Glissez une extrémité (carré vert) sur un équipement pour choisir l’endroit exact où la liaison s’y raccorde — ou pour la brancher ailleurs.'}
+              : 'Glissez une extrémité (carré vert) sur un équipement : seize repères apparaissent tout autour de la boîte — coins, milieux et quarts de chaque côté. Alt enfoncé pour se poser entre deux ; double-clic sur la poignée pour revenir à l’accroche automatique.'}
           </p>
           <div className="grid grid-cols-2 gap-2">
             <Btn

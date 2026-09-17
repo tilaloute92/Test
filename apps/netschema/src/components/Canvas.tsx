@@ -17,7 +17,9 @@ import {
   parallelOffsets,
   pathLength,
   pointAlong,
-  pointToAttach,
+  snapAttach,
+  ANCHOR_RING,
+  attachToPoint,
   resolveSide,
   type LinkGeometry,
 } from '../lib/routing'
@@ -82,6 +84,8 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   /** Point d'accroche choisi sur l'équipement de départ, en mode « Relier ». */
   const connectAttachRef = useRef<Attach | null>(null)
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
+  /** Boîte survolée pendant qu'on pose une accroche, et repère retenu : c'est l'aide visuelle. */
+  const [accroche, setAccroche] = useState<{ nodeId: string; attach: Attach } | null>(null)
   /** Liaison survolée et position du pointeur : c'est ce que l'info-bulle affiche. */
   const [hovered, setHovered] = useState<{ link: NetLink; x: number; y: number } | null>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -192,7 +196,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       // Cliquer près d'un bord fixe le point d'accroche de ce côté ; cliquer au centre
       // laisse l'accroche se calculer, comme avant.
       const point = toDiagram(event.clientX, event.clientY)
-      const attach = edgeAttach(node, point)
+      const attach = edgeAttach(node, point, event.altKey)
       if (!connectFrom) {
         connectAttachRef.current = attach
         store.setConnectFrom(node.id)
@@ -297,18 +301,33 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
    * Accroche déduite d'un clic sur un équipement : seulement si le clic tombe dans la bande
    * proche du bord, là où l'on désigne visiblement un point de branchement précis.
    */
-  const edgeAttach = (node: { x: number; y: number }, point: { x: number; y: number }): Attach | null => {
-    const margin = 14
+  const edgeAttach = (
+    node: { x: number; y: number },
+    point: { x: number; y: number },
+    libre = false,
+  ): Attach | null => {
+    // Zone morte au centre : cliquer sur le nom ou l'icône laisse l'accroche se calculer toute
+    // seule, comme avant. Partout ailleurs, on désigne un point précis.
+    const margin = 20
     const nearEdge =
       Math.abs(point.x - node.x) > NODE_W / 2 - margin || Math.abs(point.y - node.y) > NODE_H / 2 - margin
-    return nearEdge ? pointToAttach(node, point) : null
+    return nearEdge ? snapAttach(node, point, libre) : null
   }
 
-  const nodeAt = (point: { x: number; y: number }) => {
+  /**
+   * Équipement sous le pointeur. `marge` élargit la zone : en tirant une extrémité, on vise le
+   * bord d'une boîte, et le pointeur déborde forcément un peu.
+   */
+  const nodeAt = (point: { x: number; y: number }, marge = 0) => {
     for (let i = display.nodes.length - 1; i >= 0; i -= 1) {
       const node = display.nodes[i]
       if (node.group) continue
-      if (Math.abs(point.x - node.x) <= NODE_W / 2 && Math.abs(point.y - node.y) <= NODE_H / 2) return node
+      if (
+        Math.abs(point.x - node.x) <= NODE_W / 2 + marge &&
+        Math.abs(point.y - node.y) <= NODE_H / 2 + marge
+      ) {
+        return node
+      }
     }
     return null
   }
@@ -348,7 +367,18 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   }
 
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (mode === 'connect' && connectFrom) setCursor(toDiagram(event.clientX, event.clientY))
+    if (mode === 'connect') {
+      const point = toDiagram(event.clientX, event.clientY)
+      if (connectFrom) setCursor(point)
+      // Survol en mode Relier : on montre où la liaison se branchera si l'on clique ici.
+      const survole = nodeAt(point)
+      if (survole && !endpointDragRef.current) {
+        const attach = edgeAttach(survole, point, event.altKey)
+        setAccroche(attach ? { nodeId: survole.id, attach } : { nodeId: survole.id, attach: { dx: 0, dy: 0 } })
+      } else if (!endpointDragRef.current) {
+        setAccroche(null)
+      }
+    }
 
     const labelDrag = labelDragRef.current
     if (labelDrag) {
@@ -363,11 +393,13 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     const endpointDrag = endpointDragRef.current
     if (endpointDrag) {
       const point = toDiagram(event.clientX, event.clientY)
-      const target = nodeAt(point)
+      const target = nodeAt(point, 26)
       if (target) {
-        useDiagram
-          .getState()
-          .attachLink(endpointDrag.linkId, endpointDrag.end, target.id, pointToAttach(target, point))
+        const attach = snapAttach(target, point, event.altKey)
+        setAccroche({ nodeId: target.id, attach })
+        useDiagram.getState().attachLink(endpointDrag.linkId, endpointDrag.end, target.id, attach)
+      } else {
+        setAccroche(null)
       }
       return
     }
@@ -426,6 +458,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     linkDragRef.current = null
     endpointDragRef.current = null
     labelDragRef.current = null
+    setAccroche(null)
   }
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
@@ -972,6 +1005,68 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
               />
             )
           })}
+
+          {/*
+            Repères d'accroche : ils n'apparaissent qu'au moment utile — quand on tire une
+            extrémité ou qu'on relie — et disent, avant le clic, où la liaison se branchera.
+          */}
+          {accroche &&
+            (() => {
+              const cible = nodeById.get(accroche.nodeId)
+              if (!cible) return null
+              const retenu = attachToPoint(cible, accroche.attach)
+              // Les repères gardent leur taille à l'écran : à 40 % de zoom, des pastilles
+              // réduites d'autant ne se verraient plus.
+              const echelle = 1 / Math.max(0.2, view.zoom)
+              return (
+                <g key="reperes" data-export="false" pointerEvents="none">
+                  <rect
+                    x={cible.x - NODE_W / 2 - 3}
+                    y={cible.y - NODE_H / 2 - 3}
+                    width={NODE_W + 6}
+                    height={NODE_H + 6}
+                    rx={10}
+                    fill="none"
+                    stroke="#059669"
+                    strokeWidth={1.4 * echelle}
+                    strokeDasharray={`${5 * echelle} ${4 * echelle}`}
+                    opacity={0.75}
+                  />
+                  {ANCHOR_RING.map((repere) => {
+                    const point = attachToPoint(cible, repere)
+                    const actif =
+                      Math.abs(repere.dx - accroche.attach.dx) < 0.01 &&
+                      Math.abs(repere.dy - accroche.attach.dy) < 0.01
+                    return (
+                      <circle
+                        key={`repere-${repere.dx}-${repere.dy}`}
+                        cx={point.x}
+                        cy={point.y}
+                        r={(actif ? 5 : 2.8) * echelle}
+                        fill={actif ? '#059669' : '#ffffff'}
+                        stroke="#059669"
+                        strokeWidth={(actif ? 2 : 1.2) * echelle}
+                      />
+                    )
+                  })}
+                  {/* Accroche posée entre deux repères (touche Alt) : on la montre quand même. */}
+                  {!ANCHOR_RING.some(
+                    (repere) =>
+                      Math.abs(repere.dx - accroche.attach.dx) < 0.01 &&
+                      Math.abs(repere.dy - accroche.attach.dy) < 0.01,
+                  ) && (
+                    <circle
+                      cx={retenu.x}
+                      cy={retenu.y}
+                      r={5 * echelle}
+                      fill="#059669"
+                      stroke="#ffffff"
+                      strokeWidth={1.6 * echelle}
+                    />
+                  )}
+                </g>
+              )
+            })()}
         </g>
       </svg>
 

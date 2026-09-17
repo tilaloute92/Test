@@ -407,20 +407,23 @@ Le côté ne suffit pas toujours : sur un même bord, deux liaisons se superpose
 parfois brancher *là*, précisément. Les deux extrémités de la liaison sélectionnée sont donc
 des poignées (carrés verts) :
 
-- **Glissez une extrémité sur la boîte d'un équipement** : elle s'accroche à l'endroit exact
-  désigné, n'importe où sur le pourtour. Le point est mémorisé en proportion de la boîte : il
-  suit l'équipement quand on le déplace et reste juste quel que soit le zoom.
+- **Glissez une extrémité sur la boîte d'un équipement** : **seize repères** apparaissent tout
+  autour — les quatre coins, le milieu et les quarts de chaque côté. Le point le plus proche
+  s'allume, et c'est là que la liaison se branche. Le point est mémorisé en proportion de la
+  boîte : il suit l'équipement quand on le déplace et reste juste quel que soit le zoom.
+- **Aimantation** : à moins de onze pixels d'un repère, l'accroche s'y cale. C'est ce qui rend
+  le branchement *fixable* — sans elle, deux liaisons voisines arrivent à trois pixels l'une de
+  l'autre et le schéma part de travers.
+- **Placement libre** : **Alt** enfoncé désactive l'aimant, pour se poser entre deux repères.
 - **Glissez-la sur un *autre* équipement** : la liaison change de destination sans être
   supprimée ni recréée — ses attributs (type, VLAN, débit, ports) sont conservés.
-- **Aimantation** : à quelques pixels du milieu d'une arête, le point s'y cale, pour retrouver
-  facilement l'accroche « propre » d'un schéma rangé.
 - **Amorce** : une accroche choisie à la main fait sortir la liaison perpendiculairement à la
   boîte sur quelques pixels avant de repartir. Sans elle, une accroche prise à revers ferait
   traverser l'équipement au trait.
 - **Double-clic** sur une extrémité, ou bouton *Accroches auto* : retour au calcul
   automatique. À la voix : « Accroches automatiques ».
-- **À la création** : en mode *Relier* (`L`), un clic près d'un bord fixe l'accroche de ce
-  côté ; un clic au centre laisse l'application choisir.
+- **À la création** : en mode *Relier* (`L`), les repères s'affichent au survol de la boîte
+  visée ; cliquer dessus fixe l'accroche, cliquer au centre laisse l'application choisir.
 
 Les poignées sont dessinées au-dessus des équipements : un point de passage posé sur une
 boîte reste attrapable. Elles n'apparaissent jamais dans les exports, et une liaison reportée

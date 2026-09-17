@@ -59,29 +59,51 @@ export function LinkHandles({
     <g data-export="false">
       {/* Extrémités : à tirer sur l'équipement, à l'endroit exact où la liaison doit arriver. */}
       {endpoints.map(({ end, point, free }) => (
-        <rect
-          key={`endpoint-${end}`}
-          data-handle={`endpoint-${end}`}
-          x={point.x - 5.5}
-          y={point.y - 5.5}
-          width={11}
-          height={11}
-          rx={2.5}
-          fill={free ? '#059669' : '#ffffff'}
-          stroke="#059669"
-          strokeWidth={2}
-          style={{ cursor: 'grab' }}
-          onPointerDown={(event) => onEndpointDown(event, link, end)}
-          onDoubleClick={(event) => {
-            event.stopPropagation()
-            onEndpointReset(link)
-          }}
-        >
-          <title>
-            Glisser sur un équipement pour choisir le point d’accroche (ou changer
-            d’équipement) · double-clic : accroche automatique
-          </title>
-        </rect>
+        <g key={`endpoint-${end}`}>
+          {/* Zone de prise généreuse : la poignée se trouve sur le bord d'une boîte, là où se
+              bousculent l'étiquette, le tracé et l'équipement lui-même. */}
+          <rect
+            data-handle={`endpoint-${end}`}
+            x={point.x - 11}
+            y={point.y - 11}
+            width={22}
+            height={22}
+            fill="transparent"
+            style={{ cursor: 'grab' }}
+            onPointerDown={(event) => onEndpointDown(event, link, end)}
+            onDoubleClick={(event) => {
+              event.stopPropagation()
+              onEndpointReset(link)
+            }}
+          >
+            <title>
+              Glisser sur un équipement pour choisir le point d’accroche, tout autour de la
+              boîte · Alt pour se poser entre deux repères · double-clic : accroche automatique
+            </title>
+          </rect>
+          <rect
+            x={point.x - 6.5}
+            y={point.y - 6.5}
+            width={13}
+            height={13}
+            rx={3}
+            fill={free ? '#059669' : '#ffffff'}
+            stroke="#059669"
+            strokeWidth={2.2}
+            pointerEvents="none"
+          />
+          {free && (
+            <rect
+              x={point.x - 2}
+              y={point.y - 2}
+              width={4}
+              height={4}
+              rx={1}
+              fill="#ffffff"
+              pointerEvents="none"
+            />
+          )}
+        </g>
       ))}
       {/* Milieu de segment : tirer ici crée un point de passage. */}
       {segmentMidpoints(geometry).map((handle) => (
