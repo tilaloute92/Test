@@ -11,6 +11,7 @@ import { Toolbar } from './components/Toolbar'
 import { LoginView } from './components/LoginView'
 import { ProjectsDialog } from './components/ProjectsDialog'
 import { UsersDialog } from './components/UsersDialog'
+import { chargerLogos } from './lib/vendorLogos'
 import { useDiagram } from './store/useDiagram'
 import { canEdit, useSession } from './store/useSession'
 
@@ -54,6 +55,10 @@ export default function App() {
   // Le mode — local ou serveur — se découvre au démarrage, en une seule requête.
   useEffect(() => {
     void useSession.getState().start()
+    // Logos constructeurs déposés par l'installation : absents, on garde les monogrammes.
+    void chargerLogos().then((nombre) => {
+      if (nombre > 0) useDiagram.getState().bumpCatalog()
+    })
   }, [])
 
   /**

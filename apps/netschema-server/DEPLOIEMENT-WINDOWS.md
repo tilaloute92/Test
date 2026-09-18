@@ -542,6 +542,19 @@ cd apps\netschema-server\deploy\windows
 Le script recompile et remplace l'installation ; `netschema.env` et le dossier de données sont
 conservés. Une sauvegarde du dossier de données avant mise à jour reste la bonne habitude.
 
+### Logos des constructeurs
+
+Les boîtes du schéma portent le monogramme de leur fabricant. Pour afficher vos logos
+officiels à la place, déposez les fichiers dans `C:\Apps\NetSchema\web\logos` et déclarez-les
+dans `index.json` (voir le `LISEZ-MOI.txt` du même dossier) :
+
+```json
+{ "Cisco": "cisco.svg", "Fortinet": "fortinet.svg" }
+```
+
+Aucun redémarrage : les postes prennent le changement au rechargement de la page. Ces fichiers
+survivent aux mises à jour, qui ne remplacent que l'application compilée.
+
 ### Journal d'audit
 
 `audit.log` contient une ligne JSON par événement : `login`, `login-refuse`, `logout`,

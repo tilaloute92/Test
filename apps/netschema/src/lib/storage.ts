@@ -238,7 +238,21 @@ export function parseDiagram(raw: unknown): Diagram {
     locked: source.locked === true,
     labelsLocked: source.labelsLocked === true,
     layerNames: layerNames(source.layerNames),
+    layerPads: layerPads(source.layerPads),
   }
+}
+
+/** Marges de cadre par couche, bornées : un cadre ne se dessine pas à l'autre bout du plan. */
+function layerPads(value: unknown): Record<string, number> | undefined {
+  if (!isRecord(value)) return undefined
+  const marges: Record<string, number> = {}
+  for (const [rang, marge] of Object.entries(value)) {
+    const nombre = Number(marge)
+    if (/^\d{1,2}$/.test(rang) && Number.isFinite(nombre)) {
+      marges[rang] = Math.max(-20, Math.min(160, Math.round(nombre)))
+    }
+  }
+  return Object.keys(marges).length > 0 ? marges : undefined
 }
 
 /** Noms de couches personnalisés : des rangs numériques vers des libellés courts. */

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { autoLayout, diagramBounds, layerBands } from '../lib/layout'
-import { deviceMeta, findDevice, ROLES } from '../lib/catalog'
+import { deviceMeta, findDevice, ROLES , rankOf } from '../lib/catalog'
 import { bestMatch } from '../lib/speech'
 import { searchModels } from '../lib/vendors'
 import { STATUS_LABELS } from '../lib/inventory'
@@ -180,6 +180,12 @@ interface DiagramStore {
   /** Verrouille ou déverrouille le schéma entier : en lecture seule, plus rien ne bouge. */
   /** Renomme une couche pour ce schéma seulement ; un nom vide rend le nom par défaut. */
   setLayerName: (rank: number, name: string) => void
+  /** Déplace en bloc les équipements d'une couche. */
+  moveLayer: (rank: number, dx: number, dy: number) => void
+  /** Étale ou resserre les équipements d'une couche autour d'un point fixe. */
+  spreadLayer: (rank: number, facteur: number, ancre: number, axe: 'x' | 'y') => void
+  /** Marge du cadre d'une couche, en pixels. */
+  setLayerPad: (rank: number, pad: number) => void
   /** Renomme un site, une zone ou une grappe : tous ses équipements suivent. */
   renameGroup: (type: 'site' | 'zone' | 'cluster', from: string, to: string) => void
   setLocked: (locked: boolean) => void
@@ -574,6 +580,51 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       else delete noms[String(rank)]
       return {
         diagram: { ...state.diagram, layerNames: Object.keys(noms).length > 0 ? noms : undefined },
+      }
+    })
+  },
+
+  moveLayer: (rank, dx, dy) => {
+    if (lockedStore()) return
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        nodes: state.diagram.nodes.map((node) =>
+          rankOf(node.kind, node.rank) === rank
+            ? // Déplacer une couche à la main l'épingle, comme un équipement déplacé : sans
+              // cela, le prochain placement automatique effacerait le geste.
+              { ...node, x: Math.round(node.x + dx), y: Math.round(node.y + dy), pinned: true }
+            : node,
+        ),
+      },
+    }))
+  },
+
+  spreadLayer: (rank, facteur, ancre, axe) => {
+    if (lockedStore()) return
+    const borne = Math.max(0.2, Math.min(4, facteur))
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        nodes: state.diagram.nodes.map((node) => {
+          if (rankOf(node.kind, node.rank) !== rank) return node
+          const valeur = axe === 'x' ? node.x : node.y
+          const suivant = Math.round(ancre + (valeur - ancre) * borne)
+          return { ...node, [axe]: suivant, pinned: true }
+        }),
+      },
+    }))
+  },
+
+  setLayerPad: (rank, pad) => {
+    if (lockedStore()) return
+    set((state) => {
+      const marges = { ...(state.diagram.layerPads ?? {}) }
+      const valeur = Math.max(-20, Math.min(160, Math.round(pad)))
+      if (valeur === 0) delete marges[String(rank)]
+      else marges[String(rank)] = valeur
+      return {
+        diagram: { ...state.diagram, layerPads: Object.keys(marges).length > 0 ? marges : undefined },
       }
     })
   },

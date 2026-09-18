@@ -4,7 +4,7 @@ import { LinkShape, type PlacedLabel } from './LinkShape'
 import { LinkTooltip } from './LinkTooltip'
 import { NodeTooltip } from './NodeTooltip'
 import { NodeShape } from './NodeShape'
-import { LINKS } from '../lib/catalog'
+import { LINKS, rankOf } from '../lib/catalog'
 import { deriveDiagram, groupMembers, type DisplayNode } from '../lib/derive'
 import { setDiagramSvg } from '../lib/exportRegistry'
 import { readProjectFile } from '../lib/storage'
@@ -102,6 +102,14 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   } | null>(null)
   /** Le second clic d'un double-clic vole le focus au champ à peine affiché : on l'ignore. */
   const editionFraiche = useRef(false)
+  const layerDragRef = useRef<{
+    pointerId: number
+    rang: number
+    bord: 'deplacer' | 'debut' | 'fin' | 'marge'
+    depart: { x: number; y: number }
+    cadre: { x: number; y: number; width: number; height: number; centreX: number; centreY: number }
+    padDepart: number
+  } | null>(null)
   /** Liaison survolée et position du pointeur : c'est ce que l'info-bulle affiche. */
   const [hovered, setHovered] = useState<{ link: NetLink; x: number; y: number } | null>(null)
   /** Équipement survolé : même mécanique que pour les liaisons, même délai. */
@@ -128,6 +136,9 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   /** Schéma verrouillé : lecture seule. Étiquettes verrouillées : elles ne se déplacent plus. */
   const locked = useDiagram((s) => s.diagram.locked === true)
   const panel = useDiagram((s) => s.panel)
+  // Le catalogue et les logos constructeurs arrivent après le premier rendu : s'abonner à leur
+  // compteur de révision suffit à repeindre le plan quand ils sont là.
+  const catalogRevision = useDiagram((s) => s.catalogRevision)
   const pannes = useDiagram((s) => s.pannes)
   const labelsLocked = useDiagram((s) => s.diagram.labelsLocked === true)
   const showHops = useDiagram((s) => s.showHops)
@@ -424,6 +435,39 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       return
     }
 
+    const layerDrag = layerDragRef.current
+    if (layerDrag) {
+      const point = toDiagram(event.clientX, event.clientY)
+      const dx = point.x - layerDrag.depart.x
+      const dy = point.y - layerDrag.depart.y
+      const store = useDiagram.getState()
+      const long = direction === 'TB' ? 'x' : 'y'
+
+      if (layerDrag.bord === 'deplacer') {
+        store.moveLayer(layerDrag.rang, dx, dy)
+        layerDrag.depart = point
+      } else if (layerDrag.bord === 'marge') {
+        // Bord en travers : la marge du cadre, sans toucher aux équipements.
+        const sens = direction === 'TB' ? dy : dx
+        store.setLayerPad(layerDrag.rang, layerDrag.padDepart + (point.y < layerDrag.cadre.centreY ? -sens : sens))
+      } else {
+        // Bord long : on étale ou resserre la couche autour du bord opposé.
+        const demi = (direction === 'TB' ? layerDrag.cadre.width : layerDrag.cadre.height) / 2
+        const deplacement = long === 'x' ? dx : dy
+        const signe = layerDrag.bord === 'fin' ? 1 : -1
+        const facteur = demi > 10 ? Math.max(0.25, (demi + signe * deplacement) / demi) : 1
+        const ancre = direction === 'TB' ? layerDrag.cadre.centreX : layerDrag.cadre.centreY
+        store.spreadLayer(layerDrag.rang, facteur, ancre, long)
+        layerDrag.depart = point
+        layerDrag.cadre = {
+          ...layerDrag.cadre,
+          width: direction === 'TB' ? demi * 2 * facteur : layerDrag.cadre.width,
+          height: direction === 'TB' ? layerDrag.cadre.height : demi * 2 * facteur,
+        }
+      }
+      return
+    }
+
     const endpointDrag = endpointDragRef.current
     if (endpointDrag) {
       const point = toDiagram(event.clientX, event.clientY)
@@ -492,6 +536,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     linkDragRef.current = null
     endpointDragRef.current = null
     labelDragRef.current = null
+    layerDragRef.current = null
     setAccroche(null)
     clearTimeout(nodeHoverTimer.current)
     setHoveredNode(null)
@@ -553,6 +598,46 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const framed = display.nodes.filter((node) => !node.group)
   const bounds = diagramBounds(display.nodes)
   const bands = showLayerLabels ? layerBands(display.nodes, direction, diagram.layerNames) : []
+
+  /**
+   * Cadres de couche : le rectangle qui entoure les équipements d'un même rang. Il n'existait
+   * que comme étiquette en marge ; on le dessine pour pouvoir le saisir — le déplacer emmène
+   * la couche, l'étirer étale ses équipements, ses bords longs règlent sa marge.
+   */
+  const cadresCouches = useMemo(() => {
+    void catalogRevision
+    if (!showLayerLabels) return []
+    const parRang = new Map<number, DisplayNode[]>()
+    for (const node of display.nodes) {
+      const rang = rankOf(node.kind, node.rank)
+      const liste = parRang.get(rang)
+      if (liste) liste.push(node)
+      else parRang.set(rang, [node])
+    }
+    return [...parRang.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([rang, noeuds]) => {
+        const marge = 18 + (diagram.layerPads?.[String(rang)] ?? 0)
+        const minX = Math.min(...noeuds.map((n) => n.x)) - NODE_W / 2
+        const maxX = Math.max(...noeuds.map((n) => n.x)) + NODE_W / 2
+        const minY = Math.min(...noeuds.map((n) => n.y)) - NODE_H / 2
+        const maxY = Math.max(...noeuds.map((n) => n.y)) + NODE_H / 2
+        // La couche s'étire dans le sens de la mise en page : marge large dans ce sens,
+        // resserrée en travers, pour que deux couches voisines ne se recouvrent pas.
+        const padLong = direction === 'TB' ? 26 : marge
+        const padTravers = direction === 'TB' ? marge : 26
+        return {
+          rang,
+          noeuds,
+          x: minX - padLong,
+          y: minY - padTravers,
+          width: maxX - minX + padLong * 2,
+          height: maxY - minY + padTravers * 2,
+          centreX: (minX + maxX) / 2,
+          centreY: (minY + maxY) / 2,
+        }
+      })
+  }, [showLayerLabels, display.nodes, direction, diagram.layerPads, catalogRevision])
   const sites = showSites ? groupBoxes(framed, (n) => n.site, 50, 28, direction) : []
   const zones = showZones ? groupBoxes(framed, (n) => n.zone, 26, 14, direction) : []
   const clusters = showClusters ? groupBoxes(framed, (n) => n.cluster, 11, 13, direction) : []
@@ -843,6 +928,34 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     nodeHoverTimer.current = setTimeout(() => setHoveredNode({ node, x, y }), 320)
   }
 
+  /**
+   * Prise en main d'un cadre de couche : déplacement en bloc, ou étirement par un bord.
+   * `bord` vaut 'deplacer' pour le corps du cadre, ou le bord saisi.
+   */
+  const beginLayerDrag = (
+    event: React.PointerEvent<SVGElement>,
+    rang: number,
+    bord: 'deplacer' | 'debut' | 'fin' | 'marge',
+    cadre: { x: number; y: number; width: number; height: number; centreX: number; centreY: number },
+  ) => {
+    event.stopPropagation()
+    if (locked) {
+      useDiagram.getState().notify('Schéma verrouillé : déverrouillez-le pour le modifier.')
+      return
+    }
+    useDiagram.getState().pushHistory()
+    const point = toDiagram(event.clientX, event.clientY)
+    layerDragRef.current = {
+      pointerId: event.pointerId,
+      rang,
+      bord,
+      depart: point,
+      cadre,
+      padDepart: diagram.layerPads?.[String(rang)] ?? 0,
+    }
+    ;(event.currentTarget as SVGElement).setPointerCapture?.(event.pointerId)
+  }
+
   /** Ouvre le champ de renommage à l'endroit du libellé double-cliqué. */
   const ouvrirEdition = (
     type: 'layer' | 'site' | 'zone' | 'cluster',
@@ -1050,6 +1163,31 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
             </g>
           ))}
 
+          {/*
+            Cadres de couche : saisissables. Le corps déplace la couche entière, les bords longs
+            l'étalent ou la resserrent, les bords en travers règlent la marge du cadre.
+          */}
+          {cadresCouches.map((cadre) => (
+            <g key={`couche-${cadre.rang}`} data-couche="bande">
+              {/* Le cadre ne prend pas les clics : à l'intérieur, on doit pouvoir saisir un
+                  équipement ou une liaison comme d'habitude. */}
+              <rect
+                data-cadre={`couche-${cadre.rang}`}
+                x={cadre.x}
+                y={cadre.y}
+                width={cadre.width}
+                height={cadre.height}
+                rx={14}
+                fill="none"
+                stroke="#cbd5e1"
+                strokeWidth={1}
+                strokeDasharray="2 6"
+                pointerEvents="none"
+              />
+
+            </g>
+          ))}
+
           {bands.map((band) =>
             direction === 'TB' ? (
               <text
@@ -1187,6 +1325,75 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
               />
             )
           })}
+
+          {/*
+            Poignées des cadres de couche. Elles vivent dans la couche des poignées : posées
+            plus bas, le tracé de saisie d'une liaison les recouvrirait.
+          */}
+          {cadresCouches.map((cadre) => (
+            <g key={`poignees-couche-${cadre.rang}`} data-export="false">
+              {/* Poignée de déplacement, posée en marge du cadre : elle ne recouvre rien. */}
+              <g
+                data-export="false"
+                data-poignee={`couche-${cadre.rang}`}
+                transform={`translate(${direction === 'TB' ? cadre.x - 9 : cadre.centreX - 14}, ${
+                  direction === 'TB' ? cadre.centreY - 14 : cadre.y - 9
+                })`}
+                style={{ cursor: locked ? 'default' : 'move' }}
+                onPointerDown={(event) => beginLayerDrag(event, cadre.rang, 'deplacer', cadre)}
+              >
+                <title>Glisser pour déplacer toute la couche</title>
+                <rect
+                  width={direction === 'TB' ? 18 : 28}
+                  height={direction === 'TB' ? 28 : 18}
+                  rx={6}
+                  fill="#ffffff"
+                  stroke="#cbd5e1"
+                  strokeWidth={1.2}
+                />
+                {[0, 1, 2].map((rangee) => (
+                  <g key={rangee} fill="#94a3b8">
+                    <circle cx={direction === 'TB' ? 7 : 9 + rangee * 5} cy={direction === 'TB' ? 9 + rangee * 5 : 7} r={1.3} />
+                    <circle cx={direction === 'TB' ? 11 : 9 + rangee * 5} cy={direction === 'TB' ? 9 + rangee * 5 : 11} r={1.3} />
+                  </g>
+                ))}
+              </g>
+
+              {/* Bords longs : étaler ou resserrer. */}
+              {(direction === 'TB'
+                ? [
+                    { bord: 'debut' as const, x: cadre.x, y: cadre.y, w: 10, h: cadre.height, curseur: 'ew-resize' },
+                    { bord: 'fin' as const, x: cadre.x + cadre.width - 10, y: cadre.y, w: 10, h: cadre.height, curseur: 'ew-resize' },
+                    { bord: 'marge' as const, x: cadre.x, y: cadre.y, w: cadre.width, h: 8, curseur: 'ns-resize' },
+                    { bord: 'marge' as const, x: cadre.x, y: cadre.y + cadre.height - 8, w: cadre.width, h: 8, curseur: 'ns-resize' },
+                  ]
+                : [
+                    { bord: 'debut' as const, x: cadre.x, y: cadre.y, w: cadre.width, h: 10, curseur: 'ns-resize' },
+                    { bord: 'fin' as const, x: cadre.x, y: cadre.y + cadre.height - 10, w: cadre.width, h: 10, curseur: 'ns-resize' },
+                    { bord: 'marge' as const, x: cadre.x, y: cadre.y, w: 8, h: cadre.height, curseur: 'ew-resize' },
+                    { bord: 'marge' as const, x: cadre.x + cadre.width - 8, y: cadre.y, w: 8, h: cadre.height, curseur: 'ew-resize' },
+                  ]
+              ).map((poignee, index) => (
+                <rect
+                  key={`poignee-${cadre.rang}-${poignee.bord}-${index}`}
+                  data-export="false"
+                  x={poignee.x}
+                  y={poignee.y}
+                  width={poignee.w}
+                  height={poignee.h}
+                  fill="transparent"
+                  style={{ cursor: locked ? 'default' : poignee.curseur }}
+                  onPointerDown={(event) => beginLayerDrag(event, cadre.rang, poignee.bord, cadre)}
+                >
+                  <title>
+                    {poignee.bord === 'marge'
+                      ? 'Glisser pour agrandir ou resserrer le cadre'
+                      : 'Glisser pour étaler ou resserrer les équipements de la couche'}
+                  </title>
+                </rect>
+              ))}
+            </g>
+          ))}
 
           {/*
             Analyse d'impact : un halo dit l'état de chaque équipement, sans toucher au dessin

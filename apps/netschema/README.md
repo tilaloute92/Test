@@ -558,6 +558,22 @@ Les contrôles de cohérence tournent en continu :
 
 Un clic sur un constat sélectionne les équipements et les liaisons concernés.
 
+## Cadres de couche
+
+Le placement automatique range les équipements par couches. Chaque couche porte un **cadre en
+pointillés** que l'on reprend à la main :
+
+| Geste | Effet |
+| --- | --- |
+| Poignée à gauche du cadre | **Déplace** toute la couche ; ses équipements sont épinglés |
+| Bords dans le sens de la couche | **Étale ou resserre** les équipements autour du centre |
+| Bords en travers | **Agrandit ou réduit le cadre** sans déplacer les équipements |
+| Double-clic sur le nom | **Renomme** la couche |
+
+Les cadres suivent la case *Afficher les noms de couches* et ne figurent pas dans les exports.
+Les poignées sont dessinées au-dessus des liaisons : sans cela, le tracé de saisie d'un lien
+les recouvrirait et personne ne pourrait les attraper.
+
 ## Marques constructeurs
 
 Chaque boîte porte le **monogramme de son constructeur**, dès que le champ *Constructeur* ou le
@@ -566,9 +582,21 @@ réseau aux onduleurs et aux opérateurs français, avec la couleur de la marque
 
 Ce sont volontairement des **initiales dessinées par l'application**, pas les logos officiels :
 un logo est une marque déposée que l'on n'a pas le droit de redistribuer dans un logiciel, et
-un schéma exporté circule — vers un client, un prestataire, un appel d'offres. Si vous tenez
-aux logos officiels, ils se posent en image dans le catalogue d'équipements, et c'est alors
-votre licence d'utilisation qui s'applique.
+un schéma exporté circule — vers un client, un prestataire, un appel d'offres.
+
+**Pour afficher vos logos officiels**, déposez les fichiers dans `public/logos/` (SVG de
+préférence, PNG accepté, 512 Ko au plus) et déclarez-les dans `public/logos/index.json` :
+
+```json
+{ "Cisco": "cisco.svg", "Fortinet": "fortinet.svg", "Aruba": "aruba.png" }
+```
+
+Le nom de gauche est comparé sans accents ni casse ; il peut être celui saisi dans la fiche ou
+le nom canonique de la marque. Sur une installation Windows, le dossier est
+`C:\Apps\NetSchema\web\logos` : déposer un fichier et mettre `index.json` à jour suffit, sans
+réinstaller ni redémarrer le service. Les logos sont **intégrés aux exports** (SVG, PNG, page
+interactive) : le fichier produit reste lisible sans accès au serveur. Le dossier livré est
+vide — c'est votre licence d'utilisation qui s'applique, pas celle de l'application.
 
 La reconnaissance marche aussi sans le champ *Constructeur* : « Catalyst C9300-48P » donne
 Cisco, « FortiGate 100F » donne Fortinet, « Smart-UPS SRT 5000 » donne APC.
@@ -695,6 +723,37 @@ chaque équipement encore joignable, l'essai de chaque autre équipement comme p
 c'est ce qui fait ressortir les points de passage uniques d'un réseau déjà entamé. Les liaisons
 de service (battement de cœur, réplication, administration hors bande, alimentation) ne
 comptent pas comme chemin de données.
+
+### Ce que l'analyse lit au niveau 2
+
+- **VLAN et trunks** : un VLAN n'est transporté que s'il est autorisé **aux deux extrémités**
+  du trunk — l'intersection des deux listes, comme sur un vrai commutateur. Le rapport nomme
+  les VLAN interrompus (avec leur libellé du plan d'adressage) et les équipements qu'ils
+  desservaient.
+- **Ports d'accès** : un port en accès ne porte que son VLAN ; les équipements qui en dépendent
+  tombent avec lui. Les ports concernés sont listés avec leur mode, prêts à recopier dans un
+  ticket d'intervention.
+- **Trunk de secours incomplet** : quand un chemin physique subsiste mais n'autorise pas le
+  VLAN, l'analyse le dit explicitement plutôt que de conclure à une coupure. C'est l'erreur de
+  configuration la plus banale, et la plus pénible à trouver le jour de la panne.
+- **Spanning-tree** : un lien en état alternatif ou bloqué ne transporte rien en temps normal,
+  mais reprend après convergence. Il est écarté de l'état nominal, compté dans l'état
+  d'après-panne, et signalé — avec le délai à attendre : 1 à 3 s en RSTP/MSTP, jusqu'à 50 s en
+  spanning-tree historique.
+
+### Des constats, pas des chiffres
+
+Chaque point est rédigé en trois temps — **ce que l'on voit**, **ce que cela implique**, **ce
+qu'il faut faire** — classé par gravité (critique, majeur, mineur, information). Le bouton
+*Copier l'analyse* met le tout dans le presse-papiers, à coller dans un ticket ou un compte
+rendu d'incident.
+
+Exemple, pour l'arrêt d'un switch de distribution sur le schéma d'exemple :
+
+> **[Critique] VLAN 20 (Bureautique Bât. A) interrompu pour 2 équipement(s) sur 2**
+> Plus aucune liaison ne transporte le VLAN 20 vers SW-ACC-A1, Postes Bât. A.
+> *À faire : prévoir un second chemin de niveau 2 pour le VLAN 20, ou router ce segment plutôt
+> que l'étendre.*
 
 À la voix : « simule la panne de SW-CORE-01 », « débranche la liaison entre SW-CORE-01 et
 FW-01 », « quel est l'impact », « rétablis ».
@@ -850,6 +909,7 @@ src/
   lib/ha.ts             analyse haute disponibilité (points d'articulation + règles métier)
   lib/impact.ts         analyse d'impact : joignabilité après panne, fragilité, criticité
   lib/vendorMarks.ts    monogrammes des constructeurs (dessinés, pas des logos déposés)
+  lib/vendorLogos.ts    logos officiels déposés par l'installation (public/logos)
   lib/patterns.ts       bibliothèque de modèles d'architectures redondées
   lib/routing.ts        tracé des liaisons : automatique, points de passage, accroches libres, courbes
   lib/crossings.ts      croisements à enjamber (ponts) et détection des superpositions

@@ -250,6 +250,53 @@ export function GuideView() {
       ),
     },
     {
+      id: 'couches',
+      title: 'Cadres de couche et marques constructeurs',
+      keywords: 'couche cadre bande placement automatique agrandir reduire deplacer etaler resserrer marge poignee constructeur logo marque monogramme vendor cisco fortinet',
+      body: (
+        <>
+          <P>
+            Le placement automatique range les équipements par couches — Internet/WAN,
+            périmètre, sécurité, cœur, distribution, accès… Chaque couche a désormais un{' '}
+            <b>cadre en pointillés</b> que l'on peut reprendre à la main.
+          </P>
+          <List
+            items={[
+              <>
+                <b>Déplacer</b> : la poignée à gauche du cadre (les six points). Toute la couche
+                suit, et ses équipements sont épinglés — le prochain placement automatique ne
+                les reprendra plus.
+              </>,
+              <>
+                <b>Étaler ou resserrer</b> : les bords dans le sens de la couche. Les équipements
+                s'écartent ou se rapprochent autour du centre du cadre.
+              </>,
+              <>
+                <b>Agrandir ou réduire le cadre</b> : les bords en travers. Là, seule la marge du
+                cadre change ; les équipements ne bougent pas.
+              </>,
+              <>
+                <b>Renommer</b> : double-clic sur le nom de la couche, en marge du schéma.
+              </>,
+            ]}
+          />
+          <Note>
+            Les cadres n'apparaissent que si <i>Afficher les noms de couches</i> est coché dans
+            l'inspecteur, et ne figurent pas dans les exports.
+          </Note>
+          <P>
+            Chaque boîte porte par ailleurs le <b>monogramme de son constructeur</b>, reconnu
+            par le champ <i>Constructeur</i> ou, à défaut, par le modèle. Pour afficher vos
+            <b> logos officiels</b> à la place, déposez les fichiers dans{' '}
+            <code className="rounded bg-slate-100 px-1">public/logos/</code> et déclarez-les dans{' '}
+            <code className="rounded bg-slate-100 px-1">index.json</code> : ils sont alors
+            intégrés au schéma et à ses exports. L'application ne les fournit pas — ce sont des
+            marques déposées, et le droit de les utiliser est le vôtre, pas le sien.
+          </P>
+        </>
+      ),
+    },
+    {
       id: 'impact',
       title: 'Analyse d’impact : « que se passe-t-il si… »',
       keywords: 'impact panne simulation coupure arret switch cable debranche isole fragile redondance continuite pra pca criticite risque que se passe t il',
@@ -279,6 +326,26 @@ export function GuideView() {
               </>,
             ]}
           />
+          <P>
+            L'analyse descend au niveau 2. Un VLAN n'est transporté que s'il est autorisé{' '}
+            <b>aux deux extrémités</b> du trunk : le rapport nomme les VLAN interrompus, les
+            équipements qu'ils desservaient, et distingue le cas où <i>un chemin physique
+            subsiste mais n'autorise pas le VLAN</i> — la liste d'autorisation incomplète du
+            lien de secours, erreur classique et pénible à trouver le jour de la panne. Les
+            ports concernés sont listés avec leur mode (accès ou trunk), prêts à recopier dans
+            un ticket.
+          </P>
+          <P>
+            Les liens en état <b>alternatif ou bloqué</b> (spanning-tree) ne transportent rien
+            en temps normal mais reprennent après convergence : le rapport signale lequel prend
+            le relais et rappelle le délai — 1 à 3 s en RSTP/MSTP, jusqu'à 50 s en STP
+            historique.
+          </P>
+          <Note>
+            Chaque constat est rédigé en trois temps — ce que l'on voit, ce que cela implique,
+            ce qu'il faut faire — et le bouton <i>Copier l'analyse</i> met le tout dans le
+            presse-papiers, à coller dans un ticket ou un compte rendu d'incident.
+          </Note>
           <Note>
             Les liaisons de service — battement de cœur, réplication, administration hors bande,
             alimentation — ne comptent pas comme chemin de données : un onduleur relié par son

@@ -1,4 +1,5 @@
 import { deviceMeta, ROLES } from '../lib/catalog'
+import { logoDe } from '../lib/vendorLogos'
 import { vendorMark } from '../lib/vendorMarks'
 import { groupSummary, type DisplayNode } from '../lib/derive'
 import { DeviceIcon } from '../lib/icons'
@@ -58,6 +59,8 @@ export function NodeShape({
   const role = node.role && node.role !== 'standalone' ? ROLES[node.role] : undefined
   // Marque du constructeur : un monogramme, dessiné par l'application (voir vendorMarks.ts).
   const marque = group ? null : vendorMark(node.vendor, node.model)
+  // Logo officiel déposé par l'installation (public/logos) : il prend la place du monogramme.
+  const logo = group ? null : logoDe(node.vendor, node.model)
   const badgeWidth = role ? role.badge.length * 6 + 12 : 0
 
   return (
@@ -181,28 +184,29 @@ export function NodeShape({
         </>
       )}
 
-      {marque && (
-        <g transform="translate(9, 5)">
-          <title>{marque.label}</title>
-          <rect
-            width={marque.code.length * 5.6 + 8}
-            height={12}
-            rx={3}
-            fill={marque.color}
-            opacity={0.14}
-          />
-          <text
-            x={(marque.code.length * 5.6 + 8) / 2}
-            y={8.8}
-            textAnchor="middle"
-            fontSize={7.6}
-            fontWeight={700}
-            letterSpacing="0.3"
-            fill={marque.color}
-          >
-            {marque.code}
-          </text>
+      {logo ? (
+        <g transform={`translate(${NODE_W - 24}, ${NODE_H - 22})`}>
+          <title>{marque?.label ?? node.vendor ?? 'Constructeur'}</title>
+          <image href={logo} x={0} y={0} width={18} height={18} preserveAspectRatio="xMidYMid meet" />
         </g>
+      ) : (
+        marque && (
+          <g transform={`translate(9, 5)`}>
+            <title>{marque.label}</title>
+            <rect width={marque.code.length * 6.4 + 10} height={14} rx={4} fill={marque.color} />
+            <text
+              x={(marque.code.length * 6.4 + 10) / 2}
+              y={10.2}
+              textAnchor="middle"
+              fontSize={8.8}
+              fontWeight={700}
+              letterSpacing="0.4"
+              fill="#ffffff"
+            >
+              {marque.code}
+            </text>
+          </g>
+        )
       )}
 
       {flagged && (

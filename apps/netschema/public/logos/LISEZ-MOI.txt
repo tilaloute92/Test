@@ -1,0 +1,33 @@
+Logos des constructeurs
+=======================
+
+L'application dessine par défaut un monogramme coloré par constructeur (CIS pour Cisco, FTN
+pour Fortinet…). Elle n'embarque pas les logos officiels : ce sont des marques déposées, dont
+le droit d'usage appartient à celui qui exploite les schémas, pas à l'outil qui les dessine.
+
+Pour utiliser les logos auxquels vous avez droit :
+
+1. Déposez les fichiers dans ce dossier (SVG de préférence, PNG accepté, 512 Ko au plus).
+   Un logo carré ou proche du carré donne le meilleur rendu : il est posé dans un carré de
+   18 × 18 points sur la boîte de l'équipement.
+
+2. Déclarez-les dans index.json, en associant le nom du constructeur au nom du fichier :
+
+   {
+     "Cisco": "cisco.svg",
+     "Fortinet": "fortinet.svg",
+     "Aruba": "aruba.png"
+   }
+
+   Le nom de gauche est comparé sans tenir compte des accents, des espaces ni de la casse. Il
+   peut être celui saisi dans la fiche de l'équipement, ou le nom canonique de la marque.
+
+3. Rechargez l'application. Les équipements dont le constructeur correspond portent désormais
+   le logo ; les autres gardent leur monogramme.
+
+Les logos sont intégrés aux exports (SVG, PNG, page interactive) : le fichier produit reste
+lisible sans accès au serveur.
+
+Sur une installation Windows, ce dossier se trouve dans C:\Apps\NetSchema\web\logos : on y
+dépose les fichiers et on met index.json à jour, sans réinstaller ni redémarrer le service.
+Les navigateurs déjà ouverts prennent le changement au rechargement de la page.

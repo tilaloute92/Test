@@ -239,6 +239,11 @@ export interface Diagram {
    * devient « Étage 2 ». Absent = le nom par défaut de la couche.
    */
   layerNames?: Record<string, string>
+  /**
+   * Marge supplémentaire du cadre d'une couche, en pixels. Le cadre se dessine autour des
+   * équipements de la couche ; cette marge permet de l'agrandir ou de le resserrer à la main.
+   */
+  layerPads?: Record<string, number>
 }
 
 /**
