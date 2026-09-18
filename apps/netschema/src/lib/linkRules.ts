@@ -1,10 +1,12 @@
 import { deviceMeta, rankOf } from './catalog'
 import type { LinkKind, NetNode } from '../types'
 
-const SWITCHES = new Set(['core-switch', 'switch', 'access-switch', 'spine', 'leaf'])
+const SWITCHES = new Set(['core-switch', 'switch', 'access-switch', 'spine', 'leaf', 'industrial-switch'])
 const POWER = new Set(['ups', 'pdu', 'generator', 'cooling'])
 const STORAGE = new Set(['storage', 'nvme-storage', 'object-storage', 'backup', 'tape-backup', 'managed-db'])
-const MANAGEMENT = new Set(['bastion', 'nms', 'siem', 'pam', 'vuln-scanner'])
+const MANAGEMENT = new Set(['bastion', 'nms', 'siem', 'pam', 'vuln-scanner', 'console-server'])
+/** Ce qui ne se raccorde qu'en optique : SAN Fibre Channel, transport DWDM, conversion. */
+const OPTIQUE = new Set(['san-switch', 'dwdm', 'media-converter'])
 const OVERLAY = new Set(['sdwan', 'sase-pop', 'cloud-interconnect', 'vpc', 'cloud-region'])
 
 /**
@@ -23,6 +25,7 @@ export function suggestLinkKind(a: NetNode, b: NetNode): LinkKind {
   if (sameCluster) return kinds.every((kind) => SWITCHES.has(kind)) ? 'stack' : 'heartbeat'
   if (kinds.every((kind) => STORAGE.has(kind))) return 'replication'
   if (kinds.some((kind) => MANAGEMENT.has(kind))) return 'oob'
+  if (kinds.some((kind) => OPTIQUE.has(kind))) return 'fiber'
   if (kinds.some((kind) => OVERLAY.has(kind))) return 'overlay'
 
   const rankA = rankOf(a.kind, a.rank)

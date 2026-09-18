@@ -1,9 +1,28 @@
 {
   "id": "ot-industriel",
   "title": "OT / industriel",
-  "version": "2026.1",
-  "description": "Convergence IT/OT : automates, supervision industrielle, passerelles et capteurs.",
+  "version": "2026.2",
+  "description": "Convergence IT/OT : automates, supervision industrielle, commutation durcie, passerelles et capteurs.",
   "devices": [
+    {
+      "id": "industrial-switch",
+      "label": "Switch industriel (rail DIN)",
+      "rank": 4,
+      "icon": "din-switch",
+      "family": "Industriel (OT)",
+      "infrastructure": true,
+      "critical": true,
+      "aliases": [
+        "industriel",
+        "din",
+        "durci",
+        "scalance",
+        "moxa",
+        "hirschmann",
+        "anneau",
+        "ot"
+      ]
+    },
     {
       "id": "plc",
       "label": "Automate (PLC)",
@@ -11,7 +30,13 @@
       "icon": "chip",
       "family": "Industriel (OT)",
       "critical": true,
-      "aliases": ["automate", "plc", "api", "siemens", "schneider"]
+      "aliases": [
+        "automate",
+        "plc",
+        "api",
+        "siemens",
+        "schneider"
+      ]
     },
     {
       "id": "scada",
@@ -20,7 +45,12 @@
       "icon": "gauge",
       "family": "Industriel (OT)",
       "critical": true,
-      "aliases": ["scada", "supervision", "hmi", "ihm"]
+      "aliases": [
+        "scada",
+        "supervision",
+        "hmi",
+        "ihm"
+      ]
     },
     {
       "id": "ot-gateway",
@@ -30,7 +60,12 @@
       "family": "Industriel (OT)",
       "infrastructure": true,
       "critical": true,
-      "aliases": ["passerelle", "diode", "dmz industrielle", "purdue"]
+      "aliases": [
+        "passerelle",
+        "diode",
+        "dmz industrielle",
+        "purdue"
+      ]
     },
     {
       "id": "iot-sensor",
@@ -38,7 +73,12 @@
       "rank": 7,
       "icon": "antenna",
       "family": "Industriel (OT)",
-      "aliases": ["capteur", "iot", "lora", "sonde"]
+      "aliases": [
+        "capteur",
+        "iot",
+        "lora",
+        "sonde"
+      ]
     }
   ]
 }

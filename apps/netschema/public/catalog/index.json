@@ -1,5 +1,7 @@
 {
   "catalog": "netschema",
-  "version": "2026.1",
-  "packs": ["ot-industriel.json"]
+  "version": "2026.2",
+  "packs": [
+    "ot-industriel.json"
+  ]
 }

@@ -85,6 +85,10 @@ const ROUTING_WORDS: Record<string, 'static' | 'ospf' | 'bgp' | 'eigrp' | 'is-is
 }
 
 const NAME_HINTS: { pattern: RegExp; kind: string }[] = [
+  { pattern: /^(wlc|ctrl-?wifi|controleur|contrôleur)/i, kind: 'wlan-controller' },
+  { pattern: /^(fc|sw-?fc|sansw)/i, kind: 'san-switch' },
+  { pattern: /^(pp|patch|brassage)/i, kind: 'patch-panel' },
+  { pattern: /^(ipbx|pbx)/i, kind: 'ipbx' },
   { pattern: /^(fw|pare-?feu|ngfw)/i, kind: 'firewall' },
   { pattern: /^(rtr|rout)/i, kind: 'router' },
   { pattern: /^(sw-?core|core)/i, kind: 'core-switch' },

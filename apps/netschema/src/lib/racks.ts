@@ -19,6 +19,12 @@ const DEFAULT_HEIGHTS: Record<string, number> = {
   router: 1,
   firewall: 1,
   ngfw: 1,
+  'san-switch': 1,
+  'wlan-controller': 1,
+  'net-controller': 1,
+  'console-server': 1,
+  'patch-panel': 1,
+  ipbx: 2,
 }
 
 export function defaultHeight(kind: string): number {
@@ -53,6 +59,9 @@ export function isRackable(node: NetNode): boolean {
     'camera',
     'iot-sensor',
     'witness',
+    'dect',
+    'visio',
+    'wifi-bridge',
   ])
   return !virtual.has(node.kind)
 }

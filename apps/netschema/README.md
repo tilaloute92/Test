@@ -16,9 +16,10 @@ du parc, l'**implantation en baies** et la **découverte réseau** — auxquels 
 que celui câblé sur le schéma et listé à l'inventaire.
 
 Le catalogue d'équipements couvre l'état de l'art 2026 — SD-WAN et SASE/SSE, fabric
-spine-leaf VXLAN/EVPN, Wi-Fi 7, 5G, Kubernetes et serverless, serveurs GPU, pile Zero Trust
-(ZTNA, WAF, EDR/XDR, SIEM/SOAR, PAM, HSM), OT/industriel — et il se met à jour **sans
-recompiler l'application**.
+spine-leaf VXLAN/EVPN, Wi-Fi 7 et **contrôleurs Wi-Fi**, 5G, SAN Fibre Channel, hyperconvergé
+(Nutanix, VxRail, SimpliVity), Kubernetes et serverless, serveurs GPU, pile Zero Trust (ZTNA,
+WAF, EDR/XDR, SIEM/SOAR, PAM, HSM), **voix sur IP**, brassage et accès hors bande,
+OT/industriel — et il se met à jour **sans recompiler l'application**.
 
 Elle vit dans `apps/netschema/` et ne partage rien avec l'application de suivi d'équipe à la
 racine du dépôt : dépendances, build et déploiement sont indépendants.
@@ -137,17 +138,40 @@ directement ; le type et la baie renvoient au schéma et à la salle.
 
 ### Base de matériels constructeurs
 
-La colonne *Modèle* est un champ de recherche sur une base d'environ 145 matériels : on tape
-« r760 », « fortigate », « nutanix », « catalyst » et la fiche se remplit — constructeur,
-modèle, hauteur en U et consommation indicative. Le type d'équipement est aligné au passage
-(un FortiGate devient un pare-feu nouvelle génération, une AFF A250 une baie de stockage).
+La colonne *Modèle* est un champ de recherche sur une base d'environ 325 matériels de 90
+constructeurs : on tape « r760 », « fortigate », « 9800 », « nutanix », « catalyst » et la
+fiche se remplit — constructeur, modèle, hauteur en U et consommation indicative. Le type
+d'équipement est aligné au passage (un FortiGate devient un pare-feu nouvelle génération, un
+Catalyst 9800 un contrôleur Wi-Fi, une AFF A250 une baie de stockage).
 
-Constructeurs couverts : Cisco (Catalyst, Nexus, ISR/ASR, Firepower, Meraki), Dell
-(PowerEdge, PowerStore, PowerVault, PowerSwitch), HPE (ProLiant, Alletra, Nimble, MSA,
-SimpliVity), Aruba, Nutanix, Palo Alto Networks, Fortinet, Juniper, Arista, Extreme,
-Ubiquiti, Check Point, Sophos, Stormshield, WatchGuard, F5, Citrix, Radware, NetApp, Pure
-Storage, Synology, QNAP, Quantum, Veritas, Rubrik, Lenovo, Supermicro, NVIDIA, IBM, APC,
-Eaton, Legrand, Schneider Electric, HP, Xerox, Yealink, Axis, Siemens.
+Constructeurs couverts :
+
+- **Réseau** : Cisco (Catalyst, Nexus, ISR/ASR, Catalyst 8000, Firepower, Meraki, MDS),
+  Aruba (CX, contrôleurs 7000/9000, EdgeConnect), Juniper (EX, QFX, SRX, MX, Mist), Arista,
+  Extreme, Huawei, Alcatel-Lucent Enterprise, Ubiquiti, MikroTik, Netgear, TP-Link (Omada),
+  D-Link, Zyxel, Allied Telesis, Ruckus, Cambium, Peplink, Cradlepoint, Teltonika, Versa,
+  Nokia, Ciena, Smartoptics.
+- **Sans fil piloté** : contrôleurs Cisco 9800, Aruba 7030/7210/9012, Ruckus SmartZone,
+  Huawei AC6508/AC6805, FortiWLC, ExtremeCloud IQ, Mist Edge, UniFi, Omada.
+- **Calcul & hyperconvergé** : Nutanix (NX-1065 à NX-9151, Prism Central), Dell (PowerEdge,
+  VxRail, XC Core, AX), HPE (ProLiant, SimpliVity, DX Nutanix, Synergy, Alletra dHCI), Cisco
+  UCS et HyperFlex, Lenovo (ThinkSystem, ThinkAgile), Fujitsu, Supermicro, Scale Computing,
+  NVIDIA, IBM.
+- **Stockage, SAN & sauvegarde** : NetApp, Pure Storage, Dell (PowerStore, PowerScale,
+  PowerProtect), HPE (Alletra, Nimble, MSA, StoreOnce), Huawei OceanStor, IBM FlashSystem,
+  Synology, QNAP, Brocade, Quantum, Veeam, Veritas, Rubrik, Cohesity, ExaGrid, Commvault.
+- **Sécurité** : Palo Alto Networks, Fortinet, Check Point, Sophos, Stormshield, WatchGuard,
+  SonicWall, Barracuda, F5, Citrix, Radware.
+- **Services réseau & visibilité** : Infoblox, EfficientIP, Meinberg, Gigamon, Keysight,
+  Profitap.
+- **Voix & collaboration** : Alcatel-Lucent OmniPCX, Mitel, Cisco, 3CX, Sangoma, AudioCodes,
+  Spectralink, Yealink, Poly, Logitech.
+- **Câblage & hors bande** : Legrand, Panduit, Nexans, Opengear, Lantronix, Vertiv, Raritan,
+  Moxa.
+- **Industriel (OT)** : Siemens (SCALANCE, SIMATIC), Schneider Electric (Modicon), Moxa,
+  Hirschmann, Phoenix Contact, Kerlink, Milesight.
+- **Énergie, environnement & périphériques** : APC, Eaton, Legrand, Schneider Electric,
+  Vertiv, HP, Xerox, Axis, Orange, SFR.
 
 Le champ reste libre : la base est une aide à la saisie, pas une contrainte. Un filtre
 *constructeur* s'ajoute aux filtres de l'inventaire.
@@ -577,8 +601,9 @@ les recouvrirait et personne ne pourrait les attraper.
 ## Marques constructeurs
 
 Chaque boîte porte le **monogramme de son constructeur**, dès que le champ *Constructeur* ou le
-modèle permet de le reconnaître — une soixantaine de fabricants sont connus, des équipementiers
-réseau aux onduleurs et aux opérateurs français, avec la couleur de la marque.
+modèle permet de le reconnaître — une centaine de fabricants sont connus, des équipementiers
+réseau aux automates industriels, aux onduleurs et aux opérateurs français, avec la couleur de
+la marque.
 
 Ce sont volontairement des **initiales dessinées par l'application**, pas les logos officiels :
 un logo est une marque déposée que l'on n'a pas le droit de redistribuer dans un logiciel, et
@@ -608,19 +633,21 @@ Le catalogue est décrit **en données, pas en code** : un type d'équipement es
 pictogramme du registre d'icônes. Ajouter une technologie ne demande donc ni composant à
 écrire, ni dessin, ni compilation.
 
-### Ce qu'il contient (version 2026.1, 5 lots embarqués, ~76 types)
+### Ce qu'il contient (version 2026.2, 7 lots embarqués, ~90 types)
 
 | Lot | Contenu |
 | --- | --- |
 | **Socle réseau** | Internet, opérateur, routeur, pare-feu, répartiteur, switches cœur / distribution / accès, Wi-Fi, serveur, hyperviseur, stockage, sauvegarde, témoin, postes, onduleur, PDU |
-| **Réseau moderne** | Boîtier SD-WAN, point de présence SASE/SSE, CDN / edge, filtrage anti-DDoS, routeur 5G/LTE, liaison satellite, multiplexeur DWDM, switches **spine** et **leaf** (fabric VXLAN/EVPN), TAP / packet broker, borne **Wi-Fi 7**, passerelle API, maillage de services, DNS/DHCP/IPAM, serveur de temps NTP/PTP |
+| **Réseau moderne** | Boîtier SD-WAN, point de présence SASE/SSE, CDN / edge, filtrage anti-DDoS, routeur 5G/LTE, modem / ONT opérateur, liaison satellite, pont Wi-Fi / faisceau hertzien, multiplexeur DWDM, switches **spine** et **leaf** (fabric VXLAN/EVPN), **switch SAN Fibre Channel**, TAP / packet broker, borne **Wi-Fi 7**, **contrôleur Wi-Fi (WLC)**, **contrôleur réseau / SDN**, concentrateur VPN, passerelle API, maillage de services, DNS/DHCP/IPAM, serveur de temps NTP/PTP |
 | **Sécurité & Zero Trust** | NGFW, WAF, IDS/IPS, **ZTNA**, passerelle SSE (SWG/CASB), sécurité de la messagerie, NAC 802.1X, bastion, PAM, identité/SSO/MFA, SIEM, SOAR, EDR/XDR, HSM, autorité de certification, scanner de vulnérabilités, DLP, MDM/UEM, leurre |
 | **Cloud & conteneurs** | Région cloud, VPC, interconnexion cloud, cluster Kubernetes, plan de contrôle et nœuds K8s, registre d'images, fonction serverless, file de messages, base managée, stockage objet, **serveur GPU / IA**, agent CI/CD |
 | **Datacenter & salle** | Nœud hyperconvergé, bare metal, baie NVMe / NVMe-oF, sauvegarde immuable / bande, baie, supervision NMS, caméra IP, groupe électrogène, climatisation |
+| **Câblage & exploitation** | Panneau de brassage, convertisseur optique, serveur de console (accès hors bande) |
+| **Voix & collaboration** | IPBX / serveur de téléphonie, passerelle voix / trunk SIP, contrôleur de session (SBC), borne DECT, salle de visioconférence |
 
-Un sixième lot, **OT / industriel** (automate, SCADA, passerelle IT/OT, capteur IoT), est livré
-dans `public/catalog/` : il n'est pas compilé dans l'application mais chargé au démarrage —
-c'est la démonstration du mécanisme de mise à jour.
+Un huitième lot, **OT / industriel** (switch industriel sur rail DIN, automate, SCADA,
+passerelle IT/OT, capteur IoT), est livré dans `public/catalog/` : il n'est pas compilé dans
+l'application mais chargé au démarrage — c'est la démonstration du mécanisme de mise à jour.
 
 ### Trois façons de le mettre à jour
 
@@ -927,7 +954,7 @@ src/
   lib/racks.ts          occupation des baies, hauteurs, chevauchements
   lib/voice.ts          grammaire des commandes vocales et reconnaissance du navigateur
   lib/speech.ts         préparation de la dictée : nombres, sigles épelés, correspondance approchée
-  lib/vendors.ts        base de matériels constructeurs (≈145 références)
+  lib/vendors.ts        base de matériels constructeurs (≈325 références)
   lib/drawio.ts         import des schémas draw.io / diagrams.net
   store/useDiagram.ts   état global (zustand) : schéma, sélection, vue, historique
   store/useAudit.ts     analyse HA mémorisée sur la version courante du schéma

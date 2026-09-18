@@ -47,6 +47,10 @@ export function detectFormat(text: string): DiscoveryFormat {
 
 const PLATFORM_HINTS: { pattern: RegExp; kind: string }[] = [
   { pattern: /fortigate|palo\s?alto|checkpoint|asa\b|srx|pfsense|firewall/i, kind: 'ngfw' },
+  { pattern: /9800|wlc\b|wism|smartzone|zonedirector|mobility (controller|conductor)/i, kind: 'wlan-controller' },
+  { pattern: /mds 9|brocade|fibre ?channel|\bfc ?switch/i, kind: 'san-switch' },
+  { pattern: /scalance|moxa|hirschmann|phoenix contact/i, kind: 'industrial-switch' },
+  { pattern: /opengear|console ?server|avocent|nport/i, kind: 'console-server' },
   { pattern: /nexus|catalyst 9[5-6]|c9500|c9600|core/i, kind: 'core-switch' },
   { pattern: /air-|aironet|access point|\bap\b|unifi|aruba ap/i, kind: 'wifi7' },
   { pattern: /isr|asr\b|router|rtr|mx\d|vedge|velocloud/i, kind: 'router' },
@@ -56,6 +60,8 @@ const PLATFORM_HINTS: { pattern: RegExp; kind: string }[] = [
   { pattern: /ups|smart-?ups|galaxy|eaton/i, kind: 'ups' },
   { pattern: /pdu|rack ?pdu/i, kind: 'pdu' },
   { pattern: /printer|laserjet|imprimante/i, kind: 'printer' },
+  { pattern: /ipbx|\bpbx\b|omnipcx|asterisk|mediant|audiocodes/i, kind: 'ipbx' },
+  { pattern: /\bont\b|livebox|\bmodem\b/i, kind: 'modem' },
   { pattern: /phone|téléphone|voip|sip/i, kind: 'phone' },
 ]
 

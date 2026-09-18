@@ -48,6 +48,10 @@ const SWITCHING_KINDS = new Set([
   'wifi',
   'wifi7',
   'network-tap',
+  'industrial-switch',
+  'san-switch',
+  'wifi-bridge',
+  'dect',
 ])
 
 /** Équipements qui routent ou terminent un réseau IP. */
@@ -73,10 +77,24 @@ const ROUTING_KINDS = new Set([
   'sase-pop',
   'cdn',
   'ot-gateway',
+  'wlan-controller',
+  'vpn-concentrator',
+  'modem',
 ])
 
-/** Équipements d'énergie et d'environnement : hors modèle OSI. */
-const NON_NETWORK_KINDS = new Set(['ups', 'pdu', 'generator', 'cooling'])
+/**
+ * Équipements sans pile réseau : l'énergie, l'environnement et le brassage passif. Ils
+ * existent au niveau physique — un panneau de brassage se voit et se câble — mais ils ne
+ * commutent ni ne routent : ils disparaissent des vues 2 et 3.
+ */
+const NON_NETWORK_KINDS = new Set([
+  'ups',
+  'pdu',
+  'generator',
+  'cooling',
+  'patch-panel',
+  'media-converter',
+])
 
 /** Extérieurs dont on ne documente pas l'adressage : on ne numérote pas Internet. */
 const OPAQUE_KINDS = new Set(['internet', 'cloud', 'cdn', 'sase-pop', 'satellite', 'cloud-region'])

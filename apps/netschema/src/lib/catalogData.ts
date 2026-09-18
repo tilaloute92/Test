@@ -45,10 +45,13 @@ export const FAMILY_ORDER = [
   'Sécurité',
   'Commutation & fabric',
   'Sans fil & accès',
+  'Câblage & exploitation',
   'Calcul & virtualisation',
   'Conteneurs & cloud',
   'Données & sauvegarde',
   'Identité & supervision',
+  'Voix & collaboration',
+  'Industriel (OT)',
   'Utilisateurs & périphériques',
   'Énergie & environnement',
 ]
@@ -58,6 +61,8 @@ const EDGE = 'Périmètre & routage'
 const SEC = 'Sécurité'
 const SW = 'Commutation & fabric'
 const ACCESS = 'Sans fil & accès'
+const CABLE = 'Câblage & exploitation'
+const VOIX = 'Voix & collaboration'
 const COMPUTE = 'Calcul & virtualisation'
 const CLOUD = 'Conteneurs & cloud'
 const DATA = 'Données & sauvegarde'
@@ -99,8 +104,9 @@ const BASE: CatalogPack = {
 const NETWORK: CatalogPack = {
   id: 'reseau-moderne',
   title: 'Réseau moderne',
-  version: '2026.1',
-  description: 'SD-WAN, SASE/SSE, fabric spine-leaf VXLAN/EVPN, Wi-Fi 7, 5G, services réseau.',
+  version: '2026.2',
+  description:
+    'SD-WAN, SASE/SSE, fabric spine-leaf VXLAN/EVPN, Wi-Fi 7 piloté, SAN, 5G, services réseau.',
   devices: [
     { id: 'sdwan', label: 'Boîtier SD-WAN', rank: 1, icon: 'router-cloud', family: EDGE, infrastructure: true, critical: true, aliases: ['sd-wan', 'sdwan', 'overlay', 'velocloud', 'viptela'] },
     { id: 'sase-pop', label: 'Point de présence SASE', rank: 0, icon: 'cloud-shield', family: EXT, infrastructure: true, aliases: ['sase', 'sse', 'zscaler', 'cloud sécurité'] },
@@ -113,6 +119,12 @@ const NETWORK: CatalogPack = {
     { id: 'leaf', label: 'Switch leaf (fabric)', rank: 4, icon: 'leaf', family: SW, infrastructure: true, critical: true, aliases: ['leaf', 'tor', 'top of rack', 'fabric'] },
     { id: 'network-tap', label: 'TAP / packet broker', rank: 4, icon: 'split', family: SW, infrastructure: true, aliases: ['tap', 'spn', 'packet broker', 'capture', 'npb'] },
     { id: 'wifi7', label: 'Borne Wi-Fi 7', rank: 5, icon: 'wifi', family: ACCESS, infrastructure: true, aliases: ['wifi 7', 'wi-fi 7', '802.11be', 'ap', 'borne'] },
+    { id: 'wlan-controller', label: 'Contrôleur Wi-Fi (WLC)', rank: 5, icon: 'wlan-controller', family: ACCESS, infrastructure: true, critical: true, aliases: ['wlc', 'contrôleur wifi', 'controleur wi-fi', 'c9800', 'mobility conductor', 'smartzone', 'wlan'] },
+    { id: 'wifi-bridge', label: 'Pont Wi-Fi / faisceau hertzien', rank: 1, icon: 'dish-link', family: EDGE, infrastructure: true, critical: true, aliases: ['pont', 'bridge', 'hertzien', 'ptp', 'faisceau', 'airfiber', 'interbâtiment'] },
+    { id: 'modem', label: 'Modem / ONT opérateur', rank: 0, icon: 'modem', family: EXT, infrastructure: true, critical: true, aliases: ['modem', 'ont', 'ntu', 'box', 'terminaison', 'démarcation', 'sdsl'] },
+    { id: 'san-switch', label: 'Switch SAN (Fibre Channel)', rank: 4, icon: 'san-switch', family: SW, infrastructure: true, critical: true, aliases: ['san', 'fc', 'fibre channel', 'brocade', 'mds', 'zoning', 'hba'] },
+    { id: 'vpn-concentrator', label: 'Concentrateur VPN', rank: 2, icon: 'tunnel', family: SEC, infrastructure: true, critical: true, aliases: ['vpn', 'ipsec', 'site à site', 'nomade', 'concentrateur', 'tunnel'] },
+    { id: 'net-controller', label: 'Contrôleur réseau / SDN', rank: 6, icon: 'net-controller', family: OPS, palette: 3, infrastructure: true, aliases: ['sdn', 'contrôleur', 'catalyst center', 'dna center', 'apic', 'mist', 'meraki', 'omada', 'prism central', 'nsx'] },
     { id: 'api-gateway', label: 'Passerelle API', rank: 2, icon: 'gateway-api', family: SEC, infrastructure: true, aliases: ['api', 'gateway', 'apim', 'kong'] },
     { id: 'service-mesh', label: 'Maillage de services', rank: 6, icon: 'mesh', family: CLOUD, aliases: ['service mesh', 'istio', 'linkerd', 'sidecar'] },
     { id: 'ddi', label: 'DNS / DHCP / IPAM', rank: 6, icon: 'address-book', family: OPS, critical: true, aliases: ['dns', 'dhcp', 'ipam', 'ddi', 'infoblox'] },
@@ -191,7 +203,43 @@ const DATACENTER: CatalogPack = {
   ],
 }
 
-export const BUILTIN_PACKS: CatalogPack[] = [BASE, NETWORK, SECURITY, CLOUD_PACK, DATACENTER]
+/** Câblage et exploitation : ce qui se trouve dans la baie entre deux équipements actifs. */
+const CABLAGE: CatalogPack = {
+  id: 'cablage-exploitation',
+  title: 'Câblage & exploitation',
+  version: '2026.2',
+  description: 'Brassage cuivre et optique, conversion de média, accès hors bande à la console.',
+  devices: [
+    { id: 'patch-panel', label: 'Panneau de brassage', rank: 5, icon: 'patch-panel', family: CABLE, aliases: ['brassage', 'patch', 'panneau', 'rj45', 'tiroir optique', 'jarretière', 'répartiteur'] },
+    { id: 'media-converter', label: 'Convertisseur optique', rank: 5, icon: 'fiber', family: CABLE, aliases: ['convertisseur', 'média', 'fibre', 'cuivre', 'sfp', 'transceiver', 'monomode'] },
+    { id: 'console-server', label: 'Serveur de console (hors bande)', rank: 6, icon: 'console', family: CABLE, palette: 7, infrastructure: true, aliases: ['console', 'oob', 'hors bande', 'série', 'opengear', 'kvm', 'ipmi', 'secours'] },
+  ],
+}
+
+/** Voix et collaboration : téléphonie sur IP, trunks opérateur, salles de réunion. */
+const VOIX_PACK: CatalogPack = {
+  id: 'voix-collaboration',
+  title: 'Voix & collaboration',
+  version: '2026.2',
+  description: 'IPBX, passerelles et trunks SIP, contrôleur de session, DECT, salles de visioconférence.',
+  devices: [
+    { id: 'ipbx', label: 'IPBX / serveur de téléphonie', rank: 6, icon: 'pbx', family: VOIX, critical: true, aliases: ['ipbx', 'pbx', 'téléphonie', 'toip', 'voip', 'asterisk', 'omnipcx', 'mitel', '3cx'] },
+    { id: 'voice-gateway', label: 'Passerelle voix / trunk SIP', rank: 1, icon: 'voice-gateway', family: VOIX, infrastructure: true, critical: true, aliases: ['trunk', 'sip', 'passerelle voix', 't0', 't2', 'rtc', 'gateway', 'mediant'] },
+    { id: 'sbc', label: 'Contrôleur de session (SBC)', rank: 2, icon: 'shield-lock', family: VOIX, palette: 2, infrastructure: true, aliases: ['sbc', 'session border controller', 'voix', 'sécurité sip'] },
+    { id: 'dect', label: 'Borne DECT / IP-DECT', rank: 5, icon: 'antenna', family: VOIX, palette: 5, aliases: ['dect', 'combiné', 'sans fil', 'téléphone', 'spectralink'] },
+    { id: 'visio', label: 'Salle de visioconférence', rank: 7, icon: 'visio', family: VOIX, palette: 7, aliases: ['visio', 'visioconférence', 'teams rooms', 'webex', 'salle', 'barre'] },
+  ],
+}
+
+export const BUILTIN_PACKS: CatalogPack[] = [
+  BASE,
+  NETWORK,
+  SECURITY,
+  CLOUD_PACK,
+  DATACENTER,
+  CABLAGE,
+  VOIX_PACK,
+]
 
 /** Version du catalogue embarqué, affichée dans l'application. */
-export const BUILTIN_CATALOG_VERSION = '2026.1'
+export const BUILTIN_CATALOG_VERSION = '2026.2'

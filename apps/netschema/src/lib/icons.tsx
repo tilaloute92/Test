@@ -459,6 +459,98 @@ const ICONS: Record<string, (color: string) => ReactNode> = {
       <path d="M12 6.5 9.8 4.6M12 6.5l2.2-1.9M12 17.5l-2.2 1.9M12 17.5l2.2 1.9" />
     </>
   ),
+  // ─── Sans fil piloté, voix, brassage, industriel ────────────────────────────
+  'wlan-controller': () => (
+    <>
+      <rect x="2.5" y="12.5" width="19" height="8" rx="1.8" />
+      <path d="M6 16.5h3M15 16.5h3" />
+      <path d="M6.5 8.5a7.5 7.5 0 0 1 11 0M9 11a4 4 0 0 1 6 0" />
+    </>
+  ),
+  'net-controller': () => (
+    <>
+      <rect x="3" y="3" width="18" height="9.5" rx="2" />
+      <circle cx="12" cy="7.75" r="2" />
+      <path d="M12 12.5v3.5M6 21v-3.5h12V21" />
+    </>
+  ),
+  'san-switch': () => (
+    <>
+      <rect x="2.5" y="8" width="19" height="8.5" rx="2" />
+      <path d="m8.5 10.3-2.2 1.95 2.2 1.95M15.5 10.3l2.2 1.95-2.2 1.95" />
+      <path d="M11 12.25h2" />
+    </>
+  ),
+  'din-switch': () => (
+    <>
+      <rect x="4" y="5" width="16" height="11" rx="1.4" />
+      <path d="M7 8.5h10M7 12h6" />
+      <path d="M2.5 19.5h19M8 16v3.5M16 16v3.5" />
+    </>
+  ),
+  'patch-panel': () => (
+    <>
+      <rect x="2" y="7.5" width="20" height="9" rx="1.5" />
+      <path d="M4.8 10.8h2.6v2.4H4.8ZM9 10.8h2.6v2.4H9ZM13.2 10.8h2.6v2.4h-2.6ZM17.4 10.8H20v2.4h-2.6Z" />
+    </>
+  ),
+  fiber: (color) => (
+    <>
+      <path d="M2.5 12h5M16.5 12h5" />
+      <rect x="7.5" y="8" width="9" height="8" rx="1.6" />
+      <circle cx="12" cy="12" r="1.3" fill={color} stroke="none" />
+    </>
+  ),
+  console: () => (
+    <>
+      <rect x="2.5" y="4.5" width="19" height="15" rx="2" />
+      <path d="m6.5 9.5 3 2.5-3 2.5M12 15h5" />
+    </>
+  ),
+  modem: (color) => (
+    <>
+      <rect x="2.5" y="12" width="19" height="7.5" rx="2" />
+      <path d="M6 15.8h1.5M10 15.8h1.5" />
+      <circle cx="18" cy="15.8" r="1.2" fill={color} stroke="none" />
+      <path d="M8.5 9a5.5 5.5 0 0 1 7 0M5.5 6a10 10 0 0 1 13 0" />
+    </>
+  ),
+  'dish-link': (color) => (
+    <>
+      <path d="M3 8.5v7L7.5 12Z" />
+      <path d="M21 8.5v7L16.5 12Z" />
+      <path d="M9.6 12h1.2M13.2 12h1.2" />
+      <circle cx="12" cy="12" r="0.9" fill={color} stroke="none" />
+    </>
+  ),
+  tunnel: () => (
+    <>
+      <path d="M4 18.5v-4.5a8 8 0 0 1 16 0v4.5" />
+      <path d="M9 18.5V14a3 3 0 0 1 6 0v4.5" />
+      <path d="M2.5 18.5h19" />
+    </>
+  ),
+  pbx: () => (
+    <>
+      <rect x="3" y="5.5" width="18" height="13" rx="2" />
+      <path d="M8 9.5c0 3.4 2.8 6.2 6.2 6.2l1.3-1.8-2.3-1.4-1 .9a6 6 0 0 1-1.9-1.9l.9-1L9.8 8.2Z" />
+    </>
+  ),
+  'voice-gateway': () => (
+    <>
+      <rect x="2.5" y="8.5" width="19" height="8" rx="2" />
+      <path d="M6.5 11c0 2.4 1.9 4.3 4.3 4.3l.9-1.3-1.6-1-.7.6a4 4 0 0 1-1.3-1.3l.6-.7-1-1.6Z" />
+      <path d="M14.5 12.5h5M17.5 10.5l2 2-2 2" />
+    </>
+  ),
+  visio: () => (
+    <>
+      <rect x="2.5" y="4" width="19" height="12" rx="2" />
+      <circle cx="12" cy="8.5" r="1.8" />
+      <path d="M8.5 13.5c.7-1.7 2-2.6 3.5-2.6s2.8.9 3.5 2.6" />
+      <path d="M8 19.5h8M12 16v3.5" />
+    </>
+  ),
 }
 
 export interface DeviceIconProps {

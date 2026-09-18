@@ -20,6 +20,7 @@ export function looksLikeDrawio(text: string): boolean {
 const STYLE_HINTS: { pattern: RegExp; kind: string }[] = [
   { pattern: /firewall|pare.?feu|palo|forti|asa\b/i, kind: 'ngfw' },
   { pattern: /load.?balanc|\bslb\b|\badc\b/i, kind: 'loadbalancer' },
+  { pattern: /wlan.?controller|\bwlc\b|wireless.?controller/i, kind: 'wlan-controller' },
   { pattern: /wireless|access.?point|\bwifi\b|\bap\b/i, kind: 'wifi7' },
   { pattern: /core.?switch|nexus|multilayer|layer.?3.?switch|l3_switch/i, kind: 'core-switch' },
   { pattern: /spine/i, kind: 'spine' },
@@ -28,6 +29,8 @@ const STYLE_HINTS: { pattern: RegExp; kind: string }[] = [
   { pattern: /router|routeur|gateway/i, kind: 'router' },
   { pattern: /internet|www|world/i, kind: 'internet' },
   { pattern: /cloud|azure|aws|gcp/i, kind: 'cloud' },
+  { pattern: /fibre.?channel|fc.?switch|\bmds\b/i, kind: 'san-switch' },
+  { pattern: /patch.?panel|brassage/i, kind: 'patch-panel' },
   { pattern: /storage|\bsan\b|\bnas\b|disk.?array|filer/i, kind: 'storage' },
   { pattern: /database|\bdb\b|sql/i, kind: 'managed-db' },
   { pattern: /kubernetes|k8s|container|docker/i, kind: 'k8s-cluster' },
