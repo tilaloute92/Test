@@ -82,7 +82,9 @@ const TABS: { id: AppView; label: string; hint: string }[] = [
   { id: 'diagram', label: 'Schéma', hint: 'Cartographie et architecture' },
   { id: 'inventory', label: 'Inventaire', hint: 'Parc, garanties, responsables' },
   { id: 'racks', label: 'Baies', hint: 'Implantation physique en salle' },
+  { id: 'flows', label: 'Flux', hint: 'Matrice de flux et traçage de chemin' },
   { id: 'discovery', label: 'Découverte', hint: 'Relevés réseau à interpréter' },
+  { id: 'dossier', label: 'Dossier', hint: 'Complétude, dossier technique, comparaison de versions' },
   { id: 'guide', label: 'Guide', hint: "Mode d'emploi de l'application" },
 ]
 

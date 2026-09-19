@@ -344,8 +344,15 @@ export interface Classeur {
   activePage?: number
 }
 
-/** Module affiché : le schéma, l'inventaire, les baies ou la découverte réseau. */
-export type AppView = 'diagram' | 'inventory' | 'racks' | 'discovery' | 'guide'
+/** Module affiché : schéma, inventaire, baies, flux, découverte ou guide. */
+export type AppView =
+  | 'diagram'
+  | 'inventory'
+  | 'racks'
+  | 'flows'
+  | 'discovery'
+  | 'dossier'
+  | 'guide'
 
 export type LayoutDirection = 'TB' | 'LR'
 

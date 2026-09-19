@@ -875,6 +875,12 @@ const RULES: Rule[] = [
   (t) => (/(inventaire|parc)/.test(t) ? { type: 'view', view: 'inventory' } : null),
   (t) => (/(baies?|racks?|salle serveur|salle machine)/.test(t) ? { type: 'view', view: 'racks' } : null),
   (t) => (/(decouverte|scan reseau|releve)/.test(t) ? { type: 'view', view: 'discovery' } : null),
+  (t) =>
+    /(matrice de flux|matrice|les flux|flux reseau)/.test(t) ? { type: 'view', view: 'flows' } : null,
+  (t) =>
+    /(dossier|controle qualite|completude|comparer|comparaison)/.test(t)
+      ? { type: 'view', view: 'dossier' }
+      : null,
   (t) => (/(schema|cartographie|carte|plan)$/.test(t) ? { type: 'view', view: 'diagram' } : null),
   (t) => {
     const match = t.match(/^(?:replie|replier|ferme|fermer)\s+(?:la zone|le site|la grappe|le groupe)?\s*(.*)$/)

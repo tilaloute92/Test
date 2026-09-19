@@ -1915,11 +1915,13 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         return { ok: true, message: `Affichage : ${labels[intent.level]}.` }
       }
       case 'view': {
-        const labels = {
+        const labels: Record<AppView, string> = {
           diagram: 'Schéma',
           inventory: 'Inventaire',
           racks: 'Baies',
+          flows: 'Flux',
           discovery: 'Découverte',
+          dossier: 'Dossier',
           guide: 'Guide',
         }
         get().setAppView(intent.view)

@@ -19,6 +19,8 @@ import { canEdit, useSession } from './store/useSession'
 // — le schéma — n'a pas à transporter l'inventaire, les baies, la découverte ni le guide.
 const InventoryView = lazy(() => import('./components/InventoryView').then((m) => ({ default: m.InventoryView })))
 const RackView = lazy(() => import('./components/RackView').then((m) => ({ default: m.RackView })))
+const FlowsView = lazy(() => import('./components/FlowsView').then((m) => ({ default: m.FlowsView })))
+const DossierView = lazy(() => import('./components/DossierView').then((m) => ({ default: m.DossierView })))
 const DiscoveryView = lazy(() => import('./components/DiscoveryView').then((m) => ({ default: m.DiscoveryView })))
 const GuideView = lazy(() => import('./components/GuideView').then((m) => ({ default: m.GuideView })))
 
@@ -215,7 +217,9 @@ export default function App() {
         <Suspense fallback={<ModuleEnChargement />}>
           {appView === 'inventory' && <InventoryView />}
           {appView === 'racks' && <RackView />}
+          {appView === 'flows' && <FlowsView />}
           {appView === 'discovery' && <DiscoveryView />}
+          {appView === 'dossier' && <DossierView />}
           {appView === 'guide' && <GuideView />}
         </Suspense>
       )}
