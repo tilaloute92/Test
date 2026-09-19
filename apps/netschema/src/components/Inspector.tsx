@@ -1,9 +1,12 @@
+import { useState } from 'react'
 import { Btn, Checkbox, Field, Select, Slider, TextInput } from './ui'
 import { CatalogPanel } from './CatalogPanel'
 import { ModelPicker } from './ModelPicker'
 import { HaPanel } from './HaPanel'
 import { ImpactPanel } from './ImpactPanel'
 import { VlanPanel } from './VlanPanel'
+import { ANNOTATION_COLORS, annotationColors } from '../lib/annotations'
+import { aujourdhui } from '../lib/storage'
 import { linkLayers } from '../lib/osi'
 import { collapsibleGroups } from '../lib/derive'
 import { modeDefinition, VIEW_MODES } from '../lib/viewModes'
@@ -12,6 +15,7 @@ import { useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
 import type {
   AnchorSide,
+  Annotation,
   DetailLevel,
   HaRole,
   LinkShape,
@@ -51,12 +55,14 @@ export function Inspector() {
   const diagram = useDiagram((s) => s.diagram)
   const selectedNodes = useDiagram((s) => s.selectedNodes)
   const selectedLinks = useDiagram((s) => s.selectedLinks)
+  const selectedAnnotations = useDiagram((s) => s.selectedAnnotations)
   const panel = useDiagram((s) => s.panel)
   const setPanel = useDiagram((s) => s.setPanel)
   const report = useAudit()
 
   const nodes = diagram.nodes.filter((n) => selectedNodes.includes(n.id))
   const link = diagram.links.find((l) => selectedLinks.includes(l.id))
+  const annotation = (diagram.annotations ?? []).find((a) => selectedAnnotations.includes(a.id))
 
   const alerts = report.counts.critique + report.counts.avertissement
 
@@ -107,7 +113,8 @@ export function Inspector() {
         {nodes.length === 1 && <NodeForm node={nodes[0]} />}
         {nodes.length > 1 && <MultiNodeForm nodes={nodes} />}
         {nodes.length === 0 && link && <LinkForm linkId={link.id} />}
-        {nodes.length === 0 && !link && (
+        {nodes.length === 0 && !link && annotation && <AnnotationForm annotation={annotation} />}
+        {nodes.length === 0 && !link && !annotation && (
           <p className="text-[12px] leading-relaxed text-slate-400">
             Sélectionnez un équipement ou une liaison pour en modifier les propriétés.
             Maj+clic pour une sélection multiple.
@@ -118,6 +125,8 @@ export function Inspector() {
       <LayoutForm />
 
       <ReadabilityForm />
+
+      <DocumentForm />
 
       <section>
         <SectionTitle>Schéma</SectionTitle>
@@ -150,8 +159,207 @@ export function Inspector() {
   )
 }
 
+const ETATS = [
+  { value: '', label: '—' },
+  { value: 'Brouillon', label: 'Brouillon' },
+  { value: 'Pour revue', label: 'Pour revue' },
+  { value: 'Validé', label: 'Validé' },
+  { value: 'Périmé', label: 'Périmé' },
+]
+
+const DIFFUSIONS = [
+  { value: '', label: '—' },
+  { value: 'Interne', label: 'Interne' },
+  { value: 'Diffusion restreinte', label: 'Diffusion restreinte' },
+  { value: 'Confidentiel', label: 'Confidentiel' },
+  { value: 'Public', label: 'Public' },
+]
+
+/**
+ * Cartouche et légende : ce qui fait d'un dessin un document.
+ *
+ * Les champs vides ne s'impriment pas — un cartouche à moitié rempli reste lisible, et on
+ * peut commencer par les deux qui comptent vraiment : l'indice et la date.
+ */
+function DocumentForm() {
+  const bloc = useDiagram((s) => s.diagram.titleBlock)
+  const setTitleBlock = useDiagram((s) => s.setTitleBlock)
+  const showLegend = useDiagram((s) => s.showLegend)
+  const setDisplay = useDiagram((s) => s.setDisplay)
+  const [ouvert, setOuvert] = useState(false)
+
+  return (
+    <section>
+      <button
+        type="button"
+        onClick={() => setOuvert(!ouvert)}
+        className="flex w-full items-center justify-between pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-700"
+      >
+        Document
+        <span className="text-slate-300">{ouvert ? '−' : '+'}</span>
+      </button>
+
+      <div className="flex flex-col gap-2">
+        <Checkbox
+          checked={bloc?.show === true}
+          onChange={(show) => setTitleBlock({ show })}
+          label="Cartouche sur le plan"
+        />
+        <Checkbox
+          checked={showLegend}
+          onChange={(value) => setDisplay({ showLegend: value })}
+          label="Légende sous le schéma"
+        />
+      </div>
+
+      {ouvert && (
+        <div className="flex flex-col gap-2.5 pt-3">
+          <Field label="Organisation">
+            <TextInput
+              value={bloc?.organisation ?? ''}
+              onChange={(organisation) => setTitleBlock({ organisation })}
+              placeholder="Direction des systèmes d’information"
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Référence">
+              <TextInput
+                value={bloc?.reference ?? ''}
+                onChange={(reference) => setTitleBlock({ reference })}
+                placeholder="DOC-RES-001"
+              />
+            </Field>
+            <Field label="Indice">
+              <TextInput
+                value={bloc?.version ?? ''}
+                onChange={(version) => setTitleBlock({ version })}
+                placeholder="B"
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Date">
+              <TextInput
+                value={bloc?.date ?? ''}
+                onChange={(date) => setTitleBlock({ date })}
+                placeholder="2026-09-19"
+              />
+            </Field>
+            <Field label="Établi par">
+              <TextInput
+                value={bloc?.author ?? ''}
+                onChange={(author) => setTitleBlock({ author })}
+                placeholder="Prénom Nom"
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="État">
+              <Select
+                value={bloc?.status ?? ''}
+                onChange={(status) => setTitleBlock({ status })}
+                options={ETATS}
+              />
+            </Field>
+            <Field label="Diffusion">
+              <Select
+                value={bloc?.confidentiality ?? ''}
+                onChange={(confidentiality) => setTitleBlock({ confidentiality })}
+                options={DIFFUSIONS}
+              />
+            </Field>
+          </div>
+          <Field label="Mention libre">
+            <TextInput
+              value={bloc?.notes ?? ''}
+              onChange={(notes) => setTitleBlock({ notes })}
+              placeholder="Ne pas diffuser hors du service."
+            />
+          </Field>
+          <Btn onClick={() => setTitleBlock({ date: aujourdhui(), show: true })}>
+            Dater d’aujourd’hui
+          </Btn>
+        </div>
+      )}
+    </section>
+  )
+}
+
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h2 className="pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{children}</h2>
+}
+
+const ANNOTATION_LABELS: Record<Annotation['kind'], string> = {
+  note: 'Note',
+  zone: 'Cadre de périmètre',
+  arrow: 'Flèche de renvoi',
+}
+
+/** Fiche d'une annotation : son texte, sa couleur, sa taille. */
+function AnnotationForm({ annotation }: { annotation: Annotation }) {
+  const update = useDiagram((s) => s.updateAnnotation)
+  const remove = useDiagram((s) => s.removeAnnotation)
+  const actuelle = annotationColors(annotation)
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <p className="text-[12px] font-medium text-slate-600">{ANNOTATION_LABELS[annotation.kind]}</p>
+      <Field label={annotation.kind === 'note' ? 'Texte' : 'Libellé'}>
+        <textarea
+          value={annotation.text ?? ''}
+          onChange={(event) => update(annotation.id, { text: event.target.value })}
+          rows={annotation.kind === 'note' ? 4 : 2}
+          placeholder={
+            annotation.kind === 'note'
+              ? 'Migration prévue au T3 — ne pas rebrancher sans le prestataire.'
+              : 'Lot 2 — bâtiment B'
+          }
+          className="w-full resize-y rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12.5px] leading-snug outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+        />
+      </Field>
+      <Field label="Couleur">
+        <div className="flex flex-wrap gap-1.5">
+          {ANNOTATION_COLORS.map((couleur) => (
+            <button
+              key={couleur.id}
+              type="button"
+              title={couleur.label}
+              onClick={() => update(annotation.id, { color: couleur.id })}
+              className={`h-6 w-6 rounded-md border-2 transition ${
+                actuelle.accent.toLowerCase() === couleur.accent.toLowerCase()
+                  ? 'border-slate-900'
+                  : 'border-transparent hover:border-slate-300'
+              }`}
+              style={{ backgroundColor: couleur.accent }}
+            />
+          ))}
+        </div>
+      </Field>
+      {annotation.kind !== 'arrow' && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Largeur">
+            <TextInput
+              value={String(Math.round(annotation.w))}
+              onChange={(value) => update(annotation.id, { w: Math.max(60, Number(value) || 60) })}
+            />
+          </Field>
+          <Field label="Hauteur">
+            <TextInput
+              value={String(Math.round(annotation.h))}
+              onChange={(value) => update(annotation.id, { h: Math.max(36, Number(value) || 36) })}
+            />
+          </Field>
+        </div>
+      )}
+      <p className="text-[11px] leading-relaxed text-slate-400">
+        Double-cliquez l’annotation sur le plan pour en saisir le texte ; la poignée du coin la
+        redimensionne. Elle suit le document et part dans tous les exports.
+      </p>
+      <Btn variant="danger" onClick={() => remove(annotation.id)}>
+        Supprimer l’annotation
+      </Btn>
+    </div>
+  )
 }
 
 function NodeForm({ node }: { node: NetNode }) {

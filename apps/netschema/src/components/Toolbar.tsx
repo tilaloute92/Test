@@ -15,7 +15,9 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
   const zoom = useDiagram((s) => s.view.zoom)
   const canUndo = useDiagram((s) => s.past.length > 0)
   const canRedo = useDiagram((s) => s.future.length > 0)
-  const hasSelection = useDiagram((s) => s.selectedNodes.length + s.selectedLinks.length > 0)
+  const hasSelection = useDiagram(
+    (s) => s.selectedNodes.length + s.selectedLinks.length + s.selectedAnnotations.length > 0,
+  )
   const report = useAudit()
   const detail = useDiagram((s) => s.detail)
   const osi = useDiagram((s) => s.osi)
@@ -167,6 +169,40 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
       <Btn variant="danger" onClick={() => store().deleteSelection()} disabled={locked || !hasSelection} title="Supprimer (Suppr)">
         Supprimer
       </Btn>
+
+      {/*
+        Annoter : ce qu'un schéma ne peut pas dire avec des boîtes et des traits — une
+        réserve, un périmètre de travaux, un renvoi.
+      */}
+      <div className="flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5">
+        <button
+          type="button"
+          disabled={locked}
+          onClick={() => store().addAnnotation('note')}
+          title="Poser une note sur le plan (double-clic pour en saisir le texte)"
+          className="rounded-md px-2 py-1 text-[12.5px] font-medium text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ✎ Note
+        </button>
+        <button
+          type="button"
+          disabled={locked}
+          onClick={() => store().addAnnotation('zone')}
+          title="Encadrer un périmètre (lot de travaux, phase de migration…)"
+          className="rounded-md px-2 py-1 text-[12.5px] font-medium text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ▭ Cadre
+        </button>
+        <button
+          type="button"
+          disabled={locked}
+          onClick={() => store().addAnnotation('arrow')}
+          title="Poser une flèche de renvoi"
+          className="rounded-md px-2 py-1 text-[12.5px] font-medium text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ↗ Flèche
+        </button>
+      </div>
 
       <Separator />
 

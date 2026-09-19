@@ -3,9 +3,14 @@ import { looksLikeDrawio, parseDrawio } from './drawio'
 import { uid } from './ids'
 import type {
   AnchorSide,
+  Annotation,
+  AnnotationKind,
   Classeur,
   AssetStatus,
   Attach,
+  FlowAction,
+  FlowDef,
+  TitleBlock,
   LabelOffset,
   Diagram,
   LinkShape,
@@ -26,6 +31,11 @@ const FILE_VERSION = 1
 
 export function emptyDiagram(): Diagram {
   return { title: 'Nouveau schéma réseau', pageName: 'Schéma', nodes: [], links: [], vlans: [], racks: [] }
+}
+
+/** Date du jour au format AAAA-MM-JJ, pour le cartouche et les exports. */
+export function aujourdhui(): string {
+  return new Date().toISOString().slice(0, 10)
 }
 
 /** Nom de page libre : « Schéma 2 », « Schéma 3 »… */
@@ -77,6 +87,83 @@ function offset(value: unknown): LabelOffset | undefined {
 function roleOf(value: unknown): HaRole | undefined {
   const role = str(value)
   return role && role in ROLES ? (role as HaRole) : undefined
+}
+
+const ANNOTATION_KINDS = ['note', 'zone', 'arrow']
+const FLOW_ACTIONS = ['autorise', 'refuse', 'etudier']
+
+/** Couleur acceptée : une couleur CSS courte et reconnaissable, rien d'exotique. */
+function couleur(value: unknown): string | undefined {
+  const texte = str(value)
+  return texte && /^#[0-9a-fA-F]{3,8}$/.test(texte) ? texte : undefined
+}
+
+/** Annotations : notes, cadres et flèches posés sur le plan. */
+function annotations(value: unknown): Annotation[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const lues: Annotation[] = []
+  for (const item of value) {
+    if (!isRecord(item)) continue
+    const kind = str(item.kind)
+    if (!kind || !ANNOTATION_KINDS.includes(kind)) continue
+    const nombre = (v: unknown, defaut: number) => (Number.isFinite(v) ? Number(v) : defaut)
+    lues.push({
+      id: str(item.id) ?? uid('a'),
+      kind: kind as AnnotationKind,
+      text: str(item.text)?.slice(0, 2000),
+      x: nombre(item.x, 0),
+      y: nombre(item.y, 0),
+      w: nombre(item.w, 200),
+      h: nombre(item.h, 80),
+      color: couleur(item.color),
+    })
+  }
+  return lues.length > 0 ? lues : undefined
+}
+
+/** Matrice de flux : une ligne par flux documenté. */
+function flows(value: unknown): FlowDef[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const lus: FlowDef[] = []
+  for (const item of value) {
+    if (!isRecord(item)) continue
+    const from = str(item.from)
+    const to = str(item.to)
+    if (!from || !to) continue
+    const action = str(item.action)
+    lus.push({
+      id: str(item.id) ?? uid('f'),
+      from,
+      to,
+      service: str(item.service),
+      protocol: str(item.protocol),
+      action: action && FLOW_ACTIONS.includes(action) ? (action as FlowAction) : undefined,
+      purpose: str(item.purpose),
+      owner: str(item.owner),
+      encryption: str(item.encryption),
+      notes: str(item.notes),
+    })
+  }
+  return lus.length > 0 ? lus : undefined
+}
+
+/** Cartouche : uniquement des champs de texte courts, plus l'affichage. */
+function titleBlock(value: unknown): TitleBlock | undefined {
+  if (!isRecord(value)) return undefined
+  const court = (v: unknown) => str(v)?.slice(0, 120)
+  const bloc: TitleBlock = {
+    show: value.show === true,
+    organisation: court(value.organisation),
+    author: court(value.author),
+    reference: court(value.reference),
+    version: court(value.version),
+    date: court(value.date),
+    status: court(value.status),
+    confidentiality: court(value.confidentiality),
+    notes: str(value.notes)?.slice(0, 400),
+  }
+  const rempli = Object.entries(bloc).some(([cle, valeur]) => cle !== 'show' && valeur !== undefined)
+  return bloc.show || rempli ? bloc : undefined
 }
 
 /**
@@ -235,6 +322,9 @@ export function parseDiagram(raw: unknown): Diagram {
     links,
     vlans,
     racks,
+    annotations: annotations(source.annotations),
+    flows: flows(source.flows),
+    titleBlock: titleBlock(source.titleBlock),
     locked: source.locked === true,
     labelsLocked: source.labelsLocked === true,
     layerNames: layerNames(source.layerNames),

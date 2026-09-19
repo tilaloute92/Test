@@ -29,8 +29,12 @@ import { NODE_H, NODE_W } from '../types'
 import { modeDefinition } from '../lib/viewModes'
 import { firstFreeUnit, heightOf, rackOccupancy } from '../lib/racks'
 import type {
+  Annotation,
+  AnnotationKind,
   AppView,
   Attach,
+  FlowDef,
+  TitleBlock,
   Classeur,
   DetailLevel,
   LabelOffset,
@@ -107,6 +111,8 @@ interface DiagramStore {
   future: Diagram[]
   selectedNodes: string[]
   selectedLinks: string[]
+  /** Annotations sélectionnées : elles se déplacent et se suppriment comme le reste. */
+  selectedAnnotations: string[]
   layout: LayoutOptions
   linkStyle: LinkStyle
   showGrid: boolean
@@ -121,6 +127,8 @@ interface DiagramStore {
   showHops: boolean
   /** Répartition automatique des accroches pour éviter les liaisons superposées. */
   spreadLinks: boolean
+  /** Légende posée sous le schéma, construite d'après son contenu. */
+  showLegend: boolean
   /** Mode de visualisation : architecture, technique, présentation. */
   viewMode: ViewMode
   /** Module affiché : schéma, inventaire, baies, découverte. */
@@ -204,7 +212,7 @@ interface DiagramStore {
    */
   setLabelsLocked: (locked: boolean, placements?: Map<string, { dx: number; dy: number }>) => void
 
-  select: (target: { nodes?: string[]; links?: string[] }, additive?: boolean) => void
+  select: (target: { nodes?: string[]; links?: string[]; annotations?: string[] }, additive?: boolean) => void
   clearSelection: () => void
   setAppView: (view: AppView) => void
   setMode: (mode: Mode) => void
@@ -229,6 +237,18 @@ interface DiagramStore {
   mergeDiscovery: (result: DiscoveryResult) => { created: number; updated: number; links: number }
   upsertVlan: (vlan: VlanDef) => void
   removeVlan: (id: string) => void
+
+  /** Pose une note, un cadre commenté ou une flèche sur le plan et la sélectionne. */
+  addAnnotation: (kind: AnnotationKind, seed?: Partial<Annotation>) => string
+  updateAnnotation: (id: string, patch: Partial<Annotation>) => void
+  moveAnnotation: (id: string, dx: number, dy: number) => void
+  removeAnnotation: (id: string) => void
+  /** Cartouche du document : auteur, indice, diffusion. */
+  setTitleBlock: (patch: Partial<TitleBlock>) => void
+  /** Matrice de flux : ajout / modification d'une ligne. */
+  upsertFlow: (flow: FlowDef) => void
+  removeFlow: (id: string) => void
+
   deduceVlansFromDiagram: () => number
   /** Afficher ou masquer un bandeau latéral. Le choix est propre au poste, pas au document. */
   setPanelOpen: (panneau: 'palette' | 'inspecteur', ouvert: boolean) => void
@@ -260,6 +280,7 @@ interface DiagramStore {
         | 'showAudit'
         | 'showHops'
         | 'spreadLinks'
+        | 'showLegend'
       >
     >,
   ) => void
@@ -323,6 +344,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   future: [],
   selectedNodes: [],
   selectedLinks: [],
+  selectedAnnotations: [],
   layout: DEFAULT_LAYOUT,
   linkStyle: 'orthogonal',
   showGrid: true,
@@ -335,6 +357,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   showAudit: true,
   showHops: true,
   spreadLinks: true,
+  showLegend: false,
   viewMode: 'architecture',
   appView: 'diagram',
   mode: 'select',
@@ -750,8 +773,10 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   deleteSelection: () => {
     if (lockedStore()) return
-    const { selectedNodes, selectedLinks } = get()
-    if (selectedNodes.length === 0 && selectedLinks.length === 0) return
+    const { selectedNodes, selectedLinks, selectedAnnotations } = get()
+    if (selectedNodes.length === 0 && selectedLinks.length === 0 && selectedAnnotations.length === 0) {
+      return
+    }
     get().pushHistory()
     set((state) => ({
       diagram: {
@@ -763,9 +788,13 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
             !selectedNodes.includes(l.from) &&
             !selectedNodes.includes(l.to),
         ),
+        annotations: (state.diagram.annotations ?? []).filter(
+          (a) => !selectedAnnotations.includes(a.id),
+        ),
       },
       selectedNodes: [],
       selectedLinks: [],
+      selectedAnnotations: [],
     }))
   },
 
@@ -773,7 +802,10 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     set((state) => {
       const nodes = target.nodes ?? []
       const links = target.links ?? []
-      if (!additive) return { selectedNodes: nodes, selectedLinks: links }
+      const annotations = target.annotations ?? []
+      if (!additive) {
+        return { selectedNodes: nodes, selectedLinks: links, selectedAnnotations: annotations }
+      }
       const toggle = (current: string[], next: string[]) => {
         const set_ = new Set(current)
         for (const id of next) {
@@ -785,10 +817,11 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       return {
         selectedNodes: toggle(state.selectedNodes, nodes),
         selectedLinks: toggle(state.selectedLinks, links),
+        selectedAnnotations: toggle(state.selectedAnnotations, annotations),
       }
     }),
 
-  clearSelection: () => set({ selectedNodes: [], selectedLinks: [] }),
+  clearSelection: () => set({ selectedNodes: [], selectedLinks: [], selectedAnnotations: [] }),
   setAppView: (appView) => set({ appView }),
   setMode: (mode) => set({ mode, connectFrom: null }),
   setPanel: (panel) => set({ panel }),
@@ -1014,6 +1047,110 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     get().pushHistory()
     set((state) => ({
       diagram: { ...state.diagram, vlans: (state.diagram.vlans ?? []).filter((vlan) => vlan.id !== id) },
+    }))
+  },
+
+  /**
+   * Pose une annotation au centre de la vue, ou à l'endroit demandé.
+   *
+   * Les trois formes répondent à trois besoins distincts : la note explique, le cadre
+   * délimite un périmètre qui n'est pas une zone du modèle (un lot de travaux, une phase de
+   * migration), la flèche montre du doigt.
+   */
+  addAnnotation: (kind, seed) => {
+    if (lockedStore()) return ''
+    const { view, canvasSize } = get()
+    const centre = {
+      x: Math.round((canvasSize.width / 2 - view.tx) / view.zoom),
+      y: Math.round((canvasSize.height / 2 - view.ty) / view.zoom),
+    }
+    const gabarit =
+      kind === 'note'
+        ? { w: 220, h: 88, text: 'Note' }
+        : kind === 'zone'
+          ? { w: 340, h: 220, text: 'Périmètre' }
+          : { w: 160, h: 90, text: '' }
+    const annotation: Annotation = {
+      id: uid('a'),
+      kind,
+      x: seed?.x ?? centre.x - gabarit.w / 2,
+      y: seed?.y ?? centre.y - gabarit.h / 2,
+      w: seed?.w ?? gabarit.w,
+      h: seed?.h ?? gabarit.h,
+      text: seed?.text ?? gabarit.text,
+      color: seed?.color,
+    }
+    get().pushHistory()
+    set((state) => ({
+      diagram: { ...state.diagram, annotations: [...(state.diagram.annotations ?? []), annotation] },
+      selectedNodes: [],
+      selectedLinks: [],
+      selectedAnnotations: [annotation.id],
+    }))
+    return annotation.id
+  },
+
+  updateAnnotation: (id, patch) => {
+    if (lockedStore()) return
+    get().pushHistory()
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        annotations: (state.diagram.annotations ?? []).map((item) =>
+          item.id === id ? { ...item, ...patch } : item,
+        ),
+      },
+    }))
+  },
+
+  /** Déplacement : sans historique à chaque pixel, c'est le glisser qui l'empile. */
+  moveAnnotation: (id, dx, dy) =>
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        annotations: (state.diagram.annotations ?? []).map((item) =>
+          item.id === id ? { ...item, x: item.x + dx, y: item.y + dy } : item,
+        ),
+      },
+    })),
+
+  removeAnnotation: (id) => {
+    if (lockedStore()) return
+    get().pushHistory()
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        annotations: (state.diagram.annotations ?? []).filter((item) => item.id !== id),
+      },
+      selectedAnnotations: state.selectedAnnotations.filter((item) => item !== id),
+    }))
+  },
+
+  setTitleBlock: (patch) => {
+    if (lockedStore()) return
+    get().pushHistory()
+    set((state) => ({
+      diagram: { ...state.diagram, titleBlock: { ...(state.diagram.titleBlock ?? {}), ...patch } },
+    }))
+  },
+
+  upsertFlow: (flow) => {
+    if (lockedStore()) return
+    get().pushHistory()
+    set((state) => {
+      const flows = [...(state.diagram.flows ?? [])]
+      const index = flows.findIndex((item) => item.id === flow.id)
+      if (index >= 0) flows[index] = { ...flows[index], ...flow }
+      else flows.push(flow)
+      return { diagram: { ...state.diagram, flows } }
+    })
+  },
+
+  removeFlow: (id) => {
+    if (lockedStore()) return
+    get().pushHistory()
+    set((state) => ({
+      diagram: { ...state.diagram, flows: (state.diagram.flows ?? []).filter((f) => f.id !== id) },
     }))
   },
 
@@ -1991,6 +2128,15 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     }
     const padding = 72
     const bounds = diagramBounds(diagram.nodes)
+    // Les annotations, la légende et le cartouche vivent hors du nuage d'équipements :
+    // les ignorer ferait cadrer sur un schéma dont il manque un bout.
+    for (const annotation of diagram.annotations ?? []) {
+      bounds.minX = Math.min(bounds.minX, annotation.x, annotation.x + annotation.w)
+      bounds.maxX = Math.max(bounds.maxX, annotation.x, annotation.x + annotation.w)
+      bounds.minY = Math.min(bounds.minY, annotation.y, annotation.y + annotation.h)
+      bounds.maxY = Math.max(bounds.maxY, annotation.y, annotation.y + annotation.h)
+    }
+    if (get().showLegend || diagram.titleBlock?.show) bounds.maxY += 190
     const width = bounds.maxX - bounds.minX
     const height = bounds.maxY - bounds.minY
     const zoom = Math.min(

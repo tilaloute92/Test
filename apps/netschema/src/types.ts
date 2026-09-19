@@ -201,6 +201,84 @@ export interface VlanDef {
   notes?: string
 }
 
+/**
+ * Annotation posée sur le plan : ce que le schéma ne dit pas tout seul.
+ *
+ * Un schéma réseau se commente — « migration prévue T3 », « lien opérateur en cours de
+ * commande », « ne pas rebrancher sans le prestataire ». Ces notes appartiennent au
+ * document et non à un équipement : elles survivent au déplacement des boîtes et partent
+ * dans les exports.
+ */
+export type AnnotationKind = 'note' | 'zone' | 'arrow'
+
+export interface Annotation {
+  id: string
+  kind: AnnotationKind
+  text?: string
+  /** Coin haut-gauche (note, zone) ou point de départ (flèche). */
+  x: number
+  y: number
+  /** Taille du cadre (note, zone) ou vecteur vers la pointe (flèche). */
+  w: number
+  h: number
+  /** Couleur d'accent ; une couleur neutre par défaut. */
+  color?: string
+}
+
+/**
+ * Cartouche du document, au sens du dessin technique : qui a produit ce schéma, quand, dans
+ * quelle version, et jusqu'où il peut circuler. Un schéma d'infrastructure qui sort d'une
+ * équipe sans indice de révision ni mention de diffusion est un schéma que personne n'ose
+ * utiliser.
+ */
+export interface TitleBlock {
+  /** Cartouche affiché sur le plan et dans les exports. */
+  show?: boolean
+  organisation?: string
+  author?: string
+  /** Référence du document (DOC-RES-001, ticket, affaire…). */
+  reference?: string
+  /** Indice de révision (A, B, 1.2…). */
+  version?: string
+  /** Date d'établissement ou de dernière révision (AAAA-MM-JJ). */
+  date?: string
+  /** État du document : brouillon, pour revue, validé. */
+  status?: string
+  /** Mention de diffusion : interne, confidentiel, diffusion restreinte. */
+  confidentiality?: string
+  notes?: string
+}
+
+/** Décision appliquée à un flux dans la matrice. */
+export type FlowAction = 'autorise' | 'refuse' | 'etudier'
+
+/**
+ * Une ligne de matrice de flux : qui parle à qui, avec quel service, et pourquoi.
+ *
+ * C'est la pièce qui accompagne tout schéma réseau sérieux — celle que réclament la revue
+ * de sécurité, l'homologation et l'exploitation du pare-feu. Elle est tenue ici, à côté du
+ * schéma qui la justifie, plutôt que dans un tableur qui diverge au bout de trois mois.
+ */
+export interface FlowDef {
+  id: string
+  /** Source : nom de zone, de site ou d'équipement du schéma. */
+  from: string
+  /** Destination, même principe. */
+  to: string
+  /** Service applicatif : HTTPS, SSH, SMB, LDAPS… */
+  service?: string
+  /** Transport et ports : « TCP 443 », « UDP 514 », « ICMP ». */
+  protocol?: string
+  action?: FlowAction
+  /** Justification métier : ce qui sera demandé en revue. */
+  purpose?: string
+  /** Demandeur ou responsable du flux. */
+  owner?: string
+  /** Protection du flux : TLS 1.3, IPsec, aucun… */
+  encryption?: string
+  notes?: string
+}
+
 /** Une baie informatique, décrite comme dans un inventaire de parc. */
 export interface RackDef {
   id: string
@@ -227,6 +305,12 @@ export interface Diagram {
   vlans?: VlanDef[]
   /** Baies et locaux techniques. */
   racks?: RackDef[]
+  /** Notes, cadres et flèches posés sur le plan. */
+  annotations?: Annotation[]
+  /** Matrice de flux : ce qui a le droit de parler à quoi. */
+  flows?: FlowDef[]
+  /** Cartouche : auteur, indice de révision, diffusion. */
+  titleBlock?: TitleBlock
   /**
    * Schéma verrouillé : lecture seule. Les verrous appartiennent au document — un schéma
    * validé le reste pour qui l'ouvre, sur un autre poste comme après un export/import.

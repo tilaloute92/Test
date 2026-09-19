@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LinkHandles } from './LinkHandles'
 import { LinkShape, type PlacedLabel } from './LinkShape'
 import { LinkTooltip } from './LinkTooltip'
+import { AnnotationShape } from './AnnotationShape'
+import { LegendShape, legendSize } from './LegendShape'
+import { TitleBlockShape, titleBlockSize } from './TitleBlockShape'
 import { NodeTooltip } from './NodeTooltip'
 import { NodeShape } from './NodeShape'
 import { LINKS, rankOf } from '../lib/catalog'
@@ -30,7 +33,7 @@ import { assignLanes, corridorOf, spreadAnchors, type SpreadResult } from '../li
 import { GRID, useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
 import { DRAG_MIME } from '../lib/dnd'
-import { NODE_H, NODE_W, type Attach, type DeviceKind, type NetLink } from '../types'
+import { NODE_H, NODE_W, type Annotation, type Attach, type DeviceKind, type NetLink } from '../types'
 
 interface DragState {
   pointerId: number
@@ -94,7 +97,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
    * à l'autre.
    */
   const [edition, setEdition] = useState<{
-    type: 'layer' | 'site' | 'zone' | 'cluster'
+    type: 'layer' | 'site' | 'zone' | 'cluster' | 'annotation'
     cle: string
     valeur: string
     x: number
@@ -102,6 +105,14 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   } | null>(null)
   /** Le second clic d'un double-clic vole le focus au champ à peine affiché : on l'ignore. */
   const editionFraiche = useRef(false)
+  /** Glissement d'une annotation : déplacement, redimensionnement ou bout de flèche. */
+  const annotationDragRef = useRef<{
+    pointerId: number
+    id: string
+    poignee: 'deplacer' | 'taille' | 'depart' | 'arrivee'
+    depart: { x: number; y: number }
+    origine: { x: number; y: number; w: number; h: number }
+  } | null>(null)
   const layerDragRef = useRef<{
     pointerId: number
     rang: number
@@ -123,6 +134,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const connectFrom = useDiagram((s) => s.connectFrom)
   const selectedNodes = useDiagram((s) => s.selectedNodes)
   const selectedLinks = useDiagram((s) => s.selectedLinks)
+  const selectedAnnotations = useDiagram((s) => s.selectedAnnotations)
   const snap = useDiagram((s) => s.snap)
   const showGrid = useDiagram((s) => s.showGrid)
   const showZones = useDiagram((s) => s.showZones)
@@ -143,6 +155,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const labelsLocked = useDiagram((s) => s.diagram.labelsLocked === true)
   const showHops = useDiagram((s) => s.showHops)
   const spreadLinks = useDiagram((s) => s.spreadLinks)
+  const showLegend = useDiagram((s) => s.showLegend)
   const viewMode = useDiagram((s) => s.viewMode)
   const direction = useDiagram((s) => s.layout.direction)
 
@@ -435,6 +448,40 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       return
     }
 
+    const annotationDrag = annotationDragRef.current
+    if (annotationDrag) {
+      const point = toDiagram(event.clientX, event.clientY)
+      const dx = point.x - annotationDrag.depart.x
+      const dy = point.y - annotationDrag.depart.y
+      const origine = annotationDrag.origine
+      const store = useDiagram.getState()
+      if (annotationDrag.poignee === 'deplacer') {
+        store.updateAnnotation(annotationDrag.id, {
+          x: Math.round(origine.x + dx),
+          y: Math.round(origine.y + dy),
+        })
+      } else if (annotationDrag.poignee === 'taille') {
+        store.updateAnnotation(annotationDrag.id, {
+          w: Math.max(60, Math.round(origine.w + dx)),
+          h: Math.max(36, Math.round(origine.h + dy)),
+        })
+      } else if (annotationDrag.poignee === 'depart') {
+        // Le départ bouge, la pointe reste : on compense sur la taille.
+        store.updateAnnotation(annotationDrag.id, {
+          x: Math.round(origine.x + dx),
+          y: Math.round(origine.y + dy),
+          w: Math.round(origine.w - dx),
+          h: Math.round(origine.h - dy),
+        })
+      } else {
+        store.updateAnnotation(annotationDrag.id, {
+          w: Math.round(origine.w + dx),
+          h: Math.round(origine.h + dy),
+        })
+      }
+      return
+    }
+
     const layerDrag = layerDragRef.current
     if (layerDrag) {
       const point = toDiagram(event.clientX, event.clientY)
@@ -532,6 +579,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
 
   const endGesture = () => {
     dragRef.current = null
+    annotationDragRef.current = null
     panRef.current = null
     linkDragRef.current = null
     endpointDragRef.current = null
@@ -956,9 +1004,49 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     ;(event.currentTarget as SVGElement).setPointerCapture?.(event.pointerId)
   }
 
+  /**
+   * Annotation : le corps se déplace, les poignées redimensionnent ou tirent un bout de
+   * flèche. Aucun magnétisme forcé — une note se pose où on veut, pas sur la grille.
+   */
+  const onAnnotationPointerDown = (event: React.PointerEvent<SVGGElement>, annotation: Annotation) => {
+    event.stopPropagation()
+    const store = useDiagram.getState()
+    store.select({ annotations: [annotation.id] }, event.shiftKey)
+    if (locked || event.shiftKey) return
+    store.pushHistory()
+    annotationDragRef.current = {
+      pointerId: event.pointerId,
+      id: annotation.id,
+      poignee: 'deplacer',
+      depart: toDiagram(event.clientX, event.clientY),
+      origine: { x: annotation.x, y: annotation.y, w: annotation.w, h: annotation.h },
+    }
+    ;(event.currentTarget as SVGGElement).setPointerCapture?.(event.pointerId)
+  }
+
+  const onAnnotationHandleDown = (
+    event: React.PointerEvent<SVGElement>,
+    annotation: Annotation,
+    poignee: 'taille' | 'depart' | 'arrivee',
+  ) => {
+    event.stopPropagation()
+    if (locked) return
+    const store = useDiagram.getState()
+    store.select({ annotations: [annotation.id] })
+    store.pushHistory()
+    annotationDragRef.current = {
+      pointerId: event.pointerId,
+      id: annotation.id,
+      poignee,
+      depart: toDiagram(event.clientX, event.clientY),
+      origine: { x: annotation.x, y: annotation.y, w: annotation.w, h: annotation.h },
+    }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
   /** Ouvre le champ de renommage à l'endroit du libellé double-cliqué. */
   const ouvrirEdition = (
-    type: 'layer' | 'site' | 'zone' | 'cluster',
+    type: 'layer' | 'site' | 'zone' | 'cluster' | 'annotation',
     cle: string,
     valeur: string,
     point: { x: number; y: number },
@@ -980,10 +1068,19 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     }, 350)
   }
 
+  /** Double-clic sur une annotation : on saisit son texte là où elle est posée. */
+  const ouvrirEditionAnnotation = (annotation: Annotation) => {
+    ouvrirEdition('annotation', annotation.id, annotation.text ?? '', {
+      x: annotation.x,
+      y: annotation.y + (annotation.kind === 'arrow' ? -22 : 6),
+    })
+  }
+
   const validerEdition = (valeur: string) => {
     if (!edition) return
     const store = useDiagram.getState()
     if (edition.type === 'layer') store.setLayerName(Number(edition.cle), valeur)
+    else if (edition.type === 'annotation') store.updateAnnotation(edition.cle, { text: valeur })
     else store.renameGroup(edition.type, edition.cle, valeur)
     setEdition(null)
   }
@@ -1242,6 +1339,24 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
             ),
           )}
 
+          {/*
+            Cadres d'annotation : en fond, comme les cadres de groupe — ils délimitent un
+            périmètre de travaux ou de projet, pas un équipement.
+          */}
+          {(diagram.annotations ?? [])
+            .filter((annotation) => annotation.kind === 'zone')
+            .map((annotation) => (
+              <AnnotationShape
+                key={annotation.id}
+                annotation={annotation}
+                selected={selectedAnnotations.includes(annotation.id)}
+                editable={!locked}
+                onPointerDown={onAnnotationPointerDown}
+                onHandleDown={onAnnotationHandleDown}
+                onDoubleClick={ouvrirEditionAnnotation}
+              />
+            ))}
+
           {display.links.map((link) => {
             const geometry = geometries.get(link.id)
             if (!geometry) return null
@@ -1300,6 +1415,39 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
               />
             )
           })}
+
+          {/*
+            Légende et cartouche : posés sous le schéma, dans le même repère. Le cadrage de
+            l'export les englobe donc naturellement, sans mise en page particulière.
+          */}
+          {showLegend && (
+            <LegendShape diagram={diagram} x={bounds.minX} y={bounds.maxY + 46} />
+          )}
+          {diagram.titleBlock?.show && (
+            <TitleBlockShape
+              diagram={diagram}
+              x={Math.max(
+                bounds.maxX - titleBlockSize(diagram).width,
+                showLegend ? bounds.minX + legendSize(diagram).width + 24 : bounds.minX,
+              )}
+              y={bounds.maxY + 46}
+            />
+          )}
+
+          {/* Notes et flèches : au-dessus des équipements, ce sont elles qu'on vient lire. */}
+          {(diagram.annotations ?? [])
+            .filter((annotation) => annotation.kind !== 'zone')
+            .map((annotation) => (
+              <AnnotationShape
+                key={annotation.id}
+                annotation={annotation}
+                selected={selectedAnnotations.includes(annotation.id)}
+                editable={!locked}
+                onPointerDown={onAnnotationPointerDown}
+                onHandleDown={onAnnotationHandleDown}
+                onDoubleClick={ouvrirEditionAnnotation}
+              />
+            ))}
 
           {/* Poignées de tracé : au-dessus des équipements pour rester attrapables. */}
           {display.links.map((link) => {
@@ -1519,8 +1667,40 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
         </g>
       </svg>
 
+      {/*
+        Saisie du texte d'une annotation : une note tient sur plusieurs lignes, un nom de
+        couche non — d'où deux champs et un seul mécanisme.
+      */}
+      {edition?.type === 'annotation' && (
+        <textarea
+          data-export="false"
+          autoFocus
+          value={edition.valeur}
+          onChange={(event) => setEdition({ ...edition, valeur: event.target.value })}
+          onBlur={(event) => {
+            if (editionFraiche.current) {
+              event.currentTarget.focus()
+              return
+            }
+            validerEdition(edition.valeur)
+          }}
+          onKeyDown={(event) => {
+            // Entrée valide, Maj+Entrée passe à la ligne : le réflexe d'un champ de note.
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault()
+              validerEdition(edition.valeur)
+            }
+            if (event.key === 'Escape') setEdition(null)
+            event.stopPropagation()
+          }}
+          placeholder="Texte de l’annotation (Maj+Entrée : nouvelle ligne)"
+          className="absolute z-40 h-24 w-64 resize rounded-lg border border-blue-500 bg-white px-2 py-1.5 text-[12.5px] leading-snug shadow-lg outline-none"
+          style={{ left: Math.max(4, edition.x), top: Math.max(4, edition.y) }}
+        />
+      )}
+
       {/* Renommage sur le schéma : couche, site, zone ou grappe. */}
-      {edition && (
+      {edition && edition.type !== 'annotation' && (
         <input
           data-export="false"
           autoFocus
