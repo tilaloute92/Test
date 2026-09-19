@@ -1,10 +1,11 @@
 import { useRef } from 'react'
 import { Btn } from './ui'
-import { downloadBlob, downloadPng, downloadSvg, slugify, svgMarkup } from '../lib/exportImage'
-import { pageInteractive, type PageExportee, type VueExportee } from '../lib/exportHtml'
+import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
+import { pageInteractive, type PageExportee } from '../lib/exportHtml'
+import { capturerPages } from '../lib/capture'
 import { diagramFileContent, readProjectFile } from '../lib/storage'
 import { useDiagram } from '../store/useDiagram'
-import { VIEW_MODES } from '../lib/viewModes'
+import { modeDefinition, VIEW_MODES } from '../lib/viewModes'
 import type { DetailLevel, OsiView, ViewMode } from '../types'
 import { useAudit } from '../store/useAudit'
 
@@ -43,45 +44,23 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
   }
 
   /**
-   * Export « page interactive ».
+   * Export « page interactive » : toutes les pages, chacune dans ses quatre vues.
    *
-   * Les trois vues sont capturées telles que l'application les dessine : on bascule le mode,
-   * on laisse le navigateur repeindre, on relève le SVG, et on remet le mode d'origine. Ce
-   * détour vaut mieux qu'un second moteur de rendu — la page exportée montre exactement ce
-   * que montre l'écran.
+   * La capture est faite par le module commun (`capturerPages`) : c'est le rendu réel de
+   * l'application, page après page et mode après mode, avec remise en place de ce qui était
+   * ouvert — y compris l'historique d'annulation, que la bascule de page vide.
    */
   const exportPage = async () => {
-    const svg = svgRef.current
-    if (!svg) return
-    const pageInitiale = store().activePage
-    const modeInitial = store().viewMode
-    // La bascule de page efface l'historique : on le met de côté et on le remet en place,
-    // un export ne doit rien coûter à ce qui est en cours.
-    const { past, future } = store()
-    const pagesExportees: PageExportee[] = []
     try {
-      const pages = store().pagesCompletes()
-      for (let index = 0; index < pages.length; index += 1) {
-        store().selectPage(index)
-        const vues: VueExportee[] = []
-        for (const definition of VIEW_MODES) {
-          store().setViewMode(definition.id)
-          await new Promise<void>((resolve) => {
-            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-          })
-          vues.push({
-            id: definition.id,
-            label: definition.label,
-            hint: definition.hint,
-            svg: svgMarkup(svg),
-          })
-        }
-        pagesExportees.push({
-          nom: pages[index].pageName ?? `Schéma ${index + 1}`,
-          diagram: store().diagram,
-          vues,
-        })
-      }
+      const capturees = await capturerPages(VIEW_MODES.map((definition) => definition.id))
+      const pagesExportees: PageExportee[] = capturees.map((page) => ({
+        nom: page.nom,
+        diagram: page.diagram,
+        vues: page.vues.map((vue) => {
+          const definition = modeDefinition(vue.mode)
+          return { id: vue.mode, label: definition.label, hint: definition.hint, svg: vue.svg }
+        }),
+      }))
       const html = pageInteractive(store().diagram.title, pagesExportees)
       downloadBlob(
         new Blob([html], { type: 'text/html;charset=utf-8' }),
@@ -89,15 +68,11 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
       )
       store().notify(
         pagesExportees.length > 1
-          ? `Page interactive générée : ${pagesExportees.length} pages × 3 vues dans un seul fichier.`
-          : 'Page interactive générée : les trois vues dans un seul fichier.',
+          ? `Page interactive générée : ${pagesExportees.length} pages × ${VIEW_MODES.length} vues dans un seul fichier.`
+          : `Page interactive générée : les ${VIEW_MODES.length} vues dans un seul fichier.`,
       )
     } catch (error) {
       store().notify(error instanceof Error ? error.message : "L'export a échoué.")
-    } finally {
-      store().selectPage(pageInitiale)
-      store().setViewMode(modeInitial)
-      useDiagram.setState({ past, future })
     }
   }
 

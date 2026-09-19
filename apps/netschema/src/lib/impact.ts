@@ -1,4 +1,5 @@
 import { LINKS, rankOf } from './catalog'
+import { articulationPoints } from './ha'
 import { linkEnd } from './osi'
 import type { Diagram, NetLink, NetNode } from '../types'
 
@@ -247,8 +248,17 @@ export function analyseImpact(diagram: Diagram, pannes: Pannes): RapportImpact {
    * et c'est ce qui fait ressortir les points de passage uniques d'un réseau déjà entamé.
    */
   const dependances = new Map<string, string>()
+  /*
+    Seuls les points d'articulation peuvent, en tombant, priver quelqu'un de chemin : retirer
+    un équipement qui n'en est pas un laisse le graphe connexe. On les calcule une fois
+    (Tarjan, un seul parcours) au lieu de refaire un parcours par équipement — sur un schéma
+    de deux cents boîtes, c'est la différence entre deux secondes et un battement de cil. Le
+    résultat est le même : on parcourt toujours les candidats dans l'ordre du schéma, donc
+    l'équipement nommé comme point de passage unique ne change pas.
+  */
+  const coupures = articulationPoints(adjacence)
   for (const candidat of vivants) {
-    if (racines.includes(candidat)) continue
+    if (racines.includes(candidat) || !coupures.has(candidat)) continue
     const sans = new Set(vivants)
     sans.delete(candidat)
     const encore = joignables(racines, adjacence, sans)
@@ -542,15 +552,36 @@ export interface Classement {
   fragiles: number
 }
 
+/**
+ * Classement de criticité : par quoi commencer.
+ *
+ * Deux précautions rendent le classement honnête et rapide. D'abord on ne teste que les
+ * équipements qui portent au moins deux liaisons de transport : retirer une extrémité (un
+ * poste, une imprimante) ne coupe personne d'autre, et le calcul n'a rien à en dire. Ensuite
+ * on compare à l'état de repos : un réseau déjà fragile le reste quoi qu'on débranche, et
+ * recompter ces fragilités existantes pour chaque candidat les ferait toutes remonter au
+ * même niveau. On ne retient donc que ce que cet arrêt-là ajoute.
+ */
 export function classementCriticite(diagram: Diagram, limite = 10): Classement[] {
+  const degres = new Map<string, number>()
+  for (const link of transportLinks(diagram)) {
+    if (link.from === link.to) continue
+    degres.set(link.from, (degres.get(link.from) ?? 0) + 1)
+    degres.set(link.to, (degres.get(link.to) ?? 0) + 1)
+  }
+
+  const repos = analyseImpact(diagram, { nodes: [], links: [] })
+  const fragilesAuRepos = new Set(repos.fragiles.map((item) => item.id))
+
   const resultats: Classement[] = []
   for (const node of diagram.nodes) {
+    if ((degres.get(node.id) ?? 0) < 2) continue
     const rapport = analyseImpact(diagram, { nodes: [node.id], links: [] })
     resultats.push({
       id: node.id,
       nom: node.name,
       isoles: rapport.compte.isole,
-      fragiles: rapport.compte.fragile,
+      fragiles: rapport.fragiles.filter((item) => !fragilesAuRepos.has(item.id)).length,
     })
   }
   return resultats

@@ -50,7 +50,7 @@ function adjacencyOf(links: NetLink[], allowed: Set<string>): Map<string, Set<st
  * scinde le réseau en plusieurs morceaux. C'est la définition même d'un point de défaillance
  * unique dans une architecture réseau.
  */
-function articulationPoints(adj: Map<string, Set<string>>): Set<string> {
+export function articulationPoints(adj: Map<string, Set<string>>): Set<string> {
   const disc = new Map<string, number>()
   const low = new Map<string, number>()
   const parent = new Map<string, string | null>()
