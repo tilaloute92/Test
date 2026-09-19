@@ -12,7 +12,7 @@ import { LoginView } from './components/LoginView'
 import { ProjectsDialog } from './components/ProjectsDialog'
 import { UsersDialog } from './components/UsersDialog'
 import { chargerLogos } from './lib/vendorLogos'
-import { useDiagram } from './store/useDiagram'
+import { GRID, useDiagram } from './store/useDiagram'
 import { canEdit, useSession } from './store/useSession'
 
 // Les modules secondaires ne sont chargés qu'à leur première ouverture : l'écran de départ
@@ -152,6 +152,26 @@ export default function App() {
       if (!event.ctrlKey && !event.metaKey && (event.key === ']' || event.key === '[')) {
         event.preventDefault()
         store.reorderNodes(store.selectedNodes, event.key === ']' ? 'forward' : 'backward')
+        return
+      }
+      // Tout sélectionner : le réflexe de n'importe quel éditeur.
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault()
+        store.selectAll()
+        return
+      }
+      /*
+        Flèches du clavier : déplacer la sélection au pas de la grille, d'un pixel avec Alt
+        (le réglage fin), de cinq pas avec Maj. C'est ce qui manque le plus quand on range un
+        schéma à la souris : la dernière correction se fait au clavier.
+      */
+      if (event.key.startsWith('Arrow') && store.selectedNodes.length > 0) {
+        event.preventDefault()
+        const pas = event.altKey ? 1 : event.shiftKey ? GRID * 5 : GRID
+        const dx = event.key === 'ArrowLeft' ? -pas : event.key === 'ArrowRight' ? pas : 0
+        const dy = event.key === 'ArrowUp' ? -pas : event.key === 'ArrowDown' ? pas : 0
+        store.pushHistory()
+        store.moveNodes(store.selectedNodes, dx, dy)
         return
       }
       if (event.key === 'Delete' || event.key === 'Backspace') {

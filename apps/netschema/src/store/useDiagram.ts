@@ -98,6 +98,12 @@ export interface ViewState {
 
 export type Mode = 'select' | 'connect'
 
+/**
+ * Alignements proposés. Ce sont ceux de tous les outils de dessin — les retrouver ici évite
+ * d'aligner à l'œil des boîtes que la grille seule ne suffit pas à ranger.
+ */
+export type AlignMode = 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom'
+
 interface DiagramStore {
   /** Page ouverte. Tout le reste de l'application ne connaît qu'elle. */
   diagram: Diagram
@@ -183,6 +189,12 @@ interface DiagramStore {
   setLabelOffset: (id: string, which: 'mid' | 'a' | 'b', offset: LabelOffset | null) => void
   /** Ordre d'empilement des équipements : premier plan, arrière-plan, d'un cran. */
   reorderNodes: (ids: string[], where: ZOrder) => void
+  /** Aligne les équipements sélectionnés sur un bord ou sur leur axe commun. */
+  alignNodes: (ids: string[], mode: AlignMode) => void
+  /** Répartit les équipements sélectionnés à intervalles égaux. */
+  distributeNodes: (ids: string[], axis: 'x' | 'y') => void
+  /** Sélectionne tout le contenu de la page (équipements et annotations). */
+  selectAll: () => void
   deleteSelection: () => void
 
   /** Verrouille ou déverrouille le schéma entier : en lecture seule, plus rien ne bouge. */
@@ -770,6 +782,70 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       return { diagram: { ...state.diagram, nodes: next } }
     })
   },
+
+  /**
+   * Alignement : on prend le bord commun de la sélection et on y range tout le monde.
+   *
+   * L'aimantation à la grille ne suffit pas — deux équipements peuvent être sur la grille et
+   * décalés d'un pas. Les positions sont des centres de boîte, d'où la demi-taille ajoutée
+   * pour les bords.
+   */
+  alignNodes: (ids, mode) => {
+    if (lockedStore() || ids.length < 2) return
+    const cibles = get().diagram.nodes.filter((node) => ids.includes(node.id))
+    if (cibles.length < 2) return
+    get().pushHistory()
+    const xs = cibles.map((node) => node.x)
+    const ys = cibles.map((node) => node.y)
+    const valeur = {
+      left: Math.min(...xs),
+      right: Math.max(...xs),
+      hcenter: (Math.min(...xs) + Math.max(...xs)) / 2,
+      top: Math.min(...ys),
+      bottom: Math.max(...ys),
+      vcenter: (Math.min(...ys) + Math.max(...ys)) / 2,
+    }[mode]
+    const horizontal = mode === 'left' || mode === 'right' || mode === 'hcenter'
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        nodes: state.diagram.nodes.map((node) =>
+          ids.includes(node.id)
+            ? { ...node, [horizontal ? 'x' : 'y']: Math.round(valeur) }
+            : node,
+        ),
+      },
+    }))
+  },
+
+  /** Répartition : les extrêmes ne bougent pas, les autres se placent à pas égal entre eux. */
+  distributeNodes: (ids, axis) => {
+    if (lockedStore() || ids.length < 3) return
+    const cibles = get()
+      .diagram.nodes.filter((node) => ids.includes(node.id))
+      .sort((a, b) => a[axis] - b[axis])
+    if (cibles.length < 3) return
+    get().pushHistory()
+    const debut = cibles[0][axis]
+    const fin = cibles[cibles.length - 1][axis]
+    const pas = (fin - debut) / (cibles.length - 1)
+    const positions = new Map(cibles.map((node, index) => [node.id, Math.round(debut + index * pas)]))
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        nodes: state.diagram.nodes.map((node) =>
+          positions.has(node.id) ? { ...node, [axis]: positions.get(node.id) as number } : node,
+        ),
+      },
+    }))
+  },
+
+  selectAll: () =>
+    set((state) => ({
+      selectedNodes: state.diagram.nodes.map((node) => node.id),
+      selectedLinks: [],
+      selectedAnnotations: (state.diagram.annotations ?? []).map((annotation) => annotation.id),
+    })),
 
   deleteSelection: () => {
     if (lockedStore()) return

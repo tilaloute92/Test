@@ -89,6 +89,14 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   /** Point d'accroche choisi sur l'équipement de départ, en mode « Relier ». */
   const connectAttachRef = useRef<Attach | null>(null)
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
+  /**
+   * Sélection au lasso : Maj + glisser sur le fond. Le fond seul déplace la vue — c'est le
+   * geste le plus fréquent — d'où la touche Maj, qui veut déjà dire « ajouter à la sélection ».
+   */
+  const lassoRef = useRef<{ pointerId: number; depart: { x: number; y: number } } | null>(null)
+  const [lasso, setLasso] = useState<{ x: number; y: number; width: number; height: number } | null>(
+    null,
+  )
   /** Boîte survolée pendant qu'on pose une accroche, et repère retenu : c'est l'aide visuelle. */
   const [accroche, setAccroche] = useState<{ nodeId: string; attach: Attach } | null>(null)
   /**
@@ -413,6 +421,15 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const onBackgroundPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     const store = useDiagram.getState()
     if (mode === 'connect' && connectFrom) store.setConnectFrom(null)
+
+    if (event.shiftKey && mode === 'select') {
+      const depart = toDiagram(event.clientX, event.clientY)
+      lassoRef.current = { pointerId: event.pointerId, depart }
+      setLasso({ x: depart.x, y: depart.y, width: 0, height: 0 })
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+      return
+    }
+
     if (!event.shiftKey) store.clearSelection()
     panRef.current = {
       pointerId: event.pointerId,
@@ -568,6 +585,18 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       return
     }
 
+    const lassoDrag = lassoRef.current
+    if (lassoDrag) {
+      const point = toDiagram(event.clientX, event.clientY)
+      setLasso({
+        x: Math.min(lassoDrag.depart.x, point.x),
+        y: Math.min(lassoDrag.depart.y, point.y),
+        width: Math.abs(point.x - lassoDrag.depart.x),
+        height: Math.abs(point.y - lassoDrag.depart.y),
+      })
+      return
+    }
+
     const pan = panRef.current
     if (pan) {
       useDiagram.getState().setView({
@@ -578,6 +607,30 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   }
 
   const endGesture = () => {
+    // Fin du lasso : tout ce que le rectangle touche entre dans la sélection.
+    if (lassoRef.current && lasso) {
+      const dedans = (x: number, y: number, w: number, h: number) =>
+        x + w >= lasso.x && x <= lasso.x + lasso.width && y + h >= lasso.y && y <= lasso.y + lasso.height
+      const noeuds = display.nodes
+        .filter((node) => dedans(node.x - NODE_W / 2, node.y - NODE_H / 2, NODE_W, NODE_H))
+        .flatMap((node) => realIds.get(node.id) ?? [node.id])
+      const annotations = (diagram.annotations ?? [])
+        .filter((annotation) =>
+          dedans(
+            Math.min(annotation.x, annotation.x + annotation.w),
+            Math.min(annotation.y, annotation.y + annotation.h),
+            Math.abs(annotation.w),
+            Math.abs(annotation.h),
+          ),
+        )
+        .map((annotation) => annotation.id)
+      // Un simple Maj+clic sans glisser ne doit pas vider la sélection en cours.
+      if (lasso.width > 3 || lasso.height > 3) {
+        useDiagram.getState().select({ nodes: noeuds, annotations })
+      }
+    }
+    lassoRef.current = null
+    setLasso(null)
     dragRef.current = null
     annotationDragRef.current = null
     panRef.current = null
@@ -1431,6 +1484,22 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 showLegend ? bounds.minX + legendSize(diagram).width + 24 : bounds.minX,
               )}
               y={bounds.maxY + 46}
+            />
+          )}
+
+          {lasso && (lasso.width > 2 || lasso.height > 2) && (
+            <rect
+              data-export="false"
+              x={lasso.x}
+              y={lasso.y}
+              width={lasso.width}
+              height={lasso.height}
+              fill="#2563eb"
+              fillOpacity={0.08}
+              stroke="#2563eb"
+              strokeWidth={1.4}
+              strokeDasharray="6 4"
+              pointerEvents="none"
             />
           )}
 

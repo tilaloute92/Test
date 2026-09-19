@@ -151,7 +151,9 @@ export function Inspector() {
         <p className="font-semibold text-slate-600">Raccourcis</p>
         <p>Ctrl+K — recherche et commandes · Ctrl+I — import rapide</p>
         <p>L — mode Relier · N — poser une note · Ctrl+D — dupliquer · Suppr — supprimer</p>
-        <p>Ctrl+Z / Ctrl+Maj+Z — annuler / rétablir · Échap — annuler</p>
+        <p>Ctrl+Z / Ctrl+Maj+Z — annuler / rétablir · Ctrl+A — tout sélectionner</p>
+        <p>Flèches — déplacer (Alt : au pixel, Maj : cinq pas) · Échap — annuler</p>
+        <p>Maj + glisser sur le fond — sélection au lasso</p>
         <p>Molette — zoom · Glisser le fond — déplacer la vue</p>
         <p>Double-clic sur un bloc replié — l’ouvrir</p>
       </section>
@@ -506,7 +508,68 @@ function MultiNodeForm({ nodes }: { nodes: NetNode[] }) {
         onChange={(pinned) => updateNodes(ids, { pinned })}
         label="Figer la position de la sélection"
       />
+      <AlignRow ids={ids} />
       <ZOrderRow ids={ids} />
+    </div>
+  )
+}
+
+/**
+ * Alignement et répartition.
+ *
+ * L'aimantation à la grille ne range pas tout : deux équipements peuvent être sur la grille
+ * et décalés d'un pas, et une rangée de six switches se répartit mal à l'œil. Ce sont les
+ * boutons qu'on cherche dans tout outil de dessin.
+ */
+function AlignRow({ ids }: { ids: string[] }) {
+  const alignNodes = useDiagram((s) => s.alignNodes)
+  const distributeNodes = useDiagram((s) => s.distributeNodes)
+  const bouton =
+    'flex-1 rounded-md border border-slate-200 bg-white px-1 py-1.5 text-[11px] text-slate-600 transition hover:bg-slate-50 disabled:opacity-40'
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[11px] font-medium text-slate-500">Aligner</span>
+      <div className="flex gap-1">
+        <button type="button" className={bouton} title="Aligner à gauche" onClick={() => alignNodes(ids, 'left')}>
+          ⇤
+        </button>
+        <button type="button" className={bouton} title="Centrer verticalement" onClick={() => alignNodes(ids, 'hcenter')}>
+          ↔
+        </button>
+        <button type="button" className={bouton} title="Aligner à droite" onClick={() => alignNodes(ids, 'right')}>
+          ⇥
+        </button>
+        <button type="button" className={bouton} title="Aligner en haut" onClick={() => alignNodes(ids, 'top')}>
+          ⇧
+        </button>
+        <button type="button" className={bouton} title="Centrer horizontalement" onClick={() => alignNodes(ids, 'vcenter')}>
+          ↕
+        </button>
+        <button type="button" className={bouton} title="Aligner en bas" onClick={() => alignNodes(ids, 'bottom')}>
+          ⇩
+        </button>
+      </div>
+      <div className="flex gap-1">
+        <button
+          type="button"
+          className={bouton}
+          disabled={ids.length < 3}
+          title="Répartir à intervalles égaux, horizontalement"
+          onClick={() => distributeNodes(ids, 'x')}
+        >
+          Répartir ↔
+        </button>
+        <button
+          type="button"
+          className={bouton}
+          disabled={ids.length < 3}
+          title="Répartir à intervalles égaux, verticalement"
+          onClick={() => distributeNodes(ids, 'y')}
+        >
+          Répartir ↕
+        </button>
+      </div>
     </div>
   )
 }

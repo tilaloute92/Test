@@ -481,6 +481,23 @@ boîte reste attrapable. Elles n'apparaissent jamais dans les exports, et une li
 sur un bloc replié retrouve un tracé automatique — son tracé manuel ne vaut que pour ses
 extrémités d'origine.
 
+## Ranger le schéma : sélection, alignement, clavier
+
+Ce qu'on attend d'un éditeur de schéma, et qui se fait autrement à la main :
+
+- **Sélection au lasso** — <kbd>Maj</kbd> + glisser sur le fond trace un rectangle et
+  sélectionne tout ce qu'il touche, équipements et annotations. Le glisser seul déplace la
+  vue : c'est le geste le plus fréquent, il reste prioritaire.
+- **Tout sélectionner** — <kbd>Ctrl</kbd>+<kbd>A</kbd>.
+- **Flèches du clavier** — déplacent la sélection d'un pas de grille, d'un pixel avec
+  <kbd>Alt</kbd> (le réglage fin), de cinq pas avec <kbd>Maj</kbd>. La dernière correction se
+  fait au clavier, pas à la souris.
+- **Aligner et répartir** — dès que deux équipements sont sélectionnés, l'inspecteur propose
+  les six alignements (gauche, centre, droite, haut, milieu, bas) ; à partir de trois, la
+  répartition à intervalles égaux, horizontale ou verticale. L'aimantation à la grille ne
+  suffit pas : deux boîtes peuvent être sur la grille et décalées d'un pas.
+- **N** — poser une note sur le plan, comme **L** bascule en mode Relier.
+
 ## Premier plan, arrière-plan
 
 Deux boîtes qui se chevauchent, un équipement posé sur un cadre de zone, une grappe dense :
