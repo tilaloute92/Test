@@ -109,6 +109,7 @@ export type VoiceIntent =
   | { type: 'linkStyle'; style: LinkStyle }
   | { type: 'route'; shape: LinkShape }
   | { type: 'toggle'; key: ToggleKey; value: boolean }
+  | { type: 'annotate'; kind: 'note' | 'zone' | 'arrow'; text?: string }
   // Projet
   | { type: 'export'; format: 'svg' | 'png' }
   | { type: 'project'; action: 'new' | 'sample' | 'save' }
@@ -144,6 +145,7 @@ export type ToggleKey =
   | 'showHops'
   | 'spreadLinks'
   | 'snap'
+  | 'showLegend'
 
 export type QueryKind = 'count' | 'countKind' | 'ha' | 'spof' | 'power' | 'freeUnits' | 'vlans' | 'racks'
 
@@ -246,6 +248,7 @@ const TOGGLE_WORDS: { pattern: RegExp; key: ToggleKey }[] = [
   { pattern: /croisements?|ponts?|sauts?/, key: 'showHops' },
   { pattern: /superpositions?|chevauchements?|liaisons? superposees?|ecartement/, key: 'spreadLinks' },
   { pattern: /aimant|magnet|grille magnetique/, key: 'snap' },
+  { pattern: /legende/, key: 'showLegend' },
 ]
 
 /** Nettoie un nom dicté : « le switch cœur un » reste tel quel, la ponctuation part. */
@@ -382,6 +385,31 @@ function rawValue(raw: string, pattern: RegExp, group: number, fallback: string)
  * pour qu'« ajoute FW-01 à la grappe FW-HA » ne soit pas lu comme « ajoute un équipement ».
  */
 const RULES: Rule[] = [
+  // ── Annotations ────────────────────────────────────────────────────────────
+  // Placées avant « ajoute <équipement> » : « ajoute une note » désigne une annotation,
+  // pas un type du catalogue.
+  (t, raw) => {
+    const motif = /^(?:ajoute|ajouter|pose|poser|cree|creer|ecris|ecrire)\s+(?:une\s+|un\s+)?(note|annotation|remarque|commentaire)\s*(.*)$/
+    const match = t.match(motif)
+    if (!match) return null
+    const texte = rawValue(raw, motif, 2, match[2] ?? '')
+    return { type: 'annotate', kind: 'note', text: texte.trim() || undefined }
+  },
+  (t, raw) => {
+    const motif = /^(?:encadre|encadrer|entoure|entourer|delimite|delimiter)\s*(.*)$/
+    const match = t.match(motif)
+    if (!match) return null
+    const texte = rawValue(raw, motif, 1, match[1] ?? '')
+    return { type: 'annotate', kind: 'zone', text: texte.trim() || undefined }
+  },
+  (t, raw) => {
+    const motif = /^(?:ajoute|ajouter|pose|poser|trace|tracer)\s+(?:une\s+)?(?:fleche|renvoi)\s*(.*)$/
+    const match = t.match(motif)
+    if (!match) return null
+    const texte = rawValue(raw, motif, 1, match[1] ?? '')
+    return { type: 'annotate', kind: 'arrow', text: texte.trim() || undefined }
+  },
+
   // ── Pages du document ──────────────────────────────────────────────────────
   (t, raw) => {
     const match = t.match(/^(?:ajoute|ajouter|cree|creer|nouvelle|nouveau|nouvel)\s+(?:une\s+|un\s+)?(?:page|onglet)\s*(.*)$/)
@@ -1014,6 +1042,7 @@ const EDITING_INTENTS = new Set<VoiceIntent['type']>([
   'undo',
   'redo',
   'groupRename',
+  'annotate',
   // Les commandes de page ne sont pas gardées ici : un verrou porte sur une page, il ne doit
   // pas empêcher d'en créer une autre ni d'aller la voir. Le magasin refuse de lui seul de
   // renommer ou de supprimer une page verrouillée.
@@ -1050,6 +1079,17 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'Insère le modèle pare-feu actif passif',
       'Duplique',
       'Supprime SW-ACC-B1',
+    ],
+  },
+  {
+    title: 'Annoter et documenter',
+    examples: [
+      'Ajoute une note Migration prévue au troisième trimestre',
+      'Encadre Lot 2 bâtiment B',
+      'Ajoute une flèche',
+      'Affiche la légende',
+      'Ouvre la matrice de flux',
+      'Ouvre le dossier',
     ],
   },
   {

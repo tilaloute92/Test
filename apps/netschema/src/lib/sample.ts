@@ -173,5 +173,50 @@ export function sampleDiagram(): Diagram {
       { id: '100', name: 'Interconnexion périmètre', subnet: '192.168.0.0/24', gateway: '192.168.0.254' },
       { id: '999', name: 'Synchronisation HA', notes: 'Non routé : lien direct entre les pare-feu' },
     ],
+    // Cartouche renseigné : l'exemple montre ce qu'on attend d'un document qui circule.
+    titleBlock: {
+      show: false,
+      organisation: 'Direction des systèmes d’information',
+      reference: 'DOC-RES-001',
+      version: 'B',
+      author: 'Service réseau',
+      status: 'Pour revue',
+      confidentiality: 'Diffusion restreinte',
+    },
+    // Quelques lignes de matrice : de quoi montrer ce que le contrôle sait dire.
+    flows: [
+      {
+        id: 'flux-portail',
+        from: 'WAN',
+        to: 'DMZ',
+        service: 'HTTPS',
+        protocol: 'TCP 443',
+        action: 'autorise',
+        purpose: 'Publication du portail usagers',
+        owner: 'Direction métier',
+        encryption: 'TLS 1.3',
+      },
+      {
+        id: 'flux-bureautique',
+        from: 'Bâtiment A',
+        to: 'Datacenter',
+        service: 'Applications métier',
+        protocol: 'TCP 443, TCP 1433',
+        action: 'autorise',
+        purpose: 'Accès des postes aux applications hébergées',
+        owner: 'Exploitation',
+        encryption: 'TLS 1.2+',
+      },
+      {
+        id: 'flux-admin',
+        from: 'Datacenter',
+        to: 'Bâtiment B',
+        service: 'Administration',
+        protocol: 'TCP 22, TCP 3389',
+        action: 'refuse',
+        purpose: 'Administration interdite depuis les postes bureautiques',
+        owner: 'Sécurité',
+      },
+    ],
   }
 }

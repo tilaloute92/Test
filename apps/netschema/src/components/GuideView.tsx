@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Btn } from './ui'
 import { VOICE_EXAMPLE_GROUPS } from '../lib/voice'
 import { useDiagram } from '../store/useDiagram'
+import type { AppView } from '../types'
 
 /**
  * Guide d'utilisation intégré.
@@ -97,7 +98,7 @@ export function GuideView() {
   /** Dernière commande d'exemple lancée depuis le guide, avec la réponse obtenue. */
   const [tried, setTried] = useState<{ command: string; message: string; ok: boolean } | null>(null)
 
-  const openIn = (view: 'diagram' | 'inventory' | 'racks' | 'discovery', after?: () => void) => {
+  const openIn = (view: AppView, after?: () => void) => {
     setAppView(view)
     after?.()
   }
@@ -154,12 +155,12 @@ export function GuideView() {
     },
     {
       id: 'modules',
-      title: 'Les quatre modules',
-      keywords: 'onglets vues modules inventaire baies racks decouverte navigation',
+      title: 'Les six modules',
+      keywords: 'onglets vues modules inventaire baies racks flux matrice dossier decouverte navigation',
       body: (
         <>
           <P>
-            Les quatre onglets travaillent sur le <b>même</b> jeu de données : un serveur créé
+            Les six onglets travaillent sur le <b>même</b> jeu de données : un serveur créé
             dans le schéma apparaît dans l'inventaire, et l'implanter dans une baie ne le
             déplace pas sur le plan.
           </P>
@@ -181,9 +182,19 @@ export function GuideView() {
                 text: 'Implantation physique en U, façon GLPI : hauteur, position, puissance, taux de remplissage.',
               },
               {
+                view: 'flows' as const,
+                title: 'Flux',
+                text: 'Matrice de flux contrôlée contre le schéma, et traçage du chemin entre deux équipements.',
+              },
+              {
                 view: 'discovery' as const,
                 title: 'Découverte',
                 text: 'Relevés réseau (LLDP, CDP, ARP, nmap, CSV) transformés en cartographie, à fusionner avec le schéma.',
+              },
+              {
+                view: 'dossier' as const,
+                title: 'Dossier',
+                text: 'Complétude du document, dossier technique imprimable, comparaison avec une version précédente.',
               },
             ].map((card) => (
               <button
@@ -450,6 +461,132 @@ export function GuideView() {
             d'onglet repart d'un historique vierge, pour qu'un « annuler » ne modifie jamais une
             page que vous ne voyez pas.
           </Note>
+        </>
+      ),
+    },
+    {
+      id: 'annoter',
+      title: 'Annoter, cartouche et légende',
+      keywords: 'note annotation cadre fleche commentaire reserve cartouche legende indice revision diffusion document',
+      body: (
+        <>
+          <P>
+            Un schéma porte aussi ce qu'il ne montre pas : une réserve, un périmètre de
+            travaux, un renvoi. Trois outils dans la barre d'outils du module Schéma.
+          </P>
+          <List
+            items={[
+              <>
+                <b>Note</b> — un texte sur fond teinté. Double-clic sur le plan pour l'écrire
+                (<Keys>Maj</Keys> + <Keys>Entrée</Keys> pour une nouvelle ligne), poignée du
+                coin pour la redimensionner, six couleurs dans l'inspecteur.
+              </>,
+              <>
+                <b>Cadre</b> — un rectangle en pointillés avec un libellé, pour délimiter un
+                périmètre qui n'est pas une zone du schéma (un lot, une phase de migration).
+              </>,
+              <>
+                <b>Flèche</b> — un renvoi, avec un libellé facultatif.
+              </>,
+              <>
+                <b>Cartouche</b> (inspecteur → <i>Document</i>) — organisation, référence,
+                indice de révision, date, auteur, état et mention de diffusion, dessinés sous
+                le schéma. Un plan qui circule sans indice ni mention de diffusion ne peut être
+                ni daté, ni comparé, ni transmis en confiance.
+              </>,
+              <>
+                <b>Légende</b> — construite d'après le contenu réel de la page : les types de
+                liaison présents et les familles d'équipements, avec leur nombre.
+              </>,
+            ]}
+          />
+          <P>
+            Annotations, cartouche et légende appartiennent au document : ils suivent les
+            pages, l'enregistrement et partent dans tous les exports.
+          </P>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Btn onClick={() => tryCommand('Ajoute une note Migration prévue au troisième trimestre')}>
+              Essayer : « ajoute une note… »
+            </Btn>
+            <Btn onClick={() => tryCommand('Affiche la légende')}>Essayer : « affiche la légende »</Btn>
+          </div>
+        </>
+      ),
+    },
+    {
+      id: 'flux',
+      title: 'Matrice de flux et traçage de chemin',
+      keywords: 'flux matrice pare-feu filtrage ports protocole justification chemin trajet redondance securite',
+      body: (
+        <>
+          <P>
+            Module <b>Flux</b>. La matrice dit qui a le droit de parler à qui, avec quel
+            service et pourquoi — la pièce que réclame toute revue de sécurité.
+          </P>
+          <P>
+            Chaque ligne est <b>contrôlée contre le schéma</b> : extrémité qui n'existe pas,
+            chemin ne traversant aucun équipement de filtrage, traversée d'un lien opérateur
+            sans protection déclarée, VLAN absent d'un trunk, justification manquante,
+            ouverture en « any ».
+          </P>
+          <List
+            items={[
+              <>
+                <b>Proposer d'après le schéma</b> — une ligne « à étudier » par couple de zones
+                réellement reliées, à qualifier ensuite.
+              </>,
+              <>
+                <b>Import / export CSV</b> — pour reprendre une matrice de tableur et la rendre
+                à qui la demande.
+              </>,
+              <>
+                <b>Tracer un chemin</b> — le chemin le plus court puis les secours
+                <i> réellement indépendants</i> : filtrage traversé, maillon le plus lent, MTU
+                hétérogène, liaison bloquée par spanning-tree, lien de service emprunté.
+              </>,
+            ]}
+          />
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Btn onClick={() => openIn('flows')}>Ouvrir la matrice de flux</Btn>
+          </div>
+        </>
+      ),
+    },
+    {
+      id: 'dossier',
+      title: 'Dossier : complétude, PDF, comparaison',
+      keywords: 'dossier technique pdf impression completude qualite controle comparaison version diff drawio csv',
+      body: (
+        <>
+          <P>
+            Module <b>Dossier</b> : ce qui transforme un schéma en pièce livrable.
+          </P>
+          <List
+            items={[
+              <>
+                <b>Complétude</b> — cartouche, zones, équipements isolés, homonymes, adresses IP
+                en double, recouvrement de sous-réseaux, VLAN orphelins, numéros de série,
+                responsables, garanties, implantation en baie, sauvegarde, administration hors
+                bande. Chaque constat dit quoi faire et mène aux équipements concernés.
+              </>,
+              <>
+                <b>Dossier technique imprimable</b> — page de garde, sommaire, schémas,
+                inventaire, liaisons, plan d'adressage, baies et puissance installée, matrice de
+                flux, réserves. Ouvrez le fichier et imprimez-le en PDF.
+              </>,
+              <>
+                <b>Comparer avec une version</b> — sur les données, pas sur le dessin : un
+                équipement déplacé n'est pas une modification, un port renommé en est une.
+              </>,
+              <>
+                <b>Autres exports</b> — draw.io (une page par onglet), inventaire et matrice en
+                CSV.
+              </>,
+            ]}
+          />
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Btn onClick={() => openIn('dossier')}>Ouvrir le dossier</Btn>
+          </div>
         </>
       ),
     },
@@ -1058,6 +1195,7 @@ export function GuideView() {
               ['Ctrl + Maj + Z', 'Rétablir'],
               ['Ctrl + D', 'Dupliquer la sélection'],
               ['L', 'Mode liaison : cliquer les deux extrémités'],
+              ['N', 'Poser une note sur le plan'],
               ['Ctrl + Maj + F', 'Mettre la sélection au premier plan'],
               ['Ctrl + Maj + B', 'Mettre la sélection à l’arrière-plan'],
               ['] / [', 'Avancer / reculer la sélection d’un cran'],

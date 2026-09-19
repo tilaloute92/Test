@@ -274,7 +274,8 @@ const SCRIPT = `
 
   // ── Onglets principaux (schéma, tableaux) ──────────────────────────────────
   function montrerPage(nom) {
-    ['plan', 'equipements', 'liaisons'].forEach(function (page) {
+    ['plan', 'equipements', 'liaisons', 'flux'].forEach(function (page) {
+      if (!document.getElementById('page-' + page)) return;
       document.getElementById('page-' + page).style.display = page === nom ? (page === 'plan' ? 'flex' : 'block') : 'none';
       var bouton = document.getElementById('page-onglet-' + page);
       if (bouton) bouton.classList.toggle('actif', page === nom);
@@ -464,6 +465,38 @@ const SCRIPT = `
 })();
 `
 
+interface LigneFlux {
+  page: string
+  de: string
+  vers: string
+  service: string
+  protocole: string
+  decision: string
+  justification: string
+  demandeur: string
+  protection: string
+}
+
+const DECISIONS: Record<string, string> = {
+  autorise: 'Autorisé',
+  refuse: 'Refusé',
+  etudier: 'À étudier',
+}
+
+function lignesFlux(diagram: Diagram, page: string): LigneFlux[] {
+  return (diagram.flows ?? []).map((flow) => ({
+    page,
+    de: texte(flow.from),
+    vers: texte(flow.to),
+    service: texte(flow.service),
+    protocole: texte(flow.protocol),
+    decision: flow.action ? DECISIONS[flow.action] : '',
+    justification: texte(flow.purpose),
+    demandeur: texte(flow.owner),
+    protection: texte(flow.encryption),
+  }))
+}
+
 function tableau(entetes: string[], lignes: string[][]): string {
   const tete = entetes.map((titre) => `<th>${echapper(titre)}</th>`).join('')
   const corps = lignes
@@ -489,6 +522,8 @@ function legende(pages: PageExportee[]): string {
 export function pageInteractive(titre: string, pages: PageExportee[]): string {
   const equipements = pages.flatMap((page) => lignesEquipements(page.diagram, page.nom))
   const liaisons = pages.flatMap((page) => lignesLiaisons(page.diagram, page.nom))
+  // La matrice de flux voyage avec le schéma : c'est la pièce qu'on relit en même temps.
+  const flux = pages.flatMap((page) => lignesFlux(page.diagram, page.nom))
   const multi = pages.length > 1
   const donnees = {
     titre,
@@ -529,6 +564,7 @@ export function pageInteractive(titre: string, pages: PageExportee[]): string {
     .join('\n')
 
   const colonnesEquipements = ['Nom', 'Type', 'Modèle', 'Adresse IP', 'VLAN', 'N° de série', 'Site', 'Zone', 'Grappe', 'Baie', 'Rôle']
+  const colonnesFlux = ['Source', 'Destination', 'Service', 'Protocole / ports', 'Décision', 'Justification', 'Demandeur', 'Protection']
   const colonnesLiaisons = ['De', 'Vers', 'Type', 'Couches', 'Débit', 'Libellé', 'Sous-réseau', 'VRF', 'Routage', 'MTU', 'Côté départ', 'Côté arrivée']
 
   return `<!doctype html>
@@ -542,11 +578,12 @@ export function pageInteractive(titre: string, pages: PageExportee[]): string {
 <body>
 <header>
   <h1>${echapper(titre)}</h1>
-  <span class="meta">${pages.length} page(s) · ${equipements.length} équipement(s) · ${liaisons.length} liaison(s) · ${echapper(date)}</span>
+  <span class="meta">${pages.length} page(s) · ${equipements.length} équipement(s) · ${liaisons.length} liaison(s)${flux.length > 0 ? ` · ${flux.length} flux` : ''} · ${echapper(date)}</span>
   <span class="grandit"></span>
   <button class="onglet actif" id="page-onglet-plan" type="button">Schéma</button>
   <button class="onglet" id="page-onglet-equipements" type="button">Équipements</button>
   <button class="onglet" id="page-onglet-liaisons" type="button">Liaisons</button>
+  ${flux.length > 0 ? '<button class="onglet" id="page-onglet-flux" type="button">Flux</button>' : ''}
 </header>
 
 ${ongletsPages}
@@ -627,6 +664,20 @@ ${svgVues}
       }),
     )}
   </div>
+  ${
+    flux.length > 0
+      ? `<div class="tableau" id="page-flux" style="display:none">
+    ${tableau(
+      multi ? ['Page', ...colonnesFlux] : colonnesFlux,
+      flux.map((ligne) =>
+        multi
+          ? [ligne.page, ligne.de, ligne.vers, ligne.service, ligne.protocole, ligne.decision, ligne.justification, ligne.demandeur, ligne.protection]
+          : [ligne.de, ligne.vers, ligne.service, ligne.protocole, ligne.decision, ligne.justification, ligne.demandeur, ligne.protection],
+      ),
+    )}
+  </div>`
+      : ''
+  }
 </main>
 
 <div id="bulle"></div>

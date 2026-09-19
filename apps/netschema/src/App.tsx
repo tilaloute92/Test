@@ -168,6 +168,12 @@ export default function App() {
       }
       if (event.key.toLowerCase() === 'l') {
         store.setMode(store.mode === 'connect' ? 'select' : 'connect')
+        return
+      }
+      // N comme note : le geste d'annoter revient souvent pendant une relecture.
+      if (event.key.toLowerCase() === 'n') {
+        event.preventDefault()
+        store.addAnnotation('note')
       }
     }
     window.addEventListener('keydown', onKeyDown)

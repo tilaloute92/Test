@@ -150,7 +150,7 @@ export function Inspector() {
       <section className="mt-auto rounded-lg bg-slate-50 p-3 text-[11px] leading-relaxed text-slate-500">
         <p className="font-semibold text-slate-600">Raccourcis</p>
         <p>Ctrl+K — recherche et commandes · Ctrl+I — import rapide</p>
-        <p>L — mode Relier · Ctrl+D — dupliquer · Suppr — supprimer</p>
+        <p>L — mode Relier · N — poser une note · Ctrl+D — dupliquer · Suppr — supprimer</p>
         <p>Ctrl+Z / Ctrl+Maj+Z — annuler / rétablir · Échap — annuler</p>
         <p>Molette — zoom · Glisser le fond — déplacer la vue</p>
         <p>Double-clic sur un bloc replié — l’ouvrir</p>

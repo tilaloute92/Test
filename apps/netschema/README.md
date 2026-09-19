@@ -2,7 +2,8 @@
 
 Application web autonome pour dessiner des schémas d'infrastructure réseau : on décrit les
 équipements et leurs liaisons, le **placement automatique** construit le schéma par couches,
-puis on ajuste à la main ce qui doit l'être. Le résultat s'exporte en **SVG** et en **PNG**.
+puis on ajuste à la main ce qui doit l'être. Le résultat s'exporte en **SVG**, en **PNG**, en
+**page interactive autonome**, en **draw.io** et en **dossier technique imprimable**.
 
 L'application est construite autour des pratiques des **infrastructures haute disponibilité** :
 grappes actif/passif et actif/actif, VRRP/HSRP, MLAG et agrégats LACP, témoin de quorum,
@@ -10,10 +11,11 @@ double attachement, double adduction opérateur, site de secours, double chaîne
 Elle sait non seulement les représenter, mais aussi **analyser le schéma** et signaler les
 points de défaillance uniques.
 
-L'application tient quatre modules sur la même base de données : le **schéma**, l'**inventaire**
-du parc, l'**implantation en baies** et la **découverte réseau** — auxquels s'ajoutent les
+L'application tient six modules sur la même base de données : le **schéma**, l'**inventaire**
+du parc, l'**implantation en baies**, la **matrice de flux**, la **découverte réseau** et le
+**dossier** (complétude, dossier technique, comparaison de versions) — auxquels s'ajoutent les
 **commandes vocales** et un **guide intégré**. Un serveur posé dans une baie est le même objet
-que celui câblé sur le schéma et listé à l'inventaire.
+que celui câblé sur le schéma, listé à l'inventaire et cité dans la matrice de flux.
 
 Le catalogue d'équipements couvre l'état de l'art 2026 — SD-WAN et SASE/SSE, fabric
 spine-leaf VXLAN/EVPN, Wi-Fi 7 et **contrôleurs Wi-Fi**, 5G, SAN Fibre Channel, hyperconvergé
@@ -262,10 +264,10 @@ Une phrase non reconnue n'est jamais exécutée au hasard : elle est signalée t
 Onglet **Guide**, ou « ouvre le guide » à la voix, ou encore « comment ça marche ». Le mode
 d'emploi vit dans l'application plutôt que dans un fichier à côté :
 
-- **treize sections** — prise en main, les quatre modules, construction du schéma, liaisons et
-  couches OSI, haute disponibilité, simplification d'une architecture complexe, commande
-  vocale, imports et exports, découverte, inventaire et baies, catalogue, raccourcis clavier,
-  dépannage ;
+- **24 sections** — prise en main, les six modules, construction du schéma, liaisons et
+  couches OSI, annotations et cartouche, matrice de flux et chemins, dossier et complétude,
+  haute disponibilité, simplification d'une architecture complexe, commande vocale, imports et
+  exports, découverte, inventaire et baies, catalogue, raccourcis clavier, dépannage ;
 - une **recherche** insensible aux accents (« decouverte », « export », « micro ») ;
 - des **exemples vocaux cliquables** : le clic exécute la commande pour de vrai, l'application
   bascule sur le module concerné et répond ;
@@ -690,6 +692,138 @@ Format d'un lot :
 (la grille de l'onglet *Catalogue* les montre tous), `infrastructure` et `critical` font
 entrer le type dans l'analyse de haute disponibilité.
 
+## Annoter le schéma
+
+Un schéma d'infrastructure ne se limite pas à des boîtes et à des traits : il porte des
+réserves (« lien opérateur B en cours de commande »), des périmètres qui ne sont pas des zones
+du modèle (un lot de travaux, une phase de migration) et des renvois. Sans quoi ces
+informations finissent dans un courriel que plus personne ne retrouve six mois plus tard.
+
+Trois outils, dans la barre d'outils (*Note*, *Cadre*, *Flèche*) :
+
+| Annotation | Ce qu'elle fait |
+| --- | --- |
+| **Note** | Un texte sur fond teinté, avec une bande de couleur à gauche — lisible même imprimée en noir et blanc. Le texte revient à la ligne tout seul. |
+| **Cadre** | Un rectangle en pointillés avec un libellé, pour délimiter un périmètre qui n'est pas une zone du schéma. Il se dessine en arrière-plan, sous les équipements. |
+| **Flèche** | Un renvoi, avec un libellé facultatif. La pointe est dessinée trait par trait, et non avec un marqueur SVG — plusieurs visionneuses et le rendu PNG ignorent les marqueurs, les flèches y disparaîtraient. |
+
+Elles se déplacent au glisser, se redimensionnent par la poignée du coin (les deux bouts pour
+une flèche), s'éditent au double-clic sur le plan (Maj+Entrée pour une nouvelle ligne) ou dans
+l'inspecteur, et se colorent parmi six teintes. Elles appartiennent au document : elles suivent
+les pages, l'enregistrement, le serveur, et partent dans tous les exports.
+
+À la voix : « ajoute une note Migration prévue au troisième trimestre », « encadre Lot 2
+bâtiment B », « ajoute une flèche ».
+
+## Cartouche et légende
+
+**Le cartouche**, au sens du dessin technique : organisation, référence du document, indice de
+révision, date, auteur, état (brouillon, pour revue, validé) et mention de diffusion (interne,
+diffusion restreinte, confidentiel). Il se remplit dans l'inspecteur, section *Document*, et se
+dessine sous le schéma — donc dans le SVG, le PNG, la page interactive et le dossier technique.
+
+Un schéma d'infrastructure circule : il est joint à un marché, envoyé à un prestataire,
+ressorti deux ans plus tard pendant un incident. Sans indice de révision ni mention de
+diffusion, personne ne sait s'il a le bon, ni s'il a le droit de le transmettre.
+
+**La légende** est construite à partir de ce que la page contient réellement — les types de
+liaison utilisés, avec leur trait et leur nombre, puis les familles d'équipements présentes.
+Une légende figée mentirait vite : elle énumérerait des types absents et tairait les nouveaux.
+
+Le cadrage *Ajuster* tient compte des annotations, de la légende et du cartouche.
+
+## Matrice de flux
+
+Module **Flux**. Qui a le droit de parler à qui, avec quel service, et pourquoi. C'est la pièce
+que réclament la revue de sécurité, l'homologation et l'exploitation du pare-feu — et qui, tenue
+dans un tableur à côté du schéma, diverge au bout de trois mois.
+
+Chaque ligne porte : source, destination, service applicatif, protocole et ports, décision
+(autorisé, refusé, à étudier), justification, demandeur, protection (TLS, IPsec…). Les
+extrémités se désignent avec les mots du réseau — un nom de zone, de site ou d'équipement ; la
+saisie propose ceux du schéma.
+
+**Chaque ligne est contrôlée contre le schéma**, et c'est ce qui distingue cette matrice d'un
+tableur :
+
+- source ou destination qui n'existe nulle part dans le schéma ;
+- **aucun équipement de filtrage sur le chemin** : le flux n'est contrôlé nulle part ;
+- **traversée d'un lien opérateur, d'Internet ou d'un cloud sans protection déclarée** ;
+- VLAN absent d'un trunk du chemin, MTU hétérogène, liaison bloquée par spanning-tree ;
+- justification absente, protocole non précisé, ouverture en « any ».
+
+*Proposer d'après le schéma* amorce la matrice : une ligne « à étudier » par couple de zones
+réellement reliées, à qualifier ensuite. L'import et l'export **CSV** (point-virgule, ouvert
+sans question par Excel en français) permettent de reprendre une matrice existante et de la
+rendre à qui la demande. Elle part aussi dans la page interactive et dans le dossier technique.
+
+## Tracer un chemin
+
+Même module, en bas. « Par où passe le flux du poste comptable vers le serveur de paie ? » est
+la question qu'on pose devant un schéma, et celle à laquelle un schéma seul répond mal dès
+qu'il dépasse trente boîtes.
+
+Deux listes, et l'application calcule le chemin le plus court, puis les chemins de secours —
+**réellement indépendants** : un chemin de secours qui emprunte un équipement intermédiaire du
+premier n'est pas un second chemin, c'est une illusion de redondance, et il n'est pas compté
+comme tel.
+
+Pour chaque chemin, elle indique les sauts, les **équipements de filtrage traversés**, les
+équipements qui routent, le **maillon le plus lent** (d'après les débits saisis), et ce qui
+mérite d'être dit : MTU hétérogène, VLAN manquant sur un trunk, liaison bloquée par
+spanning-tree, emprunt d'une liaison de service (administration, réplication, alimentation) qui
+n'est pas un chemin de production, deux zones différentes reliées sans aucun point de contrôle.
+
+Sélectionner deux équipements sur le schéma remplit les deux listes ; *Montrer sur le schéma*
+resélectionne le chemin trouvé sur le plan.
+
+## Dossier : complétude, dossier technique, comparaison
+
+Module **Dossier**. Trois choses qui répondent au même moment du travail — celui où l'on remet
+le document.
+
+### Complétude
+
+Un schéma juste mais incomplet coûte cher au premier incident : la baie n'est pas renseignée,
+le responsable est parti, la garantie a expiré l'an dernier, le VLAN 40 n'est documenté nulle
+part. Ces manques ne se voient pas en regardant le dessin — ils se comptent.
+
+Le contrôle passe **tout le document** (toutes les pages) : cartouche incomplet, titre par
+défaut, équipements sans zone, équipements sans aucune liaison, noms en double, **adresses IP
+attribuées deux fois**, **recouvrement de sous-réseaux**, VLAN utilisés mais absents du plan
+d'adressage, matériel et numéros de série manquants, responsables, garanties expirées ou qui
+expirent dans moins de quatre mois, équipements en stock ou retirés mais encore câblés,
+équipements non implantés alors que des baies existent, **baies en surcapacité**, absence
+d'administration hors bande, données sans sauvegarde au schéma, points de défaillance unique,
+flux à corriger.
+
+Chaque constat dit **ce qu'il y a à faire** et mène d'un clic aux équipements concernés. Une
+note sur 100 et sept indicateurs de remplissage (zone, matériel, numéro de série, responsable,
+implantation, débits, interfaces) permettent de suivre le progrès d'une revue à l'autre — la
+note est un indicateur, pas un couperet.
+
+### Dossier technique imprimable
+
+Un bouton produit **une page HTML mise en page pour l'impression** : page de garde et
+cartouche, sommaire, les schémas, l'inventaire des équipements, les liaisons avec la
+configuration de leurs deux extrémités, le plan d'adressage, l'implantation en baies avec la
+**puissance installée par baie**, la matrice de flux, puis les réserves (complétude et haute
+disponibilité). Ouvrir le fichier et imprimer en PDF suffit, sur n'importe quel poste.
+
+C'est le choix qui évite d'embarquer une bibliothèque PDF dans l'application : le navigateur
+sait déjà faire, et le fichier intermédiaire reste lisible, archivable et modifiable.
+
+### Comparer deux versions
+
+« Qu'est-ce qui a changé depuis la version de mars ? » Ouvrez le projet `.json` précédent : la
+comparaison se fait **sur les données, pas sur le dessin**. Un équipement déplacé n'est pas une
+modification ; un port renommé, un VLAN retiré d'un trunk, une garantie mise à jour en sont.
+
+Les équipements sont appariés par identifiant, puis par nom — un équipement supprimé puis
+recréé reste le même aux yeux d'une revue de changement. Le rapport liste les ajouts, les
+suppressions et, champ par champ, ce qui a changé (avant → après), pour les équipements, les
+liaisons, les VLAN, les baies, les flux et les pages.
+
 ## Simplifier une architecture complexe
 
 Les outils pensés pour que trente ou cent équipements restent lisibles :
@@ -903,11 +1037,20 @@ ce qu'il sécurise sont documentés dans
   toutes les informations saisies et de quoi naviguer : onglets de vue, cases à cocher
   (étiquettes de liaison, ports et adresses des extrémités, détails des équipements, cadres de
   groupes, noms de couches), zoom à la molette, fiche d'un équipement au clic, détail d'une
-  liaison au survol, recherche, et deux tableaux (équipements, liaisons). Il s'ouvre d'un
-  double-clic sur n'importe quel poste — ni serveur, ni Internet, ni NetSchema — et s'imprime.
+  liaison au survol, recherche, et jusqu'à trois tableaux (équipements, liaisons, matrice de
+  flux). Il s'ouvre d'un double-clic sur n'importe quel poste — ni serveur, ni Internet, ni
+  NetSchema — et s'imprime.
+- **Dossier technique `.html` imprimable** — page de garde et cartouche, sommaire, schémas,
+  inventaire, liaisons, plan d'adressage, baies et puissance installée, matrice de flux,
+  réserves. Ouvrir, imprimer en PDF : c'est la pièce que l'on remet (module *Dossier*).
 - **SVG** — vectoriel, une vue, réutilisable dans Visio, Illustrator, Word, un wiki…
 - **PNG** — bitmap ×2 sur fond blanc.
-- **Projet `.json`** — *Enregistrer* / *Ouvrir…*, pour reprendre ou versionner un schéma.
+- **draw.io `.drawio`** — une page par onglet, équipements, liaisons et annotations. L'import
+  existait déjà : l'échange est maintenant à double sens.
+- **CSV** — inventaire du parc et matrice de flux, en point-virgule (Excel en français les
+  ouvre sans question).
+- **Projet `.json`** — *Enregistrer* / *Ouvrir…*, pour reprendre, versionner ou **comparer**
+  un schéma.
 - **Reprise automatique** — le schéma courant est sauvegardé dans le navigateur (localStorage)
   et rechargé au démarrage suivant.
 
@@ -935,6 +1078,14 @@ src/
   lib/layout.ts         placement automatique par couches, cadres de groupes, cadrage
   lib/ha.ts             analyse haute disponibilité (points d'articulation + règles métier)
   lib/impact.ts         analyse d'impact : joignabilité après panne, fragilité, criticité
+  lib/paths.ts          chemins entre deux équipements, filtrage traversé, cohérence VLAN/MTU
+  lib/flows.ts          matrice de flux : contrôles contre le schéma, import/export CSV
+  lib/quality.ts        contrôle de complétude du dossier (document, schéma, parc, sécurité)
+  lib/diff.ts           comparaison de deux versions, champ par champ
+  lib/dossier.ts        dossier technique imprimable (page de garde, tableaux, réserves)
+  lib/annotations.ts    couleurs des annotations et découpe du texte
+  lib/capture.ts        capture des pages et des vues pour les exports composites
+  lib/drawioExport.ts   export vers draw.io / diagrams.net
   lib/vendorMarks.ts    monogrammes des constructeurs (dessinés, pas des logos déposés)
   lib/vendorLogos.ts    logos officiels déposés par l'installation (public/logos)
   lib/patterns.ts       bibliothèque de modèles d'architectures redondées
@@ -960,8 +1111,9 @@ src/
   store/useAudit.ts     analyse HA mémorisée sur la version courante du schéma
   store/useSession.ts   mode local ou serveur, compte connecté, enregistrement automatique
   components/           barre d'outils, onglets de pages, palette, plan de travail, inspecteur,
-                        info-bulles d'équipement et de liaison, panneaux HA,
-                        L2/L3 et catalogue, palette de commandes, import rapide, guide intégré,
+                        annotations, cartouche et légende, info-bulles d'équipement et de
+                        liaison, panneaux HA, L2/L3, impact et catalogue, modules Flux et
+                        Dossier, palette de commandes, import rapide, guide intégré,
                         page de connexion et liste des schémas du serveur
 public/catalog/         lots chargés au démarrage — la voie de mise à jour sans recompilation
 tools/collector/        collecteur de découverte réseau (Node, sans dépendance) et exemples
@@ -985,4 +1137,13 @@ tools/collector/        collecteur de découverte réseau (Node, sans dépendanc
   de reconnaissance ; les commandes tapées fonctionnent partout.
 - Les pictogrammes sont dessinés pour cette application : ce ne sont pas les jeux d'icônes des
   constructeurs ou des fournisseurs cloud, et ils ne cherchent pas à les imiter.
-- Pas d'export PPTX ni PDF pour l'instant (le SVG s'insère tel quel dans PowerPoint et Word).
+- Le PDF passe par l'impression du dossier technique ou de la page interactive depuis le
+  navigateur : l'application ne produit pas de fichier `.pdf` elle-même. Pas d'export PPTX
+  (le SVG s'insère tel quel dans PowerPoint et Word).
+- L'export draw.io rend le sens, pas le pixel : les cadres de couche, le cartouche et la
+  légende n'ont pas d'équivalent dans draw.io et n'y sont pas repris.
+- Les contrôles de la matrice de flux raisonnent sur le schéma : ils disent qu'un chemin
+  traverse un pare-feu, pas que la règle correspondante existe dans sa configuration.
+- La comparaison de versions apparie les équipements par identifiant puis par nom : deux
+  équipements renommés et échangés au même moment seront vus comme modifiés, non comme
+  permutés.

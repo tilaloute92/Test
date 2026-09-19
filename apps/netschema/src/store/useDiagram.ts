@@ -1768,6 +1768,15 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         get().setDisplay({ [intent.key]: intent.value })
         return { ok: true, message: intent.value ? 'Affiché.' : 'Masqué.' }
 
+      case 'annotate': {
+        const libelles = { note: 'Note', zone: 'Cadre', arrow: 'Flèche' }
+        get().addAnnotation(intent.kind, intent.text ? { text: intent.text } : undefined)
+        return {
+          ok: true,
+          message: `${libelles[intent.kind]} posée sur le plan${intent.text ? ` : « ${intent.text} »` : ''}.`,
+        }
+      }
+
       case 'project': {
         if (intent.action === 'new') {
           get().newDiagram()
