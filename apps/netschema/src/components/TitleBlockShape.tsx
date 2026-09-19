@@ -1,3 +1,4 @@
+import { LARGEUR_CARTOUCHE } from '../lib/layoutBlocks'
 import type { Diagram } from '../types'
 
 /**
@@ -10,7 +11,7 @@ import type { Diagram } from '../types'
  * cadrage et part dans tous les exports.
  */
 
-const LARGEUR = 420
+const LARGEUR = LARGEUR_CARTOUCHE
 const LIGNE = 19
 
 export interface TitleBlockShapeProps {
@@ -88,21 +89,4 @@ export function TitleBlockShape({ diagram, x, y }: TitleBlockShapeProps) {
       )}
     </g>
   )
-}
-
-/** Hauteur occupée, pour placer ce qui vient à côté. */
-export function titleBlockSize(diagram: Diagram): { width: number; height: number } {
-  const bloc = diagram.titleBlock ?? {}
-  const remplies = [
-    bloc.organisation,
-    bloc.reference,
-    bloc.version,
-    bloc.date,
-    bloc.author,
-    bloc.status,
-    bloc.confidentiality,
-  ].filter((valeur) => (valeur ?? '').trim() !== '').length
-  const colonnes = remplies > 4 ? 2 : 1
-  const parColonne = Math.ceil(remplies / colonnes)
-  return { width: LARGEUR, height: 34 + parColonne * LIGNE + (bloc.notes ? 22 : 0) + 8 }
 }

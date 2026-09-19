@@ -50,7 +50,11 @@ export function DossierView() {
   const [enCours, setEnCours] = useState(false)
   const [diff, setDiff] = useState<{ nom: string; rapport: RapportDiff } | null>(null)
 
-  const pages = useMemo(() => pagesCompletes(), [pagesCompletes, diagram])
+  // `pagesCompletes` est une fonction stable : c'est le schéma ouvert qui dit quand relire.
+  const pages = useMemo(() => {
+    void diagram
+    return pagesCompletes()
+  }, [pagesCompletes, diagram])
   const rapport = useMemo(() => controlerDossier(pages, diagram.title), [pages, diagram.title])
 
   const exporterDossier = async () => {

@@ -355,7 +355,7 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
         <Btn onClick={() => void exportImage('png')} title="Exporter en PNG (×2)">PNG</Btn>
         <Btn
           onClick={() => void exportPage()}
-          title="Page HTML autonome : les trois vues, toutes les informations, navigation et options d’affichage"
+          title="Page HTML autonome : les quatre vues, toutes les informations, navigation et options d’affichage"
         >
           HTML
         </Btn>

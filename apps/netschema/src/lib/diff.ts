@@ -140,8 +140,22 @@ function apparier(avant: NetNode[], apres: NetNode[]): {
   return { couples, disparus: [...restantsAvant.values()], nouveaux: vraimentNouveaux }
 }
 
-/** Clé d'une liaison indépendante des identifiants : les deux noms d'équipements, triés. */
-function cleLien(link: NetLink, noms: Map<string, string>): string {
+/**
+ * Clé d'une liaison, exprimée dans les identifiants de la version actuelle.
+ *
+ * Les noms ne peuvent pas servir de clé : renommer un switch ferait apparaître toutes ses
+ * liaisons comme supprimées puis recréées, alors que rien n'a bougé. On passe donc les
+ * extrémités par l'appariement des équipements — c'est lui qui sait que l'ancien « SW-ACC-A1 »
+ * et le nouveau « SW-ACC-A1-NEW » sont le même équipement.
+ */
+function cleLien(link: NetLink, correspondance: Map<string, string>): string {
+  const a = correspondance.get(link.from) ?? link.from
+  const b = correspondance.get(link.to) ?? link.to
+  return [a, b].sort().join('~')
+}
+
+/** Libellé lisible d'une liaison : « A ↔ B », avec les noms de la version concernée. */
+function libelleLien(link: NetLink, noms: Map<string, string>): string {
   const a = noms.get(link.from) ?? link.from
   const b = noms.get(link.to) ?? link.to
   return [a, b].sort().join(' ↔ ')
@@ -189,23 +203,46 @@ function comparerPage(avant: Diagram, apres: Diagram, page: string | undefined, 
 
   const nomsAvant = new Map(avant.nodes.map((node) => [node.id, node.name]))
   const nomsApres = new Map(apres.nodes.map((node) => [node.id, node.name]))
-  const liensAvant = new Map(avant.links.map((link) => [cleLien(link, nomsAvant), link]))
-  const liensApres = new Map(apres.links.map((link) => [cleLien(link, nomsApres), link]))
+  // L'appariement des équipements sert de dictionnaire de traduction pour les liaisons.
+  const correspondance = new Map(couples.map(([ancien, nouveau]) => [ancien.id, nouveau.id]))
+  const liensAvant = new Map(avant.links.map((link) => [cleLien(link, correspondance), link]))
+  const liensApres = new Map(apres.links.map((link) => [cleLien(link, new Map()), link]))
 
   for (const [cle, link] of liensApres) {
     const ancien = liensAvant.get(cle)
     if (!ancien) {
-      out.push({ sens: 'ajoute', cible: 'Liaison', nom: cle, nodeIds: [link.from, link.to], champs: [], page })
+      out.push({
+        sens: 'ajoute',
+        cible: 'Liaison',
+        nom: libelleLien(link, nomsApres),
+        nodeIds: [link.from, link.to],
+        champs: [],
+        page,
+      })
       continue
     }
     const champs = comparerChamps(champsLien(ancien), champsLien(link))
     if (champs.length > 0) {
-      out.push({ sens: 'modifie', cible: 'Liaison', nom: cle, nodeIds: [link.from, link.to], champs, page })
+      out.push({
+        sens: 'modifie',
+        cible: 'Liaison',
+        nom: libelleLien(link, nomsApres),
+        nodeIds: [link.from, link.to],
+        champs,
+        page,
+      })
     }
   }
-  for (const [cle] of liensAvant) {
+  for (const [cle, link] of liensAvant) {
     if (!liensApres.has(cle)) {
-      out.push({ sens: 'supprime', cible: 'Liaison', nom: cle, nodeIds: [], champs: [], page })
+      out.push({
+        sens: 'supprime',
+        cible: 'Liaison',
+        nom: libelleLien(link, nomsAvant),
+        nodeIds: [],
+        champs: [],
+        page,
+      })
     }
   }
 

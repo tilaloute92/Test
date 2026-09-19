@@ -3,7 +3,7 @@ import { LAYER_LABELS_OSI, linkEnd, linkLayers } from './osi'
 import type { Diagram, NetLink, NetNode, ViewMode } from '../types'
 
 /**
- * Export « page interactive » : un seul fichier HTML qui contient les trois vues du schéma,
+ * Export « page interactive » : un seul fichier HTML qui contient les quatre vues du schéma,
  * toutes les informations saisies, et de quoi naviguer dedans.
  *
  * Un SVG ne sait pas faire cela : la plupart des visionneuses en ignorent le script, et une
@@ -11,7 +11,7 @@ import type { Diagram, NetLink, NetNode, ViewMode } from '../types'
  * elle, s'ouvre d'un double-clic sur n'importe quel poste, se transmet par courriel comme un
  * document, et n'a besoin ni de serveur, ni d'Internet, ni de NetSchema.
  *
- * Le rendu des trois vues est celui de l'application — ce sont ses propres SVG, capturés tels
+ * Le rendu des quatre vues est celui de l'application — ce sont ses propres SVG, capturés tels
  * quels. Ce fichier n'ajoute que la coquille : navigation, options d'affichage, tableaux.
  */
 
@@ -23,7 +23,7 @@ export interface VueExportee {
   svg: string
 }
 
-/** Une page du document, dans ses trois vues. */
+/** Une page du document, dans ses différentes vues. */
 export interface PageExportee {
   nom: string
   diagram: Diagram
@@ -681,7 +681,7 @@ ${svgVues}
 </main>
 
 <div id="bulle"></div>
-<footer>Page autonome produite par NetSchema — aucune connexion requise. Toutes les pages, leurs trois vues et l'intégralité des informations sont dans ce seul fichier.</footer>
+<footer>Page autonome produite par NetSchema — aucune connexion requise. Toutes les pages, leurs vues et l'intégralité des informations sont dans ce seul fichier.</footer>
 
 <script type="application/json" id="donnees">${json}</script>
 <script>${SCRIPT}</script>

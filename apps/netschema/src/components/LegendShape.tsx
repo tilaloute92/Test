@@ -1,5 +1,6 @@
 import { deviceMeta, LINKS } from '../lib/catalog'
 import { DeviceIcon } from '../lib/icons'
+import { LARGEUR_LEGENDE } from '../lib/layoutBlocks'
 import type { Diagram, LinkKind } from '../types'
 
 /**
@@ -11,7 +12,7 @@ import type { Diagram, LinkKind } from '../types'
  * schéma : elle part donc dans le SVG, le PNG et la page interactive.
  */
 
-const LARGEUR = 260
+const LARGEUR = LARGEUR_LEGENDE
 const LIGNE = 17
 
 export interface LegendShapeProps {
@@ -113,14 +114,4 @@ export function LegendShape({ diagram, x, y }: LegendShapeProps) {
       })}
     </g>
   )
-}
-
-/** Encombrement de la légende, pour la placer sans recouvrir le schéma. */
-export function legendSize(diagram: Diagram): { width: number; height: number } {
-  const kinds = new Set(diagram.links.map((link) => link.kind)).size
-  const groupes = new Set(diagram.nodes.map((node) => deviceMeta(node.kind).family)).size
-  return {
-    width: LARGEUR,
-    height: 30 + (kinds + groupes) * LIGNE + (kinds > 0 && groupes > 0 ? 14 : 0) + 10,
-  }
 }

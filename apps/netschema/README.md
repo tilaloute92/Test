@@ -1050,7 +1050,7 @@ ce qu'il sécurise sont documentés dans
 ## Exports et sauvegarde
 
 - **Page interactive `.html`** — un **seul fichier autonome** contenant **toutes les pages du
-  document**, chacune dans **ses trois vues**,
+  document**, chacune dans **ses quatre vues**,
   toutes les informations saisies et de quoi naviguer : onglets de vue, cases à cocher
   (étiquettes de liaison, ports et adresses des extrémités, détails des équipements, cadres de
   groupes, noms de couches), zoom à la molette, fiche d'un équipement au clic, détail d'une
@@ -1112,7 +1112,7 @@ src/
   lib/labels.ts         placement des étiquettes de liaison sans recouvrement
   lib/viewModes.ts      modes de visualisation : architecture, technique, présentation
   lib/exportImage.ts    export SVG / PNG
-  lib/exportHtml.ts     export « page interactive » : toutes les pages, leurs trois vues, dans
+  lib/exportHtml.ts     export « page interactive » : toutes les pages, leurs quatre vues, dans
                         un fichier autonome
   lib/storage.ts        sauvegarde locale, lecture/écriture des fichiers projet
   lib/api.ts            dialogue avec le serveur : session, jeton CSRF, schémas partagés

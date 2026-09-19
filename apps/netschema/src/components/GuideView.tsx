@@ -254,7 +254,7 @@ export function GuideView() {
             « mode architecture ».
           </P>
           <Note>
-            L'export <b>HTML</b> embarque les trois vues dans un seul fichier : on passe de
+            L'export <b>HTML</b> embarque les quatre vues dans un seul fichier : on passe de
             l'une à l'autre sans NetSchema, chez le destinataire.
           </Note>
         </>
@@ -454,7 +454,7 @@ export function GuideView() {
             Chaque page est un schéma complet et indépendant : ses équipements, ses liaisons,
             son plan d'adressage, ses baies. L'inventaire et les baies affichent la page
             ouverte. L'export <b>HTML</b>, lui, embarque <b>toutes les pages</b> — chacune dans
-            ses trois vues.
+            ses quatre vues.
           </Note>
           <Note>
             L'annulation (<Keys>Ctrl</Keys> <Keys>Z</Keys>) ne traverse pas les pages : changer
@@ -612,7 +612,7 @@ export function GuideView() {
               </>,
               <>
                 <b>HTML</b> — une <b>page autonome</b> qui contient <b>toutes les pages du
-                document</b>, chacune dans <b>ses trois vues</b>,
+                document</b>, chacune dans <b>ses quatre vues</b>,
                 toutes les informations saisies et de quoi s'y déplacer. Un seul fichier, qui
                 s'ouvre d'un double-clic sur n'importe quel poste : ni serveur, ni Internet, ni
                 NetSchema.
@@ -622,7 +622,7 @@ export function GuideView() {
           <P>Dans la page exportée, le destinataire retrouve :</P>
           <List
             items={[
-              <>les <b>trois vues</b> en onglets — architecture, technique, présentation ;</>,
+              <>les <b>quatre vues</b> en onglets — architecture, technique, logique, présentation ;</>,
               <>
                 des <b>cases à cocher</b> pour montrer ou masquer les étiquettes de liaison,
                 les ports et adresses des extrémités, les détails des équipements, les cadres
