@@ -1,5 +1,13 @@
-import { deviceMeta, LINKS, rankOf } from './catalog'
-import type { Diagram, NetLink, NetNode } from '../types'
+import { deviceMeta, LINKS, rankOf, ROLES } from './catalog'
+import {
+  concerneConstructeur,
+  concerneGamme,
+  constructeurDe,
+  mecanismeDeLaGamme,
+  mecanismeHa,
+  proposerMecanisme,
+} from './haTech'
+import type { Diagram, LinkKind, NetLink, NetNode } from '../types'
 
 export type Severity = 'critique' | 'avertissement' | 'info'
 
@@ -121,6 +129,229 @@ function clustersOf(nodes: NetNode[]): Cluster[] {
     else buckets.set(name, [node])
   }
   return [...buckets.entries()].map(([name, members]) => ({ name, members }))
+}
+
+/**
+ * Contrôles du mécanisme de haute disponibilité déclaré sur une grappe.
+ *
+ * Le schéma montre deux boîtes et un trait ; le mécanisme dit ce que ce trait doit être, à
+ * combien de membres il s'applique, s'il faut un témoin, et surtout ce que la grappe ne
+ * protège pas — un empilement partage un plan de contrôle, et une mise à jour logicielle
+ * emporte les deux châssis d'un coup.
+ */
+function controlerMecanisme(
+  cluster: Cluster,
+  diagram: Diagram,
+  memberSet: Set<string>,
+  witnesses: NetNode[],
+  actives: NetNode[],
+  add: (finding: Finding) => void,
+) {
+  const ids = cluster.members.map((m) => m.id)
+  const declares = [...new Set(cluster.members.map((m) => trimmed(m.haTech)).filter(Boolean))]
+
+  // Liaison réellement tracée entre les membres : elle sert à proposer et à contrôler.
+  const interne = diagram.links.find((l) => memberSet.has(l.from) && memberSet.has(l.to))
+  const lienInterne = interne?.kind as LinkKind | undefined
+
+  if (declares.length === 0) {
+    const reference = cluster.members.find((m) => m.role !== 'witness') ?? cluster.members[0]
+    const propose = proposerMecanisme(
+      reference.kind,
+      constructeurDe(reference.vendor, reference.model),
+      lienInterne,
+      cluster.members.filter((m) => m.role !== 'witness').length,
+      reference.model,
+    )
+    add({
+      id: `hatech:${cluster.name}`,
+      severity: 'info',
+      title: `Mécanisme de bascule non documenté dans « ${cluster.name} »`,
+      detail: propose
+        ? `Deux équipements en grappe ne disent pas comment ils basculent. D'après le matériel et la liaison tracée, il s'agit probablement de « ${propose.label} » — à confirmer dans l'inspecteur.`
+        : "Deux équipements en grappe ne disent pas comment ils basculent : précisez le mécanisme (VRRP, vPC, FGCP, vSphere HA…) dans l'inspecteur.",
+      nodeIds: ids,
+    })
+    return
+  }
+
+  if (declares.length > 1) {
+    add({
+      id: `hatech-mix:${cluster.name}`,
+      severity: 'avertissement',
+      title: `Mécanismes divergents dans « ${cluster.name} »`,
+      detail: `Les membres ne déclarent pas le même mécanisme (${declares
+        .map((id) => mecanismeHa(id)?.label ?? id)
+        .join(', ')}) : une grappe n'en a qu'un.`,
+      nodeIds: ids,
+    })
+  }
+
+  const mecanisme = mecanismeHa(declares[0])
+  if (!mecanisme) return
+  const membresActifs = cluster.members.filter((m) => m.role !== 'witness')
+
+  // Constructeur : un vPC sur un Aruba ou un VSX sur un Nexus n'existe pas.
+  /*
+    Chaque membre est contrôlé contre le mécanisme qu'il déclare lui-même : quand la grappe
+    en mélange deux, reprocher au second le mécanisme du premier n'aiderait personne.
+  */
+  const mecanismeDe = (m: NetNode) => mecanismeHa(trimmed(m.haTech)) ?? mecanisme
+  const etranger = membresActifs.filter((m) => {
+    const constructeur = constructeurDe(m.vendor, m.model)
+    return !!constructeur && !concerneConstructeur(mecanismeDe(m), constructeur)
+  })
+  if (mecanisme.vendors.length > 0 && etranger.length > 0) {
+    add({
+      id: `hatech-vendor:${cluster.name}`,
+      severity: 'avertissement',
+      title: `« ${mecanisme.label} » ne correspond pas au matériel de « ${cluster.name} »`,
+      detail: `Ce mécanisme est propre à ${mecanisme.vendors.join(', ')} ; ${etranger
+        .map((m) => `${m.name} (${constructeurDe(m.vendor, m.model)})`)
+        .join(', ')} ne le met pas en œuvre. Vérifiez le mécanisme ou le constructeur saisi.`,
+      nodeIds: etranger.map((m) => m.id),
+    })
+  }
+
+  // Gamme : le constructeur ne suffit pas, vPC est un mécanisme Nexus et non Catalyst.
+  const horsGamme = membresActifs.filter((m) => concerneGamme(mecanismeDe(m), m.model) === false)
+  if (horsGamme.length > 0) {
+    const premier = horsGamme[0]
+    const declare = mecanismeDe(premier)
+    const attendu = mecanismeDeLaGamme(
+      declare,
+      premier.kind,
+      constructeurDe(premier.vendor, premier.model),
+      premier.model,
+    )
+    add({
+      id: `hatech-gamme:${cluster.name}`,
+      severity: 'avertissement',
+      title: `« ${declare.label} » ne concerne pas la gamme de ${horsGamme.map((m) => m.name).join(', ')}`,
+      detail: `${horsGamme
+        .map((m) => `${m.name} (${m.model})`)
+        .join(', ')} : ce mécanisme s'adresse à une autre gamme du même constructeur.${
+        attendu ? ` Sur ce matériel, il s'agit plutôt de « ${attendu.label} ».` : ''
+      }`,
+      nodeIds: horsGamme.map((m) => m.id),
+    })
+  }
+
+  // Type d'équipement : un mécanisme de stockage déclaré sur un switch.
+  const horsType = membresActifs.filter((m) => !mecanisme.kinds.includes(m.kind))
+  if (horsType.length > 0) {
+    add({
+      id: `hatech-kind:${cluster.name}`,
+      severity: 'info',
+      title: `« ${mecanisme.label} » inhabituel pour ${horsType.map((m) => m.name).join(', ')}`,
+      detail: `Ce mécanisme s'applique d'ordinaire à : ${mecanisme.kinds
+        .map((kind) => deviceMeta(kind).label.toLowerCase())
+        .join(', ')}.`,
+      nodeIds: horsType.map((m) => m.id),
+    })
+  }
+
+  // Nombre de membres supporté.
+  if (membresActifs.length < mecanisme.membres.min) {
+    add({
+      id: `hatech-min:${cluster.name}`,
+      severity: 'avertissement',
+      title: `« ${mecanisme.label} » demande au moins ${mecanisme.membres.min} membres`,
+      detail: `La grappe « ${cluster.name} » n'en compte que ${membresActifs.length}. ${mecanisme.note}`,
+      nodeIds: ids,
+    })
+  } else if (mecanisme.membres.max && membresActifs.length > mecanisme.membres.max) {
+    add({
+      id: `hatech-max:${cluster.name}`,
+      severity: 'avertissement',
+      title: `« ${mecanisme.label} » accepte ${mecanisme.membres.max} membres au plus`,
+      detail: `La grappe « ${cluster.name} » en compte ${membresActifs.length} : vérifiez la topologie déclarée.`,
+      nodeIds: ids,
+    })
+  }
+
+  // Liaison de synchronisation attendue, nommée dans les termes du mécanisme.
+  if (mecanisme.lien) {
+    const correcte = diagram.links.some(
+      (l) => memberSet.has(l.from) && memberSet.has(l.to) && mecanisme.lien!.kind.includes(l.kind),
+    )
+    if (!correcte) {
+      add({
+        id: `hatech-lien:${cluster.name}`,
+        severity: 'avertissement',
+        title: `« ${mecanisme.label} » : ${mecanisme.lien.nom} absent du schéma`,
+        detail: `Tracez la liaison entre les membres de « ${cluster.name} » (type ${mecanisme.lien.kind
+          .map((kind) => LINKS[kind]?.label ?? kind)
+          .join(' ou ')}). Sans elle, la bascule ne peut ni s'arbitrer ni se documenter.`,
+        nodeIds: ids,
+      })
+    }
+  }
+
+  // Témoin : c'est ce qui manque le plus souvent aux architectures étirées sur deux salles.
+  if (mecanisme.temoin && witnesses.length === 0 && membresActifs.length <= 2) {
+    add({
+      id: `hatech-temoin:${cluster.name}`,
+      severity: 'avertissement',
+      title: `« ${mecanisme.label} » exige un témoin d'arbitrage`,
+      detail:
+        "Sans témoin sur un troisième emplacement, la coupure entre les deux membres laisse les deux côtés se croire seuls survivants (cerveau divisé), ou bloque la bascule automatique.",
+      nodeIds: ids,
+    })
+  }
+
+  // Adresse virtuelle attendue par le mécanisme.
+  if (mecanisme.vip && !cluster.members.some((m) => trimmed(m.vip))) {
+    add({
+      id: `hatech-vip:${cluster.name}`,
+      severity: 'info',
+      title: `« ${mecanisme.label} » porte une adresse virtuelle`,
+      detail: `Renseignez-la sur les membres de « ${cluster.name} » : c'est elle que les autres équipements utilisent, pas l'adresse d'un nœud.`,
+      nodeIds: ids,
+    })
+  }
+
+  // Rôles cohérents avec le mécanisme.
+  const rolesIncoherents = membresActifs.filter(
+    (m) => m.role && m.role !== 'standalone' && !mecanisme.roles.includes(m.role),
+  )
+  if (rolesIncoherents.length > 0) {
+    add({
+      id: `hatech-role:${cluster.name}`,
+      severity: 'info',
+      title: `Rôle inattendu pour « ${mecanisme.label} »`,
+      detail: `${rolesIncoherents.map((m) => m.name).join(', ')} : ce mécanisme fonctionne en ${mecanisme.roles
+        .map((role) => ROLES[role].label.toLowerCase())
+        .join(' ou ')}.`,
+      nodeIds: rolesIncoherents.map((m) => m.id),
+    })
+  }
+
+  // Le point que le schéma ne montre jamais : un plan de contrôle commun.
+  if (mecanisme.planDeControleCommun) {
+    add({
+      id: `hatech-controle:${cluster.name}`,
+      severity: 'info',
+      title: `« ${cluster.name} » ne forme qu'un seul plan de contrôle`,
+      detail: `${mecanisme.label} : les membres se comportent comme un équipement unique. La grappe protège d'une panne matérielle, pas d'un bogue logiciel ni d'une mise à jour ratée — ${mecanisme.note}`,
+      nodeIds: ids,
+    })
+  }
+
+  // Un seul actif déclaré alors que le mécanisme répartit la charge (ou l'inverse).
+  if (
+    mecanisme.roles.includes('active-active') &&
+    !mecanisme.roles.includes('active') &&
+    actives.some((m) => m.role === 'active')
+  ) {
+    add({
+      id: `hatech-aa:${cluster.name}`,
+      severity: 'info',
+      title: `« ${mecanisme.label} » fonctionne en actif / actif`,
+      detail: `Déclarez les membres de « ${cluster.name} » en « Actif / actif » : aucun n'est en veille, la charge est répartie entre eux.`,
+      nodeIds: ids,
+    })
+  }
 }
 
 /**
@@ -297,6 +528,8 @@ export function auditDiagram(diagram: Diagram): HaReport {
         nodeIds: ids,
       })
     }
+
+    controlerMecanisme(cluster, diagram, memberSet, witnesses, actives, add)
   }
 
   // 8. Double adduction opérateur

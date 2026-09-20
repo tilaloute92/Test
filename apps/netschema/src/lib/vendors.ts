@@ -334,6 +334,8 @@ const BUILTIN: HardwareModel[] = [
   m('Extreme Networks', '5420F-48P-4XE', 'access-switch', 1, 210, '48× 1G PoE+ · 4× 10G'),
   m('Extreme Networks', '7520-48Y-8C', 'leaf', 1, 380, '48× 25G · 8× 100G'),
   m('Huawei', 'CloudEngine S5732-H48UM2CC', 'switch', 1, 300, '48× multigigabit · 2× 100G'),
+  m('H3C', 'S5560X-54C-PWR-EI', 'access-switch', 1, 250, '48× 1G PoE+ · 4× 10G · Comware'),
+  m('H3C', 'S12500G-AF (châssis)', 'core-switch', 10, 1500, 'Châssis cœur Comware · IRF'),
   m('Alcatel-Lucent', 'OmniSwitch 6860N-P48M', 'access-switch', 1, 230, '48× multigigabit PoE'),
   m('Alcatel-Lucent', 'OmniSwitch 6900-V72', 'core-switch', 1, 400, '72× 25G · liaisons 100G'),
   m('Netgear', 'M4350-48X4C', 'switch', 1, 250, '48× 10G · 4× 100G'),

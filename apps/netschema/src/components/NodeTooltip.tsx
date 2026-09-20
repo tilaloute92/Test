@@ -1,4 +1,5 @@
 import { deviceMeta, LINKS, ROLES } from '../lib/catalog'
+import { mecanismeHa } from '../lib/haTech'
 import type { AssetStatus, NetLink, NetNode } from '../types'
 
 /**
@@ -107,6 +108,7 @@ export function NodeTooltip({
         <Row label="Site" value={node.site} />
         <Row label="Zone" value={node.zone} />
         <Row label="Grappe" value={node.cluster ? `${node.cluster}${node.vip ? ` · VIP ${node.vip}` : ''}` : undefined} />
+        <Row label="Bascule" value={mecanismeHa(node.haTech)?.label} />
         <Row
           label="Baie"
           value={node.rack ? `${node.rack}${node.rackUnit ? ` · U${node.rackUnit}` : ''}` : undefined}

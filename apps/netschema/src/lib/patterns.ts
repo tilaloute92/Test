@@ -10,6 +10,8 @@ interface PatternNode {
   cluster?: string
   role?: HaRole
   vip?: string
+  /** Mécanisme de bascule (voir haTech.ts). */
+  haTech?: string
   zone?: string
   site?: string
   ip?: string
@@ -45,8 +47,8 @@ export const HA_PATTERNS: HaPattern[] = [
     title: 'Pare-feu actif / passif',
     summary: 'Deux pare-feu en grappe, lien de battement de cœur et adresse virtuelle partagée.',
     nodes: [
-      { key: 'fw1', kind: 'firewall', name: 'FW-01', dx: -110, dy: 0, cluster: 'FW-HA', role: 'active', vip: '10.0.0.254', zone: 'DMZ', ip: '10.0.0.2', dualPower: true },
-      { key: 'fw2', kind: 'firewall', name: 'FW-02', dx: 110, dy: 0, cluster: 'FW-HA', role: 'passive', vip: '10.0.0.254', zone: 'DMZ', ip: '10.0.0.3', dualPower: true },
+      { key: 'fw1', kind: 'firewall', name: 'FW-01', dx: -110, dy: 0, cluster: 'FW-HA', role: 'active', haTech: 'fw-ap', vip: '10.0.0.254', zone: 'DMZ', ip: '10.0.0.2', dualPower: true },
+      { key: 'fw2', kind: 'firewall', name: 'FW-02', dx: 110, dy: 0, cluster: 'FW-HA', role: 'passive', haTech: 'fw-ap', vip: '10.0.0.254', zone: 'DMZ', ip: '10.0.0.3', dualPower: true },
     ],
     links: [{ from: 'fw1', to: 'fw2', kind: 'heartbeat', label: 'Synchro HA' }],
   },
@@ -55,8 +57,8 @@ export const HA_PATTERNS: HaPattern[] = [
     title: 'Cœur redondé MLAG',
     summary: 'Deux switches cœur en MLAG et un switch de distribution en double attachement.',
     nodes: [
-      { key: 'core1', kind: 'core-switch', name: 'SW-CORE-01', dx: -110, dy: 0, cluster: 'CORE-MLAG', role: 'active-active', vip: '10.10.0.10', dualPower: true },
-      { key: 'core2', kind: 'core-switch', name: 'SW-CORE-02', dx: 110, dy: 0, cluster: 'CORE-MLAG', role: 'active-active', vip: '10.10.0.10', dualPower: true },
+      { key: 'core1', kind: 'core-switch', name: 'SW-CORE-01', dx: -110, dy: 0, cluster: 'CORE-MLAG', role: 'active-active', haTech: 'mlag', vip: '10.10.0.10', dualPower: true },
+      { key: 'core2', kind: 'core-switch', name: 'SW-CORE-02', dx: 110, dy: 0, cluster: 'CORE-MLAG', role: 'active-active', haTech: 'mlag', vip: '10.10.0.10', dualPower: true },
       { key: 'dist', kind: 'switch', name: 'SW-DIST-01', dx: 0, dy: 170 },
     ],
     links: [
@@ -70,8 +72,8 @@ export const HA_PATTERNS: HaPattern[] = [
     title: 'Ferme derrière répartiteurs actif / actif',
     summary: 'Deux répartiteurs de charge en actif/actif devant trois serveurs applicatifs.',
     nodes: [
-      { key: 'lb1', kind: 'loadbalancer', name: 'LB-01', dx: -110, dy: 0, cluster: 'LB-HA', role: 'active-active', vip: '10.20.0.10' },
-      { key: 'lb2', kind: 'loadbalancer', name: 'LB-02', dx: 110, dy: 0, cluster: 'LB-HA', role: 'active-active', vip: '10.20.0.10' },
+      { key: 'lb1', kind: 'loadbalancer', name: 'LB-01', dx: -110, dy: 0, cluster: 'LB-HA', role: 'active-active', haTech: 'adc-ha', vip: '10.20.0.10' },
+      { key: 'lb2', kind: 'loadbalancer', name: 'LB-02', dx: 110, dy: 0, cluster: 'LB-HA', role: 'active-active', haTech: 'adc-ha', vip: '10.20.0.10' },
       { key: 'srv1', kind: 'server', name: 'APP-01', dx: -200, dy: 170 },
       { key: 'srv2', kind: 'server', name: 'APP-02', dx: 0, dy: 170 },
       { key: 'srv3', kind: 'server', name: 'APP-03', dx: 200, dy: 170 },
@@ -91,9 +93,9 @@ export const HA_PATTERNS: HaPattern[] = [
     title: 'Cluster d’hyperviseurs + témoin',
     summary: 'Trois nœuds en cluster, stockage partagé et témoin de quorum contre le split-brain.',
     nodes: [
-      { key: 'hv1', kind: 'hypervisor', name: 'ESXi-01', dx: -200, dy: 0, cluster: 'CLUSTER-VM', role: 'active-active', dualPower: true },
-      { key: 'hv2', kind: 'hypervisor', name: 'ESXi-02', dx: 0, dy: 0, cluster: 'CLUSTER-VM', role: 'active-active', dualPower: true },
-      { key: 'hv3', kind: 'hypervisor', name: 'ESXi-03', dx: 200, dy: 0, cluster: 'CLUSTER-VM', role: 'active-active', dualPower: true },
+      { key: 'hv1', kind: 'hypervisor', name: 'ESXi-01', dx: -200, dy: 0, cluster: 'CLUSTER-VM', role: 'active-active', haTech: 'vsphere-ha', dualPower: true },
+      { key: 'hv2', kind: 'hypervisor', name: 'ESXi-02', dx: 0, dy: 0, cluster: 'CLUSTER-VM', role: 'active-active', haTech: 'vsphere-ha', dualPower: true },
+      { key: 'hv3', kind: 'hypervisor', name: 'ESXi-03', dx: 200, dy: 0, cluster: 'CLUSTER-VM', role: 'active-active', haTech: 'vsphere-ha', dualPower: true },
       { key: 'san', kind: 'storage', name: 'Baie SAN', dx: -110, dy: 170, dualPower: true },
       { key: 'wit', kind: 'witness', name: 'Témoin quorum', dx: 150, dy: 170, cluster: 'CLUSTER-VM', role: 'witness' },
     ],
@@ -114,8 +116,8 @@ export const HA_PATTERNS: HaPattern[] = [
     nodes: [
       { key: 'isp1', kind: 'wan', name: 'Opérateur A', dx: -140, dy: 0 },
       { key: 'isp2', kind: 'wan', name: 'Opérateur B', dx: 140, dy: 0 },
-      { key: 'rtr1', kind: 'router', name: 'RTR-EDGE-01', dx: -110, dy: 170, cluster: 'EDGE-VRRP', role: 'active', vip: '192.168.0.254' },
-      { key: 'rtr2', kind: 'router', name: 'RTR-EDGE-02', dx: 110, dy: 170, cluster: 'EDGE-VRRP', role: 'passive', vip: '192.168.0.254' },
+      { key: 'rtr1', kind: 'router', name: 'RTR-EDGE-01', dx: -110, dy: 170, cluster: 'EDGE-VRRP', role: 'active', haTech: 'vrrp', vip: '192.168.0.254' },
+      { key: 'rtr2', kind: 'router', name: 'RTR-EDGE-02', dx: 110, dy: 170, cluster: 'EDGE-VRRP', role: 'passive', haTech: 'vrrp', vip: '192.168.0.254' },
     ],
     links: [
       { from: 'isp1', to: 'rtr1', kind: 'wan', speed: '1 Gb/s' },

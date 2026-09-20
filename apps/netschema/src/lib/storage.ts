@@ -198,6 +198,7 @@ export function parseDiagram(raw: unknown): Diagram {
       cluster: str(item.cluster),
       role: roleOf(item.role),
       vip: str(item.vip),
+      haTech: str(item.haTech),
       dualPower: item.dualPower === true,
       serial: str(item.serial),
       vendor: str(item.vendor),

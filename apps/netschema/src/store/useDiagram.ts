@@ -19,6 +19,7 @@ import { sampleDiagram } from '../lib/sample'
 import { collapsibleGroups, groupKey } from '../lib/derive'
 import { auditDiagram } from '../lib/ha'
 import { analyseImpact } from '../lib/impact'
+import { constructeurDe, proposerMecanisme } from '../lib/haTech'
 import type { DiscoveryResult } from '../lib/discovery'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
 import { getDiagramSvg } from '../lib/exportRegistry'
@@ -262,6 +263,11 @@ interface DiagramStore {
   removeFlow: (id: string) => void
 
   deduceVlansFromDiagram: () => number
+  /**
+   * Renseigne le mécanisme de bascule des grappes qui n'en déclarent pas, d'après le
+   * matériel et la liaison tracée entre les membres. Ne touche jamais à ce qui est déjà saisi.
+   */
+  deduireMecanismesHa: () => { grappes: number; equipements: number }
   /** Afficher ou masquer un bandeau latéral. Le choix est propre au poste, pas au document. */
   setPanelOpen: (panneau: 'palette' | 'inspecteur', ouvert: boolean) => void
   setCommandOpen: (open: boolean) => void
@@ -1239,6 +1245,53 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     set((state) => ({ diagram: { ...state.diagram, vlans } }))
     return vlans.length - before
   },
+  deduireMecanismesHa: () => {
+    if (lockedStore()) return { grappes: 0, equipements: 0 }
+    const diagram = get().diagram
+    const parGrappe = new Map<string, NetNode[]>()
+    for (const node of diagram.nodes) {
+      const nom = node.cluster?.trim()
+      if (!nom) continue
+      const liste = parGrappe.get(nom)
+      if (liste) liste.push(node)
+      else parGrappe.set(nom, [node])
+    }
+
+    const choix = new Map<string, string>()
+    let grappes = 0
+    for (const [, membres] of parGrappe) {
+      if (membres.length < 2) continue
+      if (membres.some((membre) => membre.haTech?.trim())) continue
+      const ids = new Set(membres.map((membre) => membre.id))
+      const interne = diagram.links.find((link) => ids.has(link.from) && ids.has(link.to))
+      const actifs = membres.filter((membre) => membre.role !== 'witness')
+      const reference = actifs[0] ?? membres[0]
+      const propose = proposerMecanisme(
+        reference.kind,
+        constructeurDe(reference.vendor, reference.model),
+        interne?.kind,
+        actifs.length,
+        reference.model,
+      )
+      if (!propose) continue
+      grappes += 1
+      // Le témoin ne met pas en œuvre le mécanisme : il l'arbitre.
+      for (const membre of actifs) choix.set(membre.id, propose.id)
+    }
+
+    if (choix.size === 0) return { grappes: 0, equipements: 0 }
+    get().pushHistory()
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        nodes: state.diagram.nodes.map((node) =>
+          choix.has(node.id) ? { ...node, haTech: choix.get(node.id) } : node,
+        ),
+      },
+    }))
+    return { grappes, equipements: choix.size }
+  },
+
   setPanelOpen: (panneau, ouvert) => {
     ecrirePanneau(panneau === 'palette' ? 'palette' : 'inspecteur', ouvert)
     set(panneau === 'palette' ? { paletteOpen: ouvert } : { inspectorOpen: ouvert })

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Btn, Checkbox, Field, Select, Slider, TextInput } from './ui'
 import { CatalogPanel } from './CatalogPanel'
 import { ModelPicker } from './ModelPicker'
@@ -7,6 +7,7 @@ import { ImpactPanel } from './ImpactPanel'
 import { VlanPanel } from './VlanPanel'
 import { ANNOTATION_COLORS, annotationColors } from '../lib/annotations'
 import { aujourdhui } from '../lib/storage'
+import { constructeurDe, mecanismeHa, mecanismesPour } from '../lib/haTech'
 import { linkLayers } from '../lib/osi'
 import { collapsibleGroups } from '../lib/derive'
 import { modeDefinition, VIEW_MODES } from '../lib/viewModes'
@@ -415,6 +416,7 @@ function NodeForm({ node }: { node: NetNode }) {
           <Field label="Adresse virtuelle (VRRP / HSRP / VIP)">
             <TextInput value={node.vip ?? ''} onChange={(vip) => set({ vip })} placeholder="10.0.0.254" />
           </Field>
+          <MecanismeHaField node={node} onChange={(haTech) => set({ haTech })} />
           <Checkbox
             checked={node.dualPower === true}
             onChange={(dualPower) => set({ dualPower })}
@@ -472,6 +474,90 @@ function ZOrderRow({ ids }: { ids: string[] }) {
           </Btn>
         ))}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Mécanisme de haute disponibilité : la liste est filtrée par le type d'équipement, et les
+ * mécanismes du constructeur saisi remontent en tête.
+ *
+ * La note affichée sous la liste est ce qui fait la différence entre cocher une case et
+ * documenter une architecture : elle rappelle ce que le mécanisme protège, ce qu'il ne
+ * protège pas, et en combien de temps il bascule.
+ */
+function MecanismeHaField({ node, onChange }: { node: NetNode; onChange: (id: string) => void }) {
+  const constructeur = constructeurDe(node.vendor, node.model)
+  const { propres, normalises, autres } = useMemo(
+    () => mecanismesPour(node.kind, constructeur),
+    [node.kind, constructeur],
+  )
+  const choisi = mecanismeHa(node.haTech)
+  if (propres.length + normalises.length + autres.length === 0 && !choisi) return null
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="flex flex-col gap-1">
+        <span className="text-[11px] font-medium text-slate-500">Mécanisme de bascule</span>
+        <select
+          value={node.haTech ?? ''}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+        >
+          <option value="">— non documenté —</option>
+          {propres.length > 0 && (
+            <optgroup label={`Chez ${constructeur}`}>
+              {propres.map((mecanisme) => (
+                <option key={mecanisme.id} value={mecanisme.id}>
+                  {mecanisme.label}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {normalises.length > 0 && (
+            <optgroup label="Mécanismes normalisés">
+              {normalises.map((mecanisme) => (
+                <option key={mecanisme.id} value={mecanisme.id}>
+                  {mecanisme.label}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {autres.length > 0 && (
+            <optgroup label="Autres constructeurs">
+              {autres.map((mecanisme) => (
+                <option key={mecanisme.id} value={mecanisme.id}>
+                  {mecanisme.label}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {choisi && ![...propres, ...normalises, ...autres].includes(choisi) && (
+            <option value={choisi.id}>{choisi.label}</option>
+          )}
+        </select>
+      </label>
+      {choisi && (
+        <div className="rounded-lg bg-slate-50 px-2.5 py-2 text-[11px] leading-relaxed text-slate-600">
+          <p>
+            <b className="font-semibold text-slate-700">Bascule :</b> {choisi.bascule}
+          </p>
+          {choisi.lien && (
+            <p>
+              <b className="font-semibold text-slate-700">À câbler :</b> {choisi.lien.nom}
+            </p>
+          )}
+          {choisi.temoin && (
+            <p className="text-amber-700">Témoin d’arbitrage indispensable (troisième emplacement).</p>
+          )}
+          {choisi.planDeControleCommun && (
+            <p className="text-amber-700">
+              Plan de contrôle commun : protège du matériel, pas d’un bogue logiciel.
+            </p>
+          )}
+          <p className="pt-1">{choisi.note}</p>
+        </div>
+      )}
     </div>
   )
 }

@@ -182,6 +182,20 @@ function buildItems(query: string, svgRef: React.RefObject<SVGSVGElement | null>
     { id: 'inventaire', label: 'Inventaire du parc', hint: 'module', run: () => store().setAppView('inventory') },
     { id: 'baies', label: 'Implantation en baies', hint: 'module', run: () => store().setAppView('racks') },
     { id: 'ha', label: 'Analyse haute disponibilité', hint: 'panneau', run: () => store().setPanel('ha') },
+    {
+      id: 'ha-deduire',
+      label: 'Déduire le mécanisme de bascule des grappes',
+      hint: 'haute dispo',
+      run: () => {
+        const { grappes, equipements } = store().deduireMecanismesHa()
+        store().setPanel('ha')
+        store().notify(
+          grappes > 0
+            ? `${grappes} grappe(s) documentée(s) sur ${equipements} équipement(s), à vérifier.`
+            : 'Rien à déduire : les grappes documentent déjà leur mécanisme.',
+        )
+      },
+    },
     { id: 'catalog', label: 'Catalogue d’équipements', hint: 'panneau', run: () => store().setPanel('catalog') },
     {
       id: 'collapse-all',

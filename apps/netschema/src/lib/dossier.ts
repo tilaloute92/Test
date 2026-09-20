@@ -14,6 +14,7 @@
 import { deviceMeta, LAYER_LABELS, LINKS, ROLES } from './catalog'
 import { controlerMatrice, FLOW_ACTIONS } from './flows'
 import { auditDiagram } from './ha'
+import { mecanismeHa } from './haTech'
 import { linkEnd } from './osi'
 import { controlerDossier } from './quality'
 import { heightOf } from './racks'
@@ -111,6 +112,48 @@ function lignesBaies(diagram: Diagram): string[][] {
       texte(rack.notes),
     ]
   })
+}
+
+/**
+ * Grappes de haute disponibilité : ce que le lecteur du dossier cherche en premier quand il
+ * prépare une intervention — qui bascule sur qui, en combien de temps, et ce qui reste à la
+ * charge de l'exploitant.
+ */
+function lignesGrappes(diagram: Diagram): string[][] {
+  const parNom = new Map<string, typeof diagram.nodes>()
+  for (const node of diagram.nodes) {
+    const cluster = texte(node.cluster)
+    if (!cluster) continue
+    const liste = parNom.get(cluster)
+    if (liste) liste.push(node)
+    else parNom.set(cluster, [node])
+  }
+
+  return [...parNom.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0], 'fr'))
+    .map(([nom, membres]) => {
+      const declares = [...new Set(membres.map((m) => texte(m.haTech)).filter(Boolean))]
+      const mecanisme = declares.length === 1 ? mecanismeHa(declares[0]) : undefined
+      const temoin = membres.find((m) => m.role === 'witness' || m.kind === 'witness')
+      const reserves = [
+        mecanisme?.planDeControleCommun ? 'Plan de contrôle commun' : '',
+        mecanisme?.temoin && !temoin ? 'Témoin d’arbitrage manquant' : '',
+        declares.length > 1 ? 'Mécanismes divergents' : '',
+        !mecanisme && declares.length === 0 ? 'Mécanisme non documenté' : '',
+      ].filter(Boolean)
+      return [
+        nom,
+        membres
+          .map((m) => `${m.name}${m.role && m.role !== 'standalone' ? ` (${ROLES[m.role].label})` : ''}`)
+          .join(', '),
+        mecanisme?.label ?? (declares.length > 1 ? declares.join(' / ') : ''),
+        mecanisme?.bascule ?? '',
+        mecanisme?.lien?.nom ?? '',
+        temoin?.name ?? '',
+        texte(membres.find((m) => texte(m.vip))?.vip),
+        reserves.join(' · '),
+      ]
+    })
 }
 
 const STYLE = `
@@ -228,6 +271,7 @@ export function dossierTechnique(titre: string, pages: PageDossier[]): string {
         <li>Plan d’adressage (VLAN)</li>
         <li>Implantation en baies</li>
         <li>Matrice de flux</li>
+        <li>Haute disponibilité</li>
         <li>Réserves et points d’attention</li>
       </ol>
       <p class="pied">Document produit le ${echapper(aujourdhui)} par NetSchema. Les informations
@@ -345,6 +389,19 @@ export function dossierTechnique(titre: string, pages: PageDossier[]): string {
     </section>
   `
 
+  const hauteDispo = `
+    <section class="feuille">
+      <h2>Haute disponibilité</h2>
+      ${tableau(
+        ['Grappe', 'Membres et rôles', 'Mécanisme de bascule', 'Bascule attendue', 'À câbler entre les membres', 'Témoin', 'Adresse virtuelle', 'Réserves'],
+        pages.flatMap((page) => lignesGrappes(page.diagram)),
+      )}
+      <p class="note">Les temps de bascule sont des ordres de grandeur propres au mécanisme
+      déclaré : ils dépendent de la version logicielle, de la charge et du dimensionnement, et
+      n’engagent que la documentation. Seul un test de bascule les vérifie.</p>
+    </section>
+  `
+
   const constats = `
     <section class="feuille">
       <h2>Réserves et points d’attention</h2>
@@ -413,6 +470,7 @@ ${liaisons}
 ${adressage}
 ${baies}
 ${matrice}
+${hauteDispo}
 ${constats}
 </body>
 </html>`

@@ -1,4 +1,5 @@
 import { deviceMeta, LINKS } from './catalog'
+import { mecanismeHa } from './haTech'
 import { LAYER_LABELS_OSI, linkEnd, linkLayers } from './osi'
 import type { Diagram, NetLink, NetNode, ViewMode } from '../types'
 
@@ -44,6 +45,7 @@ interface LigneEquipement {
   grappe: string
   baie: string
   role: string
+  bascule: string
   note: string
 }
 
@@ -107,6 +109,7 @@ function lignesEquipements(diagram: Diagram, page: string): LigneEquipement[] {
     grappe: texte(node.cluster) + (texte(node.vip) ? ` (VIP ${texte(node.vip)})` : ''),
     baie: texte(node.rack) + (texte(node.rackUnit) ? ` U${texte(node.rackUnit)}` : ''),
     role: texte(node.role) === 'standalone' ? '' : texte(node.role),
+    bascule: mecanismeHa(node.haTech)?.label ?? '',
     note: texte(node.notes),
   }))
 }
@@ -359,7 +362,8 @@ const SCRIPT = `
       ['Page', donnees.pages.length > 1 ? ligne.page : ''],
       ['Type', ligne.type], ['Modèle', ligne.modele], ['Adresse IP', ligne.ip], ['VLAN', ligne.vlan],
       ['N° de série', ligne.serie], ['Site', ligne.site], ['Zone', ligne.zone], ['Grappe', ligne.grappe],
-      ['Baie', ligne.baie], ['Rôle HA', ligne.role], ['Note', ligne.note]
+      ['Baie', ligne.baie], ['Rôle HA', ligne.role], ['Mécanisme de bascule', ligne.bascule],
+      ['Note', ligne.note]
     ];
     var liaisons = donnees.liaisons.filter(function (l) {
       return l.page === ligne.page && (l.de === ligne.nom || l.vers === ligne.nom);
@@ -563,7 +567,7 @@ export function pageInteractive(titre: string, pages: PageExportee[]): string {
     )
     .join('\n')
 
-  const colonnesEquipements = ['Nom', 'Type', 'Modèle', 'Adresse IP', 'VLAN', 'N° de série', 'Site', 'Zone', 'Grappe', 'Baie', 'Rôle']
+  const colonnesEquipements = ['Nom', 'Type', 'Modèle', 'Adresse IP', 'VLAN', 'N° de série', 'Site', 'Zone', 'Grappe', 'Baie', 'Rôle', 'Bascule']
   const colonnesFlux = ['Source', 'Destination', 'Service', 'Protocole / ports', 'Décision', 'Justification', 'Demandeur', 'Protection']
   const colonnesLiaisons = ['De', 'Vers', 'Type', 'Couches', 'Débit', 'Libellé', 'Sous-réseau', 'VRF', 'Routage', 'MTU', 'Côté départ', 'Côté arrivée']
 
@@ -636,6 +640,7 @@ ${svgVues}
           ligne.grappe,
           ligne.baie,
           ligne.role,
+          ligne.bascule,
         ]
         return multi ? [ligne.page, ...cellules] : cellules
       }),

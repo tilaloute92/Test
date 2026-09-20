@@ -872,7 +872,7 @@ export function GuideView() {
     {
       id: 'ha',
       title: 'Haute disponibilité',
-      keywords: 'haute disponibilite ha redondance spof panne cluster grappe vip actif passif temoin score audit onduleur alimentation',
+      keywords: 'haute disponibilite ha redondance spof panne cluster grappe vip actif passif temoin score audit onduleur alimentation mecanisme bascule vpc vsx mlag fgcp clusterxl vrrp hsrp vsphere metrocluster stack empilement',
       body: (
         <>
           <P>
@@ -896,6 +896,37 @@ export function GuideView() {
               <>
                 <b>Motifs</b> : insérez une architecture de référence (paire de pare-feu en
                 actif-passif, cœur en pile, cluster à trois nœuds) et adaptez-la.
+              </>,
+            ]}
+          />
+
+          <P>
+            <b>Le mécanisme de bascule.</b> « Deux pare-feu en grappe » ne dit pas lequel : un
+            FGCP Fortinet, un ClusterXL Check Point et un chassis cluster SRX ne se câblent pas
+            pareil et ne basculent pas dans le même temps. L'inspecteur propose donc, pour
+            chaque équipement de grappe, la liste des mécanismes de son type et de son
+            constructeur — 62 en tout, du vPC au MetroCluster.
+          </P>
+          <List
+            items={[
+              <>
+                Chaque mécanisme dit ce qu'il faut <b>câbler</b> entre les membres (peer-link,
+                HA1/HA2, control link + fabric link…), s'il faut un <b>témoin</b>, l'ordre de
+                grandeur de la <b>bascule</b>, et le piège qui lui est propre.
+              </>,
+              <>
+                <b>Plan de contrôle commun</b> : un empilement ou un châssis virtuel se met à
+                jour d'un bloc. La grappe protège du matériel, pas d'un bogue logiciel —
+                l'analyse le dit explicitement.
+              </>,
+              <>
+                <b>Déduire</b> : le bouton du panneau propose un mécanisme pour les grappes qui
+                n'en déclarent pas, d'après le matériel et la liaison déjà tracée.
+              </>,
+              <>
+                L'analyse vérifie ensuite la cohérence : mécanisme impossible chez ce
+                constructeur, membres trop nombreux, liaison de synchronisation absente, témoin
+                manquant, rôles incohérents.
               </>,
             ]}
           />

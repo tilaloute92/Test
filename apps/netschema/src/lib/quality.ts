@@ -13,6 +13,7 @@
 
 import { deviceMeta, LINKS, rankOf } from './catalog'
 import { auditDiagram } from './ha'
+import { mecanismeHa } from './haTech'
 import { controlerMatrice } from './flows'
 import { checkOsi, parseSubnet, usedVlans } from './osi'
 import { heightOf, isRackable } from './racks'
@@ -417,6 +418,53 @@ function analyserPage(
     })
   }
 
+  // ── Haute disponibilité ───────────────────────────────────────────────────
+  const grappes = new Map<string, NetNode[]>()
+  for (const node of page.nodes) {
+    const cluster = node.cluster?.trim()
+    if (!cluster) continue
+    const liste = grappes.get(cluster)
+    if (liste) liste.push(node)
+    else grappes.set(cluster, [node])
+  }
+  const sansMecanisme = [...grappes.entries()].filter(
+    ([, membres]) => membres.length > 1 && !membres.some((membre) => rempli(membre.haTech)),
+  )
+  if (sansMecanisme.length > 0) {
+    constats.push({
+      id: cle('ha-mecanisme'),
+      categorie: 'Exploitation',
+      gravite: 'mineur',
+      titre: `${sansMecanisme.length} grappe(s) sans mécanisme de bascule documenté`,
+      detail: `${sansMecanisme
+        .map(([nom]) => nom)
+        .slice(0, 5)
+        .join(', ')} : « en grappe » ne dit ni ce qui est câblé entre les membres, ni combien de temps dure la bascule, ni ce que la grappe ne protège pas.`,
+      action: 'Panneau Haute dispo → « Déduire », puis vérifiez le mécanisme proposé.',
+      cibles: sansMecanisme.flatMap(([, membres]) => membres.map((membre) => membre.id)),
+      page: suffixe,
+    })
+  }
+
+  const chassisUnique = [...grappes.entries()].filter(([, membres]) =>
+    membres.some((membre) => mecanismeHa(membre.haTech)?.planDeControleCommun),
+  )
+  if (chassisUnique.length > 0) {
+    constats.push({
+      id: cle('ha-plan-controle'),
+      categorie: 'Exploitation',
+      gravite: 'mineur',
+      titre: `${chassisUnique.length} grappe(s) à plan de contrôle commun`,
+      detail: `${chassisUnique
+        .map(([nom]) => nom)
+        .join(', ')} : empilement ou châssis virtuel. La panne matérielle d'un membre est couverte, une mise à jour ou un bogue logiciel ne l'est pas.`,
+      action:
+        'Vérifiez qu’un second chemin existe hors de cette grappe, et planifiez les mises à jour en conséquence.',
+      cibles: chassisUnique.flatMap(([, membres]) => membres.map((membre) => membre.id)),
+      page: suffixe,
+    })
+  }
+
   const sauvegarde = page.nodes.some((node) => ['backup', 'tape-backup'].includes(node.kind))
   const donnees = page.nodes.some((node) =>
     ['storage', 'nvme-storage', 'managed-db', 'hci', 'hypervisor'].includes(node.kind),
@@ -564,6 +612,16 @@ export function controlerDossier(pages: Diagram[], titre: string): RapportQualit
       libelle: 'Implantation en baie',
       renseignes: parc.filter((node) => rempli(node.rack)).length,
       total: parc.length,
+    },
+    {
+      libelle: 'Mécanisme de bascule',
+      renseignes: [...new Set(
+        tousNoeuds
+          .filter((node) => rempli(node.cluster) && rempli(node.haTech))
+          .map((node) => node.cluster),
+      )].length,
+      total: [...new Set(tousNoeuds.filter((node) => rempli(node.cluster)).map((node) => node.cluster))]
+        .length,
     },
     {
       libelle: 'Débit des liaisons',

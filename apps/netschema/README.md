@@ -943,6 +943,7 @@ FW-01 », « quel est l'impact », « rétablis ».
 | Notion | Où |
 | --- | --- |
 | Grappe (cluster) et rôle : actif, passif, actif/actif, témoin de quorum | Inspecteur → bloc « Haute disponibilité » ; badge sur l'équipement |
+| **Mécanisme de bascule** (vPC, VSX, FGCP, ClusterXL, vSphere HA, MetroCluster…) | Inspecteur → *Mécanisme de bascule*, liste filtrée par type d'équipement et par constructeur |
 | Adresse virtuelle VRRP / HSRP / VIP de répartiteur | Champ *Adresse virtuelle*, affichée sur le cadre de la grappe |
 | Battement de cœur, stack / MLAG / VSS, agrégat LACP | Types de liaison |
 | Réplication / synchronisation, administration hors bande, alimentation | Types de liaison |
@@ -950,6 +951,64 @@ FW-01 », « quel est l'impact », « rétablis ».
 | Site physique (siège, site de secours, site tiers) | Champ *Site* + cadre de site |
 | Double alimentation A/B | Case « Double alimentation », marque ⚡ A/B sur l'équipement |
 | Équipements dédiés : nœud hyperviseur, témoin de quorum, sauvegarde, onduleur, PDU | Palette |
+
+### Le mécanisme de bascule, pas seulement « la grappe »
+
+« Deux pare-feu en grappe » ne veut rien dire tant qu'on n'a pas dit lequel : un **FGCP**
+Fortinet, un **ClusterXL** Check Point et un **chassis cluster** SRX ne se câblent pas pareil,
+ne basculent pas dans le même temps et ne tombent pas pour les mêmes raisons. Un **empilement**
+Cisco et une paire **VSX** Aruba se ressemblent sur un schéma et n'ont rien à voir en
+exploitation : le premier n'a qu'un plan de contrôle — une mise à jour logicielle emporte les
+deux châssis — le second en a deux.
+
+L'application embarque donc une base de **62 mécanismes**, classés en onze familles et
+rattachés aux types d'équipements et aux constructeurs qui les mettent en œuvre :
+
+| Famille | Mécanismes |
+| --- | --- |
+| **Châssis virtuel / empilement** | StackWise, StackWise Virtual (VSS), VSF, IRF, Virtual Chassis, SummitStack, iStack/CSS |
+| **Paire de châssis (niveau 2)** | vPC, VSX, MLAG, VLT, MC-LAG, M-LAG, EVPN multihoming (ESI-LAG) |
+| **Passerelle (niveau 3)** | VRRP, HSRP, GLBP, passerelle anycast distribuée EVPN |
+| **Pare-feu** | FGCP, FGSP, HA PAN-OS actif/passif et actif/actif, ClusterXL, chassis cluster SRX, failover Secure Firewall, HA SNS, FireCluster, HA Sophos XGS |
+| **Répartiteurs** | F5 DSC (traffic groups), paire HA NetScaler, keepalived/VRRP logiciel |
+| **Calcul** | vSphere HA, vSAN étiré + témoin, Nutanix RF2/RF3, Nutanix Metro, WSFC, Proxmox/Corosync, Scale Computing, Pacemaker |
+| **Stockage** | Baie à deux contrôleurs, paire HA NetApp, MetroCluster, ActiveCluster, Peer Persistence, PowerStore Metro, HyperMetro, Synology SHA, sauvegarde 3-2-1-1-0 |
+| **Contrôleurs Wi-Fi** | HA SSO, N+1, cluster Aruba, cluster SmartZone |
+| **Services** | DNS/DHCP redondé, annuaire multi-contrôleurs, groupe de disponibilité SQL, grappe IPBX |
+| **WAN** | Multihoming BGP, SD-WAN double concentrateur, secours 4G/5G |
+| **Énergie** | Double chaîne 2N, onduleurs N+1 |
+
+Chaque mécanisme porte ce qu'un architecte rappellerait en revue : le **nombre de membres**
+admis, la **liaison à câbler** entre eux et son nom d'usage (peer-link, HA1/HA2, control link
++ fabric link, lien SVL…), la nécessité d'un **témoin**, l'**adresse virtuelle** attendue, les
+**rôles cohérents**, l'**ordre de grandeur de la bascule**, et le piège propre au mécanisme.
+
+**Ce que l'analyse en fait** — au-delà des contrôles de grappe existants :
+
+- mécanisme **non documenté** : l'application en **propose un** d'après le constructeur, le
+  type d'équipement et la liaison déjà tracée (bouton *Déduire* du panneau Haute dispo, ou
+  `Ctrl+K` → « déduire le mécanisme ») ;
+- mécanisme **incohérent avec le matériel** — un vPC déclaré sur un Aruba, un VSX sur un Nexus ;
+- mécanisme **incohérent avec la gamme**, ce que le constructeur seul ne suffit pas à voir :
+  vPC est un mécanisme Nexus et non Catalyst, VSX s'adresse aux CX 8000 et non aux CX 6000.
+  L'application nomme alors le mécanisme attendu sur ce matériel (« sur un C9500, c'est
+  StackWise Virtual ») ;
+- **mécanismes divergents** entre les membres d'une même grappe ;
+- **nombre de membres** hors des bornes du mécanisme (ClusterXL 2 à 5, FGCP 2 à 4, cluster
+  SmartZone 3 au minimum, Nutanix RF2 3 nœuds…) ;
+- **liaison de synchronisation absente**, nommée dans les termes du mécanisme ;
+- **témoin d'arbitrage manquant** là où il est indispensable (MetroCluster, ActiveCluster,
+  vSAN étiré, Nutanix Metro, WSFC à deux nœuds) ;
+- **plan de contrôle commun** signalé explicitement : la grappe protège du matériel, pas d'un
+  bogue logiciel ni d'une mise à jour ratée ;
+- **rôle incohérent** avec le mécanisme (un « actif/passif » déclaré sur un mécanisme qui
+  répartit la charge, et inversement).
+
+Le mécanisme se retrouve dans l'info-bulle de l'équipement, dans la liste des grappes du
+panneau *Haute dispo*, dans la fiche de la page interactive exportée et dans une section
+**Haute disponibilité** du dossier technique — un tableau par grappe : membres et rôles,
+mécanisme, bascule attendue, ce qu'il faut câbler entre les membres, témoin, adresse
+virtuelle et réserves.
 
 ### Modèles prêts à l'emploi
 
@@ -980,6 +1039,9 @@ marqués d'une pastille rouge sur le schéma.
 - **Grappes** — absence de battement de cœur, témoin de quorum manquant pour une grappe de
   calcul ou de données à deux nœuds (VRRP et MLAG, qui s'arbitrent autrement, ne sont pas
   concernés), rôles ambigus, adresse virtuelle non renseignée.
+- **Mécanisme de bascule** — non documenté (avec une proposition), incohérent avec le
+  matériel, divergent entre les membres, nombre de membres hors bornes, liaison de
+  synchronisation absente, témoin manquant, plan de contrôle commun, rôle incohérent.
 - **Adduction unique** vers l'extérieur, **chaîne électrique simple**, équipements critiques
   sans double alimentation.
 - **Site de secours** et **sauvegarde** absents, **liens parallèles non agrégés** en LACP.
@@ -1094,6 +1156,7 @@ src/
   lib/quickImport.ts    import rapide par collage de texte
   lib/layout.ts         placement automatique par couches, cadres de groupes, cadrage
   lib/ha.ts             analyse haute disponibilité (points d'articulation + règles métier)
+  lib/haTech.ts         mécanismes de bascule par type d'équipement et par constructeur
   lib/impact.ts         analyse d'impact : joignabilité après panne, fragilité, criticité
   lib/paths.ts          chemins entre deux équipements, filtrage traversé, cohérence VLAN/MTU
   lib/flows.ts          matrice de flux : contrôles contre le schéma, import/export CSV

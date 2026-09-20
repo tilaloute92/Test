@@ -65,6 +65,15 @@ export interface NetNode {
   role?: HaRole
   /** Adresse virtuelle portée par la grappe (VRRP / HSRP / VIP de répartiteur). */
   vip?: string
+  /**
+   * Mécanisme de haute disponibilité mis en œuvre (voir `haTech.ts`) : « FGCP », « vPC »,
+   * « vSphere HA »…
+   *
+   * Deux pare-feu « en grappe » ne disent rien de la façon dont ils basculent ; le
+   * mécanisme, lui, dit ce qui est protégé, ce qui ne l'est pas, ce qu'il faut câbler et
+   * combien de temps dure la bascule.
+   */
+  haTech?: string
   /** Double alimentation électrique (deux chaînes A/B). */
   dualPower?: boolean
 

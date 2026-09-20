@@ -69,14 +69,14 @@ export function sampleDiagram(): Diagram {
       node('isp1', 'wan', 'Opérateur A', { zone: 'WAN', notes: 'Fibre 1 Gb/s, chemin nord' }),
       node('isp2', 'wan', 'Opérateur B', { zone: 'WAN', notes: 'Fibre 1 Gb/s, chemin sud' }),
 
-      node('rtr1', 'router', 'RTR-EDGE-01', { site: SIEGE, zone: 'DMZ', ip: '192.168.0.1', cluster: 'EDGE-VRRP', role: ACTIVE, vip: '192.168.0.254', dualPower: true }),
-      node('rtr2', 'router', 'RTR-EDGE-02', { site: SIEGE, zone: 'DMZ', ip: '192.168.0.2', cluster: 'EDGE-VRRP', role: PASSIVE, vip: '192.168.0.254', dualPower: true }),
+      node('rtr1', 'router', 'RTR-EDGE-01', { site: SIEGE, zone: 'DMZ', ip: '192.168.0.1', cluster: 'EDGE-VRRP', haTech: 'vrrp', role: ACTIVE, vip: '192.168.0.254', dualPower: true }),
+      node('rtr2', 'router', 'RTR-EDGE-02', { site: SIEGE, zone: 'DMZ', ip: '192.168.0.2', cluster: 'EDGE-VRRP', haTech: 'vrrp', role: PASSIVE, vip: '192.168.0.254', dualPower: true }),
 
-      node('fw1', 'firewall', 'FW-01', { site: SIEGE, zone: 'DMZ', model: 'FortiGate 100F', ip: '10.0.0.2', cluster: 'FW-HA', role: ACTIVE, vip: '10.0.0.254', dualPower: true }),
-      node('fw2', 'firewall', 'FW-02', { site: SIEGE, zone: 'DMZ', model: 'FortiGate 100F', ip: '10.0.0.3', cluster: 'FW-HA', role: PASSIVE, vip: '10.0.0.254', dualPower: true }),
+      node('fw1', 'firewall', 'FW-01', { site: SIEGE, zone: 'DMZ', model: 'FortiGate 100F', ip: '10.0.0.2', cluster: 'FW-HA', haTech: 'fgcp', role: ACTIVE, vip: '10.0.0.254', dualPower: true }),
+      node('fw2', 'firewall', 'FW-02', { site: SIEGE, zone: 'DMZ', model: 'FortiGate 100F', ip: '10.0.0.3', cluster: 'FW-HA', haTech: 'fgcp', role: PASSIVE, vip: '10.0.0.254', dualPower: true }),
 
-      node('core1', 'core-switch', 'SW-CORE-01', { site: SIEGE, zone: 'Datacenter', ip: '10.10.0.11', cluster: 'CORE-MLAG', role: AA, vip: '10.10.0.10', dualPower: true }),
-      node('core2', 'core-switch', 'SW-CORE-02', { site: SIEGE, zone: 'Datacenter', ip: '10.10.0.12', cluster: 'CORE-MLAG', role: AA, vip: '10.10.0.10', dualPower: true }),
+      node('core1', 'core-switch', 'SW-CORE-01', { site: SIEGE, zone: 'Datacenter', ip: '10.10.0.11', cluster: 'CORE-MLAG', haTech: 'stackwise-virtual', role: AA, vip: '10.10.0.10', dualPower: true }),
+      node('core2', 'core-switch', 'SW-CORE-02', { site: SIEGE, zone: 'Datacenter', ip: '10.10.0.12', cluster: 'CORE-MLAG', haTech: 'stackwise-virtual', role: AA, vip: '10.10.0.10', dualPower: true }),
 
       node('distA', 'switch', 'SW-DIST-BATA', { site: SIEGE, zone: 'Bâtiment A', ip: '10.10.1.1' }),
       node('distB', 'switch', 'SW-DIST-BATB', { site: SIEGE, zone: 'Bâtiment B', ip: '10.10.2.1' }),
@@ -84,9 +84,9 @@ export function sampleDiagram(): Diagram {
       node('accB', 'access-switch', 'SW-ACC-B1', { site: SIEGE, zone: 'Bâtiment B', vlan: 'VLAN 30' }),
       node('wifiA', 'wifi', 'Bornes Wi-Fi A', { site: SIEGE, zone: 'Bâtiment A', vlan: 'VLAN 40' }),
 
-      node('hv1', 'hypervisor', 'ESXi-01', { site: SIEGE, zone: 'Datacenter', ip: '10.10.0.21', cluster: 'CLUSTER-VM', role: AA, dualPower: true }),
-      node('hv2', 'hypervisor', 'ESXi-02', { site: SIEGE, zone: 'Datacenter', ip: '10.10.0.22', cluster: 'CLUSTER-VM', role: AA, dualPower: true }),
-      node('hv3', 'hypervisor', 'ESXi-03', { site: SIEGE, zone: 'Datacenter', ip: '10.10.0.23', cluster: 'CLUSTER-VM', role: AA, dualPower: true }),
+      node('hv1', 'hypervisor', 'ESXi-01', { site: SIEGE, zone: 'Datacenter', ip: '10.10.0.21', cluster: 'CLUSTER-VM', haTech: 'vsphere-ha', role: AA, dualPower: true }),
+      node('hv2', 'hypervisor', 'ESXi-02', { site: SIEGE, zone: 'Datacenter', ip: '10.10.0.22', cluster: 'CLUSTER-VM', haTech: 'vsphere-ha', role: AA, dualPower: true }),
+      node('hv3', 'hypervisor', 'ESXi-03', { site: SIEGE, zone: 'Datacenter', ip: '10.10.0.23', cluster: 'CLUSTER-VM', haTech: 'vsphere-ha', role: AA, dualPower: true }),
       node('wit', 'witness', 'Témoin quorum', { site: 'Site tiers', cluster: 'CLUSTER-VM', role: 'witness', ip: '10.90.0.5', vlan: 'VLAN 90' }),
       node('san', 'storage', 'SAN Siège', { site: SIEGE, zone: 'Datacenter', ip: '10.10.0.30', vlan: 'VLAN 10', dualPower: true }),
       node('bkp', 'backup', 'Sauvegarde', { site: SIEGE, zone: 'Datacenter', ip: '10.10.0.35', vlan: 'VLAN 10' }),
