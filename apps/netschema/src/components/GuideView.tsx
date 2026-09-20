@@ -90,6 +90,7 @@ export function GuideView() {
   const setPanel = useDiagram((s) => s.setPanel)
   const setImportOpen = useDiagram((s) => s.setImportOpen)
   const setCommandOpen = useDiagram((s) => s.setCommandOpen)
+  const setAssistantOpen = useDiagram((s) => s.setAssistantOpen)
   const loadSample = useDiagram((s) => s.loadSample)
   const run = useDiagram((s) => s.runVoiceCommand)
   const notify = useDiagram((s) => s.notify)
@@ -150,6 +151,99 @@ export function GuideView() {
             transporter d'un poste à l'autre, exportez le JSON : c'est le format qui contient
             tout (positions, liaisons, VLAN, baies, inventaire).
           </Note>
+        </>
+      ),
+    },
+    {
+      id: 'assistant',
+      title: 'Assistant de conception',
+      keywords:
+        'assistant ia intelligence artificielle aide conception decrire description generer construire ameliorer suggestions propositions corrections automatique',
+      body: (
+        <>
+          <P>
+            Le bouton <b>✦ Assistant</b> (<Keys>Ctrl</Keys> + <Keys>J</Keys>) ouvre une aide à la
+            conception qui fait deux choses : construire un schéma à partir d'une description en
+            français, et proposer les corrections qu'elle sait appliquer sur le schéma ouvert.
+          </P>
+          <Note>
+            <b>Rien ne sort du poste.</b> L'assistant n'interroge aucun service distant : il
+            raisonne sur le catalogue d'équipements, les règles de liaison et la base des
+            mécanismes de haute disponibilité embarqués dans l'application. C'est aussi pourquoi
+            il fonctionne sans connexion et reste utilisable sur un réseau fermé.
+          </Note>
+
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">Onglet « Construire »</p>
+          <P>
+            Décrivez l'architecture, <b>un groupe d'équipements par ligne</b> (ou séparés par des
+            virgules). L'assistant reconnaît la quantité, le type, le constructeur, la zone, le
+            site, la grappe et les rôles :
+          </P>
+          <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 font-mono text-[12px] leading-relaxed text-slate-100">{`deux liens opérateur
+deux routeurs de périmètre en grappe
+deux pare-feu Fortinet en grappe actif/passif, zone DMZ
+deux switches cœur en grappe, zone Datacenter
+quatre switches d'accès
+trois hyperviseurs en grappe avec témoin
+une baie de stockage
+deux onduleurs`}</pre>
+          <List
+            items={[
+              <>
+                <b>Il annonce avant d'agir.</b> « Analyser la demande » affiche le plan étape par
+                étape — et, en ambre, les fragments qu'il n'a pas compris et qu'il ignorera
+                donc. Rien n'est modifié tant que vous n'avez pas cliqué sur « Appliquer ».
+              </>,
+              <>
+                <b>Il câble les couches entre elles</b> : chaque groupe est raccordé au groupe
+                amont le plus proche (les accès aux switches cœur, les hyperviseurs au cœur, les
+                onduleurs aux équipements critiques), avec le type de liaison qui convient.
+              </>,
+              <>
+                <b>Il monte les grappes</b> : lien de synchronisation, rôles actif/passif ou
+                actif/actif, mécanisme de bascule déduit du type et du constructeur (FGCP pour
+                du Fortinet, HA active/passive pour du Palo Alto, VRRP pour un routeur…).
+              </>,
+              <>
+                <b>Rangez ensuite</b> avec <b>Placement auto</b> : l'assistant crée la structure,
+                la mise en page reste le travail du moteur de placement.
+              </>,
+            ]}
+          />
+
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">Onglet « Améliorer »</p>
+          <P>
+            Ici l'assistant lit le schéma ouvert et ne propose que ce qu'il sait corriger tout
+            seul, sans arbitrage de votre part : membre de grappe sans lien de synchronisation,
+            grappe à deux nœuds sans témoin de quorum, équipement raccordé à un seul amont,
+            liens parallèles à déclarer en agrégat, double alimentation non renseignée alors que
+            deux chaînes ondulées existent, données représentées sans chaîne de sauvegarde.
+          </P>
+          <List
+            items={[
+              <>
+                Chaque proposition s'applique <b>séparément</b>, et s'annule d'un
+                <Keys>Ctrl</Keys> + <Keys>Z</Keys>.
+              </>,
+              <>
+                La liste se <b>fige</b> dès la première correction, pour que les cartes ne
+                sautent pas sous le curseur ; « Réanalyser le schéma » la rafraîchit.
+              </>,
+              <>
+                Ce qui demande une décision (dimensionnement, adressage, choix d'un mécanisme de
+                bascule) n'apparaît pas ici : c'est le rôle du panneau <b>Haute dispo</b> et du
+                module <b>Dossier</b>.
+              </>,
+            ]}
+          />
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Btn variant="primary" onClick={() => openIn('diagram', () => setAssistantOpen(true))}>
+              Ouvrir l'assistant
+            </Btn>
+            <Btn onClick={() => tryCommand("ouvre l'assistant de conception")}>
+              Essayer la commande vocale
+            </Btn>
+          </div>
         </>
       ),
     },
@@ -905,7 +999,7 @@ export function GuideView() {
             FGCP Fortinet, un ClusterXL Check Point et un chassis cluster SRX ne se câblent pas
             pareil et ne basculent pas dans le même temps. L'inspecteur propose donc, pour
             chaque équipement de grappe, la liste des mécanismes de son type et de son
-            constructeur — 62 en tout, du vPC au MetroCluster.
+            constructeur — 65 en tout, du vPC au MetroCluster.
           </P>
           <List
             items={[
@@ -927,6 +1021,17 @@ export function GuideView() {
                 L'analyse vérifie ensuite la cohérence : mécanisme impossible chez ce
                 constructeur, membres trop nombreux, liaison de synchronisation absente, témoin
                 manquant, rôles incohérents.
+              </>,
+              <>
+                <b>La gamme compte autant que la marque.</b> vPC est un mécanisme Nexus et non
+                Catalyst ; VSX s'adresse aux CX 8000 et non aux CX 6000 ; l'actif/actif PAN-OS
+                demande une PA-3400 ou au-dessus, une PA-450 n'en fait pas. L'analyse nomme
+                alors le mécanisme attendu sur ce matériel.
+              </>,
+              <>
+                <b>Le compte des liaisons</b> suit le mécanisme : une paire Palo Alto
+                actif/passif demande HA1 et HA2, une paire actif/actif y ajoute HA3. Un seul
+                lien tracé, et l'analyse dit lequel manque.
               </>,
             ]}
           />

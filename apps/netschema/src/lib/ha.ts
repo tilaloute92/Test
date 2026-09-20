@@ -288,6 +288,29 @@ function controlerMecanisme(
     }
   }
 
+  /*
+    Certains mécanismes n'ont pas une liaison mais deux ou trois, de natures différentes :
+    chez Palo Alto, HA1 porte l'élection et la configuration, HA2 les sessions, HA3 les
+    paquets en actif/actif. Les confondre sur un schéma, c'est promettre une bascule que le
+    câblage ne permet pas.
+  */
+  const obligatoires = (mecanisme.liensComplementaires ?? []).filter((item) => item.obligatoire)
+  if (obligatoires.length > 0) {
+    const tracees = diagram.links.filter((l) => memberSet.has(l.from) && memberSet.has(l.to)).length
+    const attendues = 1 + obligatoires.length
+    if (tracees < attendues) {
+      add({
+        id: `hatech-liens:${cluster.name}`,
+        severity: 'info',
+        title: `« ${mecanisme.label} » demande ${attendues} liaisons entre les membres`,
+        detail: `${tracees} tracée(s) dans « ${cluster.name} ». Outre ${mecanisme.lien?.nom ?? 'la liaison principale'}, il faut : ${obligatoires
+          .map((item) => item.nom)
+          .join(' ; ')}.`,
+        nodeIds: ids,
+      })
+    }
+  }
+
   // Témoin : c'est ce qui manque le plus souvent aux architectures étirées sur deux salles.
   if (mecanisme.temoin && witnesses.length === 0 && membresActifs.length <= 2) {
     add({

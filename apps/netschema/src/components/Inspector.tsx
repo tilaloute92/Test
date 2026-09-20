@@ -150,7 +150,7 @@ export function Inspector() {
 
       <section className="mt-auto rounded-lg bg-slate-50 p-3 text-[11px] leading-relaxed text-slate-500">
         <p className="font-semibold text-slate-600">Raccourcis</p>
-        <p>Ctrl+K — recherche et commandes · Ctrl+I — import rapide</p>
+        <p>Ctrl+K — recherche et commandes · Ctrl+J — assistant · Ctrl+I — import</p>
         <p>L — mode Relier · N — poser une note · Ctrl+D — dupliquer · Suppr — supprimer</p>
         <p>Ctrl+Z / Ctrl+Maj+Z — annuler / rétablir · Ctrl+A — tout sélectionner</p>
         <p>Flèches — déplacer (Alt : au pixel, Maj : cinq pas) · Échap — annuler</p>
@@ -555,7 +555,37 @@ function MecanismeHaField({ node, onChange }: { node: NetNode; onChange: (id: st
               Plan de contrôle commun : protège du matériel, pas d’un bogue logiciel.
             </p>
           )}
+          {(choisi.liensComplementaires ?? []).length > 0 && (
+            <ul className="list-disc pl-4 pt-1">
+              {choisi.liensComplementaires?.map((lien) => (
+                <li key={lien.nom}>
+                  {lien.nom}
+                  {lien.role ? ` (${lien.role})` : ''}
+                </li>
+              ))}
+            </ul>
+          )}
           <p className="pt-1">{choisi.note}</p>
+          {(choisi.prerequis ?? []).length > 0 && (
+            <>
+              <p className="pt-1.5 font-semibold text-slate-700">Prérequis</p>
+              <ul className="list-disc pl-4">
+                {choisi.prerequis?.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {(choisi.limites ?? []).length > 0 && (
+            <>
+              <p className="pt-1.5 font-semibold text-slate-700">Ce que ce mécanisme ne couvre pas</p>
+              <ul className="list-disc pl-4">
+                {choisi.limites?.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
     </div>

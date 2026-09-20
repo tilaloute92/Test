@@ -150,6 +150,12 @@ function buildItems(query: string, svgRef: React.RefObject<SVGSVGElement | null>
       hint: 'Ctrl+Maj+B',
       run: () => store().reorderNodes(store().selectedNodes, 'back'),
     },
+    {
+      id: 'assistant',
+      label: 'Assistant de conception (décrire une architecture)',
+      hint: 'Ctrl+J',
+      run: () => store().setAssistantOpen(true),
+    },
     { id: 'import', label: 'Import rapide (coller une liste)', hint: 'Ctrl+I', run: () => store().setImportOpen(true) },
     { id: 'note', label: 'Poser une note sur le plan', hint: 'annotation', run: () => store().addAnnotation('note') },
     { id: 'cadre', label: 'Encadrer un périmètre', hint: 'annotation', run: () => store().addAnnotation('zone') },

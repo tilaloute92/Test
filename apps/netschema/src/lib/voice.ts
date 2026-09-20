@@ -102,6 +102,7 @@ export type VoiceIntent =
   | { type: 'osi'; layer: OsiView }
   | { type: 'detail'; level: DetailLevel }
   | { type: 'view'; view: AppView }
+  | { type: 'assistant' }
   | { type: 'viewMode'; mode: ViewMode }
   | { type: 'collapse'; label?: string }
   | { type: 'expand' }
@@ -899,6 +900,10 @@ const RULES: Rule[] = [
       match[1] === 'technique' ? 'technique' : match[1] === 'architecture' ? 'architecture' : 'presentation'
     return { type: 'viewMode', mode }
   },
+  (t) =>
+    /(assistant|aide a la conception|aide moi a construire|aide moi a dessiner)/.test(t)
+      ? { type: 'assistant' }
+      : null,
   (t) => (/(guide|mode d'emploi|manuel|documentation|notice|tutoriel)/.test(t) ? { type: 'view', view: 'guide' } : null),
   (t) => (/(inventaire|parc)/.test(t) ? { type: 'view', view: 'inventory' } : null),
   (t) => (/(baies?|racks?|salle serveur|salle machine)/.test(t) ? { type: 'view', view: 'racks' } : null),
@@ -1069,6 +1074,7 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
   {
     title: 'Construire',
     examples: [
+      'Ouvre l’assistant de conception',
       'Ajoute un pare-feu',
       'Ajoute un switch cœur SW-CORE-03 dans la zone Datacenter',
       'Ajoute un serveur SRV-APP-01 avec IP 10.10.0.60 relié à SW-CORE-01',

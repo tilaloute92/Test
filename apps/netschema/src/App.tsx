@@ -3,6 +3,7 @@ import { AppTabs } from './components/AppTabs'
 import { Canvas } from './components/Canvas'
 import { VoicePanel } from './components/VoicePanel'
 import { CommandPalette } from './components/CommandPalette'
+import { AssistantPanel } from './components/AssistantPanel'
 import { QuickImportDialog } from './components/QuickImportDialog'
 import { Inspector } from './components/Inspector'
 import { PageTabs } from './components/PageTabs'
@@ -132,6 +133,11 @@ export default function App() {
         store.setImportOpen(true)
         return
       }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'j') {
+        event.preventDefault()
+        store.setAssistantOpen(true)
+        return
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault()
         if (event.shiftKey) store.redo()
@@ -182,6 +188,7 @@ export default function App() {
       if (event.key === 'Escape') {
         store.setCommandOpen(false)
         store.setImportOpen(false)
+        store.setAssistantOpen(false)
         store.setMode('select')
         store.clearSelection()
         return
@@ -217,6 +224,7 @@ export default function App() {
       <UsersDialog />
       <CommandPalette svgRef={svgRef} />
       <QuickImportDialog />
+      <AssistantPanel />
       <VoicePanel />
 
       {appView === 'diagram' && (

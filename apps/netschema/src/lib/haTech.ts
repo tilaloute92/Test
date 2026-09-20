@@ -66,6 +66,19 @@ export interface MecanismeHa {
   /** Liaison attendue entre les membres, et son nom d'usage. */
   lien?: { kind: LinkKind[]; nom: string }
   /**
+   * Autres liaisons du mécanisme.
+   *
+   * Plusieurs mécanismes n'ont pas un lien mais deux ou trois, de natures différentes :
+   * chez Palo Alto, HA1 porte l'élection et la configuration, HA2 les sessions, HA3 les
+   * paquets en actif/actif — les confondre sur un schéma, c'est promettre une bascule que
+   * le câblage ne permet pas.
+   */
+  liensComplementaires?: { nom: string; obligatoire?: boolean; role?: string }[]
+  /** Conditions à remplir pour que le mécanisme fonctionne (mêmes modèles, même version…). */
+  prerequis?: string[]
+  /** Ce que le mécanisme ne couvre pas : la question qu'on se pose toujours trop tard. */
+  limites?: string[]
+  /**
    * Vrai quand les membres ne forment qu'un seul plan de contrôle : la grappe protège du
    * matériel, pas du logiciel. C'est la nuance que le schéma ne montre jamais.
    */
@@ -132,6 +145,14 @@ export const MECANISMES_HA: MecanismeHa[] = [
     gammes: ['catalyst (9[456])', 'c9[456]\\d\\d', 'catalyst (45|65)00'],
     roles: ['active', 'passive'],
     bascule: '< 1 s avec SSO/NSF',
+    prerequis: [
+      'Deux châssis de même famille et de même version IOS-XE',
+      'Lien SVL redondé sur deux cartes ou deux ports différents',
+    ],
+    limites: [
+      'Un seul plan de contrôle : une mise à jour ou un bogue emporte les deux châssis',
+      'La perte du lien SVL provoque un double actif : prévoir le Dual-Active Detection',
+    ],
     note: "Deux châssis vus comme un seul : l'agrégat d'un équipement raccordé peut être réparti sur les deux. Le plan de contrôle reste unique — prévoir la mise à jour par ISSU et un second chemin hors du châssis virtuel.",
   },
   {
@@ -215,6 +236,17 @@ export const MECANISMES_HA: MecanismeHa[] = [
     gammes: ['nexus', 'n[59]k'],
     roles: ['active-active'],
     bascule: 'Sans interruption pour un agrégat réparti (LACP)',
+    liensComplementaires: [
+      { nom: 'Peer-keepalive sur un chemin distinct du peer-link', obligatoire: true },
+    ],
+    prerequis: [
+      'Même version NX-OS recommandée (mise à jour possible membre par membre)',
+      'Domaine vPC, rôle et priorité déclarés des deux côtés',
+    ],
+    limites: [
+      'Deux membres au maximum',
+      'Un équipement raccordé à un seul des deux Nexus perd son chemin si ce Nexus tombe',
+    ],
     note: "Deux Nexus gardent chacun leur plan de contrôle : une mise à jour se fait équipement par équipement. Le peer-keepalive doit emprunter un chemin distinct du peer-link, sinon la perte du peer-link fige le rôle secondaire.",
   },
   {
@@ -228,6 +260,17 @@ export const MECANISMES_HA: MecanismeHa[] = [
     gammes: ['cx (8|9|10)', '8[0-9]00', '9300', '10000'],
     roles: ['active-active'],
     bascule: 'Sans interruption pour un agrégat réparti',
+    liensComplementaires: [
+      { nom: "Keepalive sur un chemin distinct de l'ISL", obligatoire: true },
+    ],
+    prerequis: [
+      'Deux châssis de la même famille CX',
+      'Configuration synchronisée par VSX sync',
+    ],
+    limites: [
+      'Deux membres au maximum',
+      'Les objets non synchronisés doivent être déclarés identiques des deux côtés',
+    ],
     note: "Deux plans de contrôle et une synchronisation d'état : c'est le mécanisme à préférer à VSF pour un cœur, parce qu'une mise à jour logicielle ne touche qu'un membre à la fois (Live Upgrade).",
   },
   {
@@ -301,6 +344,14 @@ export const MECANISMES_HA: MecanismeHa[] = [
     vip: true,
     roles: ['active', 'passive'],
     bascule: '1 à 3 s (3 annonces manquées), < 1 s avec BFD',
+    prerequis: [
+      'Même identifiant de groupe (VRID) et même adresse virtuelle des deux côtés',
+      'Priorité et préemption documentées',
+    ],
+    limites: [
+      "Protège la passerelle, pas le chemin au-delà : à compléter par un suivi d'interface ou de route",
+      'Ne synchronise aucune session : un pare-feu en VRRP seul coupe les connexions à la bascule',
+    ],
     note: "Standard et interopérable entre constructeurs. La priorité et le « preempt » décident du maître : documentez-les, faute de quoi la bascule inverse ne se fait pas là où on l'attend.",
   },
   {
@@ -352,6 +403,17 @@ export const MECANISMES_HA: MecanismeHa[] = [
     vip: true,
     roles: ['active', 'passive', 'active-active'],
     bascule: '1 à 3 s, sessions synchronisées',
+    liensComplementaires: [
+      { nom: 'Second lien de heartbeat sur un port distinct', role: 'conseillé' },
+    ],
+    prerequis: [
+      'Mêmes modèle, version FortiOS et jeu de licences',
+      'Interfaces de heartbeat dédiées, hors des VLAN de production',
+    ],
+    limites: [
+      "En actif/actif, seule l'inspection est répartie : le maître reste seul à router",
+      'Les sessions non synchronisées (SSL profond, certaines sessions UDP) se rétablissent après bascule',
+    ],
     note: "Doublez les liens de heartbeat sur deux ports distincts : leur perte simultanée donne deux pare-feu maîtres avec les mêmes adresses. En actif/actif, seule l'inspection est répartie — le trafic reste géré par le maître.",
   },
   {
@@ -367,17 +429,100 @@ export const MECANISMES_HA: MecanismeHa[] = [
     note: 'Pour des pare-feu indépendants (souvent sur deux sites) qui partagent leurs tables de sessions : la bascule dépend alors du routage, pas du cluster.',
   },
   {
-    id: 'pan-ha',
-    label: 'HA actif/passif ou actif/actif',
+    id: 'pan-ha-ap',
+    label: 'HA actif / passif (PAN-OS)',
     famille: 'pare-feu',
     vendors: ['palo alto networks'],
     kinds: PARE_FEU,
     membres: { min: 2, max: 2 },
-    lien: { kind: ['heartbeat'], nom: 'HA1 (contrôle) + HA2 (état), HA3 en actif/actif' },
+    lien: { kind: ['heartbeat'], nom: 'HA2 — synchronisation des sessions' },
+    liensComplementaires: [
+      { nom: 'HA1 — contrôle : élection, hello, synchronisation de configuration', obligatoire: true },
+      { nom: 'HA1-backup — second chemin de contrôle (MGT ou port dédié)', role: 'conseillé' },
+      { nom: 'HA2-backup — second chemin de synchronisation', role: 'facultatif' },
+    ],
+    roles: ['active', 'passive'],
+    bascule: '< 1 s avec les minuteurs recommandés ; 2 à 3 s si le contrôle de chemin déclenche',
+    prerequis: [
+      'Mêmes modèle, version PAN-OS et jeu de licences sur les deux boîtiers',
+      'Même mode de déploiement des interfaces (L3, vwire, tap) et même configuration de slots sur PA-7000',
+      'Priorité de périphérique et préemption réglées de façon cohérente des deux côtés',
+    ],
+    limites: [
+      "Le passif ne traite aucun trafic : la paire ne double pas le débit, elle le sécurise",
+      "Les sessions déchiffrées (SSL/TLS) ne sont pas synchronisées : elles se rétablissent après bascule",
+      "La bascule ne protège pas d'une erreur de configuration — elle est justement synchronisée sur les deux",
+    ],
+    note: "En actif/passif, il n'y a pas d'adresse virtuelle : les deux boîtiers portent la même configuration d'interfaces et l'actif seul répond, le passif reprenant les adresses avec des ARP gratuits. Le point qui fait tomber les paires en production est l'absence de HA1-backup : un seul câble de contrôle coupé, et les deux se croient actifs.",
+  },
+  {
+    id: 'pan-ha-aa',
+    label: 'HA actif / actif (PAN-OS)',
+    famille: 'pare-feu',
+    vendors: ['palo alto networks'],
+    kinds: PARE_FEU,
+    membres: { min: 2, max: 2 },
+    gammes: ['pa-3[2456]', 'pa-5[245]', 'pa-7[05]', 'vm-series', 'vm-'],
+    lien: { kind: ['heartbeat'], nom: 'HA2 — synchronisation des sessions' },
+    liensComplementaires: [
+      { nom: 'HA1 — contrôle : élection, hello, synchronisation de configuration', obligatoire: true },
+      { nom: 'HA3 — réacheminement des paquets entre les deux membres (niveau 2)', obligatoire: true },
+      { nom: 'HA1-backup — second chemin de contrôle', role: 'conseillé' },
+    ],
     vip: true,
+    roles: ['active-active'],
+    bascule: 'Sans bascule pour les flux déjà pris en charge par le membre survivant',
+    prerequis: [
+      'Gammes PA-3400 et supérieures, ou VM-Series : les PA-400 et PA-800 ne font que de l’actif/passif',
+      'Un identifiant de périphérique (device-id 0 ou 1) et une liaison HA3 dédiée, souvent un agrégat',
+      'NAT, PBF et tunnels VPN liés explicitement à un device-id',
+    ],
+    limites: [
+      "Ne double pas le débit : chaque session reste traitée par un seul membre (propriétaire de session)",
+      'Le réacheminement HA3 consomme de la bande passante et de la ressource : à dimensionner',
+      "Complexité de diagnostic bien supérieure à l'actif/passif, pour un gain limité hors routage asymétrique",
+    ],
+    note: "L'actif/actif ne sert pas à aller deux fois plus vite : il sert aux topologies asymétriques — deux opérateurs, deux chemins de retour — et aux adresses flottantes qui suivent le membre resté debout. Palo Alto recommande lui-même l'actif/passif quand l'asymétrie n'est pas imposée.",
+  },
+  {
+    id: 'pan-ha-cluster',
+    label: 'Grappe HA PAN-OS (HA4, jusqu’à 16)',
+    famille: 'pare-feu',
+    vendors: ['palo alto networks'],
+    kinds: PARE_FEU,
+    membres: { min: 2, max: 16 },
+    lien: { kind: ['heartbeat'], nom: 'HA4 — synchronisation d’état entre membres de la grappe' },
     roles: ['active', 'passive', 'active-active'],
-    bascule: '< 1 s en actif/passif avec sessions synchronisées',
-    note: "Prévoyez HA1 redondé (HA1-backup) : sans lui, un câble de contrôle coupé suffit à provoquer un split-brain. L'actif/actif ne double pas le débit — il sert aux topologies asymétriques.",
+    bascule: 'Reprise par un autre membre de la grappe, sans réapprentissage des sessions',
+    prerequis: [
+      'PAN-OS 10.2 ou plus récent, modèles compatibles et administration par Panorama',
+      'Les paires HA classiques (HA1/HA2) restent en place : HA4 les complète, il ne les remplace pas',
+    ],
+    limites: [
+      "Sert la continuité de session entre sites ou entre paires, pas la répartition de charge",
+      'La synchronisation HA4 est asynchrone : quelques sessions récentes peuvent manquer',
+    ],
+    note: "Mécanisme de grappe étendue introduit avec PAN-OS 10.2 : jusqu'à seize pare-feu partagent leur table de sessions, ce qui permet à un site de reprendre le trafic d'un autre sans coupure des connexions longues.",
+  },
+  {
+    id: 'panorama-ha',
+    label: 'Panorama en actif / passif',
+    famille: 'services',
+    vendors: ['palo alto networks'],
+    kinds: ['siem', 'nms'],
+    membres: { min: 2, max: 2 },
+    lien: { kind: ['heartbeat'], nom: 'liaison HA entre les deux Panorama' },
+    roles: ['active', 'passive'],
+    bascule: 'Administration indisponible quelques minutes : le trafic, lui, n’est pas affecté',
+    prerequis: [
+      'Deux Panorama de même modèle et de même version, avec le même mode (Panorama ou Management Only)',
+      'Collecteurs de journaux dimensionnés indépendamment de la paire',
+    ],
+    limites: [
+      "Panorama n'est pas dans le chemin du trafic : sa perte n'interrompt rien, elle bloque l'administration et la collecte",
+      'Les journaux ne sont pas dupliqués par la paire : leur redondance relève des Log Collectors',
+    ],
+    note: "À documenter comme une redondance d'administration, pas de production : c'est la nuance qui évite de compter Panorama dans le calcul de disponibilité du réseau.",
   },
   {
     id: 'clusterxl',
@@ -390,6 +535,14 @@ export const MECANISMES_HA: MecanismeHa[] = [
     vip: true,
     roles: ['active', 'passive', 'active-active'],
     bascule: '< 3 s (High Availability), immédiate en Load Sharing',
+    prerequis: [
+      'Mêmes version et niveau de correctif sur tous les membres',
+      'Réseau de synchronisation dédié, au même débit que la production',
+    ],
+    limites: [
+      'Le mode Load Sharing exige un routage symétrique ou du sticky',
+      "La synchronisation n'inclut pas toutes les connexions : les services très courts peuvent être exclus",
+    ],
     note: 'Le réseau de synchronisation doit être dédié et de même débit que les interfaces de production : c’est lui qui porte la table de connexions.',
   },
   {
@@ -403,6 +556,14 @@ export const MECANISMES_HA: MecanismeHa[] = [
     vip: true,
     roles: ['active', 'passive', 'active-active'],
     bascule: '< 2 s par groupe de redondance',
+    prerequis: [
+      'Mêmes modèle et version Junos',
+      'Deux liaisons physiques distinctes : control link et fabric link',
+    ],
+    limites: [
+      'Certaines fonctions restent liées à un nœud : à vérifier par groupe de redondance',
+      'Le passage en cluster renumérote les interfaces (fe-0/0/0 devient ge-0/0/0 etc.)',
+    ],
     note: 'Deux liens distincts sont obligatoires : le control link porte l’élection, le fabric link les sessions. Les groupes de redondance permettent de rendre chaque nœud actif pour une partie du trafic.',
   },
   {
@@ -416,6 +577,17 @@ export const MECANISMES_HA: MecanismeHa[] = [
     vip: true,
     roles: ['active', 'passive'],
     bascule: '< 3 s avec réplication d’état',
+    liensComplementaires: [
+      { nom: "Lien d'état (stateful failover) distinct du lien de bascule", role: 'conseillé' },
+    ],
+    prerequis: [
+      'Mêmes modèle, version et licences',
+      'Les deux unités gérées par le même FMC',
+    ],
+    limites: [
+      'Le passif ne traite pas de trafic',
+      'Au-delà de deux unités, il faut passer au clustering',
+    ],
     note: 'Le lien d’état (stateful failover) doit être séparé du lien de bascule pour que les sessions survivent. Au-delà de deux unités, Cisco propose le clustering (jusqu’à 16 nœuds).',
   },
   {
@@ -535,6 +707,15 @@ export const MECANISMES_HA: MecanismeHa[] = [
     temoin: true,
     roles: ['active-active', 'witness'],
     bascule: 'Redémarrage des machines virtuelles : 1 à 5 minutes',
+    prerequis: [
+      'Stockage partagé accessible par tous les hôtes',
+      'Capacité de redémarrage réservée (admission control)',
+      'Réseau de gestion redondé, ou deux datastores de heartbeat',
+    ],
+    limites: [
+      'Les machines virtuelles redémarrent : la coupure est réelle',
+      "Ne protège pas d'une corruption applicative ni d'un chiffrement malveillant",
+    ],
     note: "vSphere HA redémarre les VM, il ne les maintient pas en vie : prévoyez la capacité de redémarrage (admission control) et acceptez la coupure. Pour du zéro-perte, c'est FT, limité en vCPU. Une grappe à deux hôtes demande un témoin (datastore de heartbeat ou nœud d'arbitrage).",
   },
   {
@@ -558,6 +739,14 @@ export const MECANISMES_HA: MecanismeHa[] = [
     membres: { min: 3 },
     roles: ['active-active'],
     bascule: 'Redémarrage des VM du nœud perdu : 1 à 5 minutes',
+    prerequis: [
+      'Trois nœuds au minimum pour RF2, cinq pour RF3',
+      "Capacité restante suffisante pour reconstruire après la perte d'un nœud",
+    ],
+    limites: [
+      'Les machines virtuelles du nœud perdu redémarrent',
+      'La réplication interne ne remplace pas une sauvegarde hors cluster',
+    ],
     note: "Trois nœuds au minimum pour RF2, cinq pour RF3 : en dessous, la perte d'un nœud interdit toute nouvelle écriture. Vérifiez que la capacité restante absorbe la reconstruction (n+1).",
   },
   {
@@ -644,6 +833,14 @@ export const MECANISMES_HA: MecanismeHa[] = [
     lien: { kind: ['heartbeat'], nom: 'interconnexion HA' },
     roles: ['active-active'],
     bascule: '< 60 s (takeover), non disruptif pour NFS/SMB',
+    prerequis: [
+      'Deux contrôleurs du même modèle, interconnexion HA en place',
+      'Chemins multiples (MPIO) configurés côté hôtes',
+    ],
+    limites: [
+      'Ne couvre pas la perte du châssis, de la baie ni de la salle',
+      'Le takeover interrompt brièvement les protocoles bloc',
+    ],
     note: 'Les deux contrôleurs se reprennent mutuellement les agrégats. Le stockage reste dans le même châssis ou la même salle : pour couvrir la perte d’un site, il faut MetroCluster.',
   },
   {
@@ -656,6 +853,14 @@ export const MECANISMES_HA: MecanismeHa[] = [
     temoin: true,
     roles: ['active-active', 'witness'],
     bascule: 'Automatique avec le médiateur (quelques dizaines de secondes)',
+    prerequis: [
+      'Liaisons inter-sites dédiées et médiateur sur un troisième site',
+      'Latence maîtrisée entre les deux salles',
+    ],
+    limites: [
+      'Sans médiateur, la bascule reste manuelle',
+      "La réplication synchrone propage aussi les suppressions : ce n'est pas une sauvegarde",
+    ],
     note: 'Réplication synchrone entre deux sites. Le médiateur (ou Tiebreaker) doit être hébergé sur un troisième site pour que la bascule soit automatique.',
   },
   {
@@ -743,6 +948,13 @@ export const MECANISMES_HA: MecanismeHa[] = [
     vip: true,
     roles: ['active', 'passive'],
     bascule: 'Sans réassociation des bornes ni des clients (AP SSO + Client SSO)',
+    prerequis: [
+      'Deux contrôleurs de même modèle et de même version',
+      'Lien RP direct, latence inférieure à 80 ms',
+    ],
+    limites: [
+      'Ne couvre pas la perte du site : prévoir un N+1 distant pour cela',
+    ],
     note: 'Les deux contrôleurs partagent une adresse de gestion ; le lien RP doit être direct ou en L2 pur, avec moins de 80 ms de latence.',
   },
   {
@@ -873,6 +1085,14 @@ export const MECANISMES_HA: MecanismeHa[] = [
     membres: { min: 2 },
     roles: ['active-active'],
     bascule: 'Aucune : les deux chaînes alimentent en parallèle',
+    prerequis: [
+      "Deux arrivées électriques et deux chaînes complètes, jusqu'aux prises",
+      'Équipements à double alimentation, ou commutateur de transfert (STS)',
+    ],
+    limites: [
+      'Un seul équipement mono-alimenté annule le bénéfice de la chaîne double',
+      "L'autonomie batterie se dégrade avec le temps : à tester, pas à supposer",
+    ],
     note: 'Deux chaînes complètes et indépendantes, jusqu’aux deux alimentations de chaque équipement. Un équipement mono-alimentation annule le bénéfice : repérez-le et posez un commutateur de transfert (STS).',
   },
   {
@@ -890,8 +1110,17 @@ export const MECANISMES_HA: MecanismeHa[] = [
 
 const PAR_ID = new Map(MECANISMES_HA.map((mecanisme) => [mecanisme.id, mecanisme]))
 
+/**
+ * Identifiants abandonnés, redirigés vers leur remplaçant : un schéma enregistré avant la
+ * séparation des modes Palo Alto doit continuer à s'ouvrir sans perdre son mécanisme.
+ */
+const ALIAS: Record<string, string> = {
+  'pan-ha': 'pan-ha-ap',
+}
+
 export function mecanismeHa(id?: string): MecanismeHa | undefined {
-  return id ? PAR_ID.get(id) : undefined
+  if (!id) return undefined
+  return PAR_ID.get(id) ?? PAR_ID.get(ALIAS[id] ?? '')
 }
 
 /** Le mécanisme concerne-t-il ce constructeur ? (liste vide = tous). */

@@ -396,6 +396,29 @@ export function dossierTechnique(titre: string, pages: PageDossier[]): string {
         ['Grappe', 'Membres et rôles', 'Mécanisme de bascule', 'Bascule attendue', 'À câbler entre les membres', 'Témoin', 'Adresse virtuelle', 'Réserves'],
         pages.flatMap((page) => lignesGrappes(page.diagram)),
       )}
+      ${(() => {
+        // Les limites des mécanismes employés : ce que le lecteur doit savoir avant de
+        // compter sur la grappe. On ne les répète pas par grappe, mais une fois, en clair.
+        const employes = [
+          ...new Set(
+            pages.flatMap((page) =>
+              page.diagram.nodes.map((node) => texte(node.haTech)).filter(Boolean),
+            ),
+          ),
+        ]
+          .map((id) => mecanismeHa(id))
+          .filter((mecanisme): mecanisme is NonNullable<typeof mecanisme> => !!mecanisme)
+          .filter((mecanisme) => (mecanisme.limites ?? []).length > 0)
+        if (employes.length === 0) return ''
+        return `<h3>Ce que ces mécanismes ne couvrent pas</h3>${employes
+          .map(
+            (mecanisme) =>
+              `<p><b>${echapper(mecanisme.label)}</b><br>${(mecanisme.limites ?? [])
+                .map((limite) => `• ${echapper(limite)}`)
+                .join('<br>')}</p>`,
+          )
+          .join('')}`
+      })()}
       <p class="note">Les temps de bascule sont des ordres de grandeur propres au mécanisme
       déclaré : ils dépendent de la version logicielle, de la charge et du dimensionnement, et
       n’engagent que la documentation. Seul un test de bascule les vérifie.</p>

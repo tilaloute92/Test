@@ -20,6 +20,7 @@ import { collapsibleGroups, groupKey } from '../lib/derive'
 import { auditDiagram } from '../lib/ha'
 import { analyseImpact } from '../lib/impact'
 import { constructeurDe, proposerMecanisme } from '../lib/haTech'
+import type { OperationPlan } from '../lib/assistant'
 import type { DiscoveryResult } from '../lib/discovery'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
 import { getDiagramSvg } from '../lib/exportRegistry'
@@ -268,6 +269,15 @@ interface DiagramStore {
    * matériel et la liaison tracée entre les membres. Ne touche jamais à ce qui est déjà saisi.
    */
   deduireMecanismesHa: () => { grappes: number; equipements: number }
+  /**
+   * Applique un plan de l'assistant : création des équipements manquants, des liaisons, et
+   * mise à jour des champs. Tout passe par une seule entrée d'historique — on annule un plan
+   * d'un seul Ctrl+Z, comme on annule une action.
+   */
+  appliquerPlan: (operations: OperationPlan[]) => { noeuds: number; liaisons: number }
+  /** Panneau de l'assistant de conception. */
+  assistantOpen: boolean
+  setAssistantOpen: (open: boolean) => void
   /** Afficher ou masquer un bandeau latéral. Le choix est propre au poste, pas au document. */
   setPanelOpen: (panneau: 'palette' | 'inspecteur', ouvert: boolean) => void
   setCommandOpen: (open: boolean) => void
@@ -354,6 +364,20 @@ let lockedStore: () => boolean = () => false
 /** Dernières positions d'étiquettes calculées par le plan de travail, en décalages. */
 let lastLabelPlacements = new Map<string, { dx: number; dy: number }>()
 
+/**
+ * Retire les champs non renseignés d'un correctif.
+ *
+ * Les plans de l'assistant décrivent des champs facultatifs (zone, site, grappe) : laisser
+ * passer leurs `undefined` effacerait ce que l'utilisateur a déjà saisi.
+ */
+function nettoyer<T extends object>(patch: T): Partial<T> {
+  const propre: Record<string, unknown> = {}
+  for (const [cle, valeur] of Object.entries(patch)) {
+    if (valeur !== undefined) propre[cle] = valeur
+  }
+  return propre as Partial<T>
+}
+
 export const useDiagram = create<DiagramStore>((set, get) => ({
   diagram: pagesInitiales[indexInitial],
   pages: pagesInitiales,
@@ -390,6 +414,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   pannes: { nodes: [], links: [] },
   commandOpen: false,
   importOpen: false,
+  assistantOpen: false,
   voiceOpen: false,
   connectFrom: null,
   view: { zoom: 0.8, tx: 40, ty: 20 },
@@ -1292,6 +1317,84 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     return { grappes, equipements: choix.size }
   },
 
+  setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
+
+  appliquerPlan: (operations) => {
+    if (lockedStore()) return { noeuds: 0, liaisons: 0 }
+    const etat = get()
+    etat.pushHistory()
+
+    const parNom = new Map(etat.diagram.nodes.map((node) => [node.name.trim().toLowerCase(), node.id]))
+    const nodes = [...etat.diagram.nodes]
+    const links = [...etat.diagram.links]
+    let noeuds = 0
+    let liaisons = 0
+
+    /*
+      Placement des nouveautés : une rangée par couche, sous le schéma existant. Le placement
+      automatique rangerait mieux, mais il déplacerait aussi ce que l'utilisateur a disposé à
+      la main — ce n'est pas à un assistant d'en décider.
+    */
+    const bornes = diagramBounds(etat.diagram.nodes)
+    const depart = etat.diagram.nodes.length === 0 ? 0 : bornes.maxY + 140
+    const occupation = new Map<number, number>()
+
+    const creer = (nom: string, kind: DeviceKind, patch?: Partial<NetNode>): string => {
+      const cle = nom.trim().toLowerCase()
+      const existant = parNom.get(cle)
+      if (existant) {
+        if (patch) {
+          const index = nodes.findIndex((node) => node.id === existant)
+          if (index >= 0) nodes[index] = { ...nodes[index], ...nettoyer(patch) }
+        }
+        return existant
+      }
+      const rang = rankOf(kind, patch?.rank ?? null)
+      const colonne = occupation.get(rang) ?? 0
+      occupation.set(rang, colonne + 1)
+      const id = uid('n')
+      nodes.push({
+        id,
+        kind,
+        name: nom,
+        x: Math.round(bornes.minX + colonne * (NODE_W + 60)),
+        y: Math.round(depart + rang * 150),
+        ...nettoyer(patch ?? {}),
+      })
+      parNom.set(cle, id)
+      noeuds += 1
+      return id
+    }
+
+    for (const operation of operations) {
+      if (operation.type === 'noeud') {
+        creer(operation.nom, operation.kind, operation.patch)
+      } else if (operation.type === 'champs') {
+        const id = parNom.get(operation.nom.trim().toLowerCase())
+        const index = id ? nodes.findIndex((node) => node.id === id) : -1
+        if (index >= 0) nodes[index] = { ...nodes[index], ...nettoyer(operation.patch) }
+      } else if (operation.type === 'liaison') {
+        const de = parNom.get(operation.de.trim().toLowerCase())
+        const vers = parNom.get(operation.vers.trim().toLowerCase())
+        if (!de || !vers || de === vers) continue
+        links.push({ id: uid('l'), from: de, to: vers, kind: operation.kind, ...nettoyer(operation.patch ?? {}) })
+        liaisons += 1
+      } else {
+        const de = parNom.get(operation.de.trim().toLowerCase())
+        const vers = parNom.get(operation.vers.trim().toLowerCase())
+        if (!de || !vers) continue
+        for (const [index, link] of links.entries()) {
+          const memeCouple =
+            (link.from === de && link.to === vers) || (link.from === vers && link.to === de)
+          if (memeCouple) links[index] = { ...link, ...nettoyer(operation.patch) }
+        }
+      }
+    }
+
+    set((state) => ({ diagram: { ...state.diagram, nodes, links }, selectedNodes: [], selectedLinks: [] }))
+    return { noeuds, liaisons }
+  },
+
   setPanelOpen: (panneau, ouvert) => {
     ecrirePanneau(panneau === 'palette' ? 'palette' : 'inspecteur', ouvert)
     set(panneau === 'palette' ? { paletteOpen: ouvert } : { inspectorOpen: ouvert })
@@ -2051,6 +2154,10 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         const labels = { full: 'détail complet', 'no-endpoints': 'sans les postes', summary: 'synthèse' }
         get().setDetail(intent.level)
         return { ok: true, message: `Affichage : ${labels[intent.level]}.` }
+      }
+      case 'assistant': {
+        get().setAssistantOpen(true)
+        return { ok: true, message: 'Assistant de conception ouvert.' }
       }
       case 'view': {
         const labels: Record<AppView, string> = {

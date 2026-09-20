@@ -66,6 +66,64 @@ placement auto, figer ce qui est bien placé, relancer.
 Les liaisons sont tracées en orthogonal à angles arrondis (ou en direct), les câbles multiples
 entre deux mêmes équipements sont automatiquement étalés pour ne pas se superposer.
 
+## Assistant de conception
+
+Bouton **✦ Assistant** de la barre d'outils, `Ctrl+J`, la palette de commandes ou la voix
+(« ouvre l'assistant de conception »). Il rend deux services, sans jamais rien envoyer à
+l'extérieur : il raisonne sur le catalogue, les règles de liaison et la base des mécanismes de
+haute disponibilité embarqués (`src/lib/assistant.ts`). Pas de service distant, donc pas de
+connexion requise et rien qui quitte le poste — ce qui le rend utilisable sur un réseau fermé.
+
+### Construire à partir d'une description
+
+Un groupe d'équipements par ligne, en français :
+
+```
+deux liens opérateur
+deux routeurs de périmètre en grappe
+deux pare-feu Fortinet en grappe actif/passif, zone DMZ
+deux switches cœur en grappe, zone Datacenter
+quatre switches d'accès
+trois hyperviseurs en grappe avec témoin
+une baie de stockage
+deux onduleurs
+```
+
+Sont reconnus dans chaque clause : la **quantité** (chiffres et nombres écrits), le **type**
+(rapproché du catalogue par recouvrement de mots, donc tolérant aux pluriels, aux accents et
+aux synonymes), le **constructeur**, la **zone**, le **site**, la mise en **grappe**, les
+**rôles** actif/passif ou actif/actif, et le **témoin** de quorum.
+
+À partir de là l'assistant nomme les équipements selon les conventions habituelles (`FW-01`,
+`SW-CORE-02`, `ESXi-03`…), les raccorde **de couche à couche** avec le type de liaison qui
+convient, monte les grappes (lien de synchronisation, rôles, mécanisme de bascule déduit du
+type et du constructeur — FGCP en Fortinet, HA active/passive en Palo Alto, VRRP sur un
+routeur…) et câble la double chaîne d'énergie.
+
+Il **annonce avant d'agir** : « Analyser la demande » affiche le plan étape par étape, et, en
+ambre, les fragments qu'il n'a pas compris et qu'il ignorera. Rien n'est modifié avant le clic
+sur « Appliquer », et tout le plan s'annule d'un seul `Ctrl+Z`. La mise en page reste au
+moteur de placement : **Placement auto** range l'ensemble juste après.
+
+### Améliorer un schéma existant
+
+Le second onglet lit le schéma ouvert et ne propose que ce qu'il sait corriger sans arbitrage :
+
+| Constat | Correction proposée |
+| --- | --- |
+| Membres de grappe sans lien de synchronisation | Ajout du lien (heartbeat ou pile) étiqueté |
+| Grappe de calcul ou de données à deux nœuds | Ajout d'un témoin de quorum et de ses deux liens |
+| Équipement d'infrastructure à un seul amont | Second raccordement vers le pair de même type |
+| Liens parallèles non déclarés | Passage en agrégat LACP (`Po1`) |
+| Deux chaînes ondulées, équipements mono-alimentés | Double alimentation déclarée |
+| Stockage ou virtualisation sans sauvegarde | Ajout de la chaîne de sauvegarde |
+
+Chaque proposition s'applique séparément et s'annule d'un `Ctrl+Z`. La liste se fige dès la
+première correction pour que les cartes ne sautent pas sous le curseur ; « Réanalyser le
+schéma » la rafraîchit. Ce qui demande une décision — dimensionnement, adressage, choix d'un
+mécanisme de bascule — n'est volontairement pas proposé ici : c'est le rôle du panneau **Haute
+dispo** et du module **Dossier**.
+
 ## Découverte réseau
 
 Un navigateur ne peut ni envoyer un ping, ni interroger un équipement en SNMP : la collecte
@@ -264,7 +322,7 @@ Une phrase non reconnue n'est jamais exécutée au hasard : elle est signalée t
 Onglet **Guide**, ou « ouvre le guide » à la voix, ou encore « comment ça marche ». Le mode
 d'emploi vit dans l'application plutôt que dans un fichier à côté :
 
-- **24 sections** — prise en main, les six modules, construction du schéma, liaisons et
+- **25 sections** — prise en main, assistant de conception, les six modules, construction du schéma, liaisons et
   couches OSI, annotations et cartouche, matrice de flux et chemins, dossier et complétude,
   haute disponibilité, simplification d'une architecture complexe, commande vocale, imports et
   exports, découverte, inventaire et baies, catalogue, raccourcis clavier, dépannage ;
@@ -961,13 +1019,12 @@ Cisco et une paire **VSX** Aruba se ressemblent sur un schéma et n'ont rien à 
 exploitation : le premier n'a qu'un plan de contrôle — une mise à jour logicielle emporte les
 deux châssis — le second en a deux.
 
-L'application embarque donc une base de **62 mécanismes**, classés en onze familles et
+L'application embarque donc une base de **65 mécanismes**, classés en dix familles et
 rattachés aux types d'équipements et aux constructeurs qui les mettent en œuvre :
 
 | Famille | Mécanismes |
 | --- | --- |
-| **Châssis virtuel / empilement** | StackWise, StackWise Virtual (VSS), VSF, IRF, Virtual Chassis, SummitStack, iStack/CSS |
-| **Paire de châssis (niveau 2)** | vPC, VSX, MLAG, VLT, MC-LAG, M-LAG, EVPN multihoming (ESI-LAG) |
+| **Châssis et empilement** | *empilement* : StackWise, VSF, IRF, Virtual Chassis, SummitStack, iStack/CSS — *paire de châssis* : StackWise Virtual (VSS), vPC, VSX, MLAG, VLT, MC-LAG, M-LAG, EVPN multihoming (ESI-LAG) |
 | **Passerelle (niveau 3)** | VRRP, HSRP, GLBP, passerelle anycast distribuée EVPN |
 | **Pare-feu** | FGCP, FGSP, HA PAN-OS actif/passif et actif/actif, ClusterXL, chassis cluster SRX, failover Secure Firewall, HA SNS, FireCluster, HA Sophos XGS |
 | **Répartiteurs** | F5 DSC (traffic groups), paire HA NetScaler, keepalived/VRRP logiciel |
@@ -1009,6 +1066,40 @@ panneau *Haute dispo*, dans la fiche de la page interactive exportée et dans un
 **Haute disponibilité** du dossier technique — un tableau par grappe : membres et rôles,
 mécanisme, bascule attendue, ce qu'il faut câbler entre les membres, témoin, adresse
 virtuelle et réserves.
+
+### Cas détaillé : la haute disponibilité Palo Alto
+
+Les pare-feu Palo Alto sont le cas où « la grappe » recouvre le plus de choses différentes ;
+l'application distingue donc quatre mécanismes plutôt qu'un seul.
+
+| Mécanisme | Membres | À câbler | Bascule |
+| --- | --- | --- | --- |
+| **HA actif / passif (PAN-OS)** | 2 | HA2 (sessions) + **HA1** (contrôle) obligatoires, HA1-backup conseillé, HA2-backup facultatif | < 1 s, 2 à 3 s si le contrôle de chemin déclenche |
+| **HA actif / actif (PAN-OS)** | 2 | HA2 + **HA1** + **HA3** (réacheminement niveau 2) obligatoires | pas de bascule pour les flux déjà pris par le survivant |
+| **Grappe HA (HA4)** | 2 à 16 | HA4 entre membres, **en plus** des paires HA1/HA2 existantes | reprise par un autre membre, sessions conservées |
+| **HA Panorama** | 2 | synchronisation de configuration entre les deux serveurs | administration seule — le trafic n'est pas concerné |
+
+Ce que l'analyse vérifie au-delà du simple « mécanisme renseigné » :
+
+- **la gamme**, et pas seulement le constructeur : l'actif/actif demande une PA-3400 ou
+  au-dessus, ou une VM-Series. Un actif/actif déclaré sur une **PA-450** ou une PA-820 est
+  signalé, avec le mécanisme attendu sur ce matériel ;
+- **le nombre de liaisons** : l'actif/passif en demande deux (HA1 + HA2), l'actif/actif trois
+  (HA1 + HA2 + HA3). Une paire actif/actif avec un seul lien tracé est signalée comme
+  incomplète, en nommant le lien manquant ;
+- **l'adresse virtuelle** : elle est attendue en actif/actif (adresses flottantes), et son
+  absence en actif/passif est **normale** — les deux boîtiers portent les mêmes interfaces et
+  le passif reprend les adresses par ARP gratuits. L'application ne réclame donc pas de VIP
+  sur une paire actif/passif, contrairement à un VRRP ;
+- **les rôles** : `actif/actif` déclaré sur un mécanisme actif/passif, et inversement.
+
+Les réserves propres au constructeur sont rappelées dans le dossier technique : le passif ne
+traite aucun trafic (une paire sécurise le débit, elle ne le double pas), les sessions
+déchiffrées ne sont pas synchronisées et se rétablissent après bascule, l'actif/actif ne va
+pas deux fois plus vite — il répond aux topologies asymétriques, et Palo Alto recommande
+lui-même l'actif/passif hors de ce cas. Le piège le plus fréquent en production est rappelé
+tel quel : **sans HA1-backup, un seul câble de contrôle coupé suffit à ce que les deux
+boîtiers se croient actifs**.
 
 ### Modèles prêts à l'emploi
 

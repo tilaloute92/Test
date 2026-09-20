@@ -307,6 +307,14 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
       </select>
 
       <div className="ml-auto flex items-center gap-2">
+        <Btn
+          variant="primary"
+          onClick={() => store().setAssistantOpen(true)}
+          disabled={locked}
+          title="Assistant de conception : décrire une architecture, ou faire proposer des corrections (Ctrl+J)"
+        >
+          ✦ Assistant
+        </Btn>
         <Btn onClick={() => store().setImportOpen(true)} disabled={locked} title="Importer une liste d'équipements (Ctrl+I)">
           Import rapide
         </Btn>
