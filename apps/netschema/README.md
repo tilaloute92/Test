@@ -124,6 +124,47 @@ schéma » la rafraîchit. Ce qui demande une décision — dimensionnement, adr
 mécanisme de bascule — n'est volontairement pas proposé ici : c'est le rôle du panneau **Haute
 dispo** et du module **Dossier**.
 
+## Dupliquer : un bloc, une page, un site entier
+
+Une infrastructure se répète — douze agences câblées pareil, quatre salles jumelles, deux
+baies identiques. Redessiner chacune, c'est douze occasions de se tromper, puis une
+modification reportée sur onze.
+
+### Quatre gestes
+
+| Geste | Ce qu'il fait |
+| --- | --- |
+| **Dupliquer** (`Ctrl+D`) | La copie se pose à côté de l'original, renommée (SW-ACC-01 → SW-ACC-02), liaisons internes comprises |
+| **Alt + glisser** | On part avec une copie, l'original reste en place. Un Alt+clic immobile ne duplique rien |
+| **Copier / coller** (`Ctrl+C`, `Ctrl+V`) | Le bloc passe par le presse-papiers du **système** : autre page, autre document, autre fenêtre. Il se pose là où est le pointeur. `Ctrl+X` déplace |
+| **Dupliquer la page** | Clic droit sur l'onglet de page : tout le schéma, annotations comprises |
+
+### Dupliquer en série
+
+Bouton **En série…**, `Ctrl+Maj+D`, ou « duplique quatre fois » à la voix. Le dialogue produit
+N copies et montre le résultat **avant** de l'écrire : les noms que porteront les copies, le
+nombre de liaisons recréées, et les réserves.
+
+- **Renommer** — remplacer un fragment (« BAT-A » → « BAT-@ »), ou encadrer d'un préfixe et
+  d'un suffixe. Dans ces modèles `#` vaut le numéro de la copie et `@` sa lettre : BAT-A
+  devient BAT-B, BAT-C. Sans règle, le numéro terminal est incrémenté.
+- **Site et zone** — « Agence # » nomme les copies Agence 2, Agence 3… et le placement
+  automatique les range aussitôt en groupes distincts.
+- **Adressage** — un pas de réseau décale le troisième octet des IP et les VLAN à chaque
+  copie : 10.10.**0**.1 devient 10.10.**1**.1, puis 10.10.**2**.1.
+- **Recâblage** — les copies se rebranchent sur les mêmes voisins que l'original (même switch
+  cœur, même chaîne d'énergie) ; décochez la case pour obtenir des blocs indépendants.
+- **Grappes HA** — une grappe suit son bloc : les copies forment leurs propres grappes, pas
+  une grappe géante à huit membres.
+
+**Ce qui n'est jamais recopié** : numéro de série, immobilisation et place en baie. Deux
+équipements ne partagent aucun des trois, et les laisser en double ferait mentir l'inventaire
+et le plan des baies. Un bloc **coupé** (`Ctrl+X`), lui, les conserve : c'est le même matériel
+qui change de page, pas un nouveau. Les adresses IP sont recopiées — décalez-les d'un pas de
+réseau ou videz-les ; le module **Dossier** signale de toute façon adresses et noms en double.
+
+Toute duplication, quelle qu'en soit l'ampleur, s'annule d'un seul `Ctrl+Z`.
+
 ## Découverte réseau
 
 Un navigateur ne peut ni envoyer un ping, ni interroger un équipement en SNMP : la collecte
@@ -322,7 +363,7 @@ Une phrase non reconnue n'est jamais exécutée au hasard : elle est signalée t
 Onglet **Guide**, ou « ouvre le guide » à la voix, ou encore « comment ça marche ». Le mode
 d'emploi vit dans l'application plutôt que dans un fichier à côté :
 
-- **25 sections** — prise en main, assistant de conception, les six modules, construction du schéma, liaisons et
+- **26 sections** — prise en main, assistant de conception, duplication, les six modules, construction du schéma, liaisons et
   couches OSI, annotations et cartouche, matrice de flux et chemins, dossier et complétude,
   haute disponibilité, simplification d'une architecture complexe, commande vocale, imports et
   exports, découverte, inventaire et baies, catalogue, raccourcis clavier, dépannage ;

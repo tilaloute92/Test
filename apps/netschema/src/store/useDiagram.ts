@@ -21,6 +21,17 @@ import { auditDiagram } from '../lib/ha'
 import { analyseImpact } from '../lib/impact'
 import { constructeurDe, proposerMecanisme } from '../lib/haTech'
 import type { OperationPlan } from '../lib/assistant'
+import {
+  dupliquer,
+  encombrement,
+  OPTIONS_PAR_DEFAUT,
+  type OptionsDuplication,
+} from '../lib/duplication'
+import {
+  ecrirePressePapier,
+  lirePressePapier,
+  type PressePapier,
+} from '../lib/pressePapier'
 import type { DiscoveryResult } from '../lib/discovery'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
 import { getDiagramSvg } from '../lib/exportRegistry'
@@ -284,7 +295,26 @@ interface DiagramStore {
   setImportOpen: (open: boolean) => void
   setVoiceOpen: (open: boolean) => void
   runVoiceCommand: (transcript: string) => { ok: boolean; message: string }
-  duplicateSelection: () => void
+  /**
+   * Duplique la sélection sur place. `decalage` place la copie ; 0/0 sert au glisser-copier,
+   * où c'est le déplacement de la souris qui la positionne ensuite.
+   */
+  duplicateSelection: (decalage?: { dx: number; dy: number }) => string[]
+  /** Duplication en série : N copies renommées, réadressées et recâblées d'un seul geste. */
+  duplicateSeries: (options: OptionsDuplication) => { equipements: number; liaisons: number }
+  /** Dialogue de duplication en série. */
+  duplicateOpen: boolean
+  setDuplicateOpen: (open: boolean) => void
+  duplicateOptions: OptionsDuplication
+  setDuplicateOptions: (patch: Partial<OptionsDuplication>) => void
+  /**
+   * Presse-papiers du schéma. Il vit dans l'application *et* dans le presse-papiers du
+   * système : c'est ce qui permet de coller un bloc sur une autre page, dans un autre
+   * document, ou dans une autre fenêtre du navigateur.
+   */
+  presse: PressePapier | null
+  copySelection: (couper?: boolean) => { equipements: number; liaisons: number }
+  pasteClipboard: (at?: { x: number; y: number }) => Promise<{ equipements: number; liaisons: number }>
   importText: (text: string, mode: 'merge' | 'replace') => { nodes: number; links: number; warnings: string[] }
   focusNode: (id: string) => void
   setConnectFrom: (id: string | null) => void
@@ -1942,9 +1972,53 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         } else if (state.selectedNodes.length === 0) {
           return { ok: false, message: 'Rien n’est sélectionné.' }
         }
+        if (intent.copies && intent.copies > 1) {
+          const { equipements, liaisons } = get().duplicateSeries({
+            ...get().duplicateOptions,
+            copies: intent.copies,
+          })
+          return {
+            ok: equipements > 0,
+            message:
+              equipements > 0
+                ? `${intent.copies} copies : ${equipements} équipements et ${liaisons} liaisons ajoutés.`
+                : 'Rien à dupliquer.',
+          }
+        }
         get().duplicateSelection()
         const copies = get().selectedNodes.length
         return { ok: true, message: copies === 1 ? 'Équipement dupliqué.' : `${copies} équipements dupliqués.` }
+      }
+
+      case 'duplicateSeries': {
+        if (state.selectedNodes.length === 0) return { ok: false, message: 'Rien n’est sélectionné.' }
+        get().setAppView('diagram')
+        get().setDuplicateOpen(true)
+        return { ok: true, message: 'Duplication en série.' }
+      }
+
+      case 'clipboard': {
+        if (intent.action === 'paste') {
+          void get()
+            .pasteClipboard()
+            .then(({ equipements, liaisons }) =>
+              get().notify(
+                equipements > 0
+                  ? `${equipements} équipement(s) et ${liaisons} liaison(s) collés.`
+                  : 'Rien à coller : copiez d’abord une sélection.',
+              ),
+            )
+          return { ok: true, message: 'Collage en cours…' }
+        }
+        const { equipements } = get().copySelection(intent.action === 'cut')
+        if (equipements === 0) return { ok: false, message: 'Rien n’est sélectionné.' }
+        return {
+          ok: true,
+          message:
+            intent.action === 'cut'
+              ? `${equipements} équipement(s) coupés.`
+              : `${equipements} équipement(s) copiés.`,
+        }
       }
 
       case 'selectAll': {
@@ -2224,11 +2298,13 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
    * Duplication : le nom est incrémenté (SW-ACC-A1 → SW-ACC-A2), les attributs sont
    * conservés, et les liaisons internes à la sélection sont dupliquées elles aussi.
    */
-  duplicateSelection: () => {
-    if (lockedStore()) return
-    const { diagram, selectedNodes } = get()
-    if (selectedNodes.length === 0) return
+  duplicateSelection: (decalage) => {
+    if (lockedStore()) return []
+    const { diagram, selectedNodes, selectedAnnotations } = get()
+    if (selectedNodes.length === 0 && selectedAnnotations.length === 0) return []
     get().pushHistory()
+    const dx = decalage?.dx ?? 40
+    const dy = decalage?.dy ?? 40
     const taken = new Set(diagram.nodes.map((n) => n.name))
     const mapping = new Map<string, string>()
     const clones = diagram.nodes
@@ -2238,20 +2314,167 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         mapping.set(node.id, id)
         const name = nextName(node.name, taken)
         taken.add(name)
-        return { ...node, id, name, x: node.x + 40, y: node.y + 40, pinned: false }
+        /*
+          Ce qui n'appartient qu'à un exemplaire physique ne se duplique pas : deux
+          équipements ne partagent ni un numéro de série, ni une immobilisation, ni une place
+          dans une baie. Le reste — adressage, grappe, rôle — est recopié : c'est justement ce
+          qu'on veut retrouver, et les contrôles du module Dossier signalent les doublons.
+        */
+        return {
+          ...node,
+          id,
+          name,
+          x: node.x + dx,
+          y: node.y + dy,
+          pinned: false,
+          serial: undefined,
+          assetTag: undefined,
+          rack: undefined,
+          rackUnit: undefined,
+        }
       })
     const clonedLinks = diagram.links
       .filter((l) => mapping.has(l.from) && mapping.has(l.to))
       .map((link) => ({ ...link, id: uid('l'), from: mapping.get(link.from)!, to: mapping.get(link.to)! }))
+    // Les notes, cadres et flèches sélectionnés suivent : un bloc annoté se duplique annoté.
+    const clonedAnnotations = (diagram.annotations ?? [])
+      .filter((annotation) => selectedAnnotations.includes(annotation.id))
+      .map((annotation) => ({ ...annotation, id: uid('a'), x: annotation.x + dx, y: annotation.y + dy }))
     set((state) => ({
       diagram: {
         ...state.diagram,
         nodes: [...state.diagram.nodes, ...clones],
         links: [...state.diagram.links, ...clonedLinks],
+        annotations: [...(state.diagram.annotations ?? []), ...clonedAnnotations],
       },
       selectedNodes: clones.map((n) => n.id),
       selectedLinks: [],
+      selectedAnnotations: clonedAnnotations.map((annotation) => annotation.id),
     }))
+    return clones.map((n) => n.id)
+  },
+
+  duplicateOpen: false,
+  setDuplicateOpen: (open) => set({ duplicateOpen: open }),
+  duplicateOptions: OPTIONS_PAR_DEFAUT,
+  setDuplicateOptions: (patch) =>
+    set((state) => ({ duplicateOptions: { ...state.duplicateOptions, ...patch } })),
+
+  duplicateSeries: (options) => {
+    if (lockedStore()) return { equipements: 0, liaisons: 0 }
+    const { diagram, selectedNodes, selectedAnnotations } = get()
+    const resultat = dupliquer(diagram, selectedNodes, selectedAnnotations, options)
+    if (resultat.nodes.length === 0 && resultat.annotations.length === 0) {
+      return { equipements: 0, liaisons: 0 }
+    }
+    get().pushHistory()
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        nodes: [...state.diagram.nodes, ...resultat.nodes],
+        links: [...state.diagram.links, ...resultat.links],
+        annotations: [...(state.diagram.annotations ?? []), ...resultat.annotations],
+      },
+      selectedNodes: resultat.nodes.map((node) => node.id),
+      selectedLinks: [],
+      selectedAnnotations: resultat.annotations.map((annotation) => annotation.id),
+    }))
+    return { equipements: resultat.nodes.length, liaisons: resultat.links.length }
+  },
+
+  presse: null,
+  copySelection: (couper = false) => {
+    const { diagram, selectedNodes, selectedAnnotations } = get()
+    const selection = new Set(selectedNodes)
+    const nodes = diagram.nodes.filter((node) => selection.has(node.id))
+    const annotations = (diagram.annotations ?? []).filter((annotation) =>
+      selectedAnnotations.includes(annotation.id),
+    )
+    if (nodes.length === 0 && annotations.length === 0) return { equipements: 0, liaisons: 0 }
+    // Seules les liaisons internes voyagent : une liaison dont l'autre bout reste sur place
+    // n'aurait nulle part où se rattacher une fois collée.
+    const links = diagram.links.filter(
+      (link) => selection.has(link.from) && selection.has(link.to),
+    )
+    const presse: PressePapier = {
+      format: 'netschema/selection',
+      version: 1,
+      origine: diagram.title,
+      coupe: couper,
+      nodes,
+      links,
+      annotations,
+    }
+    set({ presse })
+    void ecrirePressePapier(presse)
+    if (couper) {
+      if (lockedStore()) get().notify('Schéma verrouillé : le bloc est copié, pas retiré.')
+      else get().deleteSelection()
+    }
+    return { equipements: nodes.length, liaisons: links.length }
+  },
+
+  pasteClipboard: async (at) => {
+    if (lockedStore()) {
+      get().notify('Schéma verrouillé : déverrouillez-le pour coller.')
+      return { equipements: 0, liaisons: 0 }
+    }
+    // Le presse-papiers du système d'abord : c'est lui qui porte ce qui vient d'un autre
+    // onglet ou d'un autre document. La copie interne prend le relais s'il est inaccessible.
+    const presse = (await lirePressePapier()) ?? get().presse
+    if (!presse || (presse.nodes.length === 0 && presse.annotations.length === 0)) {
+      return { equipements: 0, liaisons: 0 }
+    }
+    get().pushHistory()
+    const state = get()
+    const cadre = encombrement(presse.nodes, presse.annotations)
+    // Collé au pointeur, le bloc se centre dessus ; sans point de dépose, on le pose à côté
+    // de l'original plutôt que par-dessus.
+    const cible = at
+      ? { x: at.x - cadre.w / 2, y: at.y - cadre.h / 2 }
+      : { x: cadre.x + 40, y: cadre.y + 40 }
+    const brut = { dx: cible.x - cadre.x, dy: cible.y - cadre.y }
+    const dx = state.snap ? Math.round(brut.dx / GRID) * GRID : Math.round(brut.dx)
+    const dy = state.snap ? Math.round(brut.dy / GRID) * GRID : Math.round(brut.dy)
+    const taken = new Set(state.diagram.nodes.map((node) => node.name))
+    const correspondance = new Map<string, string>()
+    const nodes = presse.nodes.map((node) => {
+      const id = uid('n')
+      correspondance.set(node.id, id)
+      const name = taken.has(node.name) ? nextName(node.name, taken) : node.name
+      taken.add(name)
+      // Un bloc coupé est déplacé, pas recopié : il garde son identité d'inventaire.
+      const identite = presse.coupe
+        ? {}
+        : { serial: undefined, assetTag: undefined, rack: undefined, rackUnit: undefined }
+      return { ...node, id, name, x: node.x + dx, y: node.y + dy, pinned: false, ...identite }
+    })
+    const links = presse.links
+      .filter((link) => correspondance.has(link.from) && correspondance.has(link.to))
+      .map((link) => ({
+        ...link,
+        id: uid('l'),
+        from: correspondance.get(link.from)!,
+        to: correspondance.get(link.to)!,
+      }))
+    const annotations = presse.annotations.map((annotation) => ({
+      ...annotation,
+      id: uid('a'),
+      x: annotation.x + dx,
+      y: annotation.y + dy,
+    }))
+    set((current) => ({
+      diagram: {
+        ...current.diagram,
+        nodes: [...current.diagram.nodes, ...nodes],
+        links: [...current.diagram.links, ...links],
+        annotations: [...(current.diagram.annotations ?? []), ...annotations],
+      },
+      selectedNodes: nodes.map((node) => node.id),
+      selectedLinks: [],
+      selectedAnnotations: annotations.map((annotation) => annotation.id),
+    }))
+    return { equipements: nodes.length, liaisons: links.length }
   },
 
   importText: (text, mode) => {

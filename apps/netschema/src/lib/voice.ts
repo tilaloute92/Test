@@ -86,7 +86,9 @@ export type VoiceIntent =
       /** Numéro de page, à partir de 1. */
       number?: number
     }
-  | { type: 'duplicate'; target?: string }
+  | { type: 'duplicate'; target?: string; copies?: number }
+  | { type: 'duplicateSeries' }
+  | { type: 'clipboard'; action: 'copy' | 'cut' | 'paste' }
   | { type: 'delete'; target?: string }
   | { type: 'selectAll' }
   | { type: 'clearSelection' }
@@ -736,6 +738,34 @@ const RULES: Rule[] = [
       connectTo: values.connectTo,
     }
   },
+  // Presse-papiers : ce qui voyage d'une page ou d'un document à l'autre.
+  (t) =>
+    /^(?:colle|coller)(?:\s+(?:le\s+)?(?:presse[- ]?papiers?|bloc|la\s+copie))?$/.test(t)
+      ? { type: 'clipboard', action: 'paste' }
+      : null,
+  (t) =>
+    /(?:mets?|mettre|copie|copier)\s+(?:la\s+selection\s+)?dans\s+le\s+presse[- ]?papiers?/.test(t)
+      ? { type: 'clipboard', action: 'copy' }
+      : null,
+  (t) =>
+    /^(?:coupe|couper)(?:\s+la\s+selection)?$/.test(t) ? { type: 'clipboard', action: 'cut' } : null,
+  // « duplique en série » ouvre le dialogue ; « duplique cinq fois » agit directement.
+  (t) =>
+    /(?:duplique|dupliquer|duplication)\s+(?:la\s+selection\s+)?en\s+serie/.test(t)
+      ? { type: 'duplicateSeries' }
+      : null,
+  (t) => {
+    const match = t.match(
+      /^(?:duplique|dupliquer)\s+(?:la\s+selection\s+)?(un|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|douze|\d{1,2})\s+fois$/,
+    )
+    if (!match) return null
+    const mots: Record<string, number> = {
+      un: 1, deux: 2, trois: 3, quatre: 4, cinq: 5,
+      six: 6, sept: 7, huit: 8, neuf: 9, dix: 10, douze: 12,
+    }
+    const copies = mots[match[1]] ?? Number(match[1])
+    return copies >= 1 && copies <= 50 ? { type: 'duplicate', copies } : null
+  },
   (t, raw) => {
     const match = t.match(/^(?:duplique|dupliquer|copie|copier)(?:\s+(.+))?$/)
     if (!match) return null
@@ -1034,6 +1064,7 @@ const EDITING_INTENTS = new Set<VoiceIntent['type']>([
   'zorder',
   'linkAttach',
   'duplicate',
+  'duplicateSeries',
   'delete',
   'link',
   'route',
@@ -1084,6 +1115,10 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'Liaison entre SW-CORE-01 et SW-DIST-BATA en fibre 10 Gb/s',
       'Insère le modèle pare-feu actif passif',
       'Duplique',
+      'Duplique quatre fois',
+      'Duplique la sélection en série',
+      'Mets la sélection dans le presse-papiers',
+      'Colle',
       'Supprime SW-ACC-B1',
     ],
   },

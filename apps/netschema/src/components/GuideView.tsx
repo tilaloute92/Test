@@ -91,6 +91,7 @@ export function GuideView() {
   const setImportOpen = useDiagram((s) => s.setImportOpen)
   const setCommandOpen = useDiagram((s) => s.setCommandOpen)
   const setAssistantOpen = useDiagram((s) => s.setAssistantOpen)
+  const setDuplicateOpen = useDiagram((s) => s.setDuplicateOpen)
   const loadSample = useDiagram((s) => s.loadSample)
   const run = useDiagram((s) => s.runVoiceCommand)
   const notify = useDiagram((s) => s.notify)
@@ -242,6 +243,101 @@ deux onduleurs`}</pre>
             </Btn>
             <Btn onClick={() => tryCommand("ouvre l'assistant de conception")}>
               Essayer la commande vocale
+            </Btn>
+          </div>
+        </>
+      ),
+    },
+    {
+      id: 'dupliquer',
+      title: 'Dupliquer : un bloc, une page, un site entier',
+      keywords:
+        'dupliquer duplication copier coller couper presse-papiers clone replique repeter serie agence site batiment salle baie identique modele gabarit alt glisser',
+      body: (
+        <>
+          <P>
+            Une infrastructure se répète : douze agences câblées pareil, quatre salles
+            jumelles, deux baies identiques. Rien de tout cela ne mérite d'être redessiné —
+            et le redessiner, c'est douze occasions de se tromper, puis une modification
+            reportée sur onze.
+          </P>
+
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">Quatre gestes</p>
+          <List
+            items={[
+              <>
+                <b>Dupliquer sur place</b> — bouton <b>Dupliquer</b>, ou <Keys>Ctrl</Keys> +{' '}
+                <Keys>D</Keys>. La copie se pose à côté de l'original, renommée
+                (SW-ACC-01 → SW-ACC-02), avec les liaisons internes à la sélection.
+              </>,
+              <>
+                <b>Alt + glisser</b> — le geste le plus direct : on attrape un équipement ou
+                un bloc, on part avec une copie, l'original reste en place. Un Alt+clic qui
+                ne bouge pas ne duplique rien.
+              </>,
+              <>
+                <b>Copier / coller</b> — <Keys>Ctrl</Keys> + <Keys>C</Keys> puis{' '}
+                <Keys>Ctrl</Keys> + <Keys>V</Keys>. Le bloc passe par le presse-papiers du
+                système : on le colle sur une autre page, dans un autre document, dans une
+                autre fenêtre du navigateur. Il se pose <b>là où est le pointeur</b>.{' '}
+                <Keys>Ctrl</Keys> + <Keys>X</Keys> déplace au lieu de copier.
+              </>,
+              <>
+                <b>Dupliquer une page entière</b> — clic droit sur l'onglet de page, ou
+                « duplique la page » à la voix : tout le schéma, liaisons et annotations
+                comprises, sur une nouvelle page.
+              </>,
+            ]}
+          />
+
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">
+            Dupliquer en série : douze agences d'un coup
+          </p>
+          <P>
+            Bouton <b>En série…</b>, <Keys>Ctrl</Keys> + <Keys>Maj</Keys> + <Keys>D</Keys>, ou
+            « duplique quatre fois » à la voix. Le dialogue produit N copies et montre le
+            résultat <b>avant</b> de l'écrire : les noms que porteront les copies, le nombre
+            de liaisons recréées, et les réserves.
+          </P>
+          <List
+            items={[
+              <>
+                <b>Renommer</b> — remplacer un fragment (« BAT-A » par « BAT-@ »), ou encadrer
+                d'un préfixe et d'un suffixe. Dans ces modèles, <code>#</code> vaut le numéro
+                de la copie et <code>@</code> sa lettre : un bloc BAT-A devient BAT-B, BAT-C.
+                Sans règle, le numéro terminal est simplement incrémenté.
+              </>,
+              <>
+                <b>Site et zone</b> — « Agence # » nomme les copies Agence 2, Agence 3… et le
+                placement automatique les range aussitôt en groupes distincts.
+              </>,
+              <>
+                <b>Adressage</b> — un pas de réseau décale le troisième octet des IP et les
+                VLAN à chaque copie : 10.10.<b>0</b>.1 devient 10.10.<b>1</b>.1, puis
+                10.10.<b>2</b>.1.
+              </>,
+              <>
+                <b>Recâblage</b> — les copies se rebranchent sur les mêmes voisins que
+                l'original (le même switch cœur, la même chaîne d'énergie). Décochez la case
+                pour obtenir des blocs indépendants, à raccorder ensuite.
+              </>,
+              <>
+                <b>Grappes HA</b> — une grappe suit son bloc : les copies forment leurs
+                propres grappes, et non une grappe géante à huit membres qui ferait crier
+                l'analyse de haute disponibilité.
+              </>,
+            ]}
+          />
+          <Note>
+            <b>Ce qui n'est jamais recopié</b> : numéro de série, immobilisation et place en
+            baie. Deux équipements ne partagent aucun des trois — les laisser en double
+            ferait mentir l'inventaire et le plan des baies. Les adresses IP, elles, sont
+            recopiées : décalez-les d'un pas de réseau, ou videz-les. Le module{' '}
+            <b>Dossier</b> signale de toute façon les adresses et les noms en double.
+          </Note>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Btn variant="primary" onClick={() => openIn('diagram', () => setDuplicateOpen(true))}>
+              Ouvrir la duplication en série
             </Btn>
           </div>
         </>
@@ -1330,6 +1426,9 @@ deux onduleurs`}</pre>
               ['Ctrl + Z', 'Annuler'],
               ['Ctrl + Maj + Z', 'Rétablir'],
               ['Ctrl + D', 'Dupliquer la sélection'],
+              ['Ctrl + Maj + D', 'Dupliquer en série (plusieurs copies renommées)'],
+              ['Alt + glisser', 'Emporter une copie, laisser l’original en place'],
+              ['Ctrl + C / X / V', 'Copier, couper, coller — d’une page ou d’un document à l’autre'],
               ['L', 'Mode liaison : cliquer les deux extrémités'],
               ['N', 'Poser une note sur le plan'],
               ['Ctrl + A', 'Tout sélectionner'],

@@ -151,7 +151,9 @@ export function Inspector() {
       <section className="mt-auto rounded-lg bg-slate-50 p-3 text-[11px] leading-relaxed text-slate-500">
         <p className="font-semibold text-slate-600">Raccourcis</p>
         <p>Ctrl+K — recherche et commandes · Ctrl+J — assistant · Ctrl+I — import</p>
-        <p>L — mode Relier · N — poser une note · Ctrl+D — dupliquer · Suppr — supprimer</p>
+        <p>L — mode Relier · N — poser une note · Suppr — supprimer</p>
+        <p>Ctrl+D — dupliquer · Ctrl+Maj+D — en série · Alt + glisser — copier à la souris</p>
+        <p>Ctrl+C / Ctrl+X / Ctrl+V — copier, couper, coller (même entre pages)</p>
         <p>Ctrl+Z / Ctrl+Maj+Z — annuler / rétablir · Ctrl+A — tout sélectionner</p>
         <p>Flèches — déplacer (Alt : au pixel, Maj : cinq pas) · Échap — annuler</p>
         <p>Maj + glisser sur le fond — sélection au lasso</p>

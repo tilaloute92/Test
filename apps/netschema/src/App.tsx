@@ -4,6 +4,8 @@ import { Canvas } from './components/Canvas'
 import { VoicePanel } from './components/VoicePanel'
 import { CommandPalette } from './components/CommandPalette'
 import { AssistantPanel } from './components/AssistantPanel'
+import { DuplicateDialog } from './components/DuplicateDialog'
+import { pointeurCourant } from './lib/pointeur'
 import { QuickImportDialog } from './components/QuickImportDialog'
 import { Inspector } from './components/Inspector'
 import { PageTabs } from './components/PageTabs'
@@ -125,7 +127,43 @@ export default function App() {
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
         event.preventDefault()
-        store.duplicateSelection()
+        // Maj : la duplication en série, quand une copie ne suffit pas.
+        if (event.shiftKey) store.setDuplicateOpen(true)
+        else {
+          const copies = store.duplicateSelection()
+          if (copies.length > 0) store.notify(`${copies.length} copie(s) posée(s) à côté de l’original.`)
+        }
+        return
+      }
+      /*
+        Copier / couper / coller. Le presse-papiers du système porte le bloc : on le colle
+        sur une autre page, dans un autre document, dans une autre fenêtre du navigateur.
+      */
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+        const { equipements } = store.copySelection()
+        if (equipements > 0) {
+          event.preventDefault()
+          store.notify(`${equipements} équipement(s) copiés. Ctrl+V pour les coller, ici ou ailleurs.`)
+        }
+        return
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'x') {
+        const { equipements } = store.copySelection(true)
+        if (equipements > 0) {
+          event.preventDefault()
+          store.notify(`${equipements} équipement(s) coupés.`)
+        }
+        return
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+        event.preventDefault()
+        void store.pasteClipboard(pointeurCourant() ?? undefined).then(({ equipements, liaisons }) => {
+          store.notify(
+            equipements > 0
+              ? `${equipements} équipement(s) et ${liaisons} liaison(s) collés.`
+              : 'Rien à coller : copiez d’abord une sélection (Ctrl+C).',
+          )
+        })
         return
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'i') {
@@ -189,6 +227,7 @@ export default function App() {
         store.setCommandOpen(false)
         store.setImportOpen(false)
         store.setAssistantOpen(false)
+        store.setDuplicateOpen(false)
         store.setMode('select')
         store.clearSelection()
         return
@@ -225,6 +264,7 @@ export default function App() {
       <CommandPalette svgRef={svgRef} />
       <QuickImportDialog />
       <AssistantPanel />
+      <DuplicateDialog />
       <VoicePanel />
 
       {appView === 'diagram' && (

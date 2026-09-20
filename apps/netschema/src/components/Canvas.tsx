@@ -16,6 +16,7 @@ import { linkColorFor, linkEndLabels, linkLabelFor } from '../lib/osi'
 import { crossingCount, linkCrossings, overlappingPairs, type Crossing } from '../lib/crossings'
 import { modeStyle } from '../lib/viewModes'
 import { analyseImpact, COULEURS_IMPACT } from '../lib/impact'
+import { noterPointeur } from '../lib/pointeur'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
 import {
   insertIndexAt,
@@ -41,6 +42,11 @@ interface DragState {
   startX: number
   startY: number
   origins: Record<string, { x: number; y: number }>
+  /**
+   * Alt + glisser : la copie n'est créée qu'au premier vrai déplacement. Un Alt+clic qui ne
+   * bouge pas ne doit pas laisser un doublon posé sur l'original.
+   */
+  aDupliquer?: boolean
 }
 
 /** Déplacement d'un point de passage de liaison (ou création par tirage du trait). */
@@ -288,13 +294,27 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     store.select({ nodes: ids })
     if (ids.length === 0) return
 
-    store.pushHistory()
+    /*
+      Alt + glisser : on emporte une copie et on laisse l'original en place. C'est le geste
+      de tous les éditeurs de schéma, et celui qui évite de rouvrir un dialogue pour répéter
+      une baie, une salle ou un bloc d'agence de plus. La copie n'est créée qu'au premier
+      déplacement réel — voir `aDupliquer` plus bas.
+    */
+    const aDupliquer = event.altKey
+    if (!aDupliquer) store.pushHistory()
+
     const origins: Record<string, { x: number; y: number }> = {}
     for (const id of ids) {
       const target = store.diagram.nodes.find((n) => n.id === id)
       if (target) origins[id] = { x: target.x, y: target.y }
     }
-    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, origins }
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      origins,
+      aDupliquer,
+    }
     ;(event.currentTarget as SVGGElement).setPointerCapture?.(event.pointerId)
   }
 
@@ -443,6 +463,9 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   }
 
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
+    // Mémorisé pour le collage : Ctrl+V pose le bloc là où l'on regarde.
+    const survol = toDiagram(event.clientX, event.clientY)
+    noterPointeur(survol.x, survol.y)
     if (mode === 'connect') {
       const point = toDiagram(event.clientX, event.clientY)
       if (connectFrom) setCursor(point)
@@ -574,6 +597,21 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     if (drag) {
       const dx = (event.clientX - drag.startX) / view.zoom
       const dy = (event.clientY - drag.startY) / view.zoom
+      // Le geste devient une duplication dès qu'il dépasse le simple clic.
+      if (drag.aDupliquer && Math.abs(dx) + Math.abs(dy) > 3) {
+        const copies = useDiagram.getState().duplicateSelection({ dx: 0, dy: 0 })
+        drag.aDupliquer = false
+        if (copies.length > 0) {
+          const nodes = useDiagram.getState().diagram.nodes
+          const origines: Record<string, { x: number; y: number }> = {}
+          for (const id of copies) {
+            const clone = nodes.find((node) => node.id === id)
+            if (clone) origines[id] = { x: clone.x, y: clone.y }
+          }
+          drag.origins = origines
+          useDiagram.getState().notify('Copie en cours de déplacement — relâchez pour la poser.')
+        }
+      }
       const positions: Record<string, { x: number; y: number }> = {}
       for (const [id, origin] of Object.entries(drag.origins)) {
         const x = origin.x + dx

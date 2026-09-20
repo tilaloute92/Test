@@ -141,6 +141,27 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
       >
         Relier
       </Btn>
+      <Btn
+        onClick={() => {
+          const copies = store().duplicateSelection()
+          store().notify(
+            copies.length > 0
+              ? `${copies.length} copie(s) posée(s) à côté de l’original.`
+              : 'Sélectionnez d’abord ce qu’il faut dupliquer.',
+          )
+        }}
+        disabled={locked || !hasSelection}
+        title="Dupliquer la sélection (Ctrl+D) — Alt + glisser pour dupliquer à la souris"
+      >
+        Dupliquer
+      </Btn>
+      <Btn
+        onClick={() => store().setDuplicateOpen(true)}
+        disabled={locked || !hasSelection}
+        title="Dupliquer en série : plusieurs copies renommées et réadressées (Ctrl+Maj+D)"
+      >
+        En série…
+      </Btn>
       <Btn variant="danger" onClick={() => store().deleteSelection()} disabled={locked || !hasSelection} title="Supprimer (Suppr)">
         Supprimer
       </Btn>

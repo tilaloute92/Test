@@ -151,6 +151,47 @@ function buildItems(query: string, svgRef: React.RefObject<SVGSVGElement | null>
       run: () => store().reorderNodes(store().selectedNodes, 'back'),
     },
     {
+      id: 'dupliquer',
+      label: 'Dupliquer la sélection',
+      hint: 'Ctrl+D · Alt + glisser',
+      run: () => store().duplicateSelection(),
+    },
+    {
+      id: 'dupliquer-serie',
+      label: 'Dupliquer en série (plusieurs copies renommées)',
+      hint: 'Ctrl+Maj+D',
+      run: () => store().setDuplicateOpen(true),
+    },
+    {
+      id: 'copier',
+      label: 'Copier la sélection',
+      hint: 'Ctrl+C',
+      run: () => {
+        const { equipements } = store().copySelection()
+        store().notify(
+          equipements > 0
+            ? `${equipements} équipement(s) copiés — collez-les ici, sur une autre page ou dans un autre document.`
+            : 'Rien à copier : sélectionnez d’abord des équipements.',
+        )
+      },
+    },
+    {
+      id: 'coller',
+      label: 'Coller le presse-papiers',
+      hint: 'Ctrl+V',
+      run: () => {
+        void store()
+          .pasteClipboard()
+          .then(({ equipements, liaisons }) =>
+            store().notify(
+              equipements > 0
+                ? `${equipements} équipement(s) et ${liaisons} liaison(s) collés.`
+                : 'Rien à coller : copiez d’abord une sélection.',
+            ),
+          )
+      },
+    },
+    {
       id: 'assistant',
       label: 'Assistant de conception (décrire une architecture)',
       hint: 'Ctrl+J',
