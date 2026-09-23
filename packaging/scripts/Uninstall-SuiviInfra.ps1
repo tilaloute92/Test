@@ -86,6 +86,18 @@ if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
     Write-Warn 'Service absent'
 }
 
+# Selon la présence de NSSM à l'installation, le service tourne soit comme service Windows,
+# soit comme tâche planifiée : on traite les deux, sans quoi un Node resterait lancé au
+# prochain démarrage sur une installation supposée supprimée.
+if (Get-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue) {
+    Stop-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $ServiceName -Confirm:$false
+    Write-Ok "Tâche planifiée $ServiceName supprimée"
+}
+Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -and $_.CommandLine -like "*$ServicePath*" } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; Write-Ok "Processus node.exe ($($_.ProcessId)) arrêté" }
+
 Write-Step 'Données du service'
 $dataPath = Join-Path $ServicePath 'data'
 if (-not (Test-Path $ServicePath)) {

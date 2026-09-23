@@ -90,11 +90,15 @@ Test-Item "Règle de pare-feu $Port/TCP" {
 
 if ($WithService) {
     Write-Host ''
-    Test-Item 'Service Windows en cours d''exécution' {
+    # Le service tourne comme service Windows (installation avec NSSM) ou comme tâche
+    # planifiée (repli natif) : les deux sont des réussites, seule l'absence est un échec.
+    Test-Item 'Service en cours d''exécution' {
         $svc = Get-Service -Name 'SuiviInfraAuth' -ErrorAction SilentlyContinue
-        if (-not $svc) { return $false }
-        $svc.Status -eq 'Running'
-    } "Service absent ou arrêté - consultez C:\services\suivi-infra\service.err.log."
+        if ($svc -and $svc.Status -eq 'Running') { return $true }
+        $task = Get-ScheduledTask -TaskName 'SuiviInfraAuth' -ErrorAction SilentlyContinue
+        if ($task -and $task.State -eq 'Running') { return $true }
+        $false
+    } "Ni service Windows ni tâche planifiée en cours - consultez C:\services\suivi-infra\service.log."
 
     Test-Item 'Service en écoute en local' {
         (Invoke-RestMethod "http://127.0.0.1:$ServicePort/api/health" -TimeoutSec 5).ok -eq $true

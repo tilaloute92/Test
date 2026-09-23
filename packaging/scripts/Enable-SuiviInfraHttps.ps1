@@ -146,9 +146,21 @@ if ($WithService) {
         $lines | Set-Content -Path $envPath -Encoding UTF8
         Write-Ok "COOKIE_SECURE=true et CORS_ORIGIN=$BaseUrl"
 
+        # Le service tourne comme service Windows ou comme tâche planifiée, selon que NSSM
+        # était présent à l'installation : on redémarre celui qui existe.
         if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
             Restart-Service -Name $ServiceName
             Write-Ok "Service $ServiceName redémarré"
+        } elseif (Get-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue) {
+            Stop-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue
+            Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+                Where-Object { $_.CommandLine -and $_.CommandLine -like "*$ServicePath*" } |
+                ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+            Start-Sleep -Milliseconds 500
+            Start-ScheduledTask -TaskName $ServiceName
+            Write-Ok "Tâche planifiée $ServiceName redémarrée"
+        } else {
+            Write-Warn "Ni service Windows ni tâche planifiée $ServiceName : redémarrez le service à la main pour appliquer COOKIE_SECURE."
         }
     }
 }

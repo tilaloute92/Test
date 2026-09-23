@@ -71,15 +71,25 @@ simplement le script avec `-WithService`.
 **Uniquement pour le scénario B**, en plus :
 
 4. **Node.js LTS** — <https://nodejs.org> (l'installeur par défaut convient).
-5. **NSSM** — <https://nssm.cc> — fait tourner Node comme un vrai service Windows
-   (démarrage automatique, redémarrage en cas de plantage). Décompressez `nssm.exe`
-   quelque part, par exemple `C:\outils\nssm.exe`.
+5. **NSSM** (facultatif) — <https://nssm.cc> — fait tourner Node comme un *vrai* service
+   Windows. **S'il est absent, l'installation se poursuit** : le script enregistre à la place
+   une tâche planifiée Windows « au démarrage », exécutée par SYSTEM, avec relance
+   automatique en cas d'arrêt. Le résultat pratique est le même ; le service Windows reste
+   préférable pour l'exploitation (visible dans `services.msc`, `Restart-Service`).
+
+   Pour l'utiliser, posez simplement `nssm.exe` **à côté des scripts** (ou dans
+   `prereqs\`, ou `C:\outils\`) : il est détecté tout seul. Vous pouvez aussi passer
+   de la tâche planifiée au service Windows plus tard, en relançant l'installation une
+   fois `nssm.exe` en place — le script remplace l'un par l'autre.
 6. Les modules IIS **URL Rewrite** et **Application Request Routing (ARR)** —
    <https://www.iis.net/downloads>. Ils permettent à IIS de relayer `/api` vers le
    service local.
 
 > Le paquet embarque déjà les dépendances du service : **aucun accès Internet n'est
-> nécessaire sur le serveur** une fois les prérequis ci-dessus installés.
+> nécessaire sur le serveur** une fois les prérequis ci-dessus installés. Seul Node.js
+> reste indispensable au scénario B ; tout le reste est soit installé par le script (IIS),
+> soit facultatif (NSSM), soit nécessaire uniquement en HTTPS (certificat) ou pour le
+> relais `/api` (URL Rewrite + ARR).
 
 ## 3. Transférer et vérifier le paquet
 

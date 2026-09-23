@@ -164,14 +164,26 @@ if ($WithService) {
     }
     Write-Ok "Node.js $nodeVersion - $($node.Source)"
 
+    # NSSM est PRÉFÉRÉ mais facultatif : il fait de Node un vrai service Windows. Quand il
+    # n'est pas là, on se rabat sur une tâche planifiée « au démarrage », native à Windows.
+    # L'installation ne dépend donc d'aucun téléchargement.
     if (-not $NssmPath) {
-        $nssmCmd = Get-Command nssm.exe -ErrorAction SilentlyContinue
-        if ($nssmCmd) { $NssmPath = $nssmCmd.Source }
+        foreach ($candidat in @(
+            (Get-Command nssm.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue),
+            (Join-Path $PackageRoot 'nssm.exe'),
+            (Join-Path $PackageRoot 'prereqs\nssm.exe'),
+            'C:\outils\nssm.exe'
+        )) {
+            if ($candidat -and (Test-Path $candidat)) { $NssmPath = $candidat; break }
+        }
     }
-    if (-not $NssmPath -or -not (Test-Path $NssmPath)) {
-        throw "nssm.exe introuvable. Téléchargez-le sur https://nssm.cc, puis relancez avec -NssmPath C:\chemin\nssm.exe."
+    if ($NssmPath -and (Test-Path $NssmPath)) {
+        $UseNssm = $true
+        Write-Ok "NSSM : $NssmPath"
+    } else {
+        $UseNssm = $false
+        Write-Warn "nssm.exe absent : le service sera lancé par une tâche planifiée Windows au démarrage. C'est fonctionnel et sans téléchargement. Pour un vrai service Windows, posez nssm.exe (https://nssm.cc) à côté de ce script et relancez."
     }
-    Write-Ok "NSSM : $NssmPath"
 
     # Simple avertissement : si le port est déjà pris par autre chose, le service ne
     # démarrera pas - autant le dire tout de suite. (On n'essaie pas de deviner *quel*
@@ -273,10 +285,25 @@ if ($WithService) {
     Write-Step "Installation du service « $ServiceName » vers $ServicePath"
 
     $serviceExists = [bool](Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)
-    if ($serviceExists) {
+    $taskExists    = [bool](Get-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue)
+
+    if ($serviceExists -and $UseNssm) {
         & $NssmPath stop $ServiceName confirm | Out-Null
         Write-Ok 'Service existant arrêté le temps de la mise à jour'
+    } elseif ($serviceExists) {
+        Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+        Write-Ok 'Service existant arrêté le temps de la mise à jour'
     }
+    if ($taskExists) {
+        Stop-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue
+        Write-Ok 'Tâche planifiée existante arrêtée le temps de la mise à jour'
+    }
+    # Arrêter la tâche tue cmd.exe, pas forcément le node.exe qu'elle a lancé : on le
+    # termine explicitement, sinon les fichiers du service resteraient verrouillés.
+    Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and $_.CommandLine -like "*$ServicePath*" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Milliseconds 500
 
     New-Item -ItemType Directory -Path $ServicePath -Force | Out-Null
     # data\ contient les comptes et les données d'équipe : jamais écrasé par une mise à jour.
@@ -356,20 +383,51 @@ if ($WithService) {
     Write-Ok 'Droits restreints sur service\data (Administrateurs + SYSTEM)'
 
     $nodeExe = (Get-Command node.exe).Source
-    if (-not $serviceExists) {
-        & $NssmPath install $ServiceName $nodeExe (Join-Path $ServicePath 'src\index.js') | Out-Null
+    $entryPoint = Join-Path $ServicePath 'src\index.js'
+    $logPath = Join-Path $ServicePath 'service.log'
+
+    if ($UseNssm) {
+        if (-not $serviceExists) {
+            & $NssmPath install $ServiceName $nodeExe $entryPoint | Out-Null
+        } else {
+            & $NssmPath set $ServiceName Application $nodeExe | Out-Null
+            & $NssmPath set $ServiceName AppParameters $entryPoint | Out-Null
+        }
+        & $NssmPath set $ServiceName AppDirectory $ServicePath | Out-Null
+        & $NssmPath set $ServiceName Start SERVICE_AUTO_START | Out-Null
+        & $NssmPath set $ServiceName AppStdout $logPath | Out-Null
+        & $NssmPath set $ServiceName AppStderr (Join-Path $ServicePath 'service.err.log') | Out-Null
+        & $NssmPath set $ServiceName AppRotateFiles 1 | Out-Null
+        & $NssmPath set $ServiceName Description 'Suivi Infra & Reseau - authentification et donnees partagees' | Out-Null
+        & $NssmPath start $ServiceName | Out-Null
+        Write-Ok "Service Windows $ServiceName installé et démarré (journaux : $logPath)"
+
+        # Une tâche planifiée d'une installation précédente ferait tourner un second Node
+        # sur le même port : le service ne démarrerait pas. On la retire.
+        if ($taskExists) {
+            Unregister-ScheduledTask -TaskName $ServiceName -Confirm:$false
+            Write-Ok 'Ancienne tâche planifiée retirée (remplacée par le service Windows)'
+        }
     } else {
-        & $NssmPath set $ServiceName Application $nodeExe | Out-Null
-        & $NssmPath set $ServiceName AppParameters (Join-Path $ServicePath 'src\index.js') | Out-Null
+        # Repli natif : Node n'est pas un programme de service (il ne répond pas au
+        # gestionnaire de services), on ne peut donc pas l'enregistrer tel quel avec
+        # New-Service. Une tâche planifiée « au démarrage », exécutée par SYSTEM, donne le
+        # même résultat pratique : démarrage automatique et relance en cas d'arrêt.
+        # cmd.exe sert uniquement à rediriger la sortie vers le journal.
+        $commande = "`"$nodeExe`" `"$entryPoint`" >> `"$logPath`" 2>&1"
+        $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c $commande" -WorkingDirectory $ServicePath
+        $trigger = New-ScheduledTaskTrigger -AtStartup
+        $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+            -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
+            -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -MultipleInstances IgnoreNew
+
+        Register-ScheduledTask -TaskName $ServiceName -Action $action -Trigger $trigger `
+            -Principal $principal -Settings $settings -Force `
+            -Description 'Suivi Infra & Reseau - authentification et donnees partagees' | Out-Null
+        Start-ScheduledTask -TaskName $ServiceName
+        Write-Ok "Tâche planifiée $ServiceName enregistrée et démarrée (journaux : $logPath)"
     }
-    & $NssmPath set $ServiceName AppDirectory $ServicePath | Out-Null
-    & $NssmPath set $ServiceName Start SERVICE_AUTO_START | Out-Null
-    & $NssmPath set $ServiceName AppStdout (Join-Path $ServicePath 'service.log') | Out-Null
-    & $NssmPath set $ServiceName AppStderr (Join-Path $ServicePath 'service.err.log') | Out-Null
-    & $NssmPath set $ServiceName AppRotateFiles 1 | Out-Null
-    & $NssmPath set $ServiceName Description 'Suivi Infra & Reseau - authentification et donnees partagees' | Out-Null
-    & $NssmPath start $ServiceName | Out-Null
-    Write-Ok "Service $ServiceName installé et démarré (journaux : $ServicePath\service.log)"
 
     # Attente active courte : le service doit répondre avant qu'on annonce que tout va bien.
     $healthy = $false
@@ -383,7 +441,7 @@ if ($WithService) {
     if ($healthy) {
         Write-Ok "Le service répond sur http://127.0.0.1:$ServicePort/api/health"
     } else {
-        Write-Warn "Le service ne répond pas encore. Consultez $ServicePath\service.err.log."
+        Write-Warn "Le service ne répond pas encore. Consultez $ServicePath\service.log$(if ($UseNssm) { " et $ServicePath\service.err.log" })."
     }
 
     # --- Relais /api par IIS (URL Rewrite + ARR) ---
@@ -428,7 +486,7 @@ Write-Step 'Installation terminée'
 Write-Host "    Application : $BaseUrl" -ForegroundColor White
 Write-Host "    Fichiers    : $SitePath"
 if ($WithService) {
-    Write-Host "    Service     : $ServiceName ($ServicePath), port local $ServicePort"
+    Write-Host "    Service     : $ServiceName ($ServicePath), port local $ServicePort$(if (-not $UseNssm) { ' - tâche planifiée Windows' })"
     Write-Host ""
     Write-Host "    Étape suivante - créer le premier compte administrateur :" -ForegroundColor Yellow
     Write-Host "      cd `"$ServicePath`""
