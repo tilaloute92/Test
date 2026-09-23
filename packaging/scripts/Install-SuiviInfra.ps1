@@ -54,6 +54,19 @@
     Chemin vers nssm.exe (https://nssm.cc), utilisé pour faire tourner Node comme
     service Windows. Requis avec -WithService si NSSM n'est pas déjà dans le PATH.
 
+.PARAMETER AdminUser
+    Identifiant du premier compte local, créé par le script. Si ce paramètre est omis et
+    qu'aucun compte n'existe encore, le script le demande de façon interactive. Le mot de
+    passe n'est jamais passé en paramètre : il est toujours saisi masqué.
+
+.PARAMETER AdminName
+    Nom complet associé à ce compte (ex. "R. Nelson"). Défaut : l'identifiant.
+
+.PARAMETER SkipAdminAccount
+    Ne crée aucun compte et ne pose aucune question. À utiliser pour une installation
+    silencieuse ; il faudra créer le premier compte à la main, depuis une console
+    administrateur (voir INSTALL.md).
+
 .PARAMETER SkipFirewall
     N'ajoute pas la règle de pare-feu (si vos règles sont gérées par GPO).
 
@@ -82,6 +95,9 @@ param(
     [string] $ServicePath = 'C:\services\suivi-infra',
     [int]    $ServicePort = 4000,
     [string] $NssmPath,
+    [string] $AdminUser,
+    [string] $AdminName,
+    [switch] $SkipAdminAccount,
     [switch] $SkipFirewall
 )
 
@@ -462,6 +478,68 @@ if ($WithService) {
         Write-Warn "Le service ne répond pas encore. Consultez $ServicePath\service.log$(if ($UseNssm) { " et $ServicePath\service.err.log" })."
     }
 
+    # --- Premier compte local ---
+    # Créé ici, par le script, parce qu'il est déjà élevé : le dossier data\ n'est accessible
+    # qu'aux administrateurs et à SYSTEM, si bien que la même commande lancée depuis une
+    # console non élevée échoue avec « EPERM ». C'est aussi la dernière étape manuelle qui
+    # restait entre l'installation et une application utilisable.
+    $usersFile = Join-Path $ServicePath 'data\users.json'
+    $aDesComptes = $false
+    if (Test-Path $usersFile) {
+        try { $aDesComptes = @(Get-Content $usersFile -Raw | ConvertFrom-Json).Count -gt 0 } catch { $aDesComptes = $false }
+    }
+
+    if ($aDesComptes) {
+        Write-Ok 'Des comptes locaux existent déjà - aucun compte créé'
+    } elseif ($SkipAdminAccount) {
+        Write-Warn "Aucun compte local. Créez le premier depuis une console ADMINISTRATEUR : cd `"$ServicePath`" ; node scripts\create-local-user.js <identifiant> <mot-de-passe> `"<Nom complet>`""
+    } else {
+        Write-Step 'Premier compte local'
+        if (-not $AdminUser) {
+            Write-Host "    Ce compte servira à ouvrir l'application la première fois." -ForegroundColor Yellow
+            $AdminUser = (Read-Host '    Identifiant').Trim()
+        }
+        if (-not $AdminUser) {
+            Write-Warn 'Aucun identifiant saisi - compte non créé. Voir INSTALL.md pour le créer plus tard.'
+        } else {
+            $motDePasse = $null
+            foreach ($essai in 1..3) {
+                $s1 = Read-Host '    Mot de passe (8 caractères minimum)' -AsSecureString
+                $s2 = Read-Host '    Confirmez le mot de passe' -AsSecureString
+                # Le mot de passe ne transite jamais par la ligne de commande : il part au
+                # processus Node par une variable d'environnement, invisible dans la liste
+                # des processus et dans l'historique PowerShell.
+                $p1 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
+                    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s1))
+                $p2 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
+                    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s2))
+                if ($p1 -ne $p2) { Write-Warn 'Les deux saisies diffèrent.'; continue }
+                if ($p1.Length -lt 8) { Write-Warn 'Trop court : 8 caractères minimum.'; continue }
+                $motDePasse = $p1
+                break
+            }
+
+            if (-not $motDePasse) {
+                Write-Warn 'Compte non créé (mot de passe non confirmé). Voir INSTALL.md pour le créer plus tard.'
+            } else {
+                $env:SUIVI_INFRA_PASSWORD = $motDePasse
+                try {
+                    Push-Location $ServicePath
+                    & $nodeExe 'scripts\create-local-user.js' $AdminUser '' $(if ($AdminName) { $AdminName } else { $AdminUser })
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Ok "Compte « $AdminUser » créé"
+                    } else {
+                        Write-Warn "La création du compte a échoué (code $LASTEXITCODE). Créez-le à la main, voir INSTALL.md."
+                    }
+                } finally {
+                    Pop-Location
+                    Remove-Item Env:\SUIVI_INFRA_PASSWORD -ErrorAction SilentlyContinue
+                    $motDePasse = $null
+                }
+            }
+        }
+    }
+
     # --- Relais /api par IIS (URL Rewrite + ARR) ---
     Write-Step "Relais des appels /api vers le service local"
     $rewriteInstalled = Test-Path 'HKLM:\SOFTWARE\Microsoft\IIS Extensions\URL Rewrite'
@@ -506,9 +584,13 @@ Write-Host "    Fichiers    : $SitePath"
 if ($WithService) {
     Write-Host "    Service     : $ServiceName ($ServicePath), port local $ServicePort$(if (-not $UseNssm) { ' - tâche planifiée Windows' })"
     Write-Host ""
-    Write-Host "    Étape suivante - créer le premier compte administrateur :" -ForegroundColor Yellow
-    Write-Host "      cd `"$ServicePath`""
-    Write-Host "      node scripts\create-local-user.js admin `"MotDePasseSolide123!`" `"Administrateur`""
+    if ($AdminUser) {
+        Write-Host "    Connectez-vous avec le compte « $AdminUser » (onglet « Compte local »)." -ForegroundColor Yellow
+    } else {
+        Write-Host "    Étape suivante - créer le premier compte, depuis une console ADMINISTRATEUR :" -ForegroundColor Yellow
+        Write-Host "      cd `"$ServicePath`""
+        Write-Host "      node scripts\create-local-user.js admin `"MotDePasseSolide123!`" `"Administrateur`""
+    }
 }
 Write-Host ""
 Write-Host "    Vérification :" -ForegroundColor Yellow

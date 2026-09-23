@@ -201,15 +201,55 @@ Les sessions ouvertes en HTTP sont invalidées : chacun devra se reconnecter une
 > HTTP ou faites émettre un certificat pour le nom complet (`winas.monentreprise.local`) et
 > passez-le à `-HostName`.
 
-## 5. Créer le premier compte (scénario B uniquement)
+## 5. Le premier compte (scénario B uniquement)
+
+**Le script s'en charge.** En fin d'installation, il demande un identifiant et un mot de
+passe (saisi masqué, confirmé deux fois) et crée le compte. Vous n'avez rien à taper ensuite :
+connectez-vous à l'application avec ce compte, onglet **Compte local**.
+
+Les comptes suivants se gèrent depuis l'application, dans **Paramètres → Authentification
+locale** — plus besoin de repasser par le serveur.
+
+### Le créer à la main
+
+Si vous avez installé avec `-SkipAdminAccount`, ou si vous voulez ajouter un compte sans
+passer par l'application :
 
 ```powershell
 cd C:\services\suivi-infra
-node scripts\create-local-user.js admin "MotDePasseSolide123!" "Administrateur"
+node scripts\create-local-user.js rnelson "MotDePasseSolide123!" "R. Nelson"
 ```
 
-Ce compte sert à se connecter la première fois ; tout le reste (autres comptes, LDAP)
-se gère ensuite depuis l'onglet **Paramètres** de l'application.
+> ### ⚠ Cette commande exige une console **administrateur**
+>
+> Le dossier `data\` est réservé aux administrateurs et au compte SYSTEM — il contient les
+> empreintes des mots de passe et les données de l'équipe. Depuis une console ordinaire, la
+> commande échoue avec :
+>
+> ```
+> Error: EPERM: operation not permitted, mkdir 'C:\services\suivi-infra\data'
+> ```
+>
+> Ouvrez PowerShell par **clic droit → Exécuter en tant qu'administrateur**. Appartenir au
+> groupe Administrateurs ne suffit pas : sans élévation, Windows retire ce groupe du jeton
+> de la session.
+
+Le mot de passe peut aussi être passé par la variable `SUIVI_INFRA_PASSWORD`, pour qu'il
+n'apparaisse ni dans la liste des processus ni dans l'historique du terminal :
+
+```powershell
+$env:SUIVI_INFRA_PASSWORD = 'MotDePasseSolide123!'
+node scripts\create-local-user.js rnelson "" "R. Nelson"
+Remove-Item Env:\SUIVI_INFRA_PASSWORD
+```
+
+### Comptes Active Directory
+
+Une fois connecté avec ce compte local, activez l'annuaire dans **Paramètres → Annuaire
+Active Directory (LDAP)** : URL du contrôleur de domaine et motif d'identifiant (le plus
+simple étant `{username}@monentreprise.local`, l'UPN). Chacun pourra alors se connecter avec
+son compte Windows, onglet **Identifiant Windows / LDAP**. Le mot de passe AD n'est jamais
+stocké : le serveur le vérifie par un *bind* auprès de votre contrôleur de domaine.
 
 ## 5 bis. Programme du jour par mail (optionnel, scénario B)
 
