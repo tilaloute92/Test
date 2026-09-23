@@ -214,6 +214,30 @@ function buildItems(query: string, svgRef: React.RefObject<SVGSVGElement | null>
       run: () => store().setDisplay({ showLegend: true }),
     },
     {
+      id: 'vue-routage',
+      label: 'Vue logique — routage (couche 3)',
+      hint: 'vue logique',
+      run: () => store().setVueLogique('routage'),
+    },
+    {
+      id: 'vue-rails',
+      label: 'Vue logique — plan VLAN (un rail par VLAN)',
+      hint: 'vue logique',
+      run: () => store().setVueLogique('rails'),
+    },
+    {
+      id: 'vue-domaines',
+      label: 'Vue logique — domaines de diffusion',
+      hint: 'vue logique',
+      run: () => store().setVueLogique('domaines'),
+    },
+    {
+      id: 'projecteur-vlan',
+      label: 'Retirer le projecteur VLAN',
+      hint: 'affichage',
+      run: () => store().setVlanFocus(null),
+    },
+    {
       id: 'agregats',
       label: 'Encercler les agrégats de liens (port-channels)',
       hint: 'affichage',
@@ -285,6 +309,19 @@ function buildItems(query: string, svgRef: React.RefObject<SVGSVGElement | null>
     { id: 'sample', label: 'Charger le schéma d’exemple', hint: 'projet', run: () => store().loadSample() },
     { id: 'new', label: 'Nouveau schéma', hint: 'projet', run: () => store().newDiagram() },
   ]
+
+  /*
+    Un projecteur par VLAN déclaré : la palette est l'endroit où l'on tape « vlan 20 » sans
+    chercher un sélecteur des yeux.
+  */
+  for (const vlan of store().diagram.vlans ?? []) {
+    actions.push({
+      id: `vlan:${vlan.id}`,
+      label: `Projecteur sur le VLAN ${vlan.id}${vlan.name ? ` — ${vlan.name}` : ''}`,
+      hint: vlan.subnet ?? 'affichage',
+      run: () => store().setVlanFocus(vlan.id),
+    })
+  }
 
   if (!q) return actions
 

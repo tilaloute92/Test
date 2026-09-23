@@ -92,6 +92,7 @@ export function GuideView() {
   const setCommandOpen = useDiagram((s) => s.setCommandOpen)
   const setAssistantOpen = useDiagram((s) => s.setAssistantOpen)
   const setDuplicateOpen = useDiagram((s) => s.setDuplicateOpen)
+  const setVueLogique = useDiagram((s) => s.setVueLogique)
   const loadSample = useDiagram((s) => s.loadSample)
   const run = useDiagram((s) => s.runVoiceCommand)
   const notify = useDiagram((s) => s.notify)
@@ -1055,6 +1056,96 @@ deux onduleurs`}</pre>
           />
           <div className="flex flex-wrap gap-2 pt-1">
             <Btn onClick={() => openIn('diagram', () => setPanel('osi'))}>Ouvrir le panneau OSI</Btn>
+          </div>
+        </>
+      ),
+    },
+    {
+      id: 'vues-logiques',
+      title: 'Vues logiques : routage, plan VLAN, domaines de diffusion',
+      keywords:
+        'vue logique vues logiques vlan vlans routage couche 3 l3 svi passerelle gateway domaine de diffusion broadcast rail rails plan vlan projecteur focus segment sous-reseau subnet inter-vlan',
+      body: (
+        <>
+          <P>
+            Le schéma d'infrastructure répond à « qu'est-ce qui est branché où ». Il ne répond
+            pas à « qui parle à qui sans passer par un routeur » — la question des VLAN, et
+            celle qu'on pose en exploitation, en sécurité et en migration. Le mode{' '}
+            <b>Logique</b> ouvre trois lectures du même document, choisies dans le sélecteur
+            bleu de la barre d'outils.
+          </P>
+          <Note>
+            Ce sont des <b>projections</b> : elles sont recalculées depuis le document à
+            chaque affichage, et <b>rien ne s'y modifie</b>. Un bandeau le rappelle en haut du
+            plan. Le document, lui, ne bouge pas — on le retrouve intact en revenant sur
+            <b> Architecture</b>.
+          </Note>
+
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">Routage (couche 3)</p>
+          <P>
+            Ne survit que ce qui décide d'un chemin : routeurs, pare-feu, répartiteurs, cœur de
+            niveau 3, extrémités WAN, et tout équipement qui porte une passerelle. Les chaînes
+            de commutation disparaissent, remplacées par les <b>réseaux qu'elles desservent</b>
+            — un nuage par VLAN adressé, raccroché à l'équipement qui porte sa passerelle. Le
+            plan de routage tient alors sur une page et se lit comme un plan d'adressage.
+          </P>
+
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">
+            Plan VLAN — un rail par VLAN
+          </p>
+          <P>
+            Chaque VLAN devient une ligne de sa couleur, et les équipements s'y accrochent. Il
+            n'y a plus de câble : dans un domaine de diffusion, tout le monde se parle
+            directement, et c'est précisément ce que le rail veut dire. Les commutateurs de
+            transit y figurent aussi — c'est ainsi qu'on repère un VLAN qui traverse un
+            bâtiment qu'il ne devrait pas traverser.
+          </P>
+
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">
+            Domaines de diffusion
+          </p>
+          <P>
+            Le même découpage, mais avec le routage : un cadre par VLAN, sa passerelle, et un
+            trait vers le point de routage central. <b>Chaque trait est un franchissement de
+            routeur</b> — donc un endroit où l'on filtre. Un VLAN sans trait ne sort pas du
+            niveau 2 : la synchronisation de grappe, le VLAN natif, tout ce qui doit rester
+            confiné se voit immédiatement.
+          </P>
+
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">Projecteur VLAN</p>
+          <P>
+            Indépendant des trois lectures, et disponible dans <b>toutes</b> les vues : le
+            sélecteur « Tous les VLAN » allume un VLAN et estompe le reste, sans rien retirer
+            du plan. C'est l'outil de dépannage — « par où passe le 20 ? », « ce trunk le
+            transporte-t-il ? », « quel bâtiment atteint-il ? ». <Keys>Ctrl</Keys> +{' '}
+            <Keys>K</Keys> puis « vlan 20 » fait la même chose au clavier.
+          </P>
+          <List
+            items={[
+              <>
+                Un VLAN cité sur une liaison mais absent du plan d'adressage apparaît quand
+                même : le module <b>Dossier</b> le signale comme orphelin.
+              </>,
+              <>
+                Les vues logiques s'exportent comme le reste — SVG, PNG, page interactive —
+                puisqu'elles sont dessinées avec la même machinerie.
+              </>,
+              <>
+                À la voix : « plan VLAN », « domaines de diffusion », « vue du routage »,
+                « projecteur sur le VLAN 20 », « tous les VLAN ».
+              </>,
+            ]}
+          />
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Btn variant="primary" onClick={() => openIn('diagram', () => setVueLogique('rails'))}>
+              Voir le plan VLAN
+            </Btn>
+            <Btn onClick={() => openIn('diagram', () => setVueLogique('domaines'))}>
+              Voir les domaines de diffusion
+            </Btn>
+            <Btn onClick={() => tryCommand('projecteur sur le VLAN 20')}>
+              Essayer le projecteur
+            </Btn>
           </div>
         </>
       ),

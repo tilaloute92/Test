@@ -157,7 +157,7 @@ function DeviceButton({
   showFamily?: boolean
 }) {
   const meta = deviceMeta(device.id)
-  const locked = useDiagram((s) => s.diagram.locked === true)
+  const locked = useDiagram((s) => s.diagram.locked === true || s.viewMode === 'logique')
   return (
     <button
       type="button"

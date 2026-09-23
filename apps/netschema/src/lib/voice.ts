@@ -106,6 +106,8 @@ export type VoiceIntent =
   | { type: 'view'; view: AppView }
   | { type: 'assistant' }
   | { type: 'viewMode'; mode: ViewMode }
+  | { type: 'vueLogique'; vue: 'routage' | 'rails' | 'domaines' }
+  | { type: 'vlanFocus'; id: string | null }
   | { type: 'collapse'; label?: string }
   | { type: 'expand' }
   | { type: 'direction'; direction: LayoutDirection }
@@ -932,6 +934,27 @@ const RULES: Rule[] = [
       match[1] === 'technique' ? 'technique' : match[1] === 'architecture' ? 'architecture' : 'presentation'
     return { type: 'viewMode', mode }
   },
+  // Vues logiques et projecteur VLAN.
+  (t) =>
+    /(plan vlan|rails? vlan|un rail par vlan)/.test(t) ? { type: 'vueLogique', vue: 'rails' } : null,
+  (t) =>
+    /(domaines? de diffusion|nuages? vlan|bulles? vlan)/.test(t)
+      ? { type: 'vueLogique', vue: 'domaines' }
+      : null,
+  (t) =>
+    /(vue (du )?routage|plan de routage|vue logique|mode logique)/.test(t)
+      ? { type: 'vueLogique', vue: 'routage' }
+      : null,
+  (t) => {
+    const match = t.match(
+      /^(?:projecteur|montre|affiche|isole|isoler|mets? en avant|surligne)\s+(?:le\s+|sur\s+le\s+)?vlan\s*(\d{1,4})$/,
+    )
+    return match ? { type: 'vlanFocus', id: match[1] } : null
+  },
+  (t) =>
+    /(tous les vlans?|enleve le projecteur|plus de projecteur|montre tout le schema)/.test(t)
+      ? { type: 'vlanFocus', id: null }
+      : null,
   (t) =>
     /(assistant|aide a la conception|aide moi a construire|aide moi a dessiner)/.test(t)
       ? { type: 'assistant' }
@@ -1117,6 +1140,10 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'Liaison entre SW-CORE-01 et SW-DIST-BATA en fibre 10 Gb/s',
       'Insère le modèle pare-feu actif passif',
       'Affiche les agrégats',
+      'Plan VLAN',
+      'Domaines de diffusion',
+      'Projecteur sur le VLAN 20',
+      'Tous les VLAN',
       'Duplique',
       'Duplique quatre fois',
       'Duplique la sélection en série',

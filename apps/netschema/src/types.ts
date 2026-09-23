@@ -339,6 +339,12 @@ export interface Diagram {
    */
   layerNames?: Record<string, string>
   /**
+   * Couleur d'une couche, par rang. Sert aux projections logiques, où la couche n'est plus un
+   * étage du réseau mais un VLAN : le bandeau prend alors la couleur du VLAN, et le rail se
+   * lit d'un coup d'œil.
+   */
+  layerColors?: Record<string, string>
+  /**
    * Marge supplémentaire du cadre d'une couche, en pixels. Le cadre se dessine autour des
    * équipements de la couche ; cette marge permet de l'agrandir ou de le resserrer à la main.
    */

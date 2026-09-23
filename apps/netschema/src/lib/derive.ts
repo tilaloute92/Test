@@ -166,7 +166,7 @@ export function deriveDiagram(
   const seen = new Map<string, NetLink>()
   let hiddenLinks = 0
   for (const link of diagram.links) {
-    if (strict && !linkInView(link, osi)) {
+    if (strict && !linkInView(link, osi, diagram)) {
       hiddenLinks += 1
       continue
     }
@@ -239,7 +239,7 @@ export function deriveDiagram(
       if (!nodeInView(node, osi)) dimmed.add(node.id)
     }
     for (const link of links) {
-      if (!linkInView(link, osi)) dimmed.add(link.id)
+      if (!linkInView(link, osi, diagram)) dimmed.add(link.id)
     }
   }
 

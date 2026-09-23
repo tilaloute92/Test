@@ -18,6 +18,7 @@ import { modeStyle } from '../lib/viewModes'
 import { analyseImpact, COULEURS_IMPACT } from '../lib/impact'
 import { noterPointeur } from '../lib/pointeur'
 import { agregats, ovaleAgregat } from '../lib/aggregates'
+import { porteurs, projectionLogique, VUES_LOGIQUES } from '../lib/vlanViews'
 import { AggregateShape } from './AggregateShape'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
 import {
@@ -145,7 +146,10 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const nodeHoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
-  const diagram = useDiagram((s) => s.diagram)
+  const document_ = useDiagram((s) => s.diagram)
+  const vueLogique = useDiagram((s) => s.vueLogique)
+  const layout = useDiagram((s) => s.layout)
+  const vlanFocus = useDiagram((s) => s.vlanFocus)
   const view = useDiagram((s) => s.view)
   const mode = useDiagram((s) => s.mode)
   const connectFrom = useDiagram((s) => s.connectFrom)
@@ -163,7 +167,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const linkStyle = useDiagram((s) => s.linkStyle)
   const canvasSize = useDiagram((s) => s.canvasSize)
   /** Schéma verrouillé : lecture seule. Étiquettes verrouillées : elles ne se déplacent plus. */
-  const locked = useDiagram((s) => s.diagram.locked === true)
+  const verrouille = useDiagram((s) => s.diagram.locked === true)
   const panel = useDiagram((s) => s.panel)
   // Le catalogue et les logos constructeurs arrivent après le premier rendu : s'abonner à leur
   // compteur de révision suffit à repeindre le plan quand ils sont là.
@@ -187,10 +191,46 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
    * détail appliqué et blocs repliés remplacés par un équipement unique. Le modèle, lui,
    * n'est jamais modifié.
    */
-  const display = useMemo(
-    () => deriveDiagram(diagram, { collapsed, detail, direction, osi, strictOsi }),
-    [diagram, collapsed, detail, direction, osi, strictOsi],
+  /*
+    Les vues « rails VLAN » et « domaines de diffusion » ne sont pas des filtres : ce sont des
+    projections du document, recalculées à partir de lui. On les dessine avec la même
+    machinerie — couches, cadres, liaisons — mais elles sont en lecture seule : ce qu'on y
+    voit n'existe pas dans le document.
+  */
+  const projection = viewMode === 'logique'
+  const diagram = useMemo(
+    () => (projection ? projectionLogique(document_, vueLogique, layout) : document_),
+    [document_, projection, vueLogique, layout],
   )
+  const locked = verrouille || projection
+
+  const display = useMemo(
+    // Une projection est déjà la lecture demandée : lui appliquer en plus le filtre de
+    // couche la viderait de la moitié de son contenu.
+    () =>
+      deriveDiagram(diagram, {
+        collapsed,
+        detail,
+        direction,
+        osi: projection ? 'all' : osi,
+        strictOsi: projection ? false : strictOsi,
+      }),
+    [diagram, collapsed, detail, direction, osi, projection, strictOsi],
+  )
+
+  /*
+    Projecteur VLAN : on n'enlève rien du plan, on éteint ce qui ne porte pas le VLAN
+    regardé. C'est la lecture de dépannage — « par où passe le 20 ? » — et elle garde le
+    contexte, contrairement à un filtre.
+  */
+  const eteints = useMemo(() => {
+    if (!vlanFocus) return null
+    const { nodes, links } = porteurs(diagram, vlanFocus)
+    return {
+      nodes: new Set(display.nodes.filter((node) => !nodes.has(node.id)).map((node) => node.id)),
+      links: new Set(display.links.filter((link) => !links.has(link.id)).map((link) => link.id)),
+    }
+  }, [diagram, display.links, display.nodes, vlanFocus])
 
   const nodeById = useMemo(() => new Map(display.nodes.map((n) => [n.id, n])), [display.nodes])
 
@@ -741,6 +781,36 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const framed = display.nodes.filter((node) => !node.group)
   const bounds = diagramBounds(display.nodes)
   const bands = showLayerLabels ? layerBands(display.nodes, direction, diagram.layerNames) : []
+
+  /*
+    Un rail par couche colorée : c'est la vue « plan VLAN ». Le trait passe au milieu de la
+    rangée, et chaque équipement s'y raccroche par un court ergot — comme on dessine un
+    segment depuis toujours.
+  */
+  const rails = useMemo(() => {
+    const couleurs = diagram.layerColors
+    if (!couleurs) return []
+    const parRang = new Map<number, DisplayNode[]>()
+    for (const node of display.nodes) {
+      const rang = rankOf(node.kind, node.rank)
+      const liste = parRang.get(rang)
+      if (liste) liste.push(node)
+      else parRang.set(rang, [node])
+    }
+    return [...parRang.entries()]
+      .filter(([rang]) => couleurs[String(rang)])
+      .map(([rang, membres]) => {
+        const principal =
+          membres.reduce((somme, node) => somme + (direction === 'TB' ? node.y : node.x), 0) /
+          membres.length
+        return {
+          rank: rang,
+          couleur: couleurs[String(rang)],
+          main: direction === 'TB' ? principal - NODE_H / 2 - 18 : principal - NODE_W / 2 - 24,
+          attaches: membres.map((node) => ({ x: node.x, y: node.y - NODE_H / 2 })),
+        }
+      })
+  }, [diagram.layerColors, direction, display.nodes])
 
   /**
    * Cadres de couche : le rectangle qui entoure les équipements d'un même rang. Il n'existait
@@ -1405,6 +1475,38 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
             </g>
           ))}
 
+          {/*
+            Rails VLAN : quand une couche est un domaine de diffusion, on la matérialise par
+            un trait de sa couleur. C'est le dessin classique du segment — tout le monde sur
+            la ligne se parle sans routeur.
+          */}
+          {rails.map((rail) => (
+            <g key={`rail-${rail.rank}`} data-couche="rail">
+              <line
+                x1={direction === 'TB' ? bounds.minX - 12 : rail.main}
+                y1={direction === 'TB' ? rail.main : bounds.minY - 12}
+                x2={direction === 'TB' ? bounds.maxX + 12 : rail.main}
+                y2={direction === 'TB' ? rail.main : bounds.maxY + 12}
+                stroke={rail.couleur}
+                strokeWidth={3.5}
+                strokeLinecap="round"
+                opacity={0.85}
+              />
+              {rail.attaches.map((point, index) => (
+                <line
+                  key={index}
+                  x1={point.x}
+                  y1={point.y}
+                  x2={direction === 'TB' ? point.x : rail.main}
+                  y2={direction === 'TB' ? rail.main : point.y}
+                  stroke={rail.couleur}
+                  strokeWidth={1.4}
+                  opacity={0.85}
+                />
+              ))}
+            </g>
+          ))}
+
           {bands.map((band) =>
             direction === 'TB' ? (
               <text
@@ -1416,7 +1518,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 textAnchor="end"
                 fontSize={11}
                 fontWeight={700}
-                fill="#94a3b8"
+                fill={diagram.layerColors?.[String(band.rank)] ?? '#94a3b8'}
                 pointerEvents="all"
                 style={{ cursor: 'text' }}
                 onPointerDown={(event) => event.stopPropagation()}
@@ -1441,7 +1543,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 textAnchor="middle"
                 fontSize={11}
                 fontWeight={700}
-                fill="#94a3b8"
+                fill={diagram.layerColors?.[String(band.rank)] ?? '#94a3b8'}
                 pointerEvents="all"
                 style={{ cursor: 'text' }}
                 onPointerDown={(event) => event.stopPropagation()}
@@ -1489,7 +1591,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 labels={labels.get(link.id) ?? []}
                 hops={crossings.get(link.id) ?? []}
                 color={linkColorFor(link, osi, diagram.vlans) ?? LINKS[link.kind].color}
-                dimmed={display.dimmed.has(link.id)}
+                dimmed={display.dimmed.has(link.id) || eteints?.links.has(link.id) === true}
                 editable={!locked && isRealLink(link.id)}
                 labelsEditable={!locked && !labelsLocked}
                 style={style}
@@ -1551,7 +1653,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 isConnectSource={connectFrom === node.id}
                 showDetails={showDetails}
                 flagged={own.some((id) => flagged.has(id))}
-                dimmed={display.dimmed.has(node.id)}
+                dimmed={display.dimmed.has(node.id) || eteints?.nodes.has(node.id) === true}
                 style={style}
                 onPointerDown={onNodePointerDown}
                 onDoubleClick={() => node.group && useDiagram.getState().toggleCollapse(node.group.key)}
@@ -1907,6 +2009,20 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
           width={canvasSize.width}
           height={canvasSize.height}
         />
+      )}
+
+      {/*
+        Dire ce qu'on regarde. Une projection ressemble à un schéma et n'en est pas un : sans
+        ce rappel, on croirait avoir perdu la moitié de son document.
+      */}
+      {projection && (
+        <div
+          data-export="false"
+          className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-full bg-blue-600/90 px-3.5 py-1.5 text-[11.5px] font-medium text-white shadow-sm"
+        >
+          {VUES_LOGIQUES.find((item) => item.value === vueLogique)?.label} — lecture du document,
+          rien n’y est modifiable
+        </div>
       )}
 
       {(display.hiddenNodes > 0 || collapsed.length > 0 || hopCount > 0 || overlapCount > 0) && (

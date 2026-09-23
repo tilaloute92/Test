@@ -9,6 +9,7 @@ import { ANNOTATION_COLORS, annotationColors } from '../lib/annotations'
 import { aujourdhui } from '../lib/storage'
 import { constructeurDe, mecanismeHa, mecanismesPour } from '../lib/haTech'
 import { linkLayers } from '../lib/osi'
+import { VUES_LOGIQUES, type VueLogique } from '../lib/vlanViews'
 import {
   agregats,
   formaterDebit,
@@ -1185,6 +1186,11 @@ function LayoutForm() {
   const showHops = useDiagram((s) => s.showHops)
   const spreadLinks = useDiagram((s) => s.spreadLinks)
   const showLags = useDiagram((s) => s.showLags)
+  const vueLogique = useDiagram((s) => s.vueLogique)
+  const setVueLogique = useDiagram((s) => s.setVueLogique)
+  const vlanFocus = useDiagram((s) => s.vlanFocus)
+  const setVlanFocus = useDiagram((s) => s.setVlanFocus)
+  const vlans = useDiagram((s) => s.diagram.vlans ?? [])
   const viewMode = useDiagram((s) => s.viewMode)
   const setViewMode = useDiagram((s) => s.setViewMode)
 
@@ -1200,6 +1206,35 @@ function LayoutForm() {
           />
         </Field>
         <p className="-mt-1 text-[11px] leading-snug text-slate-400">{modeDefinition(viewMode).hint}</p>
+        {viewMode === 'logique' && (
+          <>
+            <Field label="Lecture logique">
+              <Select
+                value={vueLogique}
+                onChange={(value) => setVueLogique(value as VueLogique)}
+                options={VUES_LOGIQUES.map((item) => ({ value: item.value, label: item.label }))}
+              />
+            </Field>
+            <p className="-mt-1 text-[11px] leading-snug text-slate-400">
+              {VUES_LOGIQUES.find((item) => item.value === vueLogique)?.hint}
+            </p>
+          </>
+        )}
+        {vlans.length > 0 && (
+          <Field label="Projecteur VLAN">
+            <Select
+              value={vlanFocus ?? ''}
+              onChange={(value) => setVlanFocus(value || null)}
+              options={[
+                { value: '', label: 'Tous les VLAN' },
+                ...vlans.map((vlan) => ({
+                  value: vlan.id,
+                  label: vlan.name ? `VLAN ${vlan.id} — ${vlan.name}` : `VLAN ${vlan.id}`,
+                })),
+              ]}
+            />
+          </Field>
+        )}
         <Field label="Sens des couches">
           <Select
             value={layout.direction}

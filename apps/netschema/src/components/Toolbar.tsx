@@ -1,3 +1,4 @@
+import { VUES_LOGIQUES, type VueLogique } from '../lib/vlanViews'
 import { useRef } from 'react'
 import { Btn } from './ui'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
@@ -22,8 +23,12 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
   const report = useAudit()
   const detail = useDiagram((s) => s.detail)
   const osi = useDiagram((s) => s.osi)
+  const vueLogique = useDiagram((s) => s.vueLogique)
+  const vlanFocus = useDiagram((s) => s.vlanFocus)
+  const vlans = useDiagram((s) => s.diagram.vlans ?? [])
   const viewMode = useDiagram((s) => s.viewMode)
-  const locked = useDiagram((s) => s.diagram.locked === true)
+  // Une vue logique est une lecture calculée du document : on n'y dessine pas.
+  const locked = useDiagram((s) => s.diagram.locked === true || s.viewMode === 'logique')
   const paletteOpen = useDiagram((s) => s.paletteOpen)
   const inspectorOpen = useDiagram((s) => s.inspectorOpen)
   const labelsLocked = useDiagram((s) => s.diagram.labelsLocked === true)
@@ -303,6 +308,47 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
           </button>
         ))}
       </div>
+
+      {/*
+        Le mode logique se lit de trois façons. Le sélecteur n'apparaît que là : ailleurs, il
+        n'aurait rien à régler.
+      */}
+      {viewMode === 'logique' && (
+        <select
+          value={vueLogique}
+          onChange={(event) => store().setVueLogique(event.target.value as VueLogique)}
+          title={VUES_LOGIQUES.find((item) => item.value === vueLogique)?.hint}
+          className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1.5 text-[13px] font-medium text-blue-800 outline-none"
+        >
+          {VUES_LOGIQUES.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {/*
+        Projecteur VLAN : disponible dans toutes les vues, parce que la question « par où
+        passe ce VLAN ? » se pose aussi bien sur le plan physique que sur le plan logique.
+      */}
+      {vlans.length > 0 && (
+        <select
+          value={vlanFocus ?? ''}
+          onChange={(event) => store().setVlanFocus(event.target.value || null)}
+          title="Mettre un VLAN en avant : ce qui le porte ressort, le reste s’estompe"
+          className={`rounded-lg border px-2 py-1.5 text-[13px] outline-none ${
+            vlanFocus ? 'border-blue-300 bg-blue-50 font-medium text-blue-800' : 'border-slate-200 bg-white text-slate-700'
+          }`}
+        >
+          <option value="">Tous les VLAN</option>
+          {vlans.map((vlan) => (
+            <option key={vlan.id} value={vlan.id}>
+              {vlan.name ? `VLAN ${vlan.id} — ${vlan.name}` : `VLAN ${vlan.id}`}
+            </option>
+          ))}
+        </select>
+      )}
 
       <select
         value={osi}

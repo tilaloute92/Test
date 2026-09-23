@@ -40,6 +40,7 @@ import { inventoryFromCsv } from '../lib/inventory'
 import { deduceVlans } from '../lib/osi'
 import { NODE_H, NODE_W } from '../types'
 import { modeDefinition } from '../lib/viewModes'
+import { projectionLogique, VUES_LOGIQUES, type VueLogique } from '../lib/vlanViews'
 import { firstFreeUnit, heightOf, rackOccupancy } from '../lib/racks'
 import type {
   Annotation,
@@ -155,6 +156,25 @@ interface DiagramStore {
   showLags: boolean
   /** Mode de visualisation : architecture, technique, présentation. */
   viewMode: ViewMode
+  /**
+   * Lecture choisie pour le mode logique : routage, rails VLAN, domaines de diffusion. Les
+   * deux dernières sont des projections du document — on les regarde, on n'y écrit pas.
+   */
+  vueLogique: VueLogique
+  setVueLogique: (vue: VueLogique) => void
+  /**
+   * VLAN mis en avant sur le plan (le « projecteur ») : ce qui le porte ressort, le reste
+   * s'estompe. Indépendant du mode et de la couche regardée.
+   */
+  vlanFocus: string | null
+  setVlanFocus: (id: string | null) => void
+  /**
+   * Le schéma tel qu'il est affiché. C'est le document lui-même partout, sauf dans les vues
+   * logiques projetées, qui en sont une lecture calculée.
+   */
+  schemaAffiche: () => Diagram
+  /** Vrai quand ce qui est affiché est une projection : rien n'y est modifiable. */
+  estProjection: () => boolean
   /** Module affiché : schéma, inventaire, baies, découverte. */
   appView: AppView
   mode: Mode
@@ -437,6 +457,8 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   spreadLinks: true,
   showLegend: false,
   showLags: true,
+  vueLogique: 'routage' as VueLogique,
+  vlanFocus: null as string | null,
   viewMode: 'architecture',
   appView: 'diagram',
   mode: 'select',
@@ -2236,6 +2258,25 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         get().setDetail(intent.level)
         return { ok: true, message: `Affichage : ${labels[intent.level]}.` }
       }
+      case 'vueLogique': {
+        get().setAppView('diagram')
+        get().setVueLogique(intent.vue)
+        const label = VUES_LOGIQUES.find((item) => item.value === intent.vue)?.label
+        return { ok: true, message: `Vue logique : ${label?.toLowerCase()}.` }
+      }
+
+      case 'vlanFocus': {
+        if (intent.id && !(get().diagram.vlans ?? []).some((vlan) => vlan.id === intent.id)) {
+          return { ok: false, message: `Aucun VLAN ${intent.id} au plan d’adressage.` }
+        }
+        get().setAppView('diagram')
+        get().setVlanFocus(intent.id)
+        return {
+          ok: true,
+          message: intent.id ? `Projecteur sur le VLAN ${intent.id}.` : 'Projecteur retiré.',
+        }
+      }
+
       case 'assistant': {
         get().setAssistantOpen(true)
         return { ok: true, message: 'Assistant de conception ouvert.' }
@@ -2535,6 +2576,30 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
    * Un mode n'est pas qu'un habillage : il règle aussi ce que l'on montre. Les cases
    * d'affichage restent modifiables ensuite — le mode donne le point de départ.
    */
+  setVueLogique: (vue) => {
+    set({ vueLogique: vue, viewMode: 'logique' })
+    const definition = modeDefinition('logique')
+    set({ ...definition.display, osi: definition.osi ?? 'l3', strictOsi: definition.strictOsi ?? true })
+    get().fitView()
+  },
+
+  setVlanFocus: (id) => {
+    set({ vlanFocus: id })
+    if (id) {
+      const vlan = (get().diagram.vlans ?? []).find((item) => item.id === id)
+      get().notify(
+        `Projecteur sur le VLAN ${id}${vlan?.name ? ` — ${vlan.name}` : ''}. Le reste du plan est estompé.`,
+      )
+    }
+  },
+
+  schemaAffiche: () => {
+    const { diagram, viewMode, vueLogique, layout } = get()
+    return viewMode === 'logique' ? projectionLogique(diagram, vueLogique, layout) : diagram
+  },
+
+  estProjection: () => get().viewMode === 'logique',
+
   setViewMode: (mode) =>
     set((state) => {
       const definition = modeDefinition(mode)
@@ -2598,7 +2663,8 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   setCanvasSize: (width, height) => set({ canvasSize: { width, height } }),
 
   fitView: () => {
-    const { diagram, canvasSize } = get()
+    const { canvasSize } = get()
+    const diagram = get().schemaAffiche()
     if (diagram.nodes.length === 0) {
       set({ view: { zoom: 1, tx: canvasSize.width / 2, ty: canvasSize.height / 2 } })
       return

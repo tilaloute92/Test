@@ -103,10 +103,41 @@ export function linkLayers(link: NetLink): OsiLayer[] {
   return link.layers && link.layers.length > 0 ? link.layers : (LINK_LAYERS[link.kind] ?? ['l1', 'l2'])
 }
 
-/** Une liaison concerne-t-elle la vue demandée ? */
-export function linkInView(link: NetLink, view: OsiView): boolean {
+/**
+ * Une liaison concerne-t-elle la vue demandée ?
+ *
+ * Pour les couches 1 et 2, la nature de la liaison suffit. Pour la couche 3, non : un câble
+ * de cuivre entre deux routeurs porte bel et bien du niveau 3, alors que son type dit
+ * « physique et liaison ». Exiger une déclaration explicite vidait la vue routage de presque
+ * tout son contenu — on la déduit donc de ce qui est documenté.
+ */
+export function linkInView(link: NetLink, view: OsiView, diagram?: Diagram): boolean {
   if (view === 'all') return true
-  return linkLayers(link).includes(view)
+  if (linkLayers(link).includes(view)) return true
+  if (view !== 'l3') return false
+  return porteDuNiveau3(link, diagram)
+}
+
+/**
+ * Indices qu'une liaison transporte du niveau 3 : un adressage documenté, un protocole de
+ * routage, une VRF — ou, à défaut de documentation, deux extrémités qui routent toutes les
+ * deux. Une liaison purement commutée entre deux switchs n'en fait pas partie.
+ */
+function porteDuNiveau3(link: NetLink, diagram?: Diagram): boolean {
+  if (link.subnet?.trim() || link.ipA?.trim() || link.ipB?.trim()) return true
+  if (link.routing || link.vrf?.trim()) return true
+  // L'agrégation et la synchronisation de grappe restent de la commutation, quoi qu'il arrive.
+  if (link.kind === 'stack' || link.kind === 'heartbeat' || link.kind === 'power') return false
+  if (!diagram) return false
+  const from = diagram.nodes.find((node) => node.id === link.from)
+  const to = diagram.nodes.find((node) => node.id === link.to)
+  if (!from || !to) return false
+  return routeurOuTermine(from) && routeurOuTermine(to)
+}
+
+/** L'équipement met-il fin au domaine de niveau 2, ou porte-t-il une adresse ? */
+function routeurOuTermine(node: NetNode): boolean {
+  return ROUTING_KINDS.has(node.kind) || !!node.ip?.trim() || !!node.vip?.trim()
 }
 
 /**

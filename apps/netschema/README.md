@@ -363,7 +363,7 @@ Une phrase non reconnue n'est jamais exécutée au hasard : elle est signalée t
 Onglet **Guide**, ou « ouvre le guide » à la voix, ou encore « comment ça marche ». Le mode
 d'emploi vit dans l'application plutôt que dans un fichier à côté :
 
-- **27 sections** — prise en main, assistant de conception, duplication, agrégats de liens, les six modules, construction du schéma, liaisons et
+- **28 sections** — prise en main, assistant de conception, duplication, agrégats de liens, vues logiques et VLAN, les six modules, construction du schéma, liaisons et
   couches OSI, annotations et cartouche, matrice de flux et chemins, dossier et complétude,
   haute disponibilité, simplification d'une architecture complexe, commande vocale, imports et
   exports, découverte, inventaire et baies, catalogue, raccourcis clavier, dépannage ;
@@ -431,22 +431,72 @@ ce qui s'affiche **et** comment c'est dessiné.
 
 | | **Architecture** | **Technique** | **Logique** | **Présentation** |
 | --- | --- | --- | --- | --- |
-| Question posée | Qui parle à qui ? | Comment est-ce câblé et adressé ? | Comment ça route ? | Comment le montrer ? |
-| Contenu | Tous les équipements | Tous les équipements | **Niveau 3 seulement** | Tous les équipements |
+| Question posée | Qui parle à qui ? | Comment est-ce câblé et adressé ? | Qui parle à qui sans routeur ? | Comment le montrer ? |
+| Contenu | Tous les équipements | Tous les équipements | **Une projection du document** | Tous les équipements |
 | Boîtes | Colorées par type | Blanches, compactes | Colorées, avec l'adressage | Colorées, ombrées |
 | Sur la boîte | Nom, rôle HA | Nom + adresse, modèle, série | Nom + adresse, VLAN | Nom seul, en très gros |
-| Sur les liaisons | Débit et libellé | Ports, VLAN, agrégat, STP aux deux bouts | Sous-réseau, VRF, adresses aux deux bouts | Rien |
-| Écarté du schéma | — | — | **Câblage, baies, alimentation, hors bande** | — |
+| Sur les liaisons | Débit et libellé | Ports, VLAN, agrégat, STP aux deux bouts | Sous-réseau, VRF, passerelle | Rien |
+| Modifiable | Oui | Oui | **Non — c'est une lecture** | Oui |
 | Traits | Épais | Fins | Moyens | Très épais |
 
-La **vue logique** n'est pas qu'un habillage : elle applique la couche 3 en mode strict, donc
-elle retire du schéma les équipements et les liens qui n'y participent pas. Sur le schéma
-d'exemple, on passe de 29 équipements et 48 liaisons à 13 et 13 — ce qui reste est exactement
-ce qu'un routeur voit.
+Le mode **Logique** ouvre trois lectures, détaillées plus bas. Les cases d'affichage restent
+modifiables après coup : le mode donne le point de départ, pas une prison. À la voix :
+« mode présentation », « vue technique », « mode architecture », « vue logique ».
 
-Les cases d'affichage restent modifiables après coup : le mode donne le point de départ, pas
-une prison. À la voix : « mode présentation », « vue technique », « mode architecture »,
-« vue logique ».
+## Vues logiques : routage, plan VLAN, domaines de diffusion
+
+Le schéma d'infrastructure répond à « qu'est-ce qui est branché où ». Il ne répond pas à « qui
+parle à qui sans passer par un routeur » — la question des VLAN, et celle qu'on pose en
+exploitation, en sécurité et en migration.
+
+Le mode **Logique** ouvre trois lectures du même document, choisies dans le sélecteur bleu de
+la barre d'outils. Ce sont des **projections** : recalculées depuis le document à chaque
+affichage, et non modifiables — un bandeau le rappelle en haut du plan. Elles sont dessinées
+avec la même machinerie que le reste (couches, cadres, liaisons), donc elles s'exportent en
+SVG, en PNG et dans la page interactive comme n'importe quel schéma.
+
+### Routage (couche 3)
+
+Ne survit que ce qui décide d'un chemin : routeurs, pare-feu, répartiteurs, cœur de niveau 3,
+extrémités WAN, et tout équipement qui porte une passerelle. Les chaînes de commutation
+disparaissent, remplacées par les **réseaux qu'elles desservent** — un nuage par VLAN adressé,
+raccroché à l'équipement qui porte sa passerelle.
+
+Sur le schéma d'exemple : **17 équipements et 23 liaisons** au lieu de 29 et 49, et 9
+croisements au lieu de 89. Le plan tient sur une page et se lit comme un plan d'adressage.
+
+### Plan VLAN — un rail par VLAN
+
+Chaque VLAN devient une ligne de sa couleur, les équipements s'y accrochent par un ergot. Il
+n'y a plus de câble : dans un domaine de diffusion, tout le monde se parle directement, et
+c'est précisément ce que le rail veut dire. Ni site, ni zone, ni grappe — ces découpages-là
+n'ont rien à dire ici et leurs cadres traverseraient les rails.
+
+Les commutateurs de transit y figurent aussi : c'est ainsi qu'on repère un VLAN qui traverse
+un bâtiment qu'il ne devrait pas traverser.
+
+### Domaines de diffusion
+
+Le même découpage, avec le routage : un cadre par VLAN, sa passerelle, et un trait vers le
+point de routage central. **Chaque trait est un franchissement de routeur** — donc un endroit
+où l'on filtre. Un VLAN sans trait ne sort pas du niveau 2 : la synchronisation de grappe, le
+VLAN natif, tout ce qui doit rester confiné se voit immédiatement.
+
+### Projecteur VLAN
+
+Indépendant des trois lectures, et disponible dans **toutes** les vues, plan physique compris.
+Le sélecteur « Tous les VLAN » allume un VLAN et estompe le reste, sans rien retirer du plan :
+« par où passe le 20 ? », « ce trunk le transporte-t-il ? », « quel bâtiment atteint-il ? ».
+`Ctrl+K` puis « vlan 20 » fait la même chose au clavier, et « projecteur sur le VLAN 20 » à la
+voix.
+
+### Ce qui a été corrigé au passage
+
+La vue logique retirait les trois quarts du schéma : elle exigeait que chaque liaison déclare
+explicitement la couche 3, alors qu'une liaison Ethernet, fibre ou trunk est déclarée
+`L1+L2` par défaut. Le niveau 3 est désormais **déduit** — adressage documenté, protocole de
+routage, VRF, ou deux extrémités qui routent toutes les deux — et le filtre `L3 — réseau` de
+la liste des couches, qui reste applicable au document lui-même, en profite aussi.
 
 ## Liaisons superposées
 

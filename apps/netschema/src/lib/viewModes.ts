@@ -129,7 +129,7 @@ export const VIEW_MODES: ModeDefinition[] = [
   {
     id: 'logique',
     label: 'Logique',
-    hint: 'La vue du routage : seuls les équipements et liens de niveau 3, avec sous-réseaux, VRF et adresses aux deux bouts — ni câbles, ni baies, ni alimentation.',
+    hint: 'Trois lectures du même document : le routage (couche 3), le plan VLAN rail par rail, ou les domaines de diffusion. Ce sont des projections : on les regarde, on n’y dessine pas.',
     display: {
       showDetails: true,
       showGrid: false,
