@@ -96,15 +96,14 @@ if ($Destination -notlike '\\*') {
     try {
         $acl = Get-Acl -LiteralPath $Destination
         $acl.SetAccessRuleProtection($true, $false)
-        foreach ($who in @('BUILTIN\Administrateurs', 'BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM')) {
-            try {
-                $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                    $who, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
-                $acl.AddAccessRule($rule)
-            } catch {
-                # Le nom du groupe Administrateurs dépend de la langue de Windows : on essaie
-                # les deux, il suffit qu'un des deux existe.
-            }
+        # Comptes désignés par leur SID bien connu : leur NOM dépend de la langue de Windows
+        # (« BUILTIN\Administrateurs » en français), et une désignation par nom échoue avec
+        # « Impossible de traduire certaines ou toutes les références d'identité ».
+        foreach ($type in @([Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid,
+                            [Security.Principal.WellKnownSidType]::LocalSystemSid)) {
+            $sid = New-Object Security.Principal.SecurityIdentifier($type, $null)
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
         }
         Set-Acl -LiteralPath $Destination -AclObject $acl
         Write-Host "Droits restreints aux administrateurs et à SYSTEM : $Destination" -ForegroundColor Green

@@ -373,11 +373,21 @@ if ($WithService) {
 
     # Le dossier data\ contient des secrets (hachages de mots de passe) et les données
     # d'équipe : on restreint son accès aux administrateurs et au compte de service.
+    #
+    # Les comptes sont désignés par leur SID bien connu, jamais par leur nom : sur un Windows
+    # français le groupe s'appelle « BUILTIN\Administrateurs », en allemand « VORDEFINIERT\
+    # Administratoren »... et l'attribution échoue avec « Impossible de traduire certaines ou
+    # toutes les références d'identité ». Le SID, lui, est le même partout.
+    $sidAdmins = New-Object Security.Principal.SecurityIdentifier(
+        [Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
+    $sidSystem = New-Object Security.Principal.SecurityIdentifier(
+        [Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
+
     $acl = Get-Acl (Join-Path $ServicePath 'data')
     $acl.SetAccessRuleProtection($true, $false)
-    foreach ($principal in @('BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM')) {
+    foreach ($sid in @($sidAdmins, $sidSystem)) {
         $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
-            $principal, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+            $sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
     }
     Set-Acl -Path (Join-Path $ServicePath 'data') -AclObject $acl
     Write-Ok 'Droits restreints sur service\data (Administrateurs + SYSTEM)'
@@ -417,7 +427,15 @@ if ($WithService) {
         $commande = "`"$nodeExe`" `"$entryPoint`" >> `"$logPath`" 2>&1"
         $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c $commande" -WorkingDirectory $ServicePath
         $trigger = New-ScheduledTaskTrigger -AtStartup
-        $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+        # Nom local du compte SYSTEM, obtenu depuis son SID : « AUTORITE NT\Système » en
+        # français, « NT AUTHORITY\SYSTEM » en anglais. En cas d'échec de la traduction, on
+        # retombe sur l'alias « SYSTEM », que le planificateur de tâches accepte aussi.
+        try {
+            $systemName = $sidSystem.Translate([Security.Principal.NTAccount]).Value
+        } catch {
+            $systemName = 'SYSTEM'
+        }
+        $principal = New-ScheduledTaskPrincipal -UserId $systemName -LogonType ServiceAccount -RunLevel Highest
         $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
             -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
             -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -MultipleInstances IgnoreNew
