@@ -52,6 +52,12 @@ export interface Agregat {
   mode: ModeLacp | null
   /** Incohérences relevées sur le bundle, affichées à la sélection et dans le dossier. */
   reserves: string[]
+  /** Glissement de l'ovale le long du faisceau, posé à la main. */
+  glissement: number
+  /** Décalage de l'étiquette par rapport à l'ovale, posé à la main. */
+  decalage: { dx: number; dy: number } | null
+  /** Ovale masqué pour ce faisceau seulement. */
+  masque: boolean
 }
 
 /** Nom du bundle côté `noeud` pour cette liaison, ou `undefined` s'il n'en porte pas. */
@@ -135,6 +141,10 @@ export function agregats(diagram: { nodes: NetNode[]; links: NetLink[] }): Agreg
       membres: groupe.membres,
       multiChassis,
       position: multiChassis ? 'proche' : 'milieu',
+      // Le placement manuel est recopié sur tous les brins : n'importe lequel le rend.
+      glissement: groupe.membres.find((link) => link.lagShift !== undefined)?.lagShift ?? 0,
+      decalage: groupe.membres.find((link) => link.lagOffset)?.lagOffset ?? null,
+      masque: groupe.membres.some((link) => link.lagHidden === true),
       ...mesurer(groupe.membres, groupe.noeud, parId, multiChassis),
     })
   }
@@ -293,6 +303,8 @@ export function ovaleAgregat(
   position: 'milieu' | 'proche',
   /** Équipements à éviter : une étiquette cachée derrière une boîte ne sert à rien. */
   obstacles: PointPlan[] = [],
+  /** Placement posé à la main : glissement le long du faisceau, décalage de l'étiquette. */
+  main: { glissement?: number; decalage?: { dx: number; dy: number } | null } = {},
 ): OvaleAgregat | null {
   const echantillons: { point: PointPlan; tangente: PointPlan }[] = []
   for (const membre of membres) {
@@ -302,10 +314,13 @@ export function ovaleAgregat(
     // à son ovale comme les autres, sinon le faisceau le plus important du schéma est le
     // seul à ne pas être matérialisé.
     if (total < 8) continue
-    const distance =
+    const defaut =
       position === 'milieu'
         ? total / 2
         : Math.min(DISTANCE_PROCHE, Math.max(total * 0.3, Math.min(18, total / 2)))
+    // Glisser l'ovale, c'est le faire coulisser sur les câbles : il reste sur le faisceau,
+    // simplement plus près ou plus loin de l'équipement qui porte le port-channel.
+    const distance = Math.min(total - 4, Math.max(4, defaut + (main.glissement ?? 0)))
     const point = pointSurTrace(membre.points, distance, membre.depuisLaFin)
     const ecartTangente = Math.min(14, Math.max(4, total / 3))
     const suivant = pointSurTrace(
@@ -389,6 +404,11 @@ export function ovaleAgregat(
       }
     }
     if (trouve) break
+  }
+
+  if (main.decalage) {
+    labelX = cx + main.decalage.dx
+    labelY = cy + main.decalage.dy
   }
 
   return {

@@ -225,6 +225,19 @@ interface DiagramStore {
   clearLinkAttach: (id: string) => void
   /** Déplace une étiquette de liaison à la main ; `null` la rend au placement automatique. */
   setLabelOffset: (id: string, which: 'mid' | 'a' | 'b', offset: LabelOffset | null) => void
+  /**
+   * Placement d'un agrégat, posé à la main. Il s'écrit sur tous les brins du faisceau : un
+   * agrégat n'a qu'un ovale, et il doit se retrouver au même endroit quel que soit le brin
+   * par lequel on le lit. `null` remet le réglage au calcul automatique.
+   */
+  setLagPlacement: (
+    ids: string[],
+    patch: { shift?: number | null; offset?: LabelOffset | null },
+  ) => void
+  /** Masque ou réaffiche l'ovale d'un agrégat, sans toucher aux autres. */
+  setLagHidden: (ids: string[], hidden: boolean) => void
+  /** Renomme un agrégat : le nom s'écrit sur tous ses brins, des deux côtés. */
+  renameLag: (ids: string[], nom: string) => void
   /** Ordre d'empilement des équipements : premier plan, arrière-plan, d'un cran. */
   reorderNodes: (ids: string[], where: ZOrder) => void
   /** Aligne les équipements sélectionnés sur un bord ou sur leur axe commun. */
@@ -821,6 +834,54 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
           if (which === 'mid') return { ...link, labelOffset: value }
           return which === 'a' ? { ...link, labelOffsetA: value } : { ...link, labelOffsetB: value }
         }),
+      },
+    }))
+  },
+
+  setLagPlacement: (ids, patch) => {
+    if (lockedStore()) return
+    const cibles = new Set(ids)
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        links: state.diagram.links.map((link) => {
+          if (!cibles.has(link.id)) return link
+          const suite = { ...link }
+          if (patch.shift !== undefined) suite.lagShift = patch.shift ?? undefined
+          if (patch.offset !== undefined) suite.lagOffset = patch.offset ?? undefined
+          return suite
+        }),
+      },
+    }))
+  },
+
+  setLagHidden: (ids, hidden) => {
+    if (lockedStore()) return
+    const cibles = new Set(ids)
+    get().pushHistory()
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        links: state.diagram.links.map((link) =>
+          cibles.has(link.id) ? { ...link, lagHidden: hidden ? true : undefined } : link,
+        ),
+      },
+    }))
+  },
+
+  renameLag: (ids, nom) => {
+    if (lockedStore()) return
+    const propre = nom.trim()
+    const cibles = new Set(ids)
+    get().pushHistory()
+    set((state) => ({
+      diagram: {
+        ...state.diagram,
+        links: state.diagram.links.map((link) =>
+          cibles.has(link.id)
+            ? { ...link, lag: propre || undefined, lagA: undefined, lagB: undefined }
+            : link,
+        ),
       },
     }))
   },

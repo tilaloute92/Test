@@ -265,6 +265,9 @@ export function parseDiagram(raw: unknown): Diagram {
       nativeVlan: str(item.nativeVlan),
       lag: str(item.lag),
       lacp: modeLacp(item.lacp),
+      lagShift: Number.isFinite(item.lagShift) ? Number(item.lagShift) : undefined,
+      lagOffset: offset(item.lagOffset),
+      lagHidden: item.lagHidden === true ? true : undefined,
       stp: stpRole(item.stp),
       mtu: Number.isFinite(item.mtu) ? Number(item.mtu) : undefined,
       // Configuration propre à chaque extrémité (ce qui diffère d'un équipement à l'autre).

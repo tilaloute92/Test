@@ -787,6 +787,27 @@ Un clic sur l'ovale sélectionne tous les brins ; l'inspecteur résume le faisce
 **Dossier** en dresse le tableau (porté par, vers, brins, débit cumulé, négociation,
 multi-châssis, réserves).
 
+### Déplacer, renommer, masquer
+
+L'ovale se manipule comme le reste du plan — ce n'est pas une décoration imposée.
+
+| Geste | Effet |
+| --- | --- |
+| **Glisser l'anneau** | Le fait coulisser le long du faisceau, sans jamais quitter les câbles |
+| **Glisser l'étiquette** | La pose où l'on veut autour de l'ovale |
+| **Double-clic sur l'anneau** | Replacement automatique |
+| **Double-clic sur l'étiquette** | Renomme le port-channel sur tous ses brins à la fois |
+| **Clic sur l'ovale** | Sélectionne les brins ; l'inspecteur résume le faisceau |
+
+**Masquer un ovale en particulier** : sélectionnez un brin, puis décochez *Encercler ce
+faisceau sur le plan* dans l'inspecteur. Le faisceau continue d'exister — le dossier, les
+contrôles de cohérence et l'inventaire le voient toujours —, seul son ovale disparaît, et le
+bandeau d'état le rappelle (« 1 agrégat sans ovale »). Pour tous les masquer d'un coup :
+*Encercler les agrégats* dans Mise en page, ou « masque les agrégats » à la voix.
+
+Le placement manuel vit sur les brins du faisceau : il est enregistré avec le document, suit
+le schéma d'une page à l'autre, et s'annule d'un `Ctrl+Z` comme n'importe quelle retouche.
+
 ### Ce qui est contrôlé
 
 - **débits inégaux** entre brins — 802.1AX demande des membres de même vitesse ;

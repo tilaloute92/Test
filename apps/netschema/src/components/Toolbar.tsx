@@ -7,8 +7,11 @@ import { capturerPages } from '../lib/capture'
 import { diagramFileContent, readProjectFile } from '../lib/storage'
 import { useDiagram } from '../store/useDiagram'
 import { modeDefinition, VIEW_MODES } from '../lib/viewModes'
-import type { DetailLevel, OsiView, ViewMode } from '../types'
+import type { DetailLevel, OsiView, ViewMode, VlanDef } from '../types'
 import { useAudit } from '../store/useAudit'
+
+/** Tableau vide partagé : une constante, pour que le sélecteur rende toujours la même valeur. */
+const SANS_VLAN: VlanDef[] = []
 
 export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | null> }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -25,7 +28,9 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
   const osi = useDiagram((s) => s.osi)
   const vueLogique = useDiagram((s) => s.vueLogique)
   const vlanFocus = useDiagram((s) => s.vlanFocus)
-  const vlans = useDiagram((s) => s.diagram.vlans ?? [])
+  // `?? []` dans un sélecteur rendrait un tableau neuf à chaque appel, donc une boucle
+  // de rendu sans fin : on garde la valeur du magasin et on la remplace à l'usage.
+  const vlans = useDiagram((s) => s.diagram.vlans) ?? SANS_VLAN
   const viewMode = useDiagram((s) => s.viewMode)
   // Une vue logique est une lecture calculée du document : on n'y dessine pas.
   const locked = useDiagram((s) => s.diagram.locked === true || s.viewMode === 'logique')

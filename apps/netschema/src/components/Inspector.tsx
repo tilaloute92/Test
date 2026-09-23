@@ -35,9 +35,13 @@ import type {
   PortMode,
   RoutingProtocol,
   StpRole,
+  VlanDef,
   ViewMode,
   ZOrder,
 } from '../types'
+
+/** Tableau vide partagé : une constante, pour que le sélecteur rende toujours la même valeur. */
+const SANS_VLAN: VlanDef[] = []
 
 function deviceOptions() {
   return allDevices()
@@ -1190,7 +1194,9 @@ function LayoutForm() {
   const setVueLogique = useDiagram((s) => s.setVueLogique)
   const vlanFocus = useDiagram((s) => s.vlanFocus)
   const setVlanFocus = useDiagram((s) => s.setVlanFocus)
-  const vlans = useDiagram((s) => s.diagram.vlans ?? [])
+  // `?? []` dans un sélecteur rendrait un tableau neuf à chaque appel, donc une boucle
+  // de rendu sans fin : on garde la valeur du magasin et on la remplace à l'usage.
+  const vlans = useDiagram((s) => s.diagram.vlans) ?? SANS_VLAN
   const viewMode = useDiagram((s) => s.viewMode)
   const setViewMode = useDiagram((s) => s.setViewMode)
 
@@ -1326,24 +1332,49 @@ function AgregatResume({ link }: { link: NetLink }) {
   }
   return (
     <>
-      {concernes.map((agregat) => (
-        <div key={agregat.id} className="rounded-md bg-cyan-100/50 p-2 text-[11px] leading-snug text-cyan-900">
-          <p className="font-semibold">
-            {agregat.nom} — {agregat.membres.length} brins
-            {agregat.debitTotal ? `, ${formaterDebit(agregat.debitTotal)} cumulés` : ''}
-            {agregat.multiChassis ? ', réparti sur deux châssis' : ''}
-          </p>
-          <p className="pt-0.5">
-            Un seul lien logique : l’ovale du schéma le matérialise, et la perte d’un brin ne
-            coupe pas le lien.
-          </p>
-          {agregat.reserves.map((reserve) => (
-            <p key={reserve} className="pt-1 text-amber-800">
-              ⚠ {reserve}
+      {concernes.map((agregat) => {
+        const ids = agregat.membres.map((membre) => membre.id)
+        const store = useDiagram.getState
+        return (
+          <div key={agregat.id} className="rounded-md bg-cyan-100/50 p-2 text-[11px] leading-snug text-cyan-900">
+            <p className="font-semibold">
+              {agregat.nom} — {agregat.membres.length} brins
+              {agregat.debitTotal ? `, ${formaterDebit(agregat.debitTotal)} cumulés` : ''}
+              {agregat.multiChassis ? ', réparti sur deux châssis' : ''}
             </p>
-          ))}
-        </div>
-      ))}
+            <p className="pt-0.5">
+              Un seul lien logique : l’ovale du schéma le matérialise, et la perte d’un brin ne
+              coupe pas le lien.
+            </p>
+            {agregat.reserves.map((reserve) => (
+              <p key={reserve} className="pt-1 text-amber-800">
+                ⚠ {reserve}
+              </p>
+            ))}
+            {/* Le même ovale se règle au plan (glisser, double-clic) et ici, au cas où il
+                aurait été poussé hors de vue. */}
+            <div className="flex flex-col gap-1.5 pt-2">
+              <Checkbox
+                checked={!agregat.masque}
+                onChange={(visible) => store().setLagHidden(ids, !visible)}
+                label="Encercler ce faisceau sur le plan"
+              />
+              {(agregat.glissement !== 0 || agregat.decalage) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    store().pushHistory()
+                    store().setLagPlacement(ids, { shift: null, offset: null })
+                  }}
+                  className="self-start rounded border border-cyan-300 bg-white px-1.5 py-0.5 text-[10.5px] font-medium text-cyan-800 hover:bg-cyan-50"
+                >
+                  Replacer l’ovale automatiquement
+                </button>
+              )}
+            </div>
+          </div>
+        )
+      })}
     </>
   )
 }

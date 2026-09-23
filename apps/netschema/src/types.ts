@@ -166,6 +166,18 @@ export interface NetLink {
    * agrégat statique ne détecte pas un brin resté physiquement allumé mais muet.
    */
   lacp?: 'active' | 'passive' | 'static'
+  /*
+    Placement de l'ovale de l'agrégat, posé à la main. Comme pour les étiquettes de liaison,
+    ces réglages vivent sur les brins : ils suivent le faisceau, survivent à l'enregistrement,
+    et se remettent à zéro d'un double-clic. Ils sont recopiés à l'identique sur tous les
+    membres — un agrégat n'a qu'un ovale.
+  */
+  /** Glissement de l'ovale le long du faisceau, en pixels. */
+  lagShift?: number
+  /** Décalage de l'étiquette de l'agrégat par rapport à l'ovale. */
+  lagOffset?: LabelOffset
+  /** Ovale masqué pour ce faisceau seulement. */
+  lagHidden?: boolean
   stp?: StpRole
 
   /**

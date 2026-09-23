@@ -1225,9 +1225,28 @@ deux onduleurs`}</pre>
               </>,
             ]}
           />
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">
+            Déplacer, renommer, masquer
+          </p>
+          <P>
+            L'ovale se manipule comme le reste du plan — il n'est pas une décoration imposée.
+          </P>
+          <Shortcuts
+            rows={[
+              ['Glisser l’anneau', 'Le fait coulisser le long du faisceau, sans jamais quitter les câbles'],
+              ['Glisser l’étiquette', 'La pose où l’on veut autour de l’ovale'],
+              ['Double-clic sur l’anneau', 'Replacement automatique'],
+              ['Double-clic sur l’étiquette', 'Renomme le port-channel sur tous ses brins'],
+              ['Clic sur l’ovale', 'Sélectionne les brins ; l’inspecteur résume le faisceau'],
+            ]}
+          />
           <Note>
-            Les ovales se masquent d'un clic (<i>Encercler les agrégats</i>, dans Mise en page)
-            ou à la voix (« masque les agrégats »), et disparaissent d'eux-mêmes en mode{' '}
+            <b>Masquer un ovale en particulier</b> : sélectionnez un brin, puis décochez
+            <i> Encercler ce faisceau sur le plan</i> dans l'inspecteur. Le faisceau continue
+            d'exister — le dossier, les contrôles de cohérence et l'inventaire le voient
+            toujours —, seul son ovale disparaît, et le bandeau d'état le rappelle. Pour tous
+            les masquer d'un coup : <i>Encercler les agrégats</i> dans Mise en page, ou
+            « masque les agrégats » à la voix. Ils disparaissent aussi d'eux-mêmes en mode{' '}
             <b>Présentation</b>, où le plan doit rester nu.
           </Note>
           <div className="flex flex-wrap gap-2 pt-1">

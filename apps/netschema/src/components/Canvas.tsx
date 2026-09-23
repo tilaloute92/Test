@@ -17,7 +17,7 @@ import { crossingCount, linkCrossings, overlappingPairs, type Crossing } from '.
 import { modeStyle } from '../lib/viewModes'
 import { analyseImpact, COULEURS_IMPACT } from '../lib/impact'
 import { noterPointeur } from '../lib/pointeur'
-import { agregats, ovaleAgregat } from '../lib/aggregates'
+import { agregats, ovaleAgregat, type Agregat, type OvaleAgregat } from '../lib/aggregates'
 import { porteurs, projectionLogique, VUES_LOGIQUES } from '../lib/vlanViews'
 import { AggregateShape } from './AggregateShape'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
@@ -50,6 +50,23 @@ interface DragState {
    * bouge pas ne doit pas laisser un doublon posé sur l'original.
    */
   aDupliquer?: boolean
+}
+
+/**
+ * Glissement d'un agrégat : l'anneau coulisse le long du faisceau, l'étiquette se pose
+ * librement. Les deux gestes partagent le même état, distingués par la partie saisie.
+ */
+interface LagDragState {
+  pointerId: number
+  ids: string[]
+  partie: 'anneau' | 'etiquette'
+  /** Point de départ, en coordonnées du schéma. */
+  depart: { x: number; y: number }
+  /** Centre de l'ovale au moment de la prise. */
+  centre: { x: number; y: number }
+  /** Direction du faisceau, pour projeter le glissement de l'anneau. */
+  axe: { x: number; y: number }
+  glissementInitial: number
 }
 
 /** Déplacement d'un point de passage de liaison (ou création par tirage du trait). */
@@ -96,6 +113,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const linkDragRef = useRef<LinkDragState | null>(null)
   const endpointDragRef = useRef<EndpointDragState | null>(null)
   const labelDragRef = useRef<LabelDragState | null>(null)
+  const lagDragRef = useRef<LagDragState | null>(null)
   /** Point d'accroche choisi sur l'équipement de départ, en mode « Relier ». */
   const connectAttachRef = useRef<Attach | null>(null)
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
@@ -115,7 +133,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
    * à l'autre.
    */
   const [edition, setEdition] = useState<{
-    type: 'layer' | 'site' | 'zone' | 'cluster' | 'annotation'
+    type: 'layer' | 'site' | 'zone' | 'cluster' | 'annotation' | 'agregat'
     cle: string
     valeur: string
     x: number
@@ -522,6 +540,29 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       }
     }
 
+    const lagDrag = lagDragRef.current
+    if (lagDrag) {
+      const point = toDiagram(event.clientX, event.clientY)
+      const store = useDiagram.getState()
+      if (lagDrag.partie === 'etiquette') {
+        store.setLagPlacement(lagDrag.ids, {
+          offset: {
+            dx: Math.round(point.x - lagDrag.centre.x),
+            dy: Math.round(point.y - lagDrag.centre.y),
+          },
+        })
+      } else {
+        // Projection sur l'axe du faisceau : l'anneau reste sur les câbles.
+        const dx = point.x - lagDrag.depart.x
+        const dy = point.y - lagDrag.depart.y
+        const long = dx * lagDrag.axe.x + dy * lagDrag.axe.y
+        store.setLagPlacement(lagDrag.ids, {
+          shift: Math.round(lagDrag.glissementInitial + long),
+        })
+      }
+      return
+    }
+
     const labelDrag = labelDragRef.current
     if (labelDrag) {
       const point = toDiagram(event.clientX, event.clientY)
@@ -719,6 +760,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     linkDragRef.current = null
     endpointDragRef.current = null
     labelDragRef.current = null
+    lagDragRef.current = null
     layerDragRef.current = null
     setAccroche(null)
     clearTimeout(nodeHoverTimer.current)
@@ -1097,6 +1139,9 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     if (!showLags) return []
     const obstacles = display.nodes.map((node) => ({ x: node.x, y: node.y }))
     return agregats({ nodes: display.nodes, links: display.links })
+      // Un ovale masqué à la main ne se dessine plus, mais l'agrégat continue d'exister :
+      // l'inspecteur, le dossier et les contrôles de cohérence le voient toujours.
+      .filter((agregat) => !agregat.masque)
       .map((agregat) => {
         const membres = agregat.membres
           .map((membre) => {
@@ -1108,7 +1153,10 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
             (membre): membre is { points: { x: number; y: number }[]; depuisLaFin: boolean } =>
               membre !== null,
           )
-        const ovale = ovaleAgregat(membres, agregat.position, obstacles)
+        const ovale = ovaleAgregat(membres, agregat.position, obstacles, {
+          glissement: agregat.glissement,
+          decalage: agregat.decalage,
+        })
         return ovale ? { agregat, ovale } : null
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
@@ -1124,7 +1172,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       clearTimeout(nodeHoverTimer.current)
       setHoveredNode(null)
     }
-    if (!link || !event || dragRef.current || linkDragRef.current || labelDragRef.current || endpointDragRef.current) {
+    if (!link || !event || dragRef.current || linkDragRef.current || labelDragRef.current || lagDragRef.current || endpointDragRef.current) {
       setHovered(null)
       return
     }
@@ -1236,7 +1284,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
 
   /** Ouvre le champ de renommage à l'endroit du libellé double-cliqué. */
   const ouvrirEdition = (
-    type: 'layer' | 'site' | 'zone' | 'cluster' | 'annotation',
+    type: 'layer' | 'site' | 'zone' | 'cluster' | 'annotation' | 'agregat',
     cle: string,
     valeur: string,
     point: { x: number; y: number },
@@ -1271,8 +1319,53 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     const store = useDiagram.getState()
     if (edition.type === 'layer') store.setLayerName(Number(edition.cle), valeur)
     else if (edition.type === 'annotation') store.updateAnnotation(edition.cle, { text: valeur })
+    // La clé porte les identifiants des brins : un agrégat se renomme sur tout le faisceau.
+    else if (edition.type === 'agregat') store.renameLag(edition.cle.split(','), valeur)
     else store.renameGroup(edition.type, edition.cle, valeur)
     setEdition(null)
+  }
+
+  /**
+   * Prise d'un agrégat. L'anneau ne quitte pas le faisceau — on le fait coulisser dessus, en
+   * projetant le déplacement sur l'axe des câbles. L'étiquette, elle, se pose librement.
+   */
+  const beginLagDrag = (
+    event: React.PointerEvent<SVGElement>,
+    agregat: Agregat,
+    ovale: OvaleAgregat,
+    partie: 'anneau' | 'etiquette',
+  ) => {
+    event.stopPropagation()
+    if (locked) return
+    const store = useDiagram.getState()
+    const ids = agregat.membres.map((membre) => membre.id)
+    store.select({ links: ids })
+    store.pushHistory()
+    /*
+      L'axe du faisceau est la perpendiculaire du grand axe de l'ovale, orientée dans le sens
+      où l'on s'éloigne de l'équipement qui porte le port-channel : tirer vers l'aval éloigne
+      l'ovale, tirer vers l'amont le rapproche.
+    */
+    const radians = (ovale.angle * Math.PI) / 180
+    lagDragRef.current = {
+      pointerId: event.pointerId,
+      ids,
+      partie,
+      depart: toDiagram(event.clientX, event.clientY),
+      centre: { x: ovale.cx, y: ovale.cy },
+      axe: { x: Math.sin(radians), y: -Math.cos(radians) },
+      glissementInitial: agregat.glissement,
+    }
+    /*
+      La capture est un confort, pas une nécessité : le suivi se fait sur le plan de travail.
+      Elle échoue quand l'événement ne vient pas d'un vrai pointeur — on ne laisse pas une
+      commodité interrompre le geste.
+    */
+    try {
+      ;(event.currentTarget as SVGElement).setPointerCapture?.(event.pointerId)
+    } catch {
+      /* pointeur déjà relâché : sans importance */
+    }
   }
 
   const beginLabelDrag = (event: React.PointerEvent<SVGGElement>, link: NetLink, label: PlacedLabel) => {
@@ -1289,6 +1382,15 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     }
     event.currentTarget.setPointerCapture?.(event.pointerId)
   }
+
+  /** Ovales masqués à la main : le bandeau d'état le dit, comme pour les groupes repliés. */
+  const agregatsMasques = useMemo(
+    () =>
+      showLags
+        ? agregats({ nodes: display.nodes, links: display.links }).filter((item) => item.masque).length
+        : 0,
+    [display.links, display.nodes, showLags],
+  )
 
   const hopCount = crossingCount(crossings)
   /** Liaisons encore confondues : c'est la mesure de ce qui reste illisible. */
@@ -1607,30 +1709,6 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
             )
           })}
 
-          {/*
-            Agrégats de liens : l'ovale qui encercle les brins d'un port-channel. Dessiné
-            par-dessus les traits et sous les équipements, comme sur un schéma de câblage.
-          */}
-          {showLags &&
-            detail !== 'summary' &&
-            ovales.map(({ agregat, ovale }) => (
-              <AggregateShape
-                key={agregat.id}
-                agregat={agregat}
-                ovale={ovale}
-                surbrillance={agregat.membres.some((membre) => selectedLinks.includes(membre.id))}
-                details={showDetails}
-                onSelect={
-                  locked
-                    ? undefined
-                    : () =>
-                        useDiagram
-                          .getState()
-                          .select({ links: agregat.membres.map((membre) => membre.id) })
-                }
-              />
-            ))}
-
           {source && cursor && (
             <path
               data-export="false"
@@ -1806,6 +1884,49 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
           ))}
 
           {/*
+            Agrégats de liens : l'ovale qui encercle les brins d'un port-channel. Dessiné en
+            dernier, pour rester attrapable : les poignées de tracé et les bords de cadre de
+            couche sont des zones invisibles qui, sinon, passent devant l'anneau.
+          */}
+          {showLags &&
+            detail !== 'summary' &&
+            ovales.map(({ agregat, ovale }) => (
+              <AggregateShape
+                key={agregat.id}
+                agregat={agregat}
+                ovale={ovale}
+                surbrillance={agregat.membres.some((membre) => selectedLinks.includes(membre.id))}
+                details={showDetails}
+                editable={!locked}
+                onSelect={
+                  locked
+                    ? undefined
+                    : () =>
+                        useDiagram
+                          .getState()
+                          .select({ links: agregat.membres.map((membre) => membre.id) })
+                }
+                onRingDown={(event) => beginLagDrag(event, agregat, ovale, 'anneau')}
+                onLabelDown={(event) => beginLagDrag(event, agregat, ovale, 'etiquette')}
+                onReset={() => {
+                  const store = useDiagram.getState()
+                  store.pushHistory()
+                  store.setLagPlacement(
+                    agregat.membres.map((membre) => membre.id),
+                    { shift: null, offset: null },
+                  )
+                  store.notify('Ovale replacé automatiquement.')
+                }}
+                onRename={() =>
+                  ouvrirEdition('agregat', agregat.membres.map((membre) => membre.id).join(','), agregat.nom, {
+                    x: ovale.labelX - 60,
+                    y: ovale.labelY - 10,
+                  })
+                }
+              />
+            ))}
+
+          {/*
             Analyse d'impact : un halo dit l'état de chaque équipement, sans toucher au dessin
             du schéma lui-même — on doit pouvoir lire les deux en même temps.
           */}
@@ -1961,7 +2082,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
         />
       )}
 
-      {/* Renommage sur le schéma : couche, site, zone ou grappe. */}
+      {/* Renommage sur le schéma : couche, site, zone, grappe ou agrégat. */}
       {edition && edition.type !== 'annotation' && (
         <input
           data-export="false"
@@ -1981,7 +2102,13 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
             if (event.key === 'Escape') setEdition(null)
             event.stopPropagation()
           }}
-          placeholder={edition.type === 'layer' ? 'Nom de la couche' : 'Nouveau nom'}
+          placeholder={
+            edition.type === 'layer'
+              ? 'Nom de la couche'
+              : edition.type === 'agregat'
+                ? 'Nom du port-channel (Po1, ag1, bond0…)'
+                : 'Nouveau nom'
+          }
           className="absolute z-40 h-7 w-52 rounded-lg border border-blue-500 bg-white px-2 text-[12.5px] shadow-lg outline-none"
           style={{ left: Math.max(4, edition.x), top: Math.max(4, edition.y) }}
         />
@@ -2025,11 +2152,16 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
         </div>
       )}
 
-      {(display.hiddenNodes > 0 || collapsed.length > 0 || hopCount > 0 || overlapCount > 0) && (
+      {(display.hiddenNodes > 0 ||
+        collapsed.length > 0 ||
+        hopCount > 0 ||
+        overlapCount > 0 ||
+        agregatsMasques > 0) && (
         <div className="pointer-events-none absolute bottom-4 right-4 rounded-lg bg-white/90 px-3 py-1.5 text-[11px] text-slate-500 shadow-sm ring-1 ring-slate-200">
           {[
             collapsed.length > 0 ? `${collapsed.length} groupe(s) replié(s)` : null,
             display.hiddenNodes > 0 ? `${display.hiddenNodes} équipement(s) masqué(s)` : null,
+            agregatsMasques > 0 ? `${agregatsMasques} agrégat(s) sans ovale` : null,
             hopCount > 0 ? `${hopCount} croisement(s) enjambé(s)` : null,
             overlapCount > 0 ? `${overlapCount} liaison(s) encore superposée(s)` : null,
           ]
