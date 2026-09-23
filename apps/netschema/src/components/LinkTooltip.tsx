@@ -1,3 +1,4 @@
+import { MODES_LACP } from '../lib/aggregates'
 import { LINKS } from '../lib/catalog'
 import { linkEnd, linkLayers } from '../lib/osi'
 import type { NetLink, NetNode, PortMode, StpRole } from '../types'
@@ -47,7 +48,12 @@ function EndColumn({ title, link, end }: { title: string; link: NetLink; end: 'a
         )}
         {(mode || vlans) && <p>{[mode, vlans ? `VLAN ${vlans}` : null].filter(Boolean).join(' · ')}</p>}
         {config.nativeVlan && <p>VLAN natif {config.nativeVlan}</p>}
-        {config.lag && <p>Agrégat {config.lag}</p>}
+        {config.lag && (
+          <p>
+            Agrégat {config.lag}
+            {link.lacp ? ` — ${MODES_LACP.find((item) => item.value === link.lacp)?.court}` : ''}
+          </p>
+        )}
         {config.stp && <p>STP {STP_LABEL[config.stp]}</p>}
         {config.ip && <p>IP {config.ip}</p>}
         {!config.port && !mode && !vlans && !config.lag && !config.stp && !config.ip && (

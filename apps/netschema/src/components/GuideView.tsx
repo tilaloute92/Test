@@ -1060,6 +1060,94 @@ deux onduleurs`}</pre>
       ),
     },
     {
+      id: 'agregats',
+      title: 'Agrégats de liens : port-channels, LACP, MLAG',
+      keywords:
+        'agregat agrégat port-channel portchannel po lacp 802.3ad 802.1ax bundle bonding lag teaming etherchannel faisceau ovale mlag vpc vsx vlt multi-chassis brins debit cumule negociation active passive statique',
+      body: (
+        <>
+          <P>
+            Deux câbles entre les mêmes équipements et un port-channel de deux membres se
+            dessinent de la même façon : deux traits. Ce n'est pourtant pas la même chose.
+            Deux câbles indépendants, ce sont deux chemins que le spanning-tree va arbitrer —
+            un seul travaille. Un port-channel, c'est <b>un seul lien logique</b> dont les
+            débits s'additionnent et qui ne coupe pas quand un brin tombe.
+          </P>
+          <Note>
+            NetSchema matérialise donc les agrégats selon l'usage du métier : un{' '}
+            <b>ovale encercle les brins</b> et porte le nom du bundle et son débit — « Po21 ·
+            2 × 10 Gb/s ». C'est le symbole que tout le monde reconnaît depuis les premiers
+            EtherChannel, et le seul de la légende qui ne se devine pas.
+          </Note>
+
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">Déclarer un agrégat</p>
+          <List
+            items={[
+              <>
+                Sélectionnez une liaison, puis, dans <b>Niveau 2 — liaison</b>, renseignez{' '}
+                <b>Agrégat (port-channel)</b> : <code>Po1</code>, <code>ag1</code>,{' '}
+                <code>bond0</code>, ce que vous voulez. Donnez le <b>même nom</b> aux brins qui
+                vont ensemble : c'est ce qui les réunit.
+              </>,
+              <>
+                Le nom du port-channel est <b>local à chaque châssis</b>. Quand il diffère
+                d'un bout à l'autre, saisissez-le côté par côté plus bas dans le même panneau ;
+                l'ovale est alors posé côté de l'équipement qui porte le faisceau.
+              </>,
+              <>
+                <b>Négociation de l'agrégat</b> : LACP actif, LACP passif, ou statique (mode
+                « on »). Un agrégat statique est tracé en pointillés — il ne détecte pas un
+                brin resté allumé mais muet.
+              </>,
+              <>
+                À l'import rapide : <code>lag=Po1 lacp=actif</code> sur chacune des deux lignes
+                de liaison. L'assistant, lui, propose de déclarer l'agrégat quand il voit des
+                liens parallèles non documentés.
+              </>,
+            ]}
+          />
+
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">Ce que l'ovale raconte</p>
+          <List
+            items={[
+              <>
+                <b>Faisceau entre deux mêmes équipements</b> : l'ovale se pose au milieu. C'est
+                le cas d'un peer-link MLAG, qui n'est jamais un seul câble en production.
+              </>,
+              <>
+                <b>Agrégat multi-châssis</b> (vPC, VSX, MLAG, VLT) : les brins montent vers
+                deux châssis différents, et l'ovale se pose près de l'équipement qui porte le
+                port-channel. Le schéma montre alors, d'un coup d'œil, qu'un seul lien logique
+                s'appuie sur deux boîtiers.
+              </>,
+              <>
+                <b>En ambre</b>, l'agrégat est incohérent. Survolez-le : débits inégaux entre
+                brins, MTU ou VLAN divergents, brin marqué « secours » alors que tous les
+                membres d'un agrégat sont actifs, deux extrémités en LACP passif — qui ne
+                formeront jamais le bundle —, ou agrégat multi-châssis sans mécanisme déclaré
+                côté réseau.
+              </>,
+              <>
+                Un <b>clic sur l'ovale</b> sélectionne tous les brins d'un coup ; l'inspecteur
+                résume alors le faisceau et le module <b>Dossier</b> en dresse le tableau
+                complet.
+              </>,
+            ]}
+          />
+          <Note>
+            Les ovales se masquent d'un clic (<i>Encercler les agrégats</i>, dans Mise en page)
+            ou à la voix (« masque les agrégats »), et disparaissent d'eux-mêmes en mode{' '}
+            <b>Présentation</b>, où le plan doit rester nu.
+          </Note>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Btn variant="primary" onClick={() => openIn('diagram', loadSample)}>
+              Voir sur le schéma d'exemple
+            </Btn>
+          </div>
+        </>
+      ),
+    },
+    {
       id: 'ha',
       title: 'Haute disponibilité',
       keywords: 'haute disponibilite ha redondance spof panne cluster grappe vip actif passif temoin score audit onduleur alimentation mecanisme bascule vpc vsx mlag fgcp clusterxl vrrp hsrp vsphere metrocluster stack empilement',

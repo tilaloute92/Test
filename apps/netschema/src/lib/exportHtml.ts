@@ -1,3 +1,4 @@
+import { MODES_LACP } from './aggregates'
 import { deviceMeta, LINKS } from './catalog'
 import { mecanismeHa } from './haTech'
 import { LAYER_LABELS_OSI, linkEnd, linkLayers } from './osi'
@@ -87,7 +88,7 @@ function resumeBout(link: NetLink, bout: 'a' | 'b'): string {
     config.mode === 'trunk' ? 'trunk' : config.mode === 'access' ? 'accès' : '',
     config.vlans ? `VLAN ${config.vlans}` : '',
     config.nativeVlan ? `natif ${config.nativeVlan}` : '',
-    config.lag ? `agrégat ${config.lag}` : '',
+    config.lag ? `agrégat ${config.lag}${link.lacp ? ` (${MODES_LACP.find((item) => item.value === link.lacp)?.court})` : ''}` : '',
     config.stp ? `STP ${config.stp}` : '',
     config.ip,
   ]

@@ -11,6 +11,7 @@
  * 500 ko dans l'application et sans dépendre d'un serveur.
  */
 
+import { agregats, formaterDebit, MODES_LACP } from './aggregates'
 import { deviceMeta, LAYER_LABELS, LINKS, ROLES } from './catalog'
 import { controlerMatrice, FLOW_ACTIONS } from './flows'
 import { auditDiagram } from './ha'
@@ -268,6 +269,7 @@ export function dossierTechnique(titre: string, pages: PageDossier[]): string {
         ${pages.map((page) => `<li>Schéma — ${echapper(page.nom)}</li>`).join('')}
         <li>Inventaire des équipements</li>
         <li>Liaisons et raccordements</li>
+        <li>Agrégats de liens (port-channels)</li>
         <li>Plan d’adressage (VLAN)</li>
         <li>Implantation en baies</li>
         <li>Matrice de flux</li>
@@ -323,6 +325,44 @@ export function dossierTechnique(titre: string, pages: PageDossier[]): string {
               lignesLiaisons(page.diagram),
             )}`,
         )
+        .join('')}
+    </section>
+  `
+
+  /*
+    Les agrégats méritent leur tableau : sur le plan, l'ovale dit qu'un faisceau existe ; le
+    dossier doit dire lequel, avec quoi, à quel débit et sous quelle négociation — c'est ce
+    qu'on recopie dans une fiche de câblage ou ce qu'on vérifie en salle.
+  */
+  const faisceaux = `
+    <section class="feuille">
+      <h2>Agrégats de liens (port-channels)</h2>
+      <p class="note">Un agrégat est un lien logique unique : ses brins se partagent la charge
+      et la perte de l’un ne coupe pas le lien. Sur les schémas, il est matérialisé par un
+      ovale encerclant les brins, conformément à l’usage.</p>
+      ${pages
+        .map((page) => {
+          const lignes = agregats(page.diagram).map((agregat) => {
+            const parId = new Map(page.diagram.nodes.map((node) => [node.id, node.name]))
+            const mode = MODES_LACP.find((item) => item.value === agregat.mode)
+            return [
+              agregat.nom,
+              texte(parId.get(agregat.proprietaire)),
+              agregat.pairs.map((id) => texte(parId.get(id))).join(', '),
+              String(agregat.membres.length),
+              agregat.debitTotal ? formaterDebit(agregat.debitTotal) : '—',
+              mode?.court ?? 'non précisée',
+              agregat.multiChassis ? 'oui' : 'non',
+              agregat.reserves.join(' ') || '—',
+            ]
+          })
+          return `
+            ${pages.length > 1 ? `<h3>${echapper(page.nom)}</h3>` : ''}
+            ${tableau(
+              ['Agrégat', 'Porté par', 'Vers', 'Brins', 'Débit cumulé', 'Négociation', 'Multi-châssis', 'Réserves'],
+              lignes,
+            )}`
+        })
         .join('')}
     </section>
   `
@@ -490,6 +530,7 @@ ${garde}
 ${feuillesSchemas}
 ${equipements}
 ${liaisons}
+${faisceaux}
 ${adressage}
 ${baies}
 ${matrice}

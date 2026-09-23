@@ -9,6 +9,13 @@ import { ANNOTATION_COLORS, annotationColors } from '../lib/annotations'
 import { aujourdhui } from '../lib/storage'
 import { constructeurDe, mecanismeHa, mecanismesPour } from '../lib/haTech'
 import { linkLayers } from '../lib/osi'
+import {
+  agregats,
+  formaterDebit,
+  MODES_LACP,
+  type Agregat,
+  type ModeLacp,
+} from '../lib/aggregates'
 import { collapsibleGroups } from '../lib/derive'
 import { modeDefinition, VIEW_MODES } from '../lib/viewModes'
 import { allDevices, LAYER_LABELS, LINKS, ROLES, rankOf } from '../lib/catalog'
@@ -961,6 +968,22 @@ function LinkForm({ linkId }: { linkId: string }) {
               />
             </Field>
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Agrégat (port-channel)">
+              <TextInput value={link.lag ?? ''} onChange={(lag) => set({ lag })} placeholder="Po1" />
+            </Field>
+            <Field label="Négociation de l’agrégat">
+              <Select
+                value={link.lacp ?? ''}
+                onChange={(lacp) => set({ lacp: lacp ? (lacp as ModeLacp) : undefined })}
+                options={[
+                  { value: '', label: 'Non précisée' },
+                  ...MODES_LACP.map((item) => ({ value: item.value, label: item.label })),
+                ]}
+              />
+            </Field>
+          </div>
+          <AgregatResume link={link} />
 
           <EndL2
             title={`Côté ${nameOf(link.from)}`}
@@ -1161,6 +1184,7 @@ function LayoutForm() {
   const showDetails = useDiagram((s) => s.showDetails)
   const showHops = useDiagram((s) => s.showHops)
   const spreadLinks = useDiagram((s) => s.spreadLinks)
+  const showLags = useDiagram((s) => s.showLags)
   const viewMode = useDiagram((s) => s.viewMode)
   const setViewMode = useDiagram((s) => s.setViewMode)
 
@@ -1219,6 +1243,11 @@ function LayoutForm() {
           <Checkbox checked={showSites} onChange={(v) => setDisplay({ showSites: v })} label="Afficher les sites" />
           <Checkbox checked={showZones} onChange={(v) => setDisplay({ showZones: v })} label="Afficher les zones" />
           <Checkbox checked={showClusters} onChange={(v) => setDisplay({ showClusters: v })} label="Afficher les grappes HA" />
+          <Checkbox
+            checked={showLags}
+            onChange={(v) => setDisplay({ showLags: v })}
+            label="Encercler les agrégats (port-channels)"
+          />
           <Checkbox checked={showLayerLabels} onChange={(v) => setDisplay({ showLayerLabels: v })} label="Afficher les noms de couches" />
           <Checkbox
             checked={spreadLinks}
@@ -1235,5 +1264,51 @@ function LayoutForm() {
         </div>
       </div>
     </section>
+  )
+}
+
+/**
+ * Ce que devient la liaison sélectionnée une fois le port-channel formé.
+ *
+ * Un nom de bundle saisi dans un champ ne dit rien tant qu'on ne voit pas le faisceau qu'il
+ * constitue : combien de brins, quel débit cumulé, sur combien de châssis, et ce qui cloche.
+ */
+function AgregatResume({ link }: { link: NetLink }) {
+  const diagram = useDiagram((s) => s.diagram)
+  const concernes = useMemo<Agregat[]>(
+    () => agregats(diagram).filter((agregat) => agregat.membres.some((membre) => membre.id === link.id)),
+    [diagram, link.id],
+  )
+  if (concernes.length === 0) {
+    const nom = (link.lag ?? link.lagA ?? link.lagB ?? '').trim()
+    if (!nom) return null
+    return (
+      <p className="rounded-md bg-amber-50 p-2 text-[11px] leading-snug text-amber-900">
+        « {nom} » ne compte qu’un seul brin : un agrégat d’un membre n’apporte ni débit ni
+        secours. Donnez le même nom à la liaison parallèle pour former le faisceau.
+      </p>
+    )
+  }
+  return (
+    <>
+      {concernes.map((agregat) => (
+        <div key={agregat.id} className="rounded-md bg-cyan-100/50 p-2 text-[11px] leading-snug text-cyan-900">
+          <p className="font-semibold">
+            {agregat.nom} — {agregat.membres.length} brins
+            {agregat.debitTotal ? `, ${formaterDebit(agregat.debitTotal)} cumulés` : ''}
+            {agregat.multiChassis ? ', réparti sur deux châssis' : ''}
+          </p>
+          <p className="pt-0.5">
+            Un seul lien logique : l’ovale du schéma le matérialise, et la perte d’un brin ne
+            coupe pas le lien.
+          </p>
+          {agregat.reserves.map((reserve) => (
+            <p key={reserve} className="pt-1 text-amber-800">
+              ⚠ {reserve}
+            </p>
+          ))}
+        </div>
+      ))}
+    </>
   )
 }

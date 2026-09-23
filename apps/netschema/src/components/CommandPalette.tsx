@@ -213,6 +213,12 @@ function buildItems(query: string, svgRef: React.RefObject<SVGSVGElement | null>
       hint: 'document',
       run: () => store().setDisplay({ showLegend: true }),
     },
+    {
+      id: 'agregats',
+      label: 'Encercler les agrégats de liens (port-channels)',
+      hint: 'affichage',
+      run: () => store().setDisplay({ showLags: !store().showLags }),
+    },
     { id: 'flux', label: 'Matrice de flux', hint: 'module', run: () => store().setAppView('flows') },
     {
       id: 'chemin',

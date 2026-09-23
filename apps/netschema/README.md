@@ -363,7 +363,7 @@ Une phrase non reconnue n'est jamais exécutée au hasard : elle est signalée t
 Onglet **Guide**, ou « ouvre le guide » à la voix, ou encore « comment ça marche ». Le mode
 d'emploi vit dans l'application plutôt que dans un fichier à côté :
 
-- **26 sections** — prise en main, assistant de conception, duplication, les six modules, construction du schéma, liaisons et
+- **27 sections** — prise en main, assistant de conception, duplication, agrégats de liens, les six modules, construction du schéma, liaisons et
   couches OSI, annotations et cartouche, matrice de flux et chemins, dossier et complétude,
   haute disponibilité, simplification d'une architecture complexe, commande vocale, imports et
   exports, découverte, inventaire et baies, catalogue, raccourcis clavier, dépannage ;
@@ -699,6 +699,58 @@ Les contrôles de cohérence tournent en continu :
 - **boucle de niveau 2** : cycle entre commutateurs sans aucun rôle spanning-tree documenté.
 
 Un clic sur un constat sélectionne les équipements et les liaisons concernés.
+
+## Agrégats de liens : port-channels, LACP, MLAG
+
+Deux câbles entre les mêmes équipements et un port-channel de deux membres se dessinent de la
+même façon : deux traits. Ce n'est pourtant pas la même chose. Deux câbles indépendants, ce
+sont deux chemins que le spanning-tree va arbitrer — un seul travaille. Un port-channel, c'est
+**un seul lien logique** dont les débits s'additionnent et qui ne coupe pas quand un brin
+tombe.
+
+NetSchema matérialise donc les agrégats selon l'usage du métier : **un ovale encercle les
+brins**, portant le nom du bundle et son débit — « Po21 · 2 × 10 Gb/s ». C'est le symbole
+utilisé depuis les premiers EtherChannel, et le seul de la légende qui ne se devine pas — il y
+figure donc explicitement dès qu'un agrégat existe.
+
+### Déclarer un agrégat
+
+- **Inspecteur → Niveau 2 — liaison → Agrégat (port-channel)** : `Po1`, `ag1`, `bond0`. Deux
+  brins portant le **même nom** forment le faisceau. Le nom est local à chaque châssis : quand
+  il diffère d'un bout à l'autre, il se saisit côté par côté juste en dessous.
+- **Négociation de l'agrégat** : LACP actif, LACP passif, ou statique (mode « on », tracé en
+  pointillés).
+- **Import rapide** : `lag=Po1 lacp=actif` sur chacune des lignes de liaison.
+- **Assistant** : il propose de déclarer l'agrégat quand il repère des liens parallèles non
+  documentés.
+
+### Ce que l'ovale raconte
+
+| Situation | Dessin |
+| --- | --- |
+| Faisceau entre deux mêmes équipements (peer-link MLAG) | Ovale au milieu du faisceau |
+| Agrégat multi-châssis (vPC, VSX, MLAG, VLT) | Ovale près du châssis qui porte le port-channel, les brins partant vers les deux boîtiers |
+| Agrégat statique (sans LACP) | Ovale en pointillés |
+| Agrégat incohérent | Ovale et étiquette en ambre, détail au survol |
+
+Un clic sur l'ovale sélectionne tous les brins ; l'inspecteur résume le faisceau et le module
+**Dossier** en dresse le tableau (porté par, vers, brins, débit cumulé, négociation,
+multi-châssis, réserves).
+
+### Ce qui est contrôlé
+
+- **débits inégaux** entre brins — 802.1AX demande des membres de même vitesse ;
+- **MTU ou VLAN divergents** d'un brin à l'autre, alors que le bundle est un seul port logique ;
+- **brin marqué « liaison de secours »** : dans un agrégat, tous les membres sont actifs ;
+- **brin en rôle spanning-tree bloquant ou alternatif**, ce qu'un agrégat exclut ;
+- **deux extrémités en LACP passif**, qui ne formeront jamais le bundle ;
+- **agrégat multi-châssis sans mécanisme déclaré** côté réseau : sans vPC, VSX, MLAG, VLT ou
+  pile, les deux châssis ne se présentent pas comme un seul ;
+- **liens parallèles non déclarés en agrégat** : le schéma ne permet alors pas de trancher
+  entre un port-channel et deux chemins arbitrés.
+
+Les ovales se masquent depuis *Mise en page* (« Encercler les agrégats ») ou à la voix
+(« masque les agrégats »), et disparaissent d'eux-mêmes en mode **Présentation**.
 
 ## Cadres de couche
 

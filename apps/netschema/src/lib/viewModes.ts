@@ -55,6 +55,8 @@ export interface ModeDefinition {
     showZones: boolean
     showSites: boolean
     showClusters: boolean
+    /** Ovales des agrégats : hors de la vue de présentation, où ils alourdiraient le plan. */
+    showLags: boolean
   }
   style: ModeStyle
   /** Couche OSI imposée par le mode, quand il en suppose une (vue logique). */
@@ -75,6 +77,7 @@ export const VIEW_MODES: ModeDefinition[] = [
       showZones: true,
       showSites: true,
       showClusters: true,
+      showLags: true,
     },
     style: {
       nameSize: 13.5,
@@ -104,6 +107,7 @@ export const VIEW_MODES: ModeDefinition[] = [
       showZones: true,
       showSites: true,
       showClusters: true,
+      showLags: true,
     },
     style: {
       nameSize: 11,
@@ -133,6 +137,7 @@ export const VIEW_MODES: ModeDefinition[] = [
       showZones: true,
       showSites: true,
       showClusters: true,
+      showLags: true,
     },
     // La vue logique n'est pas qu'un habillage : elle écarte du schéma tout ce qui ne
     // participe pas au niveau 3 — câblage, alimentation, administration hors bande.
@@ -166,6 +171,7 @@ export const VIEW_MODES: ModeDefinition[] = [
       showZones: true,
       showSites: true,
       showClusters: true,
+      showLags: false,
     },
     style: {
       nameSize: 15,

@@ -160,6 +160,12 @@ export interface NetLink {
   nativeVlan?: string
   /** Agrégat de liens : nom du port-channel / bundle LACP. */
   lag?: string
+  /**
+   * Protocole de négociation de l'agrégat, au sens 802.1AX : LACP actif, LACP passif, ou
+   * statique (mode « on »). Deux extrémités passives ne forment jamais le bundle, et un
+   * agrégat statique ne détecte pas un brin resté physiquement allumé mais muet.
+   */
+  lacp?: 'active' | 'passive' | 'static'
   stp?: StpRole
 
   /**

@@ -751,12 +751,12 @@ export function suggestionsAssistant(diagram: Diagram): Suggestion[] {
     suggestions.push({
       id: `lacp:${cle}`,
       titre: `Déclarer l'agrégat entre ${nom(a)} et ${nom(b)}`,
-      detail: `${groupe.length} liens parallèles : en agrégat LACP, ils forment un seul lien logique et se partagent la charge.`,
+      detail: `${groupe.length} liens parallèles : en agrégat LACP, ils forment un seul lien logique, se partagent la charge, et le schéma les matérialise par un ovale.`,
       operations: groupe.map((link) => ({
         type: 'liaisonPatch' as const,
         de: nom(link.from),
         vers: nom(link.to),
-        patch: { kind: 'trunk' as LinkKind, lag: 'Po1' },
+        patch: { kind: 'trunk' as LinkKind, lag: 'Po1', lacp: 'active' as const },
       })),
     })
   }

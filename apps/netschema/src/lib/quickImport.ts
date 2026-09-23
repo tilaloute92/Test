@@ -206,6 +206,16 @@ export function parseQuickImport(text: string, existing?: Diagram): ImportResult
           else if (field === 'mode') extra.mode = normalize(value) === 'trunk' ? 'trunk' : 'access'
           else if (field === 'natif' || field === 'native') extra.nativeVlan = value
           else if (field === 'lag' || field === 'po' || field === 'agregat') extra.lag = value
+          else if (field === 'lacp') {
+            const mode = value.toLowerCase()
+            extra.lacp = mode.startsWith('act')
+              ? 'active'
+              : mode.startsWith('pass')
+                ? 'passive'
+                : mode.startsWith('stat') || mode === 'on'
+                  ? 'static'
+                  : undefined
+          }
           else if (field === 'mtu') extra.mtu = Number(value) || undefined
           else if (field === 'stp') extra.stp = STP_WORDS[normalize(value)]
           else if (field === 'subnet' || field === 'reseau' || field === 'sousreseau') extra.subnet = value
@@ -229,7 +239,18 @@ export function parseQuickImport(text: string, existing?: Diagram): ImportResult
         else labelWords.push(word)
       }
       const resolvedKind = kind ?? suggestLinkKind(from, to)
-      const signature = [from.id, to.id].sort().join('~') + `|${resolvedKind}`
+      /*
+        Deux lignes strictement identiques sont un doublon ; deux brins d'un même
+        port-channel n'en sont pas. La signature retient donc aussi le nom de l'agrégat et
+        les ports — c'est ce qui distingue un faisceau d'une ligne recopiée deux fois.
+      */
+      const signature = [
+        [from.id, to.id].sort().join('~'),
+        resolvedKind,
+        extra.lag ?? '',
+        extra.portA ?? '',
+        extra.portB ?? '',
+      ].join('|')
       if (existingPairs.has(signature)) continue
       existingPairs.add(signature)
       links.push({
@@ -318,5 +339,7 @@ K8S-PROD ; k8s ; site=Siège ; zone=Datacenter
 RTR-EDGE-01 -> FW-01 : fibre 10 Gb/s
 RTR-EDGE-02 -> FW-01 : fibre !
 FW-01 -> SW-CORE-01 : fibre
-SW-CORE-01 -> K8S-PROD : trunk vlans=100,110 mtu=9000 lag=Po1
+# Deux brins de même nom d'agrégat forment un port-channel, encerclé sur le schéma
+SW-CORE-01 -> K8S-PROD : trunk vlans=100,110 mtu=9000 lag=Po1 lacp=actif porta=Te1/0/9
+SW-CORE-02 -> K8S-PROD : trunk vlans=100,110 mtu=9000 lag=Po1 lacp=actif porta=Te1/0/9
 FW-01 -> SW-CORE-01 : subnet=10.0.0.0/30 ipa=10.0.0.1 ipb=10.0.0.2 routage=ospf`

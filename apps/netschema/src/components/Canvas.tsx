@@ -17,6 +17,8 @@ import { crossingCount, linkCrossings, overlappingPairs, type Crossing } from '.
 import { modeStyle } from '../lib/viewModes'
 import { analyseImpact, COULEURS_IMPACT } from '../lib/impact'
 import { noterPointeur } from '../lib/pointeur'
+import { agregats, ovaleAgregat } from '../lib/aggregates'
+import { AggregateShape } from './AggregateShape'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
 import {
   insertIndexAt,
@@ -176,6 +178,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
 
   const collapsed = useDiagram((s) => s.collapsed)
   const detail = useDiagram((s) => s.detail)
+  const showLags = useDiagram((s) => s.showLags)
   const osi = useDiagram((s) => s.osi)
   const strictOsi = useDiagram((s) => s.strictOsi)
 
@@ -1016,6 +1019,31 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     return byLink
   }, [display.links, display.nodes, geometries, osi, showDetails, style])
 
+  /*
+    Agrégats de liens. On les calcule sur les liaisons affichées : un groupe replié fusionne
+    ses câbles, et il n'y a alors plus de faisceau à encercler.
+  */
+  const ovales = useMemo(() => {
+    if (!showLags) return []
+    const obstacles = display.nodes.map((node) => ({ x: node.x, y: node.y }))
+    return agregats({ nodes: display.nodes, links: display.links })
+      .map((agregat) => {
+        const membres = agregat.membres
+          .map((membre) => {
+            const geometry = geometries.get(membre.id)
+            if (!geometry) return null
+            return { points: geometry.points, depuisLaFin: membre.to === agregat.proprietaire }
+          })
+          .filter(
+            (membre): membre is { points: { x: number; y: number }[]; depuisLaFin: boolean } =>
+              membre !== null,
+          )
+        const ovale = ovaleAgregat(membres, agregat.position, obstacles)
+        return ovale ? { agregat, ovale } : null
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+  }, [display.links, display.nodes, geometries, showLags])
+
   /**
    * Survol d'une liaison. Un court délai évite que l'info-bulle clignote quand on traverse
    * le schéma, et tout geste en cours (déplacement, tracé) la fait disparaître.
@@ -1476,6 +1504,30 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
               />
             )
           })}
+
+          {/*
+            Agrégats de liens : l'ovale qui encercle les brins d'un port-channel. Dessiné
+            par-dessus les traits et sous les équipements, comme sur un schéma de câblage.
+          */}
+          {showLags &&
+            detail !== 'summary' &&
+            ovales.map(({ agregat, ovale }) => (
+              <AggregateShape
+                key={agregat.id}
+                agregat={agregat}
+                ovale={ovale}
+                surbrillance={agregat.membres.some((membre) => selectedLinks.includes(membre.id))}
+                details={showDetails}
+                onSelect={
+                  locked
+                    ? undefined
+                    : () =>
+                        useDiagram
+                          .getState()
+                          .select({ links: agregat.membres.map((membre) => membre.id) })
+                }
+              />
+            ))}
 
           {source && cursor && (
             <path

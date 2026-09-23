@@ -83,6 +83,7 @@ function champsLien(link: NetLink): Record<string, string> {
     Mode: vide(link.mode),
     'VLAN natif': vide(link.nativeVlan),
     Agrégat: vide(link.lag),
+    'Négociation de l’agrégat': vide(link.lacp),
     'Spanning-tree': vide(link.stp),
     MTU: vide(link.mtu),
     'Sous-réseau': vide(link.subnet),

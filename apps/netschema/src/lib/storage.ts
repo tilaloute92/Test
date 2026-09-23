@@ -67,6 +67,11 @@ function portMode(value: unknown): PortMode | undefined {
   return value === 'access' || value === 'trunk' ? value : undefined
 }
 
+/** Mode de négociation d'un agrégat : on n'accepte que les trois valeurs de la norme. */
+function modeLacp(valeur: unknown): NetLink['lacp'] {
+  return valeur === 'active' || valeur === 'passive' || valeur === 'static' ? valeur : undefined
+}
+
 function stpRole(value: unknown): StpRole | undefined {
   return STP_ROLES.includes(String(value)) ? (value as StpRole) : undefined
 }
@@ -259,6 +264,7 @@ export function parseDiagram(raw: unknown): Diagram {
       mode: portMode(item.mode),
       nativeVlan: str(item.nativeVlan),
       lag: str(item.lag),
+      lacp: modeLacp(item.lacp),
       stp: stpRole(item.stp),
       mtu: Number.isFinite(item.mtu) ? Number(item.mtu) : undefined,
       // Configuration propre à chaque extrémité (ce qui diffère d'un équipement à l'autre).

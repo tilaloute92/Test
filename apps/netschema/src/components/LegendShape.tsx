@@ -1,3 +1,4 @@
+import { agregats } from '../lib/aggregates'
 import { deviceMeta, LINKS } from '../lib/catalog'
 import { DeviceIcon } from '../lib/icons'
 import { LARGEUR_LEGENDE } from '../lib/layoutBlocks'
@@ -40,10 +41,13 @@ export function LegendShape({ diagram, x, y }: LegendShapeProps) {
     (kind): kind is LinkKind => kind in LINKS,
   )
   const groupes = familles(diagram)
+  const faisceaux = agregats(diagram)
+  const lignesLiaisons = kinds.length + (faisceaux.length > 0 ? 1 : 0)
   const separateur = kinds.length > 0 && groupes.length > 0 ? 14 : 0
-  const hauteur = 30 + (kinds.length + groupes.length) * LIGNE + separateur + 10
+  const hauteur = 30 + (lignesLiaisons + groupes.length) * LIGNE + separateur + 10
   const yLiaisons = y + 40
-  const yFamilles = yLiaisons + kinds.length * LIGNE + separateur
+  const yAgregat = yLiaisons + kinds.length * LIGNE
+  const yFamilles = yLiaisons + lignesLiaisons * LIGNE + separateur
 
   return (
     <g data-legende="1">
@@ -88,9 +92,24 @@ export function LegendShape({ diagram, x, y }: LegendShapeProps) {
         )
       })}
 
+      {/* L'ovale des agrégats : le seul symbole du schéma qui ne se devine pas. */}
+      {faisceaux.length > 0 && (
+        <g>
+          <line x1={x + 14} y1={yAgregat - 7} x2={x + 42} y2={yAgregat - 7} stroke="#475569" strokeWidth={1.6} />
+          <line x1={x + 14} y1={yAgregat - 1} x2={x + 42} y2={yAgregat - 1} stroke="#475569" strokeWidth={1.6} />
+          <ellipse cx={x + 28} cy={yAgregat - 4} rx={11} ry={7.5} fill="none" stroke="#334155" strokeWidth={1.2} />
+          <text x={x + 52} y={yAgregat} fontSize={10.5} fill="#475569">
+            Agrégat (port-channel)
+          </text>
+          <text x={x + LARGEUR - 12} y={yAgregat} fontSize={10} fill="#94a3b8" textAnchor="end">
+            {faisceaux.length}
+          </text>
+        </g>
+      )}
+
       {separateur > 0 && (
         <path
-          d={`M ${x + 12} ${yLiaisons + kinds.length * LIGNE} H ${x + LARGEUR - 12}`}
+          d={`M ${x + 12} ${yLiaisons + lignesLiaisons * LIGNE} H ${x + LARGEUR - 12}`}
           stroke="#e2e8f0"
           strokeWidth={1}
         />

@@ -141,7 +141,7 @@ export function LinkShape({
               />
               {label.lines.map((line, index) => (
                 <text
-                  key={line}
+                  key={`${label.which}-${index}`}
                   textAnchor="middle"
                   y={-label.height / 2 + 2 + lineHeight * (index + 1) - lineHeight / 3.2}
                   fontSize={index === 0 ? label.size : label.size - 0.8}

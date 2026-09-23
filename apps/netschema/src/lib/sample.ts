@@ -9,8 +9,17 @@ function node(
   return { id, kind, name, x: 0, y: 0, ...extra }
 }
 
+/*
+  Identifiants lisibles, et distincts même quand deux câbles de même nature relient les mêmes
+  équipements — ce qui est justement le cas d'un agrégat.
+*/
+const compteurLiens = new Map<string, number>()
+
 function link(from: string, to: string, kind: LinkKind, extra: Partial<NetLink> = {}): NetLink {
-  return { id: `l_${from}_${to}_${kind}`, from, to, kind, ...extra }
+  const base = `l_${from}_${to}_${kind}`
+  const rang = (compteurLiens.get(base) ?? 0) + 1
+  compteurLiens.set(base, rang)
+  return { id: rang === 1 ? base : `${base}_${rang}`, from, to, kind, ...extra }
 }
 
 const SIEGE = 'Siège'
@@ -57,6 +66,9 @@ const ASSETS: Record<string, Partial<NetNode>> = {
 }
 
 export function sampleDiagram(): Diagram {
+  // Les identifiants doivent être les mêmes d'un chargement à l'autre : c'est ce qui permet
+  // de comparer deux versions du même schéma.
+  compteurLiens.clear()
   return {
     title: 'Architecture haute disponibilité — siège + site de secours',
     racks: [
@@ -123,12 +135,20 @@ export function sampleDiagram(): Diagram {
       link('fw2', 'core2', 'fiber', { speed: '10 Gb/s', layers: ['l1', 'l2', 'l3'], subnet: '10.0.0.0/29', ipA: '10.0.0.3', ipB: '10.0.0.6', routing: 'ospf', mtu: 9000, portA: 'port2', portB: 'Te1/0/1' }),
       link('fw1', 'core2', 'fiber', { redundant: true }),
       link('fw2', 'core1', 'fiber', { redundant: true }),
-      link('core1', 'core2', 'stack', { label: 'MLAG', mode: 'trunk', vlans: '10,20,30,40,50,90', lag: 'Po1', mtu: 9000, portA: 'Te1/0/47', portB: 'Te1/0/47' }),
+      // Peer-link MLAG : deux brins agrégés, comme en production — un peer-link à un seul
+      // câble fait tomber les deux châssis en « split brain » dès qu'on y touche.
+      link('core1', 'core2', 'stack', { label: 'MLAG', speed: '10 Gb/s', mode: 'trunk', vlans: '10,20,30,40,50,90', lag: 'Po1', lacp: 'active', mtu: 9000, portA: 'Te1/0/47', portB: 'Te1/0/47' }),
+      link('core1', 'core2', 'stack', { speed: '10 Gb/s', mode: 'trunk', vlans: '10,20,30,40,50,90', lag: 'Po1', lacp: 'active', mtu: 9000, portA: 'Te1/0/48', portB: 'Te1/0/48' }),
 
-      link('core1', 'distA', 'fiber', { speed: '10 Gb/s', mode: 'trunk', vlans: '20,40,50', mtu: 9000, portA: 'Te1/0/1', portB: 'Te1/0/49', lagA: 'Po10', lagB: 'Po1', stpA: 'designated', stpB: 'root' }),
-      link('core2', 'distA', 'fiber', { redundant: true, mode: 'trunk', vlans: '20,40,50', portA: 'Te1/0/1', portB: 'Te1/0/50', stpA: 'designated', stpB: 'alternate' }),
-      link('core1', 'distB', 'fiber', { redundant: true, mode: 'trunk', vlans: '30', portA: 'Te1/0/2', portB: 'Te1/0/50', stpA: 'designated', stpB: 'alternate' }),
-      link('core2', 'distB', 'fiber', { speed: '10 Gb/s', mode: 'trunk', vlans: '30', mtu: 9000, portA: 'Te1/0/2', portB: 'Te1/0/49', lagA: 'Po11', lagB: 'Po1', stpA: 'designated', stpB: 'root' }),
+      /*
+        Distribution raccordée en agrégat multi-châssis : les deux brins montent vers les deux
+        châssis du cœur, qui se présentent comme un seul grâce au MLAG. Aucun n'est un lien de
+        secours — ils travaillent tous les deux, et le spanning-tree n'en bloque aucun.
+      */
+      link('core1', 'distA', 'fiber', { speed: '10 Gb/s', mode: 'trunk', vlans: '20,40,50', mtu: 9000, portA: 'Te1/0/1', portB: 'Te1/0/49', lag: 'Po10', lacp: 'active', stpA: 'designated', stpB: 'root' }),
+      link('core2', 'distA', 'fiber', { speed: '10 Gb/s', mode: 'trunk', vlans: '20,40,50', mtu: 9000, portA: 'Te1/0/1', portB: 'Te1/0/50', lag: 'Po10', lacp: 'active', stpA: 'designated', stpB: 'root' }),
+      link('core1', 'distB', 'fiber', { speed: '10 Gb/s', mode: 'trunk', vlans: '30', mtu: 9000, portA: 'Te1/0/2', portB: 'Te1/0/50', lag: 'Po11', lacp: 'active', stpA: 'designated', stpB: 'root' }),
+      link('core2', 'distB', 'fiber', { speed: '10 Gb/s', mode: 'trunk', vlans: '30', mtu: 9000, portA: 'Te1/0/2', portB: 'Te1/0/49', lag: 'Po11', lacp: 'active', stpA: 'designated', stpB: 'root' }),
 
       link('distA', 'accA', 'ethernet', { speed: '1 Gb/s', mode: 'trunk', vlans: '20,50', nativeVlan: '1', portA: 'Gi1/0/1', portB: 'Gi0/1', stpA: 'designated', stpB: 'root' }),
       link('distA', 'wifiA', 'ethernet', { label: 'PoE+', mode: 'trunk', vlans: '40', nativeVlan: '1', portA: 'Gi1/0/8', portB: 'eth0', stpA: 'designated', stpB: 'edge' }),
@@ -137,12 +157,12 @@ export function sampleDiagram(): Diagram {
       link('accA', 'imp', 'ethernet', { mode: 'access', vlans: '50', stp: 'edge' }),
       link('accB', 'pcB', 'ethernet', { mode: 'access', vlans: '30', stp: 'edge' }),
 
-      link('core1', 'hv1', 'trunk', { speed: '10 Gb/s', mode: 'trunk', vlans: '10,90', lag: 'Po21', mtu: 9000 }),
-      link('core2', 'hv1', 'trunk', { redundant: true, mode: 'trunk', vlans: '10,90', lag: 'Po21', mtu: 9000 }),
-      link('core1', 'hv2', 'trunk', { redundant: true, mode: 'trunk', vlans: '10,90', lag: 'Po22', mtu: 9000 }),
-      link('core2', 'hv2', 'trunk', { speed: '10 Gb/s', mode: 'trunk', vlans: '10,90', lag: 'Po22', mtu: 9000 }),
-      link('core1', 'hv3', 'trunk', { speed: '10 Gb/s', mode: 'trunk', vlans: '10,90', lag: 'Po23', mtu: 9000 }),
-      link('core2', 'hv3', 'trunk', { redundant: true, mode: 'trunk', vlans: '10,90', lag: 'Po23', mtu: 9000 }),
+      link('core1', 'hv1', 'trunk', { speed: '10 Gb/s', mode: 'trunk', vlans: '10,90', lag: 'Po21', lacp: 'active', mtu: 9000 }),
+      link('core2', 'hv1', 'trunk', { speed: '10 Gb/s', mode: 'trunk', vlans: '10,90', lag: 'Po21', lacp: 'active', mtu: 9000 }),
+      link('core1', 'hv2', 'trunk', { speed: '10 Gb/s', mode: 'trunk', vlans: '10,90', lag: 'Po22', lacp: 'active', mtu: 9000 }),
+      link('core2', 'hv2', 'trunk', { speed: '10 Gb/s', mode: 'trunk', vlans: '10,90', lag: 'Po22', lacp: 'active', mtu: 9000 }),
+      link('core1', 'hv3', 'trunk', { speed: '10 Gb/s', mode: 'trunk', vlans: '10,90', lag: 'Po23', lacp: 'active', mtu: 9000 }),
+      link('core2', 'hv3', 'trunk', { speed: '10 Gb/s', mode: 'trunk', vlans: '10,90', lag: 'Po23', lacp: 'active', mtu: 9000 }),
       link('hv1', 'hv2', 'heartbeat'),
       link('hv2', 'hv3', 'heartbeat'),
       link('wit', 'hv1', 'oob', { label: 'Quorum' }),

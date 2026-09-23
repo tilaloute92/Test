@@ -11,6 +11,7 @@
  * La note n'est là que pour suivre le progrès d'une revue à l'autre.
  */
 
+import { agregats } from './aggregates'
 import { deviceMeta, LINKS, rankOf } from './catalog'
 import { auditDiagram } from './ha'
 import { mecanismeHa } from './haTech'
@@ -183,6 +184,53 @@ function analyserPage(
       detail: 'Le débit est ce qui permet de repérer le maillon lent d’un chemin.',
       action: 'Renseignez le débit des liaisons d’infrastructure (1 Gb/s, 10 Gb/s…).',
       cibles: [],
+      page: suffixe,
+    })
+  }
+
+  /*
+    Agrégats. Deux points distincts : ce qui est déclaré et se contredit (débits inégaux,
+    brin marqué en secours, MTU divergents), et ce qui n'est pas déclaré du tout — deux
+    câbles parallèles qui sont peut-être un port-channel, peut-être une boucle.
+  */
+  const faisceaux = agregats(page)
+  const douteux = faisceaux.filter((agregat) => agregat.reserves.length > 0)
+  if (douteux.length > 0) {
+    constats.push({
+      id: cle('agregats-incoherents'),
+      categorie: 'Schéma',
+      gravite: 'majeur',
+      titre: `${douteux.length} agrégat(s) incohérent(s)`,
+      detail: douteux
+        .slice(0, 3)
+        .map((agregat) => `${agregat.nom} : ${agregat.reserves[0]}`)
+        .join(' — '),
+      action: 'Reprenez la configuration du faisceau : mêmes débits, mêmes VLAN, mêmes MTU, aucun brin en secours.',
+      cibles: douteux.flatMap((agregat) => agregat.membres.map((membre) => membre.id)),
+      page: suffixe,
+    })
+  }
+
+  const membresDeclares = new Set(faisceaux.flatMap((agregat) => agregat.membres.map((membre) => membre.id)))
+  const paires = new Map<string, string[]>()
+  for (const link of page.links) {
+    if (link.kind === 'power' || link.kind === 'oob' || membresDeclares.has(link.id)) continue
+    const cleP = [link.from, link.to].sort().join('~')
+    const liste = paires.get(cleP)
+    if (liste) liste.push(link.id)
+    else paires.set(cleP, [link.id])
+  }
+  const paralleles = [...paires.values()].filter((ids) => ids.length > 1)
+  if (paralleles.length > 0) {
+    constats.push({
+      id: cle('liens-paralleles'),
+      categorie: 'Schéma',
+      gravite: 'mineur',
+      titre: `${paralleles.length} faisceau(x) de liens parallèles non déclarés en agrégat`,
+      detail:
+        'Deux câbles entre les mêmes équipements ne disent pas s’ils forment un port-channel ou deux chemins que le spanning-tree arbitrera — le schéma ne permet pas de trancher.',
+      action: 'Nommez l’agrégat (Po1, ag1, bond0) sur chaque brin, ou laissez-les distincts en connaissance de cause.',
+      cibles: paralleles.flat(),
       page: suffixe,
     })
   }

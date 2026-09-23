@@ -6,6 +6,7 @@
  * composants (elle empêcherait le rechargement à chaud de ne recharger que des composants).
  */
 
+import { agregats } from './aggregates'
 import { deviceMeta } from './catalog'
 import type { Diagram } from '../types'
 
@@ -19,9 +20,12 @@ const LIGNE_CARTOUCHE = 19
 export function legendSize(diagram: Diagram): { width: number; height: number } {
   const kinds = new Set(diagram.links.map((link) => link.kind)).size
   const groupes = new Set(diagram.nodes.map((node) => deviceMeta(node.kind).family)).size
+  // Une ligne de plus dès qu'il y a un agrégat à expliquer : l'ovale n'est évident que pour
+  // qui l'a déjà vu.
+  const lignes = kinds + groupes + (agregats(diagram).length > 0 ? 1 : 0)
   return {
     width: LARGEUR_LEGENDE,
-    height: 30 + (kinds + groupes) * LIGNE_LEGENDE + (kinds > 0 && groupes > 0 ? 14 : 0) + 10,
+    height: 30 + lignes * LIGNE_LEGENDE + (kinds > 0 && groupes > 0 ? 14 : 0) + 10,
   }
 }
 

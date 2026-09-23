@@ -149,6 +149,7 @@ export type ToggleKey =
   | 'spreadLinks'
   | 'snap'
   | 'showLegend'
+  | 'showLags'
 
 export type QueryKind = 'count' | 'countKind' | 'ha' | 'spof' | 'power' | 'freeUnits' | 'vlans' | 'racks'
 
@@ -252,6 +253,7 @@ const TOGGLE_WORDS: { pattern: RegExp; key: ToggleKey }[] = [
   { pattern: /superpositions?|chevauchements?|liaisons? superposees?|ecartement/, key: 'spreadLinks' },
   { pattern: /aimant|magnet|grille magnetique/, key: 'snap' },
   { pattern: /legende/, key: 'showLegend' },
+  { pattern: /agregats?|port[- ]?channels?|lacp|faisceaux?|bundles?/, key: 'showLags' },
 ]
 
 /** Nettoie un nom dicté : « le switch cœur un » reste tel quel, la ponctuation part. */
@@ -1114,6 +1116,7 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'Supprime la liaison entre SW-CORE-01 et FW-01',
       'Liaison entre SW-CORE-01 et SW-DIST-BATA en fibre 10 Gb/s',
       'Insère le modèle pare-feu actif passif',
+      'Affiche les agrégats',
       'Duplique',
       'Duplique quatre fois',
       'Duplique la sélection en série',

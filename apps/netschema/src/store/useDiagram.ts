@@ -148,6 +148,11 @@ interface DiagramStore {
   spreadLinks: boolean
   /** Légende posée sous le schéma, construite d'après son contenu. */
   showLegend: boolean
+  /**
+   * Ovales des agrégats de liens (port-channels). Sans eux, deux câbles indépendants et un
+   * bundle LACP se dessinent pareil — et ne veulent pourtant pas dire la même chose.
+   */
+  showLags: boolean
   /** Mode de visualisation : architecture, technique, présentation. */
   viewMode: ViewMode
   /** Module affiché : schéma, inventaire, baies, découverte. */
@@ -339,6 +344,7 @@ interface DiagramStore {
         | 'showHops'
         | 'spreadLinks'
         | 'showLegend'
+        | 'showLags'
       >
     >,
   ) => void
@@ -430,6 +436,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   showHops: true,
   spreadLinks: true,
   showLegend: false,
+  showLags: true,
   viewMode: 'architecture',
   appView: 'diagram',
   mode: 'select',
