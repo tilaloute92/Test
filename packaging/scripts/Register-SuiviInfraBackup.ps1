@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Crée (ou met à jour) la tâche planifiée quotidienne de sauvegarde des données.
 
@@ -14,14 +14,14 @@
     Dossier racine des sauvegardes (local ou UNC).
 
 .PARAMETER At
-    Heure d'exécution quotidienne, format HH:mm. Par défaut 21:00 — après les horaires
+    Heure d'exécution quotidienne, format HH:mm. Par défaut 21:00 - après les horaires
     décalés de l'équipe, pour maximiser les chances d'une copie cohérente.
 
 .PARAMETER RunAsUser
     Compte d'exécution. Par défaut SYSTEM.
 
     ATTENTION pour une destination réseau (\\serveur\partage) : SYSTEM ne possède pas
-    d'identité réseau propre — il se présente comme le COMPTE ORDINATEUR du serveur
+    d'identité réseau propre - il se présente comme le COMPTE ORDINATEUR du serveur
     (DOMAINE\NOMSERVEUR$). Deux solutions, au choix :
       - autoriser ce compte ordinateur en écriture sur le partage ; ou
       - indiquer ici un compte de service dédié (-RunAsUser DOMAINE\svc-sauvegarde),
@@ -32,7 +32,7 @@
     Transmis au script de sauvegarde. Par défaut 30.
 
 .PARAMETER IncludeEnv
-    Transmis au script de sauvegarde (inclut le secret de session — voir son aide).
+    Transmis au script de sauvegarde (inclut le secret de session - voir son aide).
 
 .PARAMETER ExportXml
     Chemin d'un fichier .xml où exporter la définition de la tâche, importable ailleurs
@@ -177,7 +177,7 @@ do {
 } while ($running -and (Get-Date) -lt $deadline)
 
 if ($running) {
-    Write-Warning "La tâche tourne encore après 5 minutes — vérifiez le journal : $Destination\sauvegarde.log"
+    Write-Warning "La tâche tourne encore après 5 minutes - vérifiez le journal : $Destination\sauvegarde.log"
     exit 1
 }
 

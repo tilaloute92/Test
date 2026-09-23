@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Installe "Suivi Infra & Réseau" sur Windows Server 2022 (IIS).
 
@@ -25,7 +25,7 @@
 .PARAMETER Protocol
     http (défaut) ou https.
       http  : installation immédiate, sans certificat. L'application est servie en clair
-              sur le réseau interne — voir l'avertissement affiché en fin d'installation.
+              sur le réseau interne - voir l'avertissement affiché en fin d'installation.
       https : exige un certificat pour -HostName dans Ordinateur local\Personnel.
     Pour passer de http à https plus tard, utilisez Enable-SuiviInfraHttps.ps1 : il bascule
     la liaison, le pare-feu et la configuration du service sans toucher aux données.
@@ -99,7 +99,7 @@ function Write-Ok   { param([string] $Message) Write-Host "    [OK] $Message" -F
 function Write-Warn { param([string] $Message) Write-Host "    [!]  $Message" -ForegroundColor Yellow }
 
 # ---------------------------------------------------------------------------------------
-# 0. Contrôles préalables — on vérifie tout AVANT de modifier quoi que ce soit, pour ne
+# 0. Contrôles préalables - on vérifie tout AVANT de modifier quoi que ce soit, pour ne
 #    jamais laisser le serveur à moitié configuré.
 # ---------------------------------------------------------------------------------------
 Write-Step 'Contrôles préalables'
@@ -117,13 +117,13 @@ if (-not (Test-Path (Join-Path $PackageRoot 'site\index.html'))) {
 Write-Ok 'Contenu du paquet présent'
 
 if (-not (Get-WindowsFeature -Name Web-Server).Installed) {
-    Write-Warn "Le rôle IIS n'est pas installé — installation en cours (peut prendre une minute)."
+    Write-Warn "Le rôle IIS n'est pas installé - installation en cours (peut prendre une minute)."
     Install-WindowsFeature -Name Web-Server -IncludeManagementTools | Out-Null
 }
 Import-Module WebAdministration -ErrorAction Stop
 Write-Ok 'IIS présent'
 
-# Certificat : uniquement en HTTPS, et résolu maintenant — avant de créer quoi que ce soit.
+# Certificat : uniquement en HTTPS, et résolu maintenant - avant de créer quoi que ce soit.
 $cert = $null
 if ($IsHttps) {
     if ($CertificateThumbprint) {
@@ -142,7 +142,7 @@ if ($IsHttps) {
         } elseif ($candidates.Count -eq 0) {
             throw @"
 Aucun certificat valide trouvé pour '$HostName' dans Ordinateur local\Personnel.
-Importez-le d'abord (certlm.msc → Personnel → Certificats), puis relancez.
+Importez-le d'abord (certlm.msc -> Personnel -> Certificats), puis relancez.
 Voir DEPLOYMENT-reference.md, section 4.1.
 "@
         } else {
@@ -162,7 +162,7 @@ if ($WithService) {
     if ([int](($nodeVersion -replace '^v','') -split '\.')[0] -lt 18) {
         throw "Node.js $nodeVersion détecté : la version 18 ou supérieure est requise."
     }
-    Write-Ok "Node.js $nodeVersion — $($node.Source)"
+    Write-Ok "Node.js $nodeVersion - $($node.Source)"
 
     if (-not $NssmPath) {
         $nssmCmd = Get-Command nssm.exe -ErrorAction SilentlyContinue
@@ -174,7 +174,7 @@ if ($WithService) {
     Write-Ok "NSSM : $NssmPath"
 
     # Simple avertissement : si le port est déjà pris par autre chose, le service ne
-    # démarrera pas — autant le dire tout de suite. (On n'essaie pas de deviner *quel*
+    # démarrera pas - autant le dire tout de suite. (On n'essaie pas de deviner *quel*
     # processus écoute : sur une réinstallation c'est justement notre propre service,
     # que le script arrête un peu plus bas.)
     $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $ServicePort -ErrorAction SilentlyContinue)
@@ -184,7 +184,7 @@ if ($WithService) {
 }
 
 # ---------------------------------------------------------------------------------------
-# 1. Partie A — publication du site statique
+# 1. Partie A - publication du site statique
 # ---------------------------------------------------------------------------------------
 Write-Step "Publication du site vers $SitePath"
 
@@ -203,7 +203,7 @@ Copy-Item -Path (Join-Path $PackageRoot 'site\*') -Destination $SitePath -Recurs
 if ($configDiffers) {
     $backup = Join-Path $SitePath ("web.config.nouveau-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     Copy-Item $packagedConfig $backup -Force
-    Write-Warn "Un web.config personnalisé existe déjà : il a été conservé. La version du paquet est déposée à côté ($([IO.Path]::GetFileName($backup))) — comparez-les si cette version apporte des changements."
+    Write-Warn "Un web.config personnalisé existe déjà : il a été conservé. La version du paquet est déposée à côté ($([IO.Path]::GetFileName($backup))) - comparez-les si cette version apporte des changements."
 } else {
     Copy-Item $packagedConfig $existingConfig -Force
 }
@@ -241,7 +241,7 @@ $binding = Get-WebBinding -Name $SiteName -Protocol $Protocol -Port $Port -Error
 if (-not $binding) {
     if ($IsHttps) {
         # SNI (SslFlags 1) : permet plusieurs sites HTTPS avec des noms d'hôte différents sur
-        # la même IP — le cas courant quand ce serveur héberge déjà autre chose.
+        # la même IP - le cas courant quand ce serveur héberge déjà autre chose.
         New-WebBinding -Name $SiteName -Protocol https -Port $Port -HostHeader $HostName -SslFlags 1
     } else {
         New-WebBinding -Name $SiteName -Protocol http -Port $Port -HostHeader $HostName
@@ -267,7 +267,7 @@ if (-not $SkipFirewall) {
 }
 
 # ---------------------------------------------------------------------------------------
-# 3. Partie B — service d'authentification / multi-utilisateur
+# 3. Partie B - service d'authentification / multi-utilisateur
 # ---------------------------------------------------------------------------------------
 if ($WithService) {
     Write-Step "Installation du service « $ServiceName » vers $ServicePath"
@@ -305,11 +305,11 @@ if ($WithService) {
             "COOKIE_SECURE=$(if ($IsHttps) { 'true' } else { 'false' })",
             "CORS_ORIGIN=$BaseUrl",
             "",
-            "# SSO Microsoft (facultatif) — mêmes valeurs que dans l'onglet Paramètres :",
+            "# SSO Microsoft (facultatif) - mêmes valeurs que dans l'onglet Paramètres :",
             "# ENTRA_TENANT_ID=",
             "# ENTRA_CLIENT_ID=",
             "",
-            "# LDAP / Active Directory (facultatif) — se configure aussi depuis l'application :",
+            "# LDAP / Active Directory (facultatif) - se configure aussi depuis l'application :",
             "# LDAP_URL=ldaps://dc.monentreprise.local:636",
             "# LDAP_BIND_DN=",
             "# LDAP_BIND_PASSWORD=",
@@ -317,7 +317,7 @@ if ($WithService) {
         ) | Set-Content -Path $envPath -Encoding UTF8
         Write-Ok '.env généré (secret de session aléatoire)'
     } else {
-        # Le .env existant n'est jamais réécrit — il porte le secret de session et la
+        # Le .env existant n'est jamais réécrit - il porte le secret de session et la
         # configuration LDAP/SMTP saisies à la main. Deux valeurs font exception : elles
         # décrivent l'adresse du site, qui vient de changer si on a rejoué le script avec
         # un autre protocole ou un autre port. Les laisser périmées casserait la connexion
@@ -417,7 +417,7 @@ fonctionneront pas : le navigateur ne pourra pas joindre /api.
         # comme des fichiers par IIS (Node ne sait pas les servir).
         Set-WebConfigurationProperty -PSPath "IIS:\Sites\$SiteName" `
             -Filter "$ruleFilter/action" -Name 'url' -Value "http://127.0.0.1:$ServicePort/api/{R:1}"
-        Write-Ok "Règle « Suivi Infra - API » : /api/* → http://127.0.0.1:$ServicePort/api/*"
+        Write-Ok "Règle « Suivi Infra - API » : /api/* -> http://127.0.0.1:$ServicePort/api/*"
     }
 }
 
@@ -430,7 +430,7 @@ Write-Host "    Fichiers    : $SitePath"
 if ($WithService) {
     Write-Host "    Service     : $ServiceName ($ServicePath), port local $ServicePort"
     Write-Host ""
-    Write-Host "    Étape suivante — créer le premier compte administrateur :" -ForegroundColor Yellow
+    Write-Host "    Étape suivante - créer le premier compte administrateur :" -ForegroundColor Yellow
     Write-Host "      cd `"$ServicePath`""
     Write-Host "      node scripts\create-local-user.js admin `"MotDePasseSolide123!`" `"Administrateur`""
 }
@@ -440,7 +440,7 @@ Write-Host "      .\Test-SuiviInfra.ps1 -HostName $HostName -Protocol $Protocol 
 Write-Host ""
 
 if (-not $IsHttps) {
-    Write-Host "    ATTENTION — l'application est servie EN CLAIR." -ForegroundColor Red
+    Write-Host "    ATTENTION - l'application est servie EN CLAIR." -ForegroundColor Red
     Write-Host "    Mots de passe et données d'équipe circulent sans chiffrement sur le réseau." -ForegroundColor Yellow
     Write-Host "    Dès que le certificat pour $HostName est importé dans Ordinateur local\Personnel :" -ForegroundColor Yellow
     Write-Host "      .\Enable-SuiviInfraHttps.ps1 -HostName $HostName$(if ($WithService) { ' -WithService' })"

@@ -45,6 +45,23 @@ if find server/node_modules -name '*.node' | grep -q .; then
   exit 1
 fi
 
+echo "==> Vérification de l'encodage des scripts PowerShell"
+# Windows PowerShell 5.1 (celui de Windows Server) lit un fichier .ps1 sans BOM avec la page
+# de codes ANSI, pas en UTF-8. Un caractère comme "—" devient alors "â€”", dont le dernier
+# octet (0x94) est le guillemet fermant " en CP1252 : la chaîne se termine en plein milieu du
+# script et l'installation échoue sur une erreur de syntaxe incompréhensible. Le BOM est ce
+# qui dit à PowerShell 5.1 de lire de l'UTF-8 ; ce contrôle refuse de fabriquer un paquet
+# dont les scripts en seraient dépourvus.
+for f in packaging/scripts/*.ps1; do
+  if [ "$(head -c 3 "$f" | od -An -tx1 | tr -d ' ')" != "efbbbf" ]; then
+    echo "ERREUR : $f n'a pas de BOM UTF-8." >&2
+    echo "         Windows PowerShell 5.1 le lirait en ANSI et l'installation échouerait." >&2
+    echo "         Corrigez avec : printf '\\xef\\xbb\\xbf' | cat - \"$f\" > tmp && mv tmp \"$f\"" >&2
+    exit 1
+  fi
+done
+echo "    BOM UTF-8 présent sur tous les scripts"
+
 echo "==> Assemblage du paquet"
 # 1. Le site statique (Partie A) — c'est ce qui est publié par IIS.
 mkdir -p "$STAGE/site"

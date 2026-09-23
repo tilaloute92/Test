@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Bascule une installation "Suivi Infra & Réseau" de HTTP vers HTTPS.
 
@@ -87,7 +87,7 @@ if ($CertificateThumbprint) {
     } elseif ($candidates.Count -eq 0) {
         throw @"
 Aucun certificat valide trouvé pour '$HostName' dans Ordinateur local\Personnel.
-Importez-le d'abord (certlm.msc → Personnel → Certificats), puis relancez.
+Importez-le d'abord (certlm.msc -> Personnel -> Certificats), puis relancez.
 "@
     } else {
         $list = ($candidates | ForEach-Object { "  $($_.Thumbprint)  $($_.Subject)  (expire le $($_.NotAfter.ToString('yyyy-MM-dd')))" }) -join "`n"
@@ -113,7 +113,7 @@ if ($KeepHttp) {
         $info = $b.bindingInformation
         $bPort = ($info -split ':')[1]
         Remove-WebBinding -Name $SiteName -Protocol http -Port $bPort -HostHeader (($info -split ':')[2]) -ErrorAction SilentlyContinue
-        Write-Ok "Liaison HTTP $bPort retirée — accès en HTTPS uniquement"
+        Write-Ok "Liaison HTTP $bPort retirée - accès en HTTPS uniquement"
         if (-not $SkipFirewall) {
             $old = Get-NetFirewallRule -DisplayName "Suivi Infra - HTTP $bPort" -ErrorAction SilentlyContinue
             if ($old) { $old | Remove-NetFirewallRule; Write-Ok "Règle de pare-feu $bPort/TCP supprimée" }

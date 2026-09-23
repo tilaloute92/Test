@@ -7,6 +7,8 @@ REM  strategie d execution PowerShell et en demandant les elevations voulues.
 REM  Toute la logique est dans le .ps1, lisible et rejouable a la main.
 REM ---------------------------------------------------------------------------
 setlocal
+REM Console en UTF-8 : sans cela les accents des messages s affichent de travers.
+chcp 65001 >nul
 cd /d "%~dp0"
 
 net session >/dev/null 2>&1

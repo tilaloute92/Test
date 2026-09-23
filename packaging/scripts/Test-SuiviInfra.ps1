@@ -1,14 +1,14 @@
-<#
+﻿<#
 .SYNOPSIS
     Vérifie qu'une installation de "Suivi Infra & Réseau" est saine.
 
 .DESCRIPTION
     À lancer après l'installation, ou en cas de doute. Chaque contrôle affiche
-    OK / ÉCHEC et, en cas d'échec, ce qu'il faut regarder — le script ne modifie
+    OK / ÉCHEC et, en cas d'échec, ce qu'il faut regarder - le script ne modifie
     jamais rien.
 
 .PARAMETER Protocol
-    http (défaut) ou https — doit correspondre à l'installation en place.
+    http (défaut) ou https - doit correspondre à l'installation en place.
 
 .PARAMETER Port
     Port du site IIS. Défaut : 8081.
@@ -45,20 +45,20 @@ function Test-Item {
             Write-Host '[OK]' -ForegroundColor Green
         } else {
             Write-Host '[ÉCHEC]' -ForegroundColor Red
-            if ($Hint) { Write-Host "        → $Hint" -ForegroundColor Yellow }
+            if ($Hint) { Write-Host "        -> $Hint" -ForegroundColor Yellow }
             $script:Failures++
         }
     } catch {
         Write-Host '[ÉCHEC]' -ForegroundColor Red
-        Write-Host "        → $($_.Exception.Message)" -ForegroundColor Yellow
-        if ($Hint) { Write-Host "        → $Hint" -ForegroundColor Yellow }
+        Write-Host "        -> $($_.Exception.Message)" -ForegroundColor Yellow
+        if ($Hint) { Write-Host "        -> $Hint" -ForegroundColor Yellow }
         $script:Failures++
     }
 }
 
 $BaseUrl = "${Protocol}://${HostName}" + $(if (($Protocol -eq 'https' -and $Port -eq 443) -or ($Protocol -eq 'http' -and $Port -eq 80)) { '' } else { ":$Port" })
 
-Write-Host "`nVérification de l'installation — $BaseUrl`n" -ForegroundColor Cyan
+Write-Host "`nVérification de l'installation - $BaseUrl`n" -ForegroundColor Cyan
 
 Import-Module WebAdministration -ErrorAction SilentlyContinue
 
@@ -86,7 +86,7 @@ Test-Item 'En-têtes de sécurité présents' {
 
 Test-Item "Règle de pare-feu $Port/TCP" {
     (Get-NetFirewallRule -DisplayName "Suivi Infra - $($Protocol.ToUpper()) $Port" -ErrorAction SilentlyContinue) -ne $null
-} "Absente — normal si vos règles sont gérées par GPO (-SkipFirewall)."
+} "Absente - normal si vos règles sont gérées par GPO (-SkipFirewall)."
 
 if ($WithService) {
     Write-Host ''
@@ -94,7 +94,7 @@ if ($WithService) {
         $svc = Get-Service -Name 'SuiviInfraAuth' -ErrorAction SilentlyContinue
         if (-not $svc) { return $false }
         $svc.Status -eq 'Running'
-    } "Service absent ou arrêté — consultez C:\services\suivi-infra\service.err.log."
+    } "Service absent ou arrêté - consultez C:\services\suivi-infra\service.err.log."
 
     Test-Item 'Service en écoute en local' {
         (Invoke-RestMethod "http://127.0.0.1:$ServicePort/api/health" -TimeoutSec 5).ok -eq $true
@@ -102,7 +102,7 @@ if ($WithService) {
 
     Test-Item 'Relais /api par IIS (URL Rewrite + ARR)' {
         (Invoke-RestMethod "$BaseUrl/api/health" -TimeoutSec 10).ok -eq $true
-    } "Modules URL Rewrite/ARR manquants, proxy ARR désactivé, ou règle absente — voir INSTALL.md §5."
+    } "Modules URL Rewrite/ARR manquants, proxy ARR désactivé, ou règle absente - voir INSTALL.md §5."
 
     # C'est cette réponse qui fait basculer les navigateurs en mode client/serveur : sans le
     # champ 'mode', ils se croiraient sur une installation autonome et travailleraient chacun
@@ -133,7 +133,7 @@ Write-Host ''
 if ($script:Failures -eq 0) {
     Write-Host "Tous les contrôles sont au vert." -ForegroundColor Green
 } else {
-    Write-Host "$($script:Failures) contrôle(s) en échec — voir les indications ci-dessus." -ForegroundColor Red
+    Write-Host "$($script:Failures) contrôle(s) en échec - voir les indications ci-dessus." -ForegroundColor Red
 }
 Write-Host ''
 exit $script:Failures

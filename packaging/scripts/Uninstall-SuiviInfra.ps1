@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Désinstalle "Suivi Infra & Réseau" d'un serveur Windows Server 2022.
 
@@ -80,7 +80,7 @@ if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
     } else {
         Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue
         sc.exe delete $ServiceName | Out-Null
-        Write-Ok "Service $ServiceName supprimé (via sc.exe — nssm.exe introuvable)"
+        Write-Ok "Service $ServiceName supprimé (via sc.exe - nssm.exe introuvable)"
     }
 } else {
     Write-Warn 'Service absent'
@@ -103,7 +103,7 @@ if (-not (Test-Path $ServicePath)) {
         Remove-Item $ServicePath -Recurse -Force
         Write-Ok 'Service et données supprimés'
     } else {
-        Write-Warn "Suppression annulée — $ServicePath est conservé intact."
+        Write-Warn "Suppression annulée - $ServicePath est conservé intact."
     }
 } else {
     # On retire les fichiers programme mais on garde data\ et .env : une réinstallation
@@ -112,7 +112,7 @@ if (-not (Test-Path $ServicePath)) {
         $p = Join-Path $ServicePath $item
         if (Test-Path $p) { Remove-Item $p -Recurse -Force }
     }
-    Write-Ok "Programme retiré — données conservées dans $dataPath"
+    Write-Ok "Programme retiré - données conservées dans $dataPath"
     Write-Warn "Pour tout supprimer, relancez avec -RemoveData (après sauvegarde)."
 }
 

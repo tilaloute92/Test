@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Sauvegarde les données de "Suivi Infra & Réseau" (mode client/serveur).
 
@@ -40,7 +40,7 @@
 .PARAMETER IncludeEnv
     Sauvegarde aussi le fichier .env. Il contient le SECRET DE SESSION et la configuration
     LDAP : ne l'activez que si la destination est aussi protégée que le serveur lui-même.
-    Sans lui, une restauration est possible malgré tout — il faut simplement regénérer un
+    Sans lui, une restauration est possible malgré tout - il faut simplement regénérer un
     secret (tout le monde se reconnecte) et ressaisir la configuration LDAP.
 
 .PARAMETER LogPath
@@ -85,7 +85,7 @@ function Write-Log {
 function Get-DataVersion {
     param([string] $MetaFile)
     # Témoin de cohérence : ce compteur change à chaque écriture du service.
-    # Absent tant que le serveur n'a jamais été mis en service — on renvoie alors -1,
+    # Absent tant que le serveur n'a jamais été mis en service - on renvoie alors -1,
     # valeur stable qui ne déclenchera pas de fausse détection de modification.
     if (-not (Test-Path -LiteralPath $MetaFile)) { return -1 }
     try {
@@ -158,9 +158,9 @@ try {
         $envFile = Join-Path $ServicePath '.env'
         if (Test-Path -LiteralPath $envFile) {
             Copy-Item -LiteralPath $envFile -Destination (Join-Path $target 'env.sauvegarde') -Force
-            Write-Log "Fichier .env inclus — il contient le secret de session : la destination doit être protégée en conséquence." 'AVERT'
+            Write-Log "Fichier .env inclus - il contient le secret de session : la destination doit être protégée en conséquence." 'AVERT'
         } else {
-            Write-Log "Fichier .env introuvable dans $ServicePath — ignoré." 'AVERT'
+            Write-Log "Fichier .env introuvable dans $ServicePath - ignoré." 'AVERT'
         }
     }
 
@@ -168,7 +168,7 @@ try {
     # Écrite ici plutôt que dans la documentation seule : le jour d'un incident, c'est ce
     # dossier qu'on ouvre, et souvent sans avoir la procédure sous la main.
     $note = @"
-Sauvegarde "Suivi Infra & Réseau" — $stamp
+Sauvegarde "Suivi Infra & Réseau" - $stamp
 Source : $dataDir (serveur $(if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { 'inconnu' }))
 
 POUR RESTAURER
@@ -194,7 +194,7 @@ session et configuration LDAP) : à remettre sous le nom ".env" à la racine du 
         # L'âge est déduit du NOM du dossier, pas de sa date de création : celle-ci est
         # remise à zéro si l'arborescence de sauvegardes est un jour déplacée ou recopiée
         # (changement de baie, migration de partage), ce qui ferait alors tout conserver
-        # indéfiniment — ou, selon le sens, tout supprimer.
+        # indéfiniment - ou, selon le sens, tout supprimer.
         $old = @(Get-ChildItem -LiteralPath $Destination -Directory | Where-Object {
             if ($_.Name -notmatch '^(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})$') { return $false }
             $when = Get-Date -Year $Matches[1] -Month $Matches[2] -Day $Matches[3] `
@@ -213,6 +213,6 @@ session et configuration LDAP) : à remettre sous le nom ".env" à la racine du 
 
 } catch {
     Write-Log $_.Exception.Message 'ERREUR'
-    Write-Log "SAUVEGARDE EN ÉCHEC — les données de l'équipe ne sont pas protégées pour aujourd'hui." 'ERREUR'
+    Write-Log "SAUVEGARDE EN ÉCHEC - les données de l'équipe ne sont pas protégées pour aujourd'hui." 'ERREUR'
     exit 1
 }
