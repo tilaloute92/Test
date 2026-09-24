@@ -15,7 +15,8 @@ import { useStore } from './store/useStore';
 import { isAuthConfigured, signIn as msalLoginOnly, signInWithIdToken, trySilentAccount, signOut as msalSignOut } from './auth/msalClient';
 import { backendAvailable, backendLogout, finalizeSsoSession, getBackendSession, loginLdap, loginLocal, type BackendUser } from './auth/backendAuth';
 import { setSyncActive, onSyncError, setLinkState } from './lib/syncState';
-import { getMode, recordProbe, switchToLocalMode } from './lib/serverMode';
+import { forceServerMode, getMode, recordProbe, switchToLocalMode } from './lib/serverMode';
+import { requiresServer } from './lib/deployConfig';
 import { useAppMode, useLinkState } from './hooks/useAppStatus';
 import { initializeServer } from './lib/serverSync';
 import { useServerSync } from './hooks/useServerSync';
@@ -107,6 +108,10 @@ function useAuthGate() {
     let cancelled = false;
     (async () => {
       setChecking(true);
+      // Une installation faite avec le service l'exige : on fixe le mode AVANT la sonde,
+      // pour qu'un service injoignable donne « Serveur indisponible » et non une
+      // application ouverte à tous sur les données du navigateur.
+      if (requiresServer()) forceServerMode();
       const up = await backendAvailable();
       if (cancelled) return;
       // Mémorise l'architecture détectée : une fois qu'un navigateur a vu une installation

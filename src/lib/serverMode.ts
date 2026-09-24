@@ -103,6 +103,15 @@ export function recordProbe(reachable: boolean): AppMode {
 }
 
 /**
+ * Force le mode client/serveur, sans attendre de sonde : l'installation a été faite avec le
+ * service (voir src/lib/deployConfig.ts). Une panne du service n'ouvre alors jamais
+ * l'application en autonome, elle affiche l'écran d'indisponibilité.
+ */
+export function forceServerMode(): void {
+  setMode('serveur');
+}
+
+/**
  * Bascule volontaire vers le mode autonome, à n'appeler qu'après confirmation explicite de
  * l'utilisateur : les données affichées deviennent celles de ce navigateur, et ce qui sera
  * saisi ensuite ne rejoindra plus le serveur tant que le mode n'aura pas été redétecté.

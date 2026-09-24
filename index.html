@@ -5,6 +5,11 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Suivi Infra & Réseau</title>
+    <!-- Posé par l'installateur : dit si cette installation exige le service (voir
+         public/app-config.js). Chargé avant l'application, en script classique, pour
+         qu'IIS le serve toujours - un .json peut manquer de type MIME sur certaines
+         configurations, un .js jamais. -->
+    <script src="/app-config.js"></script>
   </head>
   <body>
     <div id="root"></div>

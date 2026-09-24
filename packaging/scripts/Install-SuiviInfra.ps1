@@ -237,6 +237,22 @@ if ($configDiffers) {
 }
 Write-Ok 'Fichiers du site publiés'
 
+# Drapeau lu par l'application au démarrage (voir public/app-config.js). Sur une
+# installation avec service, il interdit le repli silencieux en mode autonome : si le
+# service ou le relais /api tombe, l'application annonce « Serveur indisponible » au lieu
+# de s'ouvrir sans authentification sur les données du navigateur.
+$configJs = Join-Path $SitePath 'app-config.js'
+@(
+    "// Écrit par Install-SuiviInfra.ps1 le $(Get-Date -Format 'yyyy-MM-dd HH:mm'). Ne pas modifier :",
+    '// ce fichier est réécrit à chaque installation.',
+    "window.__SUIVI_INFRA__ = { requireServer: $(if ($WithService) { 'true' } else { 'false' }) };"
+) | Set-Content -Path $configJs -Encoding UTF8
+Write-Ok $(if ($WithService) {
+    "app-config.js : le service est exigé - pas d'ouverture sans authentification si /api tombe"
+} else {
+    'app-config.js : installation autonome'
+})
+
 # ---------------------------------------------------------------------------------------
 # 2. Site IIS + liaison HTTPS
 # ---------------------------------------------------------------------------------------
