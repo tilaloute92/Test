@@ -62,6 +62,26 @@ for f in packaging/scripts/*.ps1; do
 done
 echo "    BOM UTF-8 présent sur tous les scripts"
 
+echo "==> Vérification du contenu des scripts PowerShell"
+# Un script vide ou tronqué passe tous les contrôles précédents : il a bien un BOM, et il
+# s'analyse sans erreur de syntaxe puisqu'il n'y a rien à analyser. C'est arrivé — une
+# commande d'ajout de BOM qui ouvrait le fichier en écriture avant de le lire l'a réduit à
+# ses 3 octets de BOM, et le paquet est parti avec un script de restauration vide. Le seul
+# contrôle qui l'aurait attrapé est celui-ci : un script doit avoir une taille plausible et
+# contenir de vraies instructions.
+for f in packaging/scripts/*.ps1; do
+  taille=$(wc -c < "$f")
+  if [ "$taille" -lt 1000 ]; then
+    echo "ERREUR : $f ne fait que $taille octets - fichier vide ou tronqué." >&2
+    exit 1
+  fi
+  if ! grep -q 'param(' "$f" || ! grep -qE 'Write-Host|Write-Output|Set-|Copy-Item|Invoke-' "$f"; then
+    echo "ERREUR : $f ne contient ni bloc param() ni instruction exécutable." >&2
+    exit 1
+  fi
+done
+echo "    Contenu plausible sur tous les scripts"
+
 echo "==> Assemblage du paquet"
 # 1. Le site statique (Partie A) — c'est ce qui est publié par IIS.
 mkdir -p "$STAGE/site"
