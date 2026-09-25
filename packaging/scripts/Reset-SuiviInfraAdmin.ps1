@@ -69,7 +69,9 @@ if ($Password.Length -lt 8) { throw 'Le mot de passe doit faire au moins 8 carac
 $env:SUIVI_INFRA_PASSWORD = $Password
 try {
     Push-Location $ServicePath
-    & $node.Source 'scripts\create-local-user.js' $UserName '' $FullName
+    # --name : un argument vide serait escamoté par Windows PowerShell 5.1 et le nom complet
+    # prendrait la place du mot de passe.
+    & $node.Source 'scripts\create-local-user.js' $UserName '--name' $FullName
     if ($LASTEXITCODE -ne 0) { throw "La création du compte a échoué (code $LASTEXITCODE)." }
 } finally {
     Pop-Location

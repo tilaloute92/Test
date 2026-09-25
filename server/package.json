@@ -7,7 +7,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "create-user": "node scripts/create-local-user.js"
+    "create-user": "node scripts/create-local-user.js",
+    "list-users": "node scripts/list-local-users.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

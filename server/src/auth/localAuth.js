@@ -13,6 +13,20 @@ const FILE = 'users.json';
 export const DEFAULT_ADMIN = { username: 'admin', password: 'SuiviInfra2026!', name: 'Administrateur' };
 
 /**
+ * Mots de passe que l'on doit considérer comme connus de tous sur le compte « admin ».
+ *
+ * Le premier est le mot de passe par défaut assumé. Le second est un accident : dans la
+ * version ad871b1 de l'installateur, le mot de passe était transmis à Node par un argument
+ * positionnel vide, que Windows PowerShell 5.1 escamote ; le nom complet « Administrateur »
+ * glissait à sa place et devenait le mot de passe du compte. Le défaut est corrigé, mais les
+ * installations déjà faites gardent ce mot de passe — désormais public, puisqu'il est écrit
+ * ici et dans les notes de version. Il doit donc déclencher le même bandeau rouge que
+ * l'autre : le danger est identique, et l'administrateur qui a subi le bogue est précisément
+ * celui qui ignore quel mot de passe protège son application.
+ */
+const MOTS_DE_PASSE_PUBLICS = [DEFAULT_ADMIN.password, 'Administrateur'];
+
+/**
  * Comptes locaux : server/data/users.json, créé automatiquement (liste vide)
  * au premier démarrage. Chaque entrée ne contient jamais le mot de passe en
  * clair — seulement son empreinte bcrypt. Gérés depuis l'application
@@ -44,7 +58,10 @@ export async function verifyLocalLogin(username, password) {
 export async function usesDefaultPassword() {
   const user = loadUsers().find((u) => u.username.toLowerCase() === DEFAULT_ADMIN.username);
   if (!user) return false;
-  return bcrypt.compare(DEFAULT_ADMIN.password, user.passwordHash);
+  for (const candidat of MOTS_DE_PASSE_PUBLICS) {
+    if (await bcrypt.compare(candidat, user.passwordHash)) return true;
+  }
+  return false;
 }
 
 export async function upsertLocalUser(username, password, name) {

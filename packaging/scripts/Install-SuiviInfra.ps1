@@ -561,7 +561,10 @@ if ($WithService) {
         $env:SUIVI_INFRA_PASSWORD = $motDePasse
         try {
             Push-Location $ServicePath
-            & $nodeExe 'scripts\create-local-user.js' $identifiant '' $nomComplet
+            # --name, et surtout pas un mot de passe positionnel vide : Windows PowerShell 5.1
+            # escamote les arguments vides transmis aux programmes externes, si bien que le nom
+            # complet glisserait à la place du mot de passe et créerait un compte inutilisable.
+            & $nodeExe 'scripts\create-local-user.js' $identifiant '--name' $nomComplet
             if ($LASTEXITCODE -eq 0) {
                 Write-Host ''
                 Write-Host '    +------------------------------------------------------------+' -ForegroundColor Yellow

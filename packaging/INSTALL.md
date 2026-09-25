@@ -223,6 +223,32 @@ Connectez-vous avec ce compte, onglet **Compte local**.
 
 Utilisez `-AdminUser` pour un autre identifiant, ou `-SkipAdminAccount` pour n'en créer aucun.
 
+> ### Vous avez installé la version `ad871b1` ?
+>
+> Cette version-là créait le compte avec le mot de passe **`Administrateur`**, et non
+> `SuiviInfra2026!` : le mot de passe était transmis par un argument vide, que Windows
+> PowerShell 5.1 escamote, si bien que le nom complet glissait à sa place. Le symptôme est
+> « Identifiant ou mot de passe incorrect » avec les identifiants documentés.
+>
+> Connectez-vous avec `admin` / `Administrateur`, puis changez le mot de passe
+> immédiatement — il est public au même titre que l'autre, et l'application affiche le même
+> bandeau rouge tant qu'il est en place. Ou, sans attendre, réinitialisez-le :
+> `.\Reset-SuiviInfraAdmin.ps1` depuis une console administrateur.
+
+### Quels comptes existent ?
+
+Quand la connexion est refusée, la première chose à trancher est de savoir si c'est
+l'identifiant ou le mot de passe qui est faux. Console **administrateur** :
+
+```powershell
+cd C:\services\suivi-infra
+npm run list-users
+```
+
+Le script affiche les identifiants existants — jamais les mots de passe, qui ne sont stockés
+que sous forme d'empreinte. `Test-SuiviInfra.ps1` les affiche également, lorsqu'il est lancé
+depuis une console élevée.
+
 ### Mot de passe oublié, ou personne ne peut se connecter
 
 Console **administrateur** :
@@ -266,9 +292,15 @@ n'apparaisse ni dans la liste des processus ni dans l'historique du terminal :
 
 ```powershell
 $env:SUIVI_INFRA_PASSWORD = 'MotDePasseSolide123!'
-node scripts\create-local-user.js rnelson "" "R. Nelson"
+node scripts\create-local-user.js rnelson --name "R. Nelson"
 Remove-Item Env:\SUIVI_INFRA_PASSWORD
 ```
+
+> Le nom complet se passe par `--name`, **jamais** comme troisième argument après un mot de
+> passe vide : Windows PowerShell 5.1 supprime les arguments vides transmis aux programmes
+> externes, et le nom complet prendrait alors la place du mot de passe. La commande refuse
+> désormais de créer un compte quand un mot de passe lui parvient à la fois par argument et
+> par `SUIVI_INFRA_PASSWORD` — c'est la signature de ce décalage.
 
 ### Comptes Active Directory
 

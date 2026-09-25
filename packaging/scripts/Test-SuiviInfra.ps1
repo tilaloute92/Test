@@ -193,6 +193,21 @@ if ($WithService) {
             if (-not $raw) { return $false }
             @($raw | ConvertFrom-Json).Count -ge 1
         } "Aucun compte : relancez Install-SuiviInfra.ps1 -WithService, il le crée à la fin."
+
+        # Et surtout : LESQUELS. « Identifiant ou mot de passe incorrect » ne dit pas lequel
+        # des deux est faux ; voir la liste des identifiants existants tranche immédiatement.
+        $f = Join-Path $ServicePath 'data\users.json'
+        if (Test-Path $f) {
+            try {
+                $comptes = @((Get-Content $f -Raw | ConvertFrom-Json))
+                if ($comptes.Count -gt 0) {
+                    Write-Host ('    Identifiants locaux : ' + (($comptes | ForEach-Object { $_.username }) -join ', ')) -ForegroundColor Gray
+                    Write-Host '    Mot de passe oublié : .\Reset-SuiviInfraAdmin.ps1 (console administrateur)' -ForegroundColor Gray
+                }
+            } catch {
+                Write-Warn "data\users.json illisible : $($_.Exception.Message)"
+            }
+        }
     }
 }
 
