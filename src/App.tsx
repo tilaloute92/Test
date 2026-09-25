@@ -501,6 +501,12 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      {authGate.session?.defaultPassword && (
+        <div className="bg-red-600 px-4 py-2 text-center text-sm font-medium text-white print:hidden">
+          Le compte « admin » utilise encore le mot de passe par défaut, qui est public. Changez-le dans
+          Paramètres → Authentification locale : tant qu'il est en place, n'importe qui peut ouvrir cette application.
+        </div>
+      )}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur print:hidden dark:border-slate-800 dark:bg-slate-950/90">
         <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3">
           <div className="flex items-center gap-2">

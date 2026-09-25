@@ -203,9 +203,36 @@ Les sessions ouvertes en HTTP sont invalidées : chacun devra se reconnecter une
 
 ## 5. Le premier compte (scénario B uniquement)
 
-**Le script s'en charge.** En fin d'installation, il demande un identifiant et un mot de
-passe (saisi masqué, confirmé deux fois) et crée le compte. Vous n'avez rien à taper ensuite :
-connectez-vous à l'application avec ce compte, onglet **Compte local**.
+**Le script s'en charge**, sans rien demander. S'il n'existe aucun compte, il crée :
+
+| | |
+| --- | --- |
+| Identifiant | `admin` |
+| Mot de passe | `SuiviInfra2026!` |
+
+Connectez-vous avec ce compte, onglet **Compte local**.
+
+> ### ⚠ Ce mot de passe est public
+>
+> Il figure dans cette documentation et dans le code : tant qu'il n'est pas changé, toute
+> personne connaissant le produit peut ouvrir votre application. **Changez-le à la première
+> connexion**, dans Paramètres → Authentification locale.
+>
+> L'application affiche un bandeau rouge en haut de chaque écran tant que c'est le cas, pour
+> tout le monde. Il disparaît dès que le mot de passe est changé.
+
+Utilisez `-AdminUser` pour un autre identifiant, ou `-SkipAdminAccount` pour n'en créer aucun.
+
+### Mot de passe oublié, ou personne ne peut se connecter
+
+Console **administrateur** :
+
+```powershell
+.\Reset-SuiviInfraAdmin.ps1
+```
+
+Le mot de passe est demandé de façon masquée. `-UserName` vise un autre compte que `admin`.
+Le script ne touche ni au site, ni au service, ni aux données d'équipe.
 
 Les comptes suivants se gèrent depuis l'application, dans **Paramètres → Authentification
 locale** — plus besoin de repasser par le serveur.

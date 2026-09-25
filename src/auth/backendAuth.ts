@@ -11,6 +11,9 @@ export interface BackendUser {
   username: string;
   name: string;
   method?: 'local' | 'ldap' | 'sso';
+  /** Le compte « admin » tourne encore avec le mot de passe public livré par l'installateur.
+   *  L'application l'affiche en bandeau tant que ce n'est pas corrigé. */
+  defaultPassword?: boolean;
 }
 
 export interface LdapConfig {

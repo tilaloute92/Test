@@ -546,51 +546,39 @@ if ($WithService) {
     if ($aDesComptes) {
         Write-Ok 'Des comptes locaux existent déjà - aucun compte créé'
     } elseif ($SkipAdminAccount) {
-        Write-Warn "Aucun compte local. Créez le premier depuis une console ADMINISTRATEUR : cd `"$ServicePath`" ; node scripts\create-local-user.js <identifiant> <mot-de-passe> `"<Nom complet>`""
+        Write-Warn "Aucun compte local. Créez-en un depuis une console ADMINISTRATEUR : .\Reset-SuiviInfraAdmin.ps1"
     } else {
-        Write-Step 'Premier compte local'
-        if (-not $AdminUser) {
-            Write-Host "    Ce compte servira à ouvrir l'application la première fois." -ForegroundColor Yellow
-            $AdminUser = (Read-Host '    Identifiant').Trim()
-        }
-        if (-not $AdminUser) {
-            Write-Warn 'Aucun identifiant saisi - compte non créé. Voir INSTALL.md pour le créer plus tard.'
-        } else {
-            $motDePasse = $null
-            foreach ($essai in 1..3) {
-                $s1 = Read-Host '    Mot de passe (8 caractères minimum)' -AsSecureString
-                $s2 = Read-Host '    Confirmez le mot de passe' -AsSecureString
-                # Le mot de passe ne transite jamais par la ligne de commande : il part au
-                # processus Node par une variable d'environnement, invisible dans la liste
-                # des processus et dans l'historique PowerShell.
-                $p1 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
-                    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s1))
-                $p2 = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
-                    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($s2))
-                if ($p1 -ne $p2) { Write-Warn 'Les deux saisies diffèrent.'; continue }
-                if ($p1.Length -lt 8) { Write-Warn 'Trop court : 8 caractères minimum.'; continue }
-                $motDePasse = $p1
-                break
-            }
+        Write-Step 'Compte de première connexion'
+        # Compte créé sans rien demander : la saisie interactive d'un mot de passe est le
+        # dernier endroit où une installation peut échouer ou être sautée par mégarde, et on
+        # se retrouve alors avec une application installée mais inaccessible. Le mot de passe
+        # par défaut est public ; l'application affiche un bandeau rouge tant qu'il est en
+        # place, ce qui rend l'oubli difficile.
+        $identifiant = if ($AdminUser) { $AdminUser } else { 'admin' }
+        $motDePasse  = 'SuiviInfra2026!'
+        $nomComplet  = if ($AdminName) { $AdminName } else { 'Administrateur' }
 
-            if (-not $motDePasse) {
-                Write-Warn 'Compte non créé (mot de passe non confirmé). Voir INSTALL.md pour le créer plus tard.'
+        $env:SUIVI_INFRA_PASSWORD = $motDePasse
+        try {
+            Push-Location $ServicePath
+            & $nodeExe 'scripts\create-local-user.js' $identifiant '' $nomComplet
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host ''
+                Write-Host '    +------------------------------------------------------------+' -ForegroundColor Yellow
+                Write-Host '    |  COMPTE DE PREMIERE CONNEXION                               |' -ForegroundColor Yellow
+                Write-Host ("    |    Identifiant : {0,-42}|" -f $identifiant) -ForegroundColor White
+                Write-Host ("    |    Mot de passe : {0,-41}|" -f $motDePasse) -ForegroundColor White
+                Write-Host '    |                                                            |' -ForegroundColor Yellow
+                Write-Host '    |  Ce mot de passe est PUBLIC. Changez-le a la premiere       |' -ForegroundColor Red
+                Write-Host '    |  connexion : Parametres -> Authentification locale.         |' -ForegroundColor Red
+                Write-Host '    +------------------------------------------------------------+' -ForegroundColor Yellow
+                Write-Host ''
             } else {
-                $env:SUIVI_INFRA_PASSWORD = $motDePasse
-                try {
-                    Push-Location $ServicePath
-                    & $nodeExe 'scripts\create-local-user.js' $AdminUser '' $(if ($AdminName) { $AdminName } else { $AdminUser })
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Ok "Compte « $AdminUser » créé"
-                    } else {
-                        Write-Warn "La création du compte a échoué (code $LASTEXITCODE). Créez-le à la main, voir INSTALL.md."
-                    }
-                } finally {
-                    Pop-Location
-                    Remove-Item Env:\SUIVI_INFRA_PASSWORD -ErrorAction SilentlyContinue
-                    $motDePasse = $null
-                }
+                Write-Warn "La création du compte a échoué (code $LASTEXITCODE). Lancez .\Reset-SuiviInfraAdmin.ps1 depuis une console administrateur."
             }
+        } finally {
+            Pop-Location
+            Remove-Item Env:\SUIVI_INFRA_PASSWORD -ErrorAction SilentlyContinue
         }
     }
 
@@ -638,13 +626,8 @@ Write-Host "    Fichiers    : $SitePath"
 if ($WithService) {
     Write-Host "    Service     : $ServiceName ($ServicePath), port local $ServicePort$(if (-not $UseNssm) { ' - tâche planifiée Windows' })"
     Write-Host ""
-    if ($AdminUser) {
-        Write-Host "    Connectez-vous avec le compte « $AdminUser » (onglet « Compte local »)." -ForegroundColor Yellow
-    } else {
-        Write-Host "    Étape suivante - créer le premier compte, depuis une console ADMINISTRATEUR :" -ForegroundColor Yellow
-        Write-Host "      cd `"$ServicePath`""
-        Write-Host "      node scripts\create-local-user.js admin `"MotDePasseSolide123!`" `"Administrateur`""
-    }
+    Write-Host "    Connexion : onglet « Compte local », identifiant « $(if ($AdminUser) { $AdminUser } else { 'admin' }) »." -ForegroundColor Yellow
+    Write-Host "    Mot de passe oublié ou compte à recréer : .\Reset-SuiviInfraAdmin.ps1" -ForegroundColor Yellow
 }
 Write-Host ""
 Write-Host "    Vérification :" -ForegroundColor Yellow

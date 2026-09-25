@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { verifyLocalLogin, listLocalUsers, upsertLocalUser, removeLocalUser } from '../auth/localAuth.js';
+import { verifyLocalLogin, listLocalUsers, upsertLocalUser, removeLocalUser, usesDefaultPassword } from '../auth/localAuth.js';
 import { verifyLdapLogin, getLdapConfig, setLdapConfig } from '../auth/ldapAuth.js';
 import { verifySsoToken } from '../auth/ssoAuth.js';
 import { issueSession, clearSession, requireAuth, currentUser } from '../auth/session.js';
@@ -24,7 +24,7 @@ authRouter.post('/local', loginLimiter, async (req, res) => {
   const user = await verifyLocalLogin(username, password);
   if (!user) return res.status(401).json({ error: 'Identifiant ou mot de passe incorrect.' });
   issueSession(res, { ...user, method: 'local' });
-  res.json({ username: user.username, name: user.name });
+  res.json({ username: user.username, name: user.name, method: 'local', defaultPassword: await usesDefaultPassword() });
 });
 
 authRouter.post('/ldap', loginLimiter, async (req, res) => {
@@ -34,7 +34,7 @@ authRouter.post('/ldap', loginLimiter, async (req, res) => {
     const user = await verifyLdapLogin(username, password);
     if (!user) return res.status(401).json({ error: 'Identifiant ou mot de passe incorrect.' });
     issueSession(res, { ...user, method: 'ldap' });
-    res.json({ username: user.username, name: user.name });
+    res.json({ username: user.username, name: user.name, method: 'ldap', defaultPassword: await usesDefaultPassword() });
   } catch (err) {
     res.status(503).json({ error: err.message });
   }
@@ -46,7 +46,7 @@ authRouter.post('/sso', async (req, res) => {
   try {
     const user = await verifySsoToken(idToken);
     issueSession(res, { ...user, method: 'sso' });
-    res.json({ username: user.username, name: user.name });
+    res.json({ username: user.username, name: user.name, method: 'sso', defaultPassword: await usesDefaultPassword() });
   } catch (err) {
     res.status(401).json({ error: `Jeton SSO invalide : ${err.message}` });
   }
@@ -57,10 +57,12 @@ authRouter.post('/logout', (_req, res) => {
   res.json({ ok: true });
 });
 
-authRouter.get('/me', (req, res) => {
+authRouter.get('/me', async (req, res) => {
   const user = currentUser(req);
   if (!user) return res.status(401).json({ error: 'Non authentifié.' });
-  res.json({ username: user.sub, name: user.name, method: user.method });
+  // defaultPassword : le compte « admin » tourne encore avec le mot de passe public livré
+  // par l'installateur. L'application l'affiche en bandeau tant que c'est le cas.
+  res.json({ username: user.sub, name: user.name, method: user.method, defaultPassword: await usesDefaultPassword() });
 });
 
 // --- Gestion des comptes locaux (protégée : il faut déjà être connecté) ---
