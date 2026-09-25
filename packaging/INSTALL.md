@@ -249,6 +249,37 @@ Le script affiche les identifiants existants — jamais les mots de passe, qui n
 que sous forme d'empreinte. `Test-SuiviInfra.ps1` les affiche également, lorsqu'il est lancé
 depuis une console élevée.
 
+### « Identifiant ou mot de passe incorrect » avec les identifiants attendus
+
+Ce message vient du service, pas du navigateur : il prouve déjà que le service tourne et que
+le relais `/api` fonctionne. Il ne reste que deux possibilités — le compte n'existe pas dans
+le dossier que le service lit réellement, ou son mot de passe n'est pas celui que vous
+croyez. Un seul script tranche, console **administrateur** :
+
+```powershell
+.\Repair-SuiviInfraLogin.ps1
+```
+
+Il retrouve le dossier réellement utilisé par le service **depuis la tâche planifiée** (et
+non depuis un chemin supposé : une installation antérieure ailleurs suffit à ce qu'un compte
+soit créé dans un dossier que le service ne lit jamais), affiche les comptes présents, fixe
+le mot de passe que vous saisissez, puis **le vérifie en appelant la vraie API de
+connexion**. Écrire le fichier ne prouve rien ; seul un `200` sur `/api/auth/local` prouve
+que vous pourrez entrer.
+
+`-DiagnoseOnly` affiche le diagnostic sans rien modifier.
+
+> #### Attention au blocage après plusieurs essais
+>
+> Le service refuse plus de **10 tentatives par quart d'heure** et par adresse. Passé ce
+> seuil, même le bon mot de passe est rejeté — avec un autre message, « Trop de tentatives de
+> connexion ». Le compteur vit en mémoire : redémarrer le service le remet à zéro
+> immédiatement.
+>
+> ```powershell
+> Restart-ScheduledTask -TaskName SuiviInfraService
+> ```
+
 ### Mot de passe oublié, ou personne ne peut se connecter
 
 Console **administrateur** :

@@ -631,6 +631,7 @@ if ($WithService) {
     Write-Host ""
     Write-Host "    Connexion : onglet « Compte local », identifiant « $(if ($AdminUser) { $AdminUser } else { 'admin' }) »." -ForegroundColor Yellow
     Write-Host "    Mot de passe oublié ou compte à recréer : .\Reset-SuiviInfraAdmin.ps1" -ForegroundColor Yellow
+    Write-Host "    Connexion refusée malgré ces identifiants : .\Repair-SuiviInfraLogin.ps1" -ForegroundColor Yellow
 }
 Write-Host ""
 Write-Host "    Vérification :" -ForegroundColor Yellow
