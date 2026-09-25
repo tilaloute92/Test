@@ -133,6 +133,81 @@ if ($WithService) {
     } "Créez le premier compte : node scripts\create-local-user.js admin `"MotDePasse!`" `"Administrateur`""
 }
 
+# ---------------------------------------------------------------------------------------
+# Diagnostic du relais /api : quand la chaîne est cassée, dire OÙ.
+#
+# « Serveur indisponible » côté navigateur a quatre causes possibles, qui demandent quatre
+# gestes différents. Les tests ci-dessus disent que ça ne marche pas ; cette section dit
+# lequel des quatre maillons a lâché, pour ne pas laisser chercher au hasard.
+# ---------------------------------------------------------------------------------------
+if ($WithService) {
+    $relaisOk = $false
+    try { $relaisOk = (Invoke-RestMethod "$BaseUrl/api/health" -TimeoutSec 10).ok -eq $true } catch { }
+
+    if (-not $relaisOk) {
+        Write-Host ''
+        Write-Host 'DIAGNOSTIC DU RELAIS /api' -ForegroundColor Cyan
+        Write-Host ('-' * 60)
+
+        # 1. Le service tourne-t-il et répond-il en local ?
+        $localOk = $false
+        try { $localOk = (Invoke-RestMethod "http://127.0.0.1:$ServicePort/api/health" -TimeoutSec 5).ok -eq $true } catch { }
+
+        if (-not $localOk) {
+            Write-Host '  [X] Le service ne répond pas sur 127.0.0.1 : le problème est AVANT IIS.' -ForegroundColor Red
+            $svc  = Get-Service -Name 'SuiviInfraAuth' -ErrorAction SilentlyContinue
+            $task = Get-ScheduledTask -TaskName 'SuiviInfraAuth' -ErrorAction SilentlyContinue
+            if ($svc)  { Write-Host "      Service Windows  : $($svc.Status)" }
+            if ($task) { Write-Host "      Tâche planifiée  : $($task.State)" }
+            if (-not $svc -and -not $task) {
+                Write-Host '      Ni service ni tâche : relancez Install-SuiviInfra.ps1 -WithService.' -ForegroundColor Yellow
+            } else {
+                Write-Host '      Journal : C:\services\suivi-infra\service.log (les dernières lignes disent pourquoi Node s''arrête).' -ForegroundColor Yellow
+                Write-Host '      Relancer : Start-ScheduledTask -TaskName SuiviInfraAuth   (ou Restart-Service SuiviInfraAuth)' -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host '  [OK] Le service répond sur 127.0.0.1 : le problème est DANS IIS.' -ForegroundColor Green
+
+            $rewrite = Test-Path 'HKLM:\SOFTWARE\Microsoft\IIS Extensions\URL Rewrite'
+            $arr     = Test-Path 'HKLM:\SOFTWARE\Microsoft\IIS Extensions\Application Request Routing'
+            Write-Host ("  [{0}] Module URL Rewrite" -f $(if ($rewrite) { 'OK' } else { 'X ' })) -ForegroundColor $(if ($rewrite) { 'Green' } else { 'Red' })
+            Write-Host ("  [{0}] Module Application Request Routing (ARR)" -f $(if ($arr) { 'OK' } else { 'X ' })) -ForegroundColor $(if ($arr) { 'Green' } else { 'Red' })
+
+            if (-not $rewrite -or -not $arr) {
+                Write-Host ''
+                Write-Host '      Ce sont eux qui manquent. Téléchargez-les sur https://www.iis.net/downloads :' -ForegroundColor Yellow
+                if (-not $rewrite) { Write-Host '        - URL Rewrite 2.1' -ForegroundColor Yellow }
+                if (-not $arr)     { Write-Host '        - Application Request Routing 3.0' -ForegroundColor Yellow }
+                Write-Host '      Puis relancez Install-SuiviInfra.ps1 avec les mêmes options : la règle sera créée.' -ForegroundColor Yellow
+            } else {
+                # Modules présents : reste le proxy ARR au niveau serveur, et la règle du site.
+                $proxyOn = $false
+                try {
+                    $proxyOn = [bool]::Parse((Get-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' `
+                        -Filter 'system.webServer/proxy' -Name 'enabled').Value)
+                } catch { }
+                Write-Host ("  [{0}] Proxy ARR activé au niveau serveur" -f $(if ($proxyOn) { 'OK' } else { 'X ' })) -ForegroundColor $(if ($proxyOn) { 'Green' } else { 'Red' })
+                if (-not $proxyOn) {
+                    Write-Host '      Corriger : Set-WebConfigurationProperty -PSPath MACHINE/WEBROOT/APPHOST -Filter system.webServer/proxy -Name enabled -Value True' -ForegroundColor Yellow
+                }
+
+                $regle = $null
+                try {
+                    $regle = Get-WebConfigurationProperty -PSPath "IIS:\Sites\$SiteName" `
+                        -Filter "system.webServer/rewrite/rules/rule[@name='Suivi Infra - API']/action" -Name 'url' -ErrorAction SilentlyContinue
+                } catch { }
+                if ($regle -and $regle.Value) {
+                    Write-Host "  [OK] Règle « Suivi Infra - API » -> $($regle.Value)" -ForegroundColor Green
+                } else {
+                    Write-Host '  [X ] Règle « Suivi Infra - API » absente du site.' -ForegroundColor Red
+                    Write-Host '      Corriger : relancez Install-SuiviInfra.ps1 avec les mêmes options.' -ForegroundColor Yellow
+                }
+            }
+        }
+        Write-Host ('-' * 60)
+    }
+}
+
 Write-Host ''
 if ($script:Failures -eq 0) {
     Write-Host "Tous les contrôles sont au vert." -ForegroundColor Green
