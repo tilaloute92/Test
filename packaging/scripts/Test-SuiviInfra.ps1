@@ -30,7 +30,8 @@ param(
     [int]    $Port = 8081,
     [string] $SiteName = 'Suivi Infra & Reseau',
     [switch] $WithService,
-    [int]    $ServicePort = 4000
+    [int]    $ServicePort = 4000,
+    [string] $ServicePath = 'C:\services\suivi-infra'
 )
 
 $ErrorActionPreference = 'Continue'
@@ -58,6 +59,14 @@ function Test-Item {
 
 $BaseUrl = "${Protocol}://${HostName}" + $(if (($Protocol -eq 'https' -and $Port -eq 443) -or ($Protocol -eq 'http' -and $Port -eq 80)) { '' } else { ":$Port" })
 
+# Un proxy d'entreprise configuré sur le serveur détourne les appels de PowerShell, y compris
+# vers un nom interne : la connexion est alors coupée par le proxy et TOUS les contrôles web
+# échouent sur « La connexion sous-jacente a été fermée », alors que le site répond
+# parfaitement depuis un navigateur — celui-ci ayant, lui, ses exceptions pour les adresses
+# locales. On sort donc du proxy le temps des contrôles.
+$proxyInitial = [System.Net.WebRequest]::DefaultWebProxy
+[System.Net.WebRequest]::DefaultWebProxy = $null
+
 Write-Host "`nVérification de l'installation - $BaseUrl`n" -ForegroundColor Cyan
 
 # L'accès à la configuration d'IIS exige une console élevée : sans cela, le fournisseur
@@ -66,6 +75,14 @@ Write-Host "`nVérification de l'installation - $BaseUrl`n" -ForegroundColor Cya
 $estAdmin = (New-Object Security.Principal.WindowsPrincipal(
     [Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $estAdmin) {
+    Write-Host '  ATTENTION - console NON ELEVEE.' -ForegroundColor Red
+    Write-Host '  Les contrôles IIS et l''accès au dossier de données sont impossibles ;' -ForegroundColor Yellow
+    Write-Host '  ce rapport sera incomplet et certains échecs ne refléteront pas la réalité.' -ForegroundColor Yellow
+    Write-Host '  Rouvrez PowerShell par clic droit -> « Exécuter en tant qu''administrateur ».' -ForegroundColor Yellow
+    Write-Host ''
+}
 
 $iisDispo = $false
 $iisRaison = ''
@@ -138,7 +155,7 @@ if ($WithService) {
         $task = Get-ScheduledTask -TaskName 'SuiviInfraAuth' -ErrorAction SilentlyContinue
         if ($task -and $task.State -eq 'Running') { return $true }
         $false
-    } "Ni service Windows ni tâche planifiée en cours - consultez C:\services\suivi-infra\service.log."
+    } "Ni service Windows ni tâche planifiée en cours - consultez $ServicePath\service.log."
 
     Test-Item 'Service en écoute en local' {
         (Invoke-RestMethod "http://127.0.0.1:$ServicePort/api/health" -TimeoutSec 5).ok -eq $true
@@ -164,13 +181,19 @@ if ($WithService) {
         }
     } "Les données d'équipe doivent être refusées (401) sans session authentifiée."
 
-    Test-Item 'Au moins un compte local existe' {
-        $f = 'C:\services\suivi-infra\data\users.json'
-        if (-not (Test-Path $f)) { return $false }
-        $raw = (Get-Content $f -Raw).Trim()
-        if (-not $raw) { return $false }
-        @($raw | ConvertFrom-Json).Count -ge 1
-    } "Créez le premier compte : node scripts\create-local-user.js admin `"MotDePasse!`" `"Administrateur`""
+    # Le dossier de données est réservé aux administrateurs : sans élévation, on ne peut pas
+    # savoir s'il contient des comptes. Annoncer « aucun compte » serait faux.
+    if (-not $estAdmin) {
+        Write-Host ("  {0,-52}[non vérifiable sans élévation]" -f 'Au moins un compte local existe') -ForegroundColor Yellow
+    } else {
+        Test-Item 'Au moins un compte local existe' {
+            $f = Join-Path $ServicePath 'data\users.json'
+            if (-not (Test-Path $f)) { return $false }
+            $raw = (Get-Content $f -Raw).Trim()
+            if (-not $raw) { return $false }
+            @($raw | ConvertFrom-Json).Count -ge 1
+        } "Aucun compte : relancez Install-SuiviInfra.ps1 -WithService, il le crée à la fin."
+    }
 }
 
 # ---------------------------------------------------------------------------------------
@@ -202,7 +225,7 @@ if ($WithService) {
             if (-not $svc -and -not $task) {
                 Write-Host '      Ni service ni tâche : relancez Install-SuiviInfra.ps1 -WithService.' -ForegroundColor Yellow
             } else {
-                Write-Host '      Journal : C:\services\suivi-infra\service.log (les dernières lignes disent pourquoi Node s''arrête).' -ForegroundColor Yellow
+                Write-Host "      Journal : $ServicePath\service.log (les dernières lignes disent pourquoi Node s'arrête)." -ForegroundColor Yellow
                 Write-Host '      Relancer : Start-ScheduledTask -TaskName SuiviInfraAuth   (ou Restart-Service SuiviInfraAuth)' -ForegroundColor Yellow
             }
         } else {
@@ -254,5 +277,6 @@ if ($script:Failures -eq 0) {
 } else {
     Write-Host "$($script:Failures) contrôle(s) en échec - voir les indications ci-dessus." -ForegroundColor Red
 }
+[System.Net.WebRequest]::DefaultWebProxy = $proxyInitial
 Write-Host ''
 exit $script:Failures
