@@ -57,7 +57,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$ServiceName = 'SuiviInfraService'
+$ServiceName = 'SuiviInfraAuth'
 
 function Write-Titre($t) { Write-Host ''; Write-Host "== $t" -ForegroundColor Cyan }
 function Write-Ok($t)    { Write-Host "  [OK]    $t" -ForegroundColor Green }
@@ -90,6 +90,17 @@ Write-Ok "Console administrateur ($($identity.Name))"
 # --- 2. Dossier réellement utilisé par le service ---------------------------------------
 Write-Titre 'Dossier du service'
 $cheminTache = $null
+# L'installateur pose soit un vrai service Windows (quand NSSM est présent), soit une tâche
+# planifiée, sous le même nom. Chercher l'un sans l'autre laisserait la moitié des
+# installations sans diagnostic.
+$svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+if ($svc) {
+    Write-Ok "Service Windows « $ServiceName » : état $($svc.Status)"
+    try {
+        $chemin = (Get-CimInstance Win32_Service -Filter "Name='$ServiceName'").PathName
+        if ($chemin -match '"?([A-Za-z]:\\[^"]*?)\\src\\index\.js') { $cheminTache = $Matches[1] }
+    } catch { }
+}
 $tache = Get-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue
 if ($tache) {
     Write-Ok "Tâche planifiée « $ServiceName » : état $($tache.State)"
@@ -101,9 +112,9 @@ if ($tache) {
     if ($repTravail)     { $cheminTache = $repTravail }
     elseif ($programme)  { $cheminTache = Split-Path -Parent $programme }
     if ($cheminTache) { Write-Info "Dossier de travail déclaré : $cheminTache" }
-} else {
-    Write-Ko "Tâche planifiée « $ServiceName » introuvable"
-    Write-Info "Le service n'est pas installé en tant que tâche, ou porte un autre nom."
+} elseif (-not $svc) {
+    Write-Ko "Ni service Windows ni tâche planifiée nommés « $ServiceName »"
+    Write-Info "Le service n'est pas installé, ou porte un autre nom."
 }
 
 if ($ServicePath) {
@@ -276,7 +287,7 @@ $sortie | Where-Object { $_ -like 'ECRIT:*' } | ForEach-Object {
 Write-Titre 'Verification par l''API de connexion'
 if (-not $ecoute) {
     Write-Ko "Service arrêté : impossible de vérifier. Démarrez-le, puis relancez avec -DiagnoseOnly."
-    Write-Info "Start-ScheduledTask -TaskName $ServiceName"
+    Write-Info "Start-ScheduledTask -TaskName $ServiceName   (ou Start-Service $ServiceName)"
     exit 1
 }
 
@@ -310,7 +321,7 @@ try {
             Write-Info 'Le compte est réparé, mais le service refuse temporairement les essais'
             Write-Info '(10 par quart d''heure). Le compteur est en mémoire : redémarrer le'
             Write-Info 'service le remet à zéro immédiatement.'
-            Write-Info "Restart-ScheduledTask -TaskName $ServiceName"
+            Write-Info "Restart-ScheduledTask -TaskName $ServiceName   (ou Restart-Service $ServiceName)"
         }
         default {
             Write-Ko "POST /api/auth/local a échoué : $($_.Exception.Message)"

@@ -171,13 +171,25 @@ try {
 Sauvegarde "Suivi Infra & Réseau" - $stamp
 Source : $dataDir (serveur $(if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { 'inconnu' }))
 
-POUR RESTAURER
-1. Arrêter le service :        Stop-Service SuiviInfraAuth
-2. Mettre de côté l'existant : Rename-Item "$dataDir" "data_avant_restauration"
-3. Recréer le dossier :        New-Item -ItemType Directory "$dataDir"
-4. Copier les fichiers *.json de CE dossier dans "$dataDir"
-5. Redémarrer le service :     Start-Service SuiviInfraAuth
-6. Vérifier :                  .\Test-SuiviInfra.ps1 -HostName <nom> -WithService
+POUR RESTAURER - console PowerShell ADMINISTRATEUR
+
+    .\Restore-SuiviInfra.ps1 -Source "<ce dossier>" -DryRun     (valide sans rien changer)
+    .\Restore-SuiviInfra.ps1 -Source "<ce dossier>"             (restaure pour de bon)
+
+Le script arrête le service, met les données actuelles de côté sans jamais les supprimer,
+restaure, redémarre et vérifie. Ajoutez -IncludeUsers pour restaurer aussi les comptes
+locaux, qui sont écartés par défaut.
+
+À LA MAIN, si le script n'est pas disponible
+1. Arrêter le service. Selon l'installation, l'un OU l'autre :
+       Stop-Service SuiviInfraAuth
+       Stop-ScheduledTask -TaskName SuiviInfraAuth
+   C'est indispensable : le service sert une copie mémoire des données et la réécrirait
+   par-dessus la restauration à la première modification.
+2. Déplacer les *.json de "$dataDir" vers un sous-dossier (ne rien supprimer).
+3. Copier les *.json de CE dossier dans "$dataDir".
+4. Redémarrer (Start-Service ou Start-ScheduledTask, selon le point 1).
+5. Vérifier :  .\Test-SuiviInfra.ps1 -HostName <nom> -WithService
 
 Ne restaurez PAS depuis l'application (onglet Paramètres) : en mode client/serveur, une
 restauration côté navigateur n'a aucun effet sur le serveur et serait effacée à

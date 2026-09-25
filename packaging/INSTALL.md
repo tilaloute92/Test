@@ -249,6 +249,44 @@ Le script affiche les identifiants existants — jamais les mots de passe, qui n
 que sous forme d'empreinte. `Test-SuiviInfra.ps1` les affiche également, lorsqu'il est lancé
 depuis une console élevée.
 
+### Restaurer une sauvegarde
+
+Console **administrateur**. Le script reconnaît seul les deux formes de sauvegarde :
+
+```powershell
+# 1. Toujours valider d'abord : lit et vérifie la sauvegarde sans rien modifier
+.\Restore-SuiviInfra.ps1 -Source D:\sauvegardes\suivi-infra\2026-09-20_0200 -DryRun
+
+# 2. Restaurer pour de bon
+.\Restore-SuiviInfra.ps1 -Source D:\sauvegardes\suivi-infra\2026-09-20_0200
+```
+
+| Ce que vous avez | Ce qu'il faut passer à `-Source` |
+| --- | --- |
+| Un dossier horodaté produit par `Backup-SuiviInfra.ps1` | Le dossier (`2026-09-20_0200`) |
+| Un export fait depuis l'application, onglet Paramètres | Le fichier `sauvegarde_suivi-infra_AAAA-MM-JJ.json` |
+
+En mode client/serveur, l'application **refuse volontairement** de réimporter un export
+depuis le navigateur : la restauration n'atteindrait pas le serveur et disparaîtrait à
+l'actualisation suivante. C'est donc ce script, et lui seul, qui remet un export en place.
+
+Le script arrête le service — sans quoi il réécrirait sa copie mémoire par-dessus la
+restauration —, **met les données actuelles de côté sans jamais les supprimer** (dans
+`data\_avant_restauration_<horodatage>\`), restaure, redémarre et vérifie que le service
+répond.
+
+| Option | Effet |
+| --- | --- |
+| `-DryRun` | Valide la sauvegarde et n'écrit rien |
+| `-IncludeUsers` | Restaure aussi les comptes locaux, écartés par défaut |
+| `-IncludeEnv` | Restaure `.env` : remet l'ancien secret de session, **déconnecte tout le monde** |
+
+Un export applicatif contient aussi `apiConnections`, `requestHistory` et `authSettings` :
+identifiants de test personnels et réglages de poste, jamais restaurés sur le serveur.
+
+Vérifiez le contenu dans l'application **avant** de supprimer le dossier
+`_avant_restauration_…` : c'est votre seul retour en arrière.
+
 ### « Identifiant ou mot de passe incorrect » avec les identifiants attendus
 
 Ce message vient du service, pas du navigateur : il prouve déjà que le service tourne et que
@@ -277,7 +315,7 @@ que vous pourrez entrer.
 > immédiatement.
 >
 > ```powershell
-> Restart-ScheduledTask -TaskName SuiviInfraService
+> Restart-ScheduledTask -TaskName SuiviInfraAuth   # ou : Restart-Service SuiviInfraAuth
 > ```
 
 ### Mot de passe oublié, ou personne ne peut se connecter
