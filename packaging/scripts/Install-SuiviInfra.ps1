@@ -136,6 +136,13 @@ if (-not (Get-WindowsFeature -Name Web-Server).Installed) {
     Write-Warn "Le rôle IIS n'est pas installé - installation en cours (peut prendre une minute)."
     Install-WindowsFeature -Name Web-Server -IncludeManagementTools | Out-Null
 }
+# Le module PowerShell WebAdministration vient de Web-Scripting-Tools, pas du rôle IIS
+# lui-même : sans lui, ni ce script ni Test-SuiviInfra.ps1 ne peuvent configurer ou
+# contrôler le site.
+if (-not (Get-WindowsFeature -Name Web-Scripting-Tools).Installed) {
+    Write-Warn "Outils de script IIS absents - installation en cours."
+    Install-WindowsFeature -Name Web-Scripting-Tools | Out-Null
+}
 Import-Module WebAdministration -ErrorAction Stop
 Write-Ok 'IIS présent'
 

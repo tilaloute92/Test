@@ -60,24 +60,64 @@ $BaseUrl = "${Protocol}://${HostName}" + $(if (($Protocol -eq 'https' -and $Port
 
 Write-Host "`nVérification de l'installation - $BaseUrl`n" -ForegroundColor Cyan
 
-Import-Module WebAdministration -ErrorAction SilentlyContinue
+# L'accès à la configuration d'IIS exige une console élevée : sans cela, le fournisseur
+# « WebAdministration » ne se charge pas et TOUS les contrôles IIS échouent avec un message
+# incompréhensible. Autant le dire une fois, clairement, plutôt que trois fois de travers.
+$estAdmin = (New-Object Security.Principal.WindowsPrincipal(
+    [Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator)
 
-Test-Item 'Site IIS présent et démarré' {
-    $s = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
-    $s -and $s.State -eq 'Started'
-} "Relancez Install-SuiviInfra.ps1, ou démarrez le site depuis le Gestionnaire IIS."
+$iisDispo = $false
+$iisRaison = ''
+if (-not $estAdmin) {
+    $iisRaison = "console non élevée : rouvrez PowerShell par clic droit -> « Exécuter en tant qu'administrateur »."
+} else {
+    try {
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            # PowerShell 7 ne charge pas ce module nativement : il passe par la couche de
+            # compatibilité Windows PowerShell.
+            Import-Module WebAdministration -UseWindowsPowerShell -ErrorAction Stop -WarningAction SilentlyContinue
+        } else {
+            Import-Module WebAdministration -ErrorAction Stop
+        }
+        $iisDispo = $true
+    } catch {
+        $iisRaison = "module WebAdministration indisponible ($($_.Exception.Message)). Installez les outils de script IIS : Install-WindowsFeature Web-Scripting-Tools"
+    }
+}
 
-Test-Item "Liaison $($Protocol.ToUpper()) ($Port) configurée" {
-    (Get-WebBinding -Name $SiteName -Protocol $Protocol -Port $Port -ErrorAction SilentlyContinue) -ne $null
-} "Aucune liaison $Protocol sur le port $Port : relancez Install-SuiviInfra.ps1 avec -Protocol $Protocol -Port $Port."
+if ($iisDispo) {
+    Test-Item 'Site IIS présent et démarré' {
+        $s = Get-Website -Name $SiteName -ErrorAction SilentlyContinue
+        $s -and $s.State -eq 'Started'
+    } "Relancez Install-SuiviInfra.ps1, ou démarrez le site depuis le Gestionnaire IIS."
 
-Test-Item 'Liaison HTTP (80) absente' {
-    (Get-WebBinding -Name $SiteName -Protocol http -ErrorAction SilentlyContinue) -eq $null
-} "Le site répond aussi en clair sur le port 80 : retirez la liaison http (DEPLOYMENT, étape 5)."
+    Test-Item "Liaison $($Protocol.ToUpper()) ($Port) configurée" {
+        (Get-WebBinding -Name $SiteName -Protocol $Protocol -Port $Port -ErrorAction SilentlyContinue) -ne $null
+    } "Aucune liaison $Protocol sur le port $Port : relancez Install-SuiviInfra.ps1 avec -Protocol $Protocol -Port $Port."
 
-Test-Item 'Page d''accueil servie en HTTPS' {
+    # Une liaison en clair n'est un défaut qu'en HTTPS. En HTTP assumé, c'est l'installation
+    # demandée : la signaler comme un échec n'aurait aucun sens.
+    if ($Protocol -eq 'https') {
+        Test-Item 'Aucune liaison HTTP en clair' {
+            (Get-WebBinding -Name $SiteName -Protocol http -ErrorAction SilentlyContinue) -eq $null
+        } "Le site répond aussi en clair : retirez la liaison http (Enable-SuiviInfraHttps.ps1 le fait)."
+    }
+} else {
+    Write-Host "  Contrôles IIS ignorés - $iisRaison" -ForegroundColor Yellow
+    Write-Host ''
+}
+
+Test-Item "Page d'accueil servie en $($Protocol.ToUpper())" {
     (Invoke-WebRequest $BaseUrl -UseBasicParsing -TimeoutSec 10).StatusCode -eq 200
-} "Vérifiez le DNS (le nom doit pointer sur ce serveur), le certificat et le pare-feu."
+} "Vérifiez le DNS (le nom doit pointer sur ce serveur), le pare-feu$(if ($Protocol -eq 'https') { ' et le certificat' })."
+
+# Si le nom ne répond pas, on retente en local avec l'en-tête Host : cela sépare « IIS ne
+# sert pas le site » de « le nom winas ne résout pas, ou le pare-feu bloque ».
+Test-Item 'Site joignable depuis le serveur lui-même (127.0.0.1)' {
+    $r = Invoke-WebRequest "${Protocol}://127.0.0.1:$Port" -Headers @{ Host = $HostName } -UseBasicParsing -TimeoutSec 10
+    $r.StatusCode -eq 200
+} "IIS ne sert pas le site sur ce port. Si ce contrôle passe alors que le précédent échoue, c'est le DNS ou le pare-feu qui sont en cause, pas IIS."
 
 Test-Item 'En-têtes de sécurité présents' {
     $h = (Invoke-WebRequest $BaseUrl -UseBasicParsing -TimeoutSec 10).Headers
