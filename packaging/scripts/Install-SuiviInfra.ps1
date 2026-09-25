@@ -463,8 +463,24 @@ if ($WithService) {
         # New-Service. Une tâche planifiée « au démarrage », exécutée par SYSTEM, donne le
         # même résultat pratique : démarrage automatique et relance en cas d'arrêt.
         # cmd.exe sert uniquement à rediriger la sortie vers le journal.
-        $commande = "`"$nodeExe`" `"$entryPoint`" >> `"$logPath`" 2>&1"
-        $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c $commande" -WorkingDirectory $ServicePath
+        # Le lancement passe par un fichier .cmd plutôt que par un « cmd.exe /c <ligne> ».
+        # Quand la ligne remise à /c commence par un guillemet, cmd.exe en retire le premier
+        # et le dernier avant d'interpréter le reste : la commande se retrouve coupée et Node
+        # n'est jamais lancé - la tâche repasse aussitôt en « Ready », sans rien dans le
+        # journal puisque la redirection elle-même a été mutilée. Un fichier évite ces règles
+        # de découpage, et l'administrateur peut le lancer à la main pour voir les erreurs.
+        $lanceur = Join-Path $ServicePath 'run-service.cmd'
+        @(
+            '@echo off',
+            'REM Lanceur du service, appele par la tache planifiee SuiviInfraAuth.',
+            'REM Ecrit par Install-SuiviInfra.ps1 - ne pas modifier, il est reecrit a chaque installation.',
+            'REM Pour diagnostiquer : lancez ce fichier a la main dans une console administrateur.',
+            'cd /d "%~dp0"',
+            "`"$nodeExe`" `"$entryPoint`" >> `"$logPath`" 2>&1"
+        ) | Set-Content -Path $lanceur -Encoding ASCII
+        Write-Ok "Lanceur écrit : $lanceur"
+
+        $action = New-ScheduledTaskAction -Execute $lanceur -WorkingDirectory $ServicePath
         $trigger = New-ScheduledTaskTrigger -AtStartup
         # Nom local du compte SYSTEM, obtenu depuis son SID : « AUTORITE NT\Système » en
         # français, « NT AUTHORITY\SYSTEM » en anglais. En cas d'échec de la traduction, on
@@ -498,7 +514,22 @@ if ($WithService) {
     if ($healthy) {
         Write-Ok "Le service répond sur http://127.0.0.1:$ServicePort/api/health"
     } else {
-        Write-Warn "Le service ne répond pas encore. Consultez $ServicePath\service.log$(if ($UseNssm) { " et $ServicePath\service.err.log" })."
+        Write-Warn "Le service ne répond pas."
+        # Le journal dit pourquoi : autant l'afficher ici plutôt que d'y renvoyer, c'est la
+        # première chose que l'on irait lire.
+        foreach ($f in @("$ServicePath\service.log", $(if ($UseNssm) { "$ServicePath\service.err.log" }))) {
+            if ($f -and (Test-Path $f)) {
+                $lignes = Get-Content $f -Tail 15 -ErrorAction SilentlyContinue
+                if ($lignes) {
+                    Write-Host "    --- $f (15 dernières lignes) ---" -ForegroundColor Yellow
+                    $lignes | ForEach-Object { Write-Host "    $_" }
+                    Write-Host "    ---" -ForegroundColor Yellow
+                }
+            }
+        }
+        if (-not $UseNssm) {
+            Write-Host "    Pour voir l'erreur en direct : lancez `"$ServicePath\run-service.cmd`" dans cette console." -ForegroundColor Yellow
+        }
     }
 
     # --- Premier compte local ---
