@@ -249,6 +249,59 @@ Le script affiche les identifiants existants — jamais les mots de passe, qui n
 que sous forme d'empreinte. `Test-SuiviInfra.ps1` les affiche également, lorsqu'il est lancé
 depuis une console élevée.
 
+### Qui peut configurer l'application
+
+La **configuration** — comptes locaux, annuaire LDAP, connexion Microsoft, mode de
+fonctionnement, sauvegardes — est réservée au compte **`admin`**. Les autres utilisateurs
+voient la page Paramètres en lecture seule.
+
+Ce n'est pas seulement un masquage de boutons : le serveur refuse les routes de
+configuration avec un **403** pour toute session non administratrice. Masquer un bouton ne
+protège rien, la route restant appelable à la main.
+
+Les **données d'équipe** ne sont pas concernées : tout le monde continue de saisir tâches,
+planning, temps et absences.
+
+Pour donner ce droit à un autre compte (par exemple un compte LDAP nominatif), ajoutez-le
+dans `C:\services\suivi-infra\data\config.json` :
+
+```json
+{ "admins": ["rnelson", "jdupont"] }
+```
+
+Le compte `admin` reste administrateur en toutes circonstances, et le serveur refuse de
+supprimer le dernier administrateur : sans lui, plus personne ne pourrait configurer
+l'application depuis l'application.
+
+La page Paramètres n'est plus accessible depuis l'écran de connexion : elle permettait de
+créer des comptes et de rediriger l'annuaire sans s'authentifier.
+
+### Purge automatique des éléments périmés
+
+Le serveur supprime seul, au démarrage puis toutes les heures :
+
+| Élément | Condition |
+| --- | --- |
+| Tâches terminées | Achevées depuis plus de **10 jours** |
+| Absences | Date passée de plus de **10 jours** |
+| Saisies de temps | Rattachées à une tâche purgée |
+
+> **Il n'y a pas de corbeille.** Le seul retour en arrière est une sauvegarde
+> (`Backup-SuiviInfra.ps1`, restaurable avec `Restore-SuiviInfra.ps1`). Les saisies de temps
+> emportées sont des heures de travail réelles : c'est la conséquence la plus lourde de
+> cette purge, et c'est la raison d'être de la sauvegarde quotidienne.
+
+Deux garde-fous : une tâche terminée **sans date d'achèvement** n'est jamais purgée (aucune
+date fiable, aucun risque pris), et les créneaux de planning qui visaient une tâche purgée
+sont **vidés, pas supprimés**.
+
+La page Paramètres annonce en direct ce qui sera concerné au prochain passage. Le journal du
+service trace chaque purge :
+
+```
+[purge] 1 tâche(s) terminée(s), 3 absence(s) et 1 saisie(s) de temps supprimées (antérieures au 2026-09-18).
+```
+
 ### Restaurer une sauvegarde
 
 Console **administrateur**. Le script reconnaît seul les deux formes de sauvegarde :

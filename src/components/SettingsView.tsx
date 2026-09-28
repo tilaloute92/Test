@@ -27,12 +27,21 @@ import { fetchStatus, type ServerStatus } from '../lib/serverSync';
 import { getSyncUser, isSyncActive, onSyncActiveChange, type SyncUser } from '../lib/syncState';
 import { useAppMode, useLinkState } from '../hooks/useAppStatus';
 import { clearLocalArchive, countArchived, readLocalArchive } from '../lib/localArchive';
+import { findExpired, RETENTION_DAYS } from '../lib/retention';
 
 const NOT_LOGGED_IN_HINT =
   "Connectez-vous d'abord avec un compte local ou LDAP existant (celui créé via `npm run create-user` sur le serveur, par exemple) pour gérer ceci depuis l'application.";
 import type { AccountInfo } from '@azure/msal-browser';
 
-export function SettingsView() {
+/**
+ * @param canEdit  Ce compte peut-il modifier la configuration ? Décidé par le serveur
+ *   (voir server/src/auth/admin.js), transmis par App.tsx. À faux, tout reste LISIBLE —
+ *   savoir comment l'application est configurée n'est pas un privilège — mais rien n'est
+ *   modifiable. Ce verrouillage est un confort de lecture, pas une protection : la
+ *   protection est le refus 403 du serveur sur les routes de configuration. Masquer un
+ *   bouton n'empêche personne d'appeler la route à la main.
+ */
+export function SettingsView({ canEdit = true }: { canEdit?: boolean }) {
   const { authSettings, updateAuthSettings } = useStore();
   const confirm = useConfirm();
   const [account, setAccount] = useState<AccountInfo | null>(null);
@@ -114,6 +123,16 @@ export function SettingsView() {
         <PrintButton />
       </div>
 
+      {!canEdit && (
+        <Card className="border-amber-200 p-3 dark:border-amber-500/40">
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            <strong>Lecture seule.</strong> La configuration de l'application (comptes locaux, annuaire LDAP,
+            connexion Microsoft, mode de fonctionnement, sauvegardes) est réservée au compte «&nbsp;admin&nbsp;».
+            Vous pouvez consulter ces réglages, pas les changer.
+          </p>
+        </Card>
+      )}
+
       {backendUp === false && (
         <Card className="p-3">
           <p className="text-xs text-amber-700 dark:text-amber-300">
@@ -123,6 +142,14 @@ export function SettingsView() {
         </Card>
       )}
 
+      {/* Un fieldset désactivé neutralise nativement TOUT contrôle qu'il contient, y compris
+          ceux qu'on ajoutera plus tard sans y penser — plus sûr que de les désactiver un à
+          un. Il ne les grise pas pour autant : les variantes ci-dessous s'en chargent, sans
+          quoi un bouton resterait vif et cliquable en apparence alors qu'il ne répond plus. */}
+      <fieldset
+        disabled={!canEdit}
+        className="m-0 min-w-0 space-y-6 border-0 p-0 [&_button:disabled]:cursor-not-allowed [&_button:disabled]:opacity-50 [&_input:disabled]:opacity-60 [&_select:disabled]:opacity-60 [&_textarea:disabled]:opacity-60"
+      >
       {/* ------------------------------------------------------------------ */}
       {/* 1. SSO Microsoft Entra ID — fonctionne avec ou sans le serveur      */}
       {/*    d'authentification : sans lui, la session reste gérée par le    */}
@@ -337,7 +364,9 @@ export function SettingsView() {
       {/*    survive à un vidage du stockage local ou un changement de poste).*/}
       {/* ------------------------------------------------------------------ */}
       <BackupCard confirm={confirm} />
+      <RetentionCard confirm={confirm} />
       <ArchivedDataCard confirm={confirm} />
+      </fieldset>
     </div>
   );
 }
@@ -637,6 +666,81 @@ function ModeCard() {
  * référence — mais les supprimer sans les proposer reviendrait à effacer du travail sans le
  * dire. Elles restent donc exportables tant que l'utilisateur ne les a pas écartées lui-même.
  */
+/**
+ * Purge automatique. Carte volontairement informative : la règle est fixe, et ce qui
+ * manquerait le plus à un administrateur n'est pas un réglage de plus mais de savoir CE QUI
+ * VA DISPARAÎTRE, avant que cela ne disparaisse. D'où le décompte en direct.
+ */
+function RetentionCard({ confirm }: { confirm: ConfirmFn }) {
+  const { tasks, absences, timeEntries, purgeExpiredRecords } = useStore();
+  const mode = useAppMode();
+  const expired = findExpired({ tasks, absences, timeEntries }, new Date());
+
+  const purgeNow = async () => {
+    if (
+      await confirm({
+        title: 'Purger maintenant',
+        message: `Supprimer définitivement ${expired.tasks.length} tâche(s) terminée(s), ${expired.absences.length} absence(s) passée(s) et ${expired.timeEntries.length} saisie(s) de temps rattachée(s) ? Il n'y a pas de corbeille : le seul retour en arrière est une sauvegarde.`,
+        confirmLabel: 'Purger',
+        danger: true,
+      })
+    ) {
+      purgeExpiredRecords();
+    }
+  };
+
+  return (
+    <Card className="space-y-3 p-4">
+      <div>
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Purge automatique ({RETENTION_DAYS} jours)</h2>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Sont supprimés automatiquement les <strong>tâches terminées</strong> depuis plus de {RETENTION_DAYS} jours et les{' '}
+          <strong>absences</strong> dont la date est passée de plus de {RETENTION_DAYS} jours.
+        </p>
+      </div>
+
+      <ul className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
+        <li>
+          • Les <strong>saisies de temps</strong> rattachées à une tâche purgée partent avec elle : sans la tâche, elles ne
+          s'affichent plus nulle part. Ce sont des heures de travail réelles — c'est la conséquence la plus lourde de cette purge.
+        </li>
+        <li>• Une tâche terminée <strong>sans date d'achèvement</strong> n'est jamais purgée : aucune date fiable, donc aucun risque pris.</li>
+        <li>• Les créneaux de planning qui visaient une tâche purgée sont vidés, pas supprimés.</li>
+        <li>
+          • {mode === 'serveur'
+            ? 'Le serveur purge au démarrage puis toutes les heures ; ce navigateur en voit le résultat à la synchronisation suivante.'
+            : 'La purge a lieu à l\'ouverture de l\'application puis toutes les heures.'}
+        </li>
+        <li>
+          • <strong>Il n'y a pas de corbeille.</strong> Le seul retour en arrière est une sauvegarde
+          {mode === 'serveur' ? ' du serveur (Backup-SuiviInfra.ps1).' : ' (section ci-dessus).'}
+        </li>
+      </ul>
+
+      <div className="rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-800/60">
+        {expired.total === 0 ? (
+          <span className="text-slate-500 dark:text-slate-400">Rien à purger actuellement.</span>
+        ) : (
+          <span className="text-amber-700 dark:text-amber-300">
+            Concernés au prochain passage (antérieurs au {expired.cutoff}) : <strong>{expired.tasks.length}</strong> tâche(s)
+            terminée(s), <strong>{expired.absences.length}</strong> absence(s), <strong>{expired.timeEntries.length}</strong> saisie(s)
+            de temps.
+          </span>
+        )}
+      </div>
+
+      {mode !== 'serveur' && expired.total > 0 && (
+        <button
+          onClick={purgeNow}
+          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-slate-700 dark:hover:bg-red-500/10 print:hidden"
+        >
+          Purger maintenant
+        </button>
+      )}
+    </Card>
+  );
+}
+
 function ArchivedDataCard({ confirm }: { confirm: ConfirmFn }) {
   const [archive, setArchive] = useState(() => readLocalArchive());
   if (!archive) return null;

@@ -15,6 +15,7 @@ import { addDays, toISODate } from '../lib/date';
 import { makeId } from '../lib/ids';
 import { archiveLocalCollections, archivePersistedCollections } from '../lib/localArchive';
 import { repairDuplicateIds } from '../lib/repairIds';
+import { findExpired } from '../lib/retention';
 import { isServerMode, onModeChange } from '../lib/serverMode';
 import { isSyncActive, reportSyncError, requestResync } from '../lib/syncState';
 import {
@@ -104,6 +105,11 @@ export interface StoreState extends SharedSnapshot {
   /** Remplace les 7 collections partagées par ce que renvoie le serveur — ne déclenche
    *  jamais de synchronisation en retour (voir le hook de sondage périodique dans App.tsx). */
   applyServerSnapshot: (snapshot: SharedSnapshot) => void;
+
+  /** Purge locale des tâches terminées et absences passées de plus de RETENTION_DAYS jours
+   *  (voir src/lib/retention.ts). N'a d'effet qu'en mode AUTONOME : en client/serveur c'est
+   *  le serveur qui purge, et ce navigateur reçoit le résultat au sondage suivant. */
+  purgeExpiredRecords: (now?: Date) => { tasks: number; absences: number; timeEntries: number };
 
   resetToSeed: () => void;
 }
@@ -401,6 +407,33 @@ export const useStore = create<StoreState>()(
       },
 
       applyServerSnapshot: (snapshot) => set(snapshot),
+
+      // Purge locale (mode autonome uniquement — voir src/lib/retention.ts). Aucun appel à
+      // syncWrite : en mode client/serveur cette fonction ne fait rien, et laisser dix
+      // navigateurs émettre les mêmes suppressions ferait échouer neuf d'entre elles sur
+      // des éléments déjà disparus, avec autant d'erreurs affichées à des gens qui n'ont
+      // rien demandé.
+      purgeExpiredRecords: (now = new Date()) => {
+        const vide = { tasks: 0, absences: 0, timeEntries: 0 };
+        if (isServerMode()) return vide;
+        const s = get();
+        const expired = findExpired({ tasks: s.tasks, absences: s.absences, timeEntries: s.timeEntries }, now);
+        if (expired.total === 0) return vide;
+
+        const taskIds = new Set(expired.tasks.map((t) => t.id));
+        const absenceIds = new Set(expired.absences.map((a) => a.id));
+        const entryIds = new Set(expired.timeEntries.map((e) => e.id));
+        set((st) => ({
+          tasks: st.tasks.filter((t) => !taskIds.has(t.id)),
+          absences: st.absences.filter((a) => !absenceIds.has(a.id)),
+          timeEntries: st.timeEntries.filter((e) => !entryIds.has(e.id)),
+          planningSlots: st.planningSlots.map((p) => (p.taskId && taskIds.has(p.taskId) ? { ...p, taskId: null } : p)),
+          roadmapItems: st.roadmapItems.map((r) =>
+            r.linkedTaskIds.some((t) => taskIds.has(t)) ? { ...r, linkedTaskIds: r.linkedTaskIds.filter((t) => !taskIds.has(t)) } : r
+          ),
+        }));
+        return { tasks: expired.tasks.length, absences: expired.absences.length, timeEntries: expired.timeEntries.length };
+      },
 
       // Réinitialisation au jeu d'exemple : réservée au mode autonome. En mode
       // client/serveur, elle n'aurait aucun sens — les données appartiennent au serveur, et

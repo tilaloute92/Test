@@ -7,6 +7,7 @@ import { FlashReportModal } from './FlashReportModal';
 import { PlannerImportModal } from './PlannerImportModal';
 import { useViewMode } from '../hooks/useViewMode';
 import { bucketTasksByDueDate, KANBAN_STATUSES } from '../lib/taskViews';
+import { nextSort, sortTasks, type TaskSort, type TaskSortKey } from '../lib/taskSort';
 import type { Priority, ProjectTask, TaskStatus, TaskType, TeamMember } from '../types';
 
 type ConfirmFn = ReturnType<typeof useConfirm>;
@@ -34,6 +35,9 @@ export function TasksView() {
   const [flashReportProject, setFlashReportProject] = useState<string | null>(null);
   const [showPlannerImport, setShowPlannerImport] = useState(false);
   const [mode, setMode] = useViewMode<TaskViewMode>('taches', TASK_VIEW_MODES, 'tableau');
+  // `null` = ordre par défaut (terminées en bas). Le tri ne concerne que la vue Tableau :
+  // le Kanban est ordonné par statut et l'Échéancier par échéance, par construction.
+  const [sort, setSort] = useState<TaskSort | null>(null);
 
   const spentByTask = useMemo(() => {
     const map: Record<string, number> = {};
@@ -47,12 +51,18 @@ export function TasksView() {
     [projects, tasks, timeEntries, members]
   );
 
-  const filtered = tasks
-    .filter((t) => typeFilter === 'Tous' || t.type === typeFilter)
-    .filter((t) => assigneeFilter === 'Tous' || t.assigneeIds.includes(assigneeFilter))
-    .filter((t) => statusFilter === 'Tous' || t.status === statusFilter)
-    .filter((t) => t.title.toLowerCase().includes(search.toLowerCase()) || (t.project ?? '').toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => (a.status === 'termine' ? 1 : 0) - (b.status === 'termine' ? 1 : 0));
+  const filtered = useMemo(() => {
+    const retenues = tasks
+      .filter((t) => typeFilter === 'Tous' || t.type === typeFilter)
+      .filter((t) => assigneeFilter === 'Tous' || t.assigneeIds.includes(assigneeFilter))
+      .filter((t) => statusFilter === 'Tous' || t.status === statusFilter)
+      .filter(
+        (t) =>
+          t.title.toLowerCase().includes(search.toLowerCase()) ||
+          (t.project ?? '').toLowerCase().includes(search.toLowerCase())
+      );
+    return sortTasks(retenues, sort, members, spentByTask);
+  }, [tasks, typeFilter, assigneeFilter, statusFilter, search, sort, members, spentByTask]);
 
   const toggleAssignee = async (t: ProjectTask, m: TeamMember) => {
     const has = t.assigneeIds.includes(m.id);
@@ -153,6 +163,8 @@ export function TasksView() {
           tasks={filtered}
           members={members}
           spentByTask={spentByTask}
+          sort={sort}
+          onSort={(key) => setSort((c) => nextSort(c, key))}
           confirm={confirm}
           openAssigneeMenu={openAssigneeMenu}
           setOpenAssigneeMenu={setOpenAssigneeMenu}
@@ -213,11 +225,61 @@ interface TaskListProps {
   setEditingTask: (t: ProjectTask) => void;
 }
 
+/**
+ * En-tête de colonne triable. Le sens du tri est annoncé à la fois visuellement (▲ ▼) et
+ * par aria-sort, que les lecteurs d'écran restituent — une flèche seule ne dit rien à qui
+ * ne voit pas l'écran.
+ */
+function SortableHeader({
+  label,
+  sortKey,
+  sort,
+  onSort,
+}: {
+  label: string;
+  sortKey: TaskSortKey;
+  sort: TaskSort | null;
+  onSort: (key: TaskSortKey) => void;
+}) {
+  const actif = sort?.key === sortKey;
+  const sens = actif ? sort.direction : null;
+  return (
+    <th
+      className="px-3 py-2 font-medium"
+      aria-sort={sens === 'asc' ? 'ascending' : sens === 'desc' ? 'descending' : 'none'}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        title={
+          actif
+            ? sens === 'asc'
+              ? `${label} : croissant — cliquer pour décroissant`
+              : `${label} : décroissant — cliquer pour revenir à l'ordre par défaut`
+            : `Trier par ${label.toLowerCase()}`
+        }
+        className={`-mx-1 flex items-center gap-1 rounded px-1 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 print:hover:bg-transparent ${
+          actif ? 'text-violet-600 dark:text-violet-400' : ''
+        }`}
+      >
+        <span>{label}</span>
+        {/* Le repère reste présent mais estompé sur les colonnes non triées : sans lui, rien
+            n'indique qu'un en-tête est cliquable tant qu'on n'a pas essayé. */}
+        <span aria-hidden className={actif ? '' : 'text-slate-300 dark:text-slate-600'}>
+          {actif ? (sens === 'asc' ? '▲' : '▼') : '↕'}
+        </span>
+      </button>
+    </th>
+  );
+}
+
 /** Vue Tableau (mode par défaut) : une ligne par tâche, tout modifiable en place. */
 function TaskTable({
   tasks,
   members,
   spentByTask,
+  sort,
+  onSort,
   confirm,
   openAssigneeMenu,
   setOpenAssigneeMenu,
@@ -226,6 +288,8 @@ function TaskTable({
   removeTask,
   setEditingTask,
 }: TaskListProps & {
+  sort: TaskSort | null;
+  onSort: (key: TaskSortKey) => void;
   confirm: ConfirmFn;
   openAssigneeMenu: string | null;
   setOpenAssigneeMenu: (id: string | null) => void;
@@ -238,13 +302,13 @@ function TaskTable({
       <table className="w-full min-w-[900px] text-sm print:min-w-0">
         <thead>
           <tr className="border-b border-slate-100 text-left text-xs text-slate-400 dark:border-slate-800">
-            <th className="px-3 py-2 font-medium">Tâche</th>
-            <th className="px-3 py-2 font-medium">Type</th>
-            <th className="px-3 py-2 font-medium">Assigné(s)</th>
-            <th className="px-3 py-2 font-medium">Priorité</th>
-            <th className="px-3 py-2 font-medium">Statut</th>
-            <th className="px-3 py-2 font-medium">Temps</th>
-            <th className="px-3 py-2 font-medium">Échéance</th>
+            <SortableHeader label="Tâche" sortKey="titre" sort={sort} onSort={onSort} />
+            <SortableHeader label="Type" sortKey="type" sort={sort} onSort={onSort} />
+            <SortableHeader label="Assigné(s)" sortKey="assignes" sort={sort} onSort={onSort} />
+            <SortableHeader label="Priorité" sortKey="priorite" sort={sort} onSort={onSort} />
+            <SortableHeader label="Statut" sortKey="statut" sort={sort} onSort={onSort} />
+            <SortableHeader label="Temps" sortKey="temps" sort={sort} onSort={onSort} />
+            <SortableHeader label="Échéance" sortKey="echeance" sort={sort} onSort={onSort} />
             <th className="px-3 py-2 print:hidden" />
           </tr>
         </thead>

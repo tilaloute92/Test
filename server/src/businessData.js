@@ -201,6 +201,35 @@ export function removeTask(id) {
   persist('tasks', 'planningSlots', 'roadmapItems');
 }
 
+/**
+ * Suppression en masse, pour la purge automatique (voir retention.js).
+ *
+ * En un seul `persist` : la purge d'une semaine de vacances d'équipe touche facilement
+ * plusieurs dizaines d'enregistrements, et les supprimer un par un incrémenterait le
+ * compteur de version autant de fois — chaque navigateur ouvert retéléchargerait alors
+ * l'intégralité des données à chaque suppression. Une écriture, une version.
+ */
+export function purgeRecords({ taskIds = [], absenceIds = [], timeEntryIds = [] }) {
+  const tasks = new Set(taskIds);
+  const absences = new Set(absenceIds);
+  const entries = new Set(timeEntryIds);
+  if (tasks.size === 0 && absences.size === 0 && entries.size === 0) return;
+
+  if (tasks.size > 0) {
+    cache.tasks = cache.tasks.filter((t) => !tasks.has(t.id));
+    cache.planningSlots = cache.planningSlots.map((p) => (tasks.has(p.taskId) ? { ...p, taskId: null } : p));
+    cache.roadmapItems = cache.roadmapItems.map((r) =>
+      Array.isArray(r.linkedTaskIds) && r.linkedTaskIds.some((t) => tasks.has(t))
+        ? { ...r, linkedTaskIds: r.linkedTaskIds.filter((t) => !tasks.has(t)) }
+        : r
+    );
+  }
+  if (absences.size > 0) cache.absences = cache.absences.filter((a) => !absences.has(a.id));
+  if (entries.size > 0) cache.timeEntries = cache.timeEntries.filter((e) => !entries.has(e.id));
+
+  persist('tasks', 'planningSlots', 'roadmapItems', 'absences', 'timeEntries');
+}
+
 // --- Planning (upsert par memberId+date+period, comme setPlanningSlot côté client) ---
 export function setPlanningSlot(memberId, date, period, taskId) {
   const existing = cache.planningSlots.find((p) => p.memberId === memberId && p.date === date && p.period === period);

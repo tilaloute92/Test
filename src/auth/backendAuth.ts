@@ -14,6 +14,11 @@ export interface BackendUser {
   /** Le compte « admin » tourne encore avec le mot de passe public livré par l'installateur.
    *  L'application l'affiche en bandeau tant que ce n'est pas corrigé. */
   defaultPassword?: boolean;
+  /** Ce compte peut-il modifier la configuration (comptes locaux, LDAP, SSO) ? Décidé par le
+   *  serveur (voir server/src/auth/admin.js), jamais déduit de l'identifiant ici : la liste
+   *  des administrateurs est extensible, et deux définitions divergentes afficheraient des
+   *  commandes que le serveur refuserait ensuite. */
+  isAdmin?: boolean;
 }
 
 export interface LdapConfig {

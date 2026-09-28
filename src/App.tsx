@@ -89,8 +89,13 @@ function useTheme() {
  *   géré uniquement côté navigateur via MSAL) — l'application reste utilisable
  *   sans serveur, avec une seule méthode de connexion disponible.
  *
- * Dans les deux cas, la page Paramètres reste accessible depuis l'écran de
- * connexion pour ne jamais s'enfermer dehors avec une mauvaise configuration.
+ * La page Paramètres n'est PLUS accessible depuis l'écran de connexion en mode
+ * client/serveur : elle permet de créer des comptes et de rediriger l'annuaire, ce
+ * qu'un visiteur non authentifié ne doit pas pouvoir faire. L'issue de secours qu'elle
+ * constituait est devenue inutile le jour où l'installateur s'est mis à créer un compte
+ * « admin » : il y a toujours par quoi entrer. En autonome, en revanche, elle reste
+ * accessible — il n'y a ni serveur ni comptes, les données sont dans ce navigateur, et
+ * la « connexion » n'y protège rien qu'un visiteur ne puisse déjà lire.
  */
 function useAuthGate() {
   const { authSettings } = useStore();
@@ -186,13 +191,18 @@ function useAuthGate() {
   }, [backendUp, session]);
 
   const isAuthenticated = backendUp ? Boolean(session) : Boolean(msalAccount);
+  // Qui peut modifier la configuration. En mode client/serveur, c'est le serveur qui
+  // tranche (voir server/src/auth/admin.js) et le navigateur ne fait que suivre. En
+  // autonome, il n'y a ni serveur ni comptes : tout est dans ce navigateur, et refuser
+  // la configuration à la seule personne qui l'utilise n'empêcherait rien.
+  const isAdmin = backendUp ? Boolean(session?.isAdmin) : true;
   const displayName = session?.name ?? msalAccount?.name ?? msalAccount?.username ?? null;
   // En mode client/serveur, la connexion n'est pas une option : les données vivent derrière
   // une API qui exige une session, et sans elle l'application n'aurait rien à afficher.
   // L'interrupteur « exiger la connexion » ne concerne donc que le mode autonome.
   const locked = (getMode() === 'serveur' || authSettings.requireLogin) && !checking && !isAuthenticated;
 
-  return { checking, locked, error, backendUp, session, displayName, retryProbe, loginMicrosoft, loginLocalAccount, loginLdapAccount, logout };
+  return { checking, locked, error, backendUp, session, displayName, isAdmin, retryProbe, loginMicrosoft, loginLocalAccount, loginLdapAccount, logout };
 }
 
 type AuthGate = ReturnType<typeof useAuthGate>;
@@ -291,9 +301,20 @@ function LockScreen({ authGate }: { authGate: AuthGate }) {
         )}
 
         {authGate.error && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{authGate.error}</p>}
-        <button onClick={() => setShowSettings(true)} className="mt-4 text-xs text-slate-400 hover:text-violet-600 dark:hover:text-violet-400">
-          Paramètres de connexion
-        </button>
+        {/* En mode client/serveur, ce lien ouvrait la configuration — création de comptes
+            locaux, adresse de l'annuaire LDAP — à quiconque atteignait la page de
+            connexion, sans s'authentifier. Il n'apparaît plus que sans serveur, où il n'y
+            a ni comptes ni données partagées à protéger. */}
+        {!authGate.backendUp && (
+          <button onClick={() => setShowSettings(true)} className="mt-4 text-xs text-slate-400 hover:text-violet-600 dark:hover:text-violet-400">
+            Paramètres de connexion
+          </button>
+        )}
+        {authGate.backendUp && (
+          <p className="mt-4 text-xs text-slate-400">
+            La configuration de l'application est réservée au compte « admin », une fois connecté.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -455,6 +476,19 @@ function App() {
       if (hideTimer) clearTimeout(hideTimer);
     };
   }, []);
+
+  // Purge des tâches terminées et absences passées de plus de 10 jours, en mode AUTONOME
+  // seulement : en client/serveur c'est le serveur qui purge (server/src/retention.js), et
+  // ce navigateur en voit le résultat au sondage suivant. Un passage au chargement puis un
+  // par heure — l'application reste souvent ouverte plusieurs jours d'affilée sur un poste
+  // d'exploitation, et sans réveil périodique rien ne serait purgé entre deux ouvertures.
+  const purgeExpiredRecords = useStore((s) => s.purgeExpiredRecords);
+  useEffect(() => {
+    if (mode !== 'local') return;
+    purgeExpiredRecords();
+    const timer = setInterval(() => purgeExpiredRecords(), 60 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [mode, purgeExpiredRecords]);
 
   const goToMember = () => setTab('planning');
 
@@ -624,7 +658,7 @@ function App() {
         {tab === 'report' && <WeeklyReportView />}
         {tab === 'roadmap' && <RoadmapView />}
         {tab === 'copils' && <CopilView />}
-        {tab === 'settings' && <SettingsView />}
+        {tab === 'settings' && <SettingsView canEdit={authGate.isAdmin} />}
       </main>
     </div>
   );

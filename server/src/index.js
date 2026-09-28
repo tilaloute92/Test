@@ -6,6 +6,7 @@ import { authRouter } from './routes/auth.js';
 import { dataRouter } from './routes/data.js';
 import { mailRouter } from './routes/mail.js';
 import { startMailScheduler } from './mail/scheduler.js';
+import { startRetentionScheduler } from './retention.js';
 
 const app = express();
 
@@ -38,4 +39,5 @@ app.use((err, _req, res, _next) => {
 app.listen(config.port, '127.0.0.1', () => {
   console.log(`Serveur d'authentification démarré sur http://127.0.0.1:${config.port}`);
   startMailScheduler();
+  startRetentionScheduler();
 });
