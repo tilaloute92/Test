@@ -38,6 +38,7 @@ import { getDiagramSvg } from '../lib/exportRegistry'
 import { interpret, isEditingIntent } from '../lib/voice'
 import { inventoryFromCsv } from '../lib/inventory'
 import { deduceVlans } from '../lib/osi'
+import { analyserVlans } from '../lib/vlanImport'
 import { NODE_H, NODE_W } from '../types'
 import { modeDefinition } from '../lib/viewModes'
 import { projectionLogique, VUES_LOGIQUES, type VueLogique } from '../lib/vlanViews'
@@ -307,6 +308,15 @@ interface DiagramStore {
   mergeDiscovery: (result: DiscoveryResult) => { created: number; updated: number; links: number }
   upsertVlan: (vlan: VlanDef) => void
   removeVlan: (id: string) => void
+  /**
+   * Import d'un plan d'adressage collé : tableau, collage de tableur ou sortie de
+   * commutateur. En mode « compléter », ce qui est déjà renseigné n'est jamais écrasé par
+   * une cellule vide — on complète un plan existant sans lui faire perdre ce qu'il savait.
+   */
+  importerVlans: (
+    texte: string,
+    mode: 'merge' | 'replace',
+  ) => { ajoutes: number; completes: number; format: string; avertissements: string[] }
 
   /** Pose une note, un cadre commenté ou une flèche sur le plan et la sélectionne. */
   addAnnotation: (kind: AnnotationKind, seed?: Partial<Annotation>) => string
@@ -360,7 +370,10 @@ interface DiagramStore {
   presse: PressePapier | null
   copySelection: (couper?: boolean) => { equipements: number; liaisons: number }
   pasteClipboard: (at?: { x: number; y: number }) => Promise<{ equipements: number; liaisons: number }>
-  importText: (text: string, mode: 'merge' | 'replace') => { nodes: number; links: number; warnings: string[] }
+  importText: (
+    text: string,
+    mode: 'merge' | 'replace',
+  ) => { nodes: number; links: number; vlans: number; warnings: string[] }
   focusNode: (id: string) => void
   setConnectFrom: (id: string | null) => void
 
@@ -1275,6 +1288,50 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       else vlans.push(vlan)
       return { diagram: { ...state.diagram, vlans } }
     })
+  },
+
+  importerVlans: (texte, mode) => {
+    const lecture = analyserVlans(texte)
+    if (lecture.vlans.length === 0) {
+      return { ajoutes: 0, completes: 0, format: lecture.format, avertissements: lecture.avertissements }
+    }
+    if (lockedStore()) {
+      return {
+        ajoutes: 0,
+        completes: 0,
+        format: lecture.format,
+        avertissements: ['Schéma verrouillé : déverrouillez-le pour importer.'],
+      }
+    }
+    get().pushHistory()
+    const existants = new Map((get().diagram.vlans ?? []).map((vlan) => [vlan.id, vlan]))
+    let ajoutes = 0
+    let completes = 0
+    const resultat = mode === 'replace' ? new Map<string, VlanDef>() : existants
+    for (const arrivant of lecture.vlans) {
+      const present = resultat.get(arrivant.id)
+      if (!present) {
+        resultat.set(arrivant.id, arrivant)
+        ajoutes += 1
+        continue
+      }
+      // Une cellule vide ne dit rien : elle ne doit pas effacer ce qui était renseigné.
+      const fusion: VlanDef = {
+        ...present,
+        name: arrivant.name ?? present.name,
+        subnet: arrivant.subnet ?? present.subnet,
+        gateway: arrivant.gateway ?? present.gateway,
+        notes: arrivant.notes ?? present.notes,
+        color: arrivant.color ?? present.color,
+      }
+      if (JSON.stringify(fusion) !== JSON.stringify(present)) completes += 1
+      resultat.set(arrivant.id, fusion)
+    }
+    const vlans = [...resultat.values()].sort(
+      (a, b) => Number(a.id) - Number(b.id) || a.id.localeCompare(b.id),
+    )
+    set((state) => ({ diagram: { ...state.diagram, vlans } }))
+    return { ajoutes, completes, format: lecture.format, avertissements: lecture.avertissements }
   },
 
   removeVlan: (id) => {
@@ -2595,18 +2652,39 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   importText: (text, mode) => {
-    if (lockedStore()) return { nodes: 0, links: 0, warnings: ['Schéma verrouillé.'] }
+    if (lockedStore()) return { nodes: 0, links: 0, vlans: 0, warnings: ['Schéma verrouillé.'] }
     const base = mode === 'merge' ? get().diagram : emptyDiagram()
     const result = parseQuickImport(text, base)
-    if (result.nodes.length === 0 && result.links.length === 0) {
-      return { nodes: 0, links: 0, warnings: result.warnings }
+    if (result.nodes.length === 0 && result.links.length === 0 && result.vlans.length === 0) {
+      return { nodes: 0, links: 0, vlans: 0, warnings: result.warnings }
     }
     get().pushHistory()
     const updated = new Map(result.updates.map((node) => [node.id, node]))
+    // Un VLAN déjà décrit garde ce qu'il sait : une cellule vide ne l'efface pas.
+    const plan = new Map((base.vlans ?? []).map((vlan) => [vlan.id, vlan]))
+    let vlansAjoutes = 0
+    for (const arrivant of result.vlans) {
+      const present = plan.get(arrivant.id)
+      if (!present) vlansAjoutes += 1
+      plan.set(arrivant.id, {
+        ...present,
+        ...arrivant,
+        name: arrivant.name ?? present?.name,
+        subnet: arrivant.subnet ?? present?.subnet,
+        gateway: arrivant.gateway ?? present?.gateway,
+        notes: arrivant.notes ?? present?.notes,
+      })
+    }
+    /*
+      On repart du document complet : un import qui ne recopierait que les équipements et les
+      liaisons emporterait avec lui le plan d'adressage, les baies, les annotations et le
+      cartouche — tout ce que le collage ne mentionne pas.
+    */
     const diagram: Diagram = {
-      title: base.title,
+      ...base,
       nodes: [...base.nodes.map((node) => updated.get(node.id) ?? node), ...result.nodes],
       links: [...base.links, ...result.links],
+      vlans: [...plan.values()].sort((a, b) => Number(a.id) - Number(b.id) || a.id.localeCompare(b.id)),
     }
     set((state) => ({
       diagram: autoLayoutOf(diagram, state.layout),
@@ -2614,7 +2692,12 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       selectedLinks: [],
     }))
     get().fitView()
-    return { nodes: result.nodes.length, links: result.links.length, warnings: result.warnings }
+    return {
+      nodes: result.nodes.length,
+      links: result.links.length,
+      vlans: vlansAjoutes,
+      warnings: result.warnings,
+    }
   },
 
   focusNode: (id) => {

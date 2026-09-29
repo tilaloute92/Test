@@ -1114,6 +1114,53 @@ deux onduleurs`}</pre>
           </P>
 
           <p className="pt-1 text-[12.5px] font-semibold text-slate-700">
+            Importer le plan d'adressage
+          </p>
+          <P>
+            Le plan VLAN existe presque toujours avant le schéma — dans un tableur, dans un
+            wiki, ou simplement dans la sortie d'un <code>show vlan</code>. Le retaper ligne à
+            ligne est la meilleure façon d'y introduire une faute qui se retrouvera ensuite
+            dans tout le document. Panneau <b>L2/L3</b> → <i>importer</i> : collez ce que vous
+            avez, tel quel.
+          </P>
+          <List
+            items={[
+              <>
+                <b>Un tableau</b>, séparé par des points-virgules, des tabulations (collage
+                direct depuis un tableur), des virgules, ou des barres verticales (tableau
+                Markdown d'un wiki). Avec ou sans ligne d'en-tête : sans en-tête, l'ordre
+                attendu est numéro, nom, sous-réseau, passerelle, commentaire.
+              </>,
+              <>
+                <b>Les en-têtes sont reconnus dans les deux langues</b> et dans l'ordre que
+                vous voulez : <i>VLAN</i>, <i>ID</i>, <i>Numéro</i>, <i>Nom</i>, <i>Name</i>,
+                <i> Sous-réseau</i>, <i>Subnet</i>, <i>CIDR</i>, <i>Passerelle</i>,
+                <i> Gateway</i>, <i>Commentaire</i>.
+              </>,
+              <>
+                <b>La sortie brute d'un commutateur</b> — <code>show vlan brief</code> chez
+                Cisco, <code>show vlan</code> chez Aruba et HPE. Numéros et noms sont repris ;
+                sous-réseaux et passerelles restent à compléter, puisqu'un commutateur ne les
+                connaît pas.
+              </>,
+              <>
+                <b>Compléter</b> enrichit le plan existant sans rien écraser : une cellule
+                vide ne dit rien et n'efface donc pas ce qui était renseigné. <b>Remplacer</b>
+                repart de la liste collée.
+              </>,
+              <>
+                <b>Exporter</b> rend le plan en CSV, prêt à rouvrir dans un tableur — et à
+                réimporter tel quel.
+              </>,
+              <>
+                Dans l'<b>import rapide</b> (<Keys>Ctrl</Keys> + <Keys>I</Keys>), une ligne
+                <code> vlan 20 ; Bureautique ; 10.10.20.0/24 ; 10.10.20.254</code> fait la
+                même chose : plan d'adressage, équipements et liaisons dans un seul collage.
+              </>,
+            ]}
+          />
+
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">
             Les VLAN suivent les trunks
           </p>
           <P>

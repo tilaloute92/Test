@@ -1,7 +1,8 @@
 import { hasDevice, LINKS, searchDevices } from './catalog'
 import { uid } from './ids'
 import { suggestLinkKind } from './linkRules'
-import type { Diagram, HaRole, LinkKind, NetLink, NetNode } from '../types'
+import { analyserVlans } from './vlanImport'
+import type { Diagram, HaRole, LinkKind, NetLink, NetNode, VlanDef } from '../types'
 
 export interface ImportResult {
   /** Équipements créés par l'import. */
@@ -9,6 +10,8 @@ export interface ImportResult {
   /** Copies modifiées d'équipements déjà présents (jamais mutés sur place). */
   updates: NetNode[]
   links: NetLink[]
+  /** Plan d'adressage repris dans le même collage. */
+  vlans: VlanDef[]
   warnings: string[]
 }
 
@@ -177,11 +180,29 @@ export function parseQuickImport(text: string, existing?: Diagram): ImportResult
     (existing?.links ?? []).map((link) => [link.from, link.to].sort().join('~') + `|${link.kind}`),
   )
 
+  const vlans: VlanDef[] = []
+
   const lines = text.split(/\r?\n/)
   for (const [index, rawLine] of lines.entries()) {
     const line = rawLine.trim()
     if (!line || line.startsWith('#') || line.startsWith('//')) continue
     const where = `ligne ${index + 1}`
+
+    /*
+      Plan d'adressage dans le même collage : « vlan 20 ; Bureautique ; 10.10.20.0/24 ;
+      10.10.20.254 ». Un plan VLAN et une liste d'équipements arrivent souvent ensemble, et
+      les séparer en deux imports n'apporte rien à personne.
+    */
+    const vlanMatch = line.match(/^vlans?\s+(.+)$/i)
+    if (vlanMatch) {
+      const lus = analyserVlans(vlanMatch[1].replace(/\s*;\s*/g, ';')).vlans
+      if (lus.length === 0) {
+        warnings.push(`${where} : numéro de VLAN illisible, ligne ignorée.`)
+      } else {
+        vlans.push(...lus)
+      }
+      continue
+    }
 
     const linkMatch = line.match(/^(.+?)\s*(?:->|-->|--|→)\s*([^:]+)(?::(.*))?$/)
     if (linkMatch) {
@@ -325,10 +346,14 @@ export function parseQuickImport(text: string, existing?: Diagram): ImportResult
     }
   }
 
-  return { nodes, updates: [...updates.values()], links, warnings }
+  return { nodes, updates: [...updates.values()], links, vlans, warnings }
 }
 
-export const QUICK_IMPORT_EXAMPLE = `# Équipements : nom ; type ; champs=valeur
+export const QUICK_IMPORT_EXAMPLE = `# Plan d'adressage : vlan numéro ; nom ; sous-réseau ; passerelle
+vlan 10 ; Serveurs ; 10.10.0.0/24 ; 10.10.0.254
+vlan 20 ; Bureautique ; 10.10.20.0/24 ; 10.10.20.254
+
+# Équipements : nom ; type ; champs=valeur
 RTR-EDGE-01 ; routeur ; ip=192.168.0.1 ; site=Siège ; zone=DMZ ; cluster=EDGE-VRRP ; role=actif ; vip=192.168.0.254
 RTR-EDGE-02 ; routeur ; ip=192.168.0.2 ; site=Siège ; zone=DMZ ; cluster=EDGE-VRRP ; role=passif ; vip=192.168.0.254
 FW-01 ; ngfw ; site=Siège ; zone=DMZ ; cluster=FW-HA ; role=actif ; alim=oui

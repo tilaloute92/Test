@@ -89,7 +89,8 @@ export function inventoryToCsv(diagram: Diagram, nodes: NetNode[]): string {
   return `﻿${[header, ...rows].join('\r\n')}\r\n`
 }
 
-function splitCsvLine(line: string, separator: string): string[] {
+/** Découpe une ligne CSV en respectant les guillemets. Partagé avec l'import des VLAN. */
+export function splitCsvLine(line: string, separator: string): string[] {
   const cells: string[] = []
   let current = ''
   let quoted = false
@@ -112,7 +113,8 @@ function splitCsvLine(line: string, separator: string): string[] {
   return cells
 }
 
-function normalizeHeader(value: string): string {
+/** Normalise un en-tête de colonne : sans accents, sans casse, sans BOM. */
+export function normalizeHeader(value: string): string {
   return value
     .replace(/^﻿/, '')
     .trim()

@@ -23,13 +23,16 @@ export function QuickImportDialog() {
 
   const run = () => {
     const result = useDiagram.getState().importText(text, mode)
-    if (result.nodes === 0 && result.links === 0) {
+    if (result.nodes === 0 && result.links === 0 && result.vlans === 0) {
       setWarnings(['Rien à importer : vérifiez le format des lignes.', ...result.warnings])
       return
     }
-    useDiagram
-      .getState()
-      .notify(`${result.nodes} équipement(s) et ${result.links} liaison(s) importés.`)
+    const compte = [
+      `${result.nodes} équipement(s)`,
+      `${result.links} liaison(s)`,
+      result.vlans > 0 ? `${result.vlans} VLAN` : '',
+    ].filter(Boolean)
+    useDiagram.getState().notify(`${compte.join(', ')} importés.`)
     if (result.warnings.length > 0) {
       setWarnings(result.warnings)
       return

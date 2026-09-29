@@ -490,6 +490,29 @@ point de routage central. **Chaque trait est un franchissement de routeur** — 
 où l'on filtre. Un VLAN sans trait ne sort pas du niveau 2 : la synchronisation de grappe, le
 VLAN natif, tout ce qui doit rester confiné se voit immédiatement.
 
+### Importer le plan d'adressage
+
+Le plan VLAN existe presque toujours avant le schéma — dans un tableur, dans un wiki, ou dans
+la sortie d'un `show vlan`. Panneau **L2/L3** → *importer* : collez ce que vous avez, tel quel.
+
+| Ce que vous collez | Ce qui est lu |
+| --- | --- |
+| Tableau `;`, tabulation, virgule ou Markdown, **avec en-tête** | Colonnes reconnues dans l'ordre que vous voulez : *VLAN, ID, Numéro, Nom, Name, Sous-réseau, Subnet, CIDR, Passerelle, Gateway, Commentaire* |
+| Le même **sans en-tête** | Ordre implicite : numéro, nom, sous-réseau, passerelle, commentaire |
+| `show vlan brief` (Cisco) | Numéros et noms ; le reste est à compléter — un commutateur ne connaît pas les sous-réseaux |
+| `show vlan` (Aruba, HPE) | Idem, colonnes séparées par une barre verticale |
+
+- **Compléter** enrichit le plan existant sans rien écraser : une cellule vide ne dit rien et
+  n'efface donc pas ce qui était renseigné. **Remplacer** repart de la liste collée ;
+- `VLAN 20`, `vlan0020` et `20` désignent le même VLAN ; une ligne sans numéro exploitable est
+  signalée plutôt que devinée ;
+- un VLAN cité deux fois voit ses informations réunies, et le rapport le dit ;
+- **exporter** rend le plan en CSV, prêt à rouvrir dans un tableur et à réimporter tel quel.
+
+Dans l'**import rapide** (`Ctrl+I`), une ligne `vlan 20 ; Bureautique ; 10.10.20.0/24 ;
+10.10.20.254` fait la même chose : plan d'adressage, équipements et liaisons dans un seul
+collage.
+
 ### Les VLAN suivent les trunks
 
 Un VLAN ne vit pas là où on l'écrit, il vit là où il est **étendu**. Déclarez `10,20,30` dans
@@ -1111,11 +1134,16 @@ Les outils pensés pour que trente ou cent équipements restent lisibles :
   nom et mis à jour au lieu d'être dupliqué.
 
   ```
+  vlan 20 ; Bureautique ; 10.10.20.0/24 ; 10.10.20.254
   SW-CORE-01 ; switch cœur ; ip=10.10.0.11 ; site=Siège ; cluster=CORE-MLAG ; role=aa
   FW-01 -> SW-CORE-01 : fibre 10 Gb/s subnet=10.0.0.0/29 ipa=10.0.0.2 ipb=10.0.0.5 routage=ospf
   SW-CORE-01 -> SW-DIST-A : fibre vlans=20,40,50 mode=trunk lag=Po10 mtu=9000 stp=racine
   FW-02 -> SW-CORE-01 : fibre !          # « ! » = liaison de secours
   ```
+
+  Une ligne commençant par `vlan` alimente le plan d'adressage : numéro, nom, sous-réseau,
+  passerelle, commentaire. Le collage peut donc décrire le plan VLAN, les équipements et les
+  liaisons d'un seul tenant.
 
   Les champs de niveau 1, 2 et 3 s'écrivent directement sur la ligne de liaison :
   `porta=`, `portb=`, `debit=`, `vlans=`, `mode=`, `natif=`, `lag=`, `mtu=`, `stp=`,

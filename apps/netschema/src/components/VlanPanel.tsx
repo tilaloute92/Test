@@ -3,6 +3,8 @@ import { Btn, Checkbox, Field, TextInput } from './ui'
 import type { Severity } from '../lib/ha'
 import { checkOsi, LAYER_LABELS_OSI, vlanColor } from '../lib/osi'
 import { porteeVlans, resumePortee } from '../lib/vlanReach'
+import { EXEMPLE_VLANS, vlansVersCsv } from '../lib/vlanImport'
+import { downloadBlob, slugify } from '../lib/exportImage'
 import { useDiagram } from '../store/useDiagram'
 import type { OsiView, VlanDef } from '../types'
 
@@ -31,11 +33,32 @@ export function VlanPanel() {
   const setStrictOsi = useDiagram((s) => s.setStrictOsi)
   const upsertVlan = useDiagram((s) => s.upsertVlan)
   const removeVlan = useDiagram((s) => s.removeVlan)
+  const importerVlans = useDiagram((s) => s.importerVlans)
   const deduce = useDiagram((s) => s.deduceVlansFromDiagram)
   const select = useDiagram((s) => s.select)
   const notify = useDiagram((s) => s.notify)
 
   const [draft, setDraft] = useState({ id: '', name: '', subnet: '', gateway: '' })
+  const [importOuvert, setImportOuvert] = useState(false)
+  const [colle, setColle] = useState('')
+  const [rapport, setRapport] = useState<{ resume: string; avertissements: string[] } | null>(null)
+
+  const appliquerImport = (mode: 'merge' | 'replace') => {
+    const { ajoutes, completes, format, avertissements } = importerVlans(colle, mode)
+    const parts = [
+      ajoutes > 0 ? `${ajoutes} VLAN ajouté(s)` : '',
+      completes > 0 ? `${completes} complété(s)` : '',
+    ].filter(Boolean)
+    const resume =
+      parts.length > 0
+        ? `${parts.join(', ')} — lu comme ${format}.`
+        : `Rien d’ajouté : le plan connaissait déjà ces VLAN (lu comme ${format}).`
+    setRapport({ resume, avertissements })
+    if (ajoutes > 0 || completes > 0) {
+      notify(resume)
+      setColle('')
+    }
+  }
 
   const vlans = diagram.vlans ?? []
   const propagation = useDiagram((s) => s.vlanPropagation)
@@ -91,21 +114,102 @@ export function VlanPanel() {
       </section>
 
       <section>
-        <div className="flex items-baseline justify-between pb-2">
+        {/* Trois actions ne tiennent pas sur la ligne du titre dans un bandeau de 288 px :
+            elles prennent leur propre rangée plutôt que de se couper en trois. */}
+        <div className="flex flex-col gap-1 pb-2">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Plan d’adressage ({vlans.length})
           </h2>
-          <button
-            type="button"
-            onClick={() => {
-              const added = deduce()
-              notify(added > 0 ? `${added} VLAN ajouté(s) depuis le schéma.` : 'Aucun nouveau VLAN trouvé.')
-            }}
-            className="text-[11px] text-blue-600 hover:underline"
-          >
-            déduire du schéma
-          </button>
+          <div className="flex items-baseline gap-3">
+            <button
+              type="button"
+              onClick={() => setImportOuvert((ouvert) => !ouvert)}
+              className="text-[11px] text-blue-600 hover:underline"
+            >
+              importer
+            </button>
+            <button
+              type="button"
+              disabled={vlans.length === 0}
+              onClick={() => {
+                downloadBlob(
+                  new Blob([vlansVersCsv(vlans)], { type: 'text/csv;charset=utf-8' }),
+                  `${slugify(diagram.title)}-vlans.csv`,
+                )
+                notify(`${vlans.length} VLAN exportés en CSV.`)
+              }}
+              className="text-[11px] text-blue-600 hover:underline disabled:cursor-not-allowed disabled:text-slate-300 disabled:no-underline"
+            >
+              exporter
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const added = deduce()
+                notify(added > 0 ? `${added} VLAN ajouté(s) depuis le schéma.` : 'Aucun nouveau VLAN trouvé.')
+              }}
+              className="text-[11px] text-blue-600 hover:underline"
+            >
+              déduire du schéma
+            </button>
+          </div>
         </div>
+
+        {/*
+          Import du plan d'adressage. Il existe presque toujours ailleurs — dans un tableur,
+          dans un wiki, dans la sortie d'un « show vlan » — et le retaper est la meilleure
+          façon d'y glisser une faute qui se propagera ensuite dans tout le document.
+        */}
+        {importOuvert && (
+          <div className="mb-2 flex flex-col gap-2 rounded-lg border border-blue-200 bg-blue-50/50 p-2.5">
+            <p className="text-[11px] leading-snug text-slate-600">
+              Collez un tableau (point-virgule, tabulation, virgule ou Markdown), avec ou sans
+              ligne d’en-tête, ou la sortie brute d’un <code>show vlan</code>. Colonnes
+              reconnues : numéro, nom, sous-réseau, passerelle, commentaire.
+            </p>
+            <textarea
+              value={colle}
+              onChange={(event) => setColle(event.target.value)}
+              spellCheck={false}
+              placeholder={EXEMPLE_VLANS}
+              className="h-28 w-full resize-none rounded-md border border-slate-200 p-2 font-mono text-[11px] leading-snug outline-none focus:border-blue-500"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Btn
+                variant="primary"
+                disabled={colle.trim().length === 0}
+                onClick={() => appliquerImport('merge')}
+              >
+                Compléter le plan
+              </Btn>
+              <Btn disabled={colle.trim().length === 0} onClick={() => appliquerImport('replace')}>
+                Remplacer
+              </Btn>
+              <button
+                type="button"
+                onClick={() => setColle(EXEMPLE_VLANS)}
+                className="text-[11px] text-blue-600 hover:underline"
+              >
+                exemple
+              </button>
+            </div>
+            {rapport && (
+              <div className="rounded-md bg-white p-2 text-[11px] leading-snug text-slate-600">
+                <p className="font-medium text-slate-700">{rapport.resume}</p>
+                {rapport.avertissements.slice(0, 5).map((avertissement) => (
+                  <p key={avertissement} className="pt-0.5 text-amber-700">
+                    ⚠ {avertissement}
+                  </p>
+                ))}
+                {rapport.avertissements.length > 5 && (
+                  <p className="pt-0.5 text-slate-400">
+                    … et {rapport.avertissements.length - 5} autre(s).
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/*
           Un VLAN déclaré sur le cœur de réseau ne s'arrête pas au cœur : il atteint tout ce
