@@ -1,5 +1,6 @@
 import { autoLayout } from './layout'
 import { deviceMeta } from './catalog'
+import { mecanismeHa } from './haTech'
 import { linkInView, vlanColor } from './osi'
 import { porteeVlans, type OrigineVlan } from './vlanReach'
 import type { Diagram, LayoutOptions, NetLink, NetNode, VlanDef } from '../types'
@@ -261,6 +262,30 @@ function domainesVlan(diagram: Diagram, propager: boolean): Diagram {
 }
 
 /**
+ * Les châssis qui ne forment qu'un seul commutateur logique.
+ *
+ * Un StackWise Virtual, un VSS, un IRF, un VSF, un Virtual Chassis : deux boîtiers, un seul
+ * plan de contrôle, un seul jeu d'interfaces de niveau 3. Le réseau qu'ils desservent est
+ * porté par les deux — le raccrocher à un seul des deux ferait croire à un point de
+ * défaillance qui n'existe pas, et masquerait celui qui existe vraiment (le plan de contrôle
+ * commun).
+ *
+ * C'est le drapeau `planDeControleCommun` du mécanisme qui tranche : un vPC, un VSX ou un
+ * MLAG gardent deux plans de contrôle et restent donc deux commutateurs distincts.
+ */
+export function chassisLogique(diagram: Diagram, node: NetNode): NetNode[] {
+  const grappe = node.cluster?.trim()
+  if (!grappe) return [node]
+  const membres = diagram.nodes.filter(
+    (autre) => autre.cluster?.trim() === grappe && autre.role !== 'witness',
+  )
+  if (membres.length < 2) return [node]
+  // Un seul membre suffit à déclarer le mécanisme, comme le fait déjà l'analyse de grappe.
+  const mecanisme = membres.map((membre) => mecanismeHa(membre.haTech)).find(Boolean)
+  return mecanisme?.planDeControleCommun ? membres : [node]
+}
+
+/**
  * Projection « routage ».
  *
  * On garde ce qui route et ce qui porte une adresse, et l'on remplace les chaînes de
@@ -313,22 +338,45 @@ function routageL3(diagram: Diagram, propager: boolean): Diagram {
     if (!reseau || groupe.membres.length === 0) continue
     const cible = groupe.passerelle && ids.has(groupe.passerelle.id) ? groupe.passerelle : rattachement
     if (!cible) continue
+    // Un châssis virtuel dessert par ses deux boîtiers : on les raccroche tous les deux.
+    const porteurs = chassisLogique(diagram, cible).filter((membre) => ids.has(membre.id))
+    const attaches = porteurs.length > 0 ? porteurs : [cible]
     const id = `net~${groupe.vlan.id}`
     nodes.push(
       noeud(id, 'cloud', titreVlan(groupe.vlan), {
         rank: rangReseaux,
         vlan: groupe.vlan.id,
-        notes: `${groupe.membres.length} équipement(s) dans ce domaine de diffusion.`,
+        notes: [
+          `${groupe.membres.length} équipement(s) dans ce domaine de diffusion.`,
+          attaches.length > 1
+            ? `Desservi par le châssis virtuel ${attaches.map((membre) => membre.name).join(' / ')} : un seul commutateur logique, deux boîtiers.`
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' '),
       }),
     )
-    links.push(
-      lien(`l~${id}`, cible.id, id, 'ethernet', {
-        label: groupe.vlan.gateway ? `passerelle ${groupe.vlan.gateway}` : undefined,
-        subnet: reseau,
-        vlans: groupe.vlan.id,
-        layers: ['l3'],
-      }),
-    )
+    for (const [rang, membre] of attaches.entries()) {
+      /*
+        Le premier brin porte l'étiquette, les suivants sont tracés en pointillés : les deux
+        châssis desservent réellement le réseau, mais superposer deux traits pleins identiques
+        n'apprendrait rien. Chacun reste le chemin de secours de l'autre.
+      */
+      links.push(
+        lien(`l~${id}~${membre.id}`, membre.id, id, 'ethernet', {
+          label:
+            rang === 0
+              ? groupe.vlan.gateway
+                ? `passerelle ${groupe.vlan.gateway}`
+                : undefined
+              : 'second châssis du commutateur logique',
+          subnet: reseau,
+          vlans: groupe.vlan.id,
+          layers: ['l3'],
+          redundant: rang > 0,
+        }),
+      )
+    }
   }
 
   return {

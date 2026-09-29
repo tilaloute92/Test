@@ -490,6 +490,33 @@ point de routage central. **Chaque trait est un franchissement de routeur** — 
 où l'on filtre. Un VLAN sans trait ne sort pas du niveau 2 : la synchronisation de grappe, le
 VLAN natif, tout ce qui doit rester confiné se voit immédiatement.
 
+### Châssis virtuels : deux boîtiers, un commutateur
+
+Un StackWise Virtual, un VSS, un IRF, un VSF, un Virtual Chassis : deux châssis, mais **un
+seul plan de contrôle** et un seul jeu d'interfaces de niveau 3. Le réseau desservi l'est donc
+par les deux, et la vue routage les raccorde **tous les deux** — le second en pointillés, pour
+ne pas superposer deux traits identiques.
+
+Encore faut-il le lui dire. Sur **chaque** membre :
+
+| Champ | Valeur |
+| --- | --- |
+| **Grappe** | Le même nom sur les deux châssis (`CORE-VSS`) |
+| **Mécanisme de bascule** | StackWise Virtual / VSS, StackWise, VSF, IRF, Virtual Chassis, SummitStack, iStack/CSS — c'est lui qui porte l'information « plan de contrôle commun » |
+| **Lien entre les deux** | De type pile (le SVL) ; l'analyse le réclame s'il manque |
+| **Rôles** | Actif / passif |
+| **Modèle** | Facultatif mais utile : l'analyse vérifie la gamme |
+
+Le bouton **Déduire** du panneau *Haute dispo* remplit le mécanisme tout seul d'après le
+matériel et le lien tracé — deux Catalyst 9500 reliés par un lien de pile donnent StackWise
+Virtual. À l'import rapide : `cluster=CORE-VSS ; bascule=vss ; role=actif`, le champ
+`bascule=` acceptant l'identifiant, l'abréviation ou le nom complet.
+
+**Sans mécanisme déclaré, deux commutateurs en grappe restent deux commutateurs distincts**,
+et le réseau ne se raccroche qu'au premier. C'est voulu : un vPC, un VSX, un MLAG ou un VLT
+gardent, eux, **deux** plans de contrôle — ce sont bien deux commutateurs, et la vue logique
+les traite comme tels.
+
 ### Importer le plan d'adressage
 
 Le plan VLAN existe presque toujours avant le schéma — dans un tableur, dans un wiki, ou dans
@@ -1135,7 +1162,7 @@ Les outils pensés pour que trente ou cent équipements restent lisibles :
 
   ```
   vlan 20 ; Bureautique ; 10.10.20.0/24 ; 10.10.20.254
-  SW-CORE-01 ; switch cœur ; ip=10.10.0.11 ; site=Siège ; cluster=CORE-MLAG ; role=aa
+  SW-CORE-01 ; switch cœur ; ip=10.10.0.11 ; site=Siège ; cluster=CORE-MLAG ; role=aa ; bascule=mlag
   FW-01 -> SW-CORE-01 : fibre 10 Gb/s subnet=10.0.0.0/29 ipa=10.0.0.2 ipb=10.0.0.5 routage=ospf
   SW-CORE-01 -> SW-DIST-A : fibre vlans=20,40,50 mode=trunk lag=Po10 mtu=9000 stp=racine
   FW-02 -> SW-CORE-01 : fibre !          # « ! » = liaison de secours
@@ -1146,8 +1173,9 @@ Les outils pensés pour que trente ou cent équipements restent lisibles :
   liaisons d'un seul tenant.
 
   Les champs de niveau 1, 2 et 3 s'écrivent directement sur la ligne de liaison :
-  `porta=`, `portb=`, `debit=`, `vlans=`, `mode=`, `natif=`, `lag=`, `mtu=`, `stp=`,
-  `subnet=`, `ipa=`, `ipb=`, `vrf=`, `routage=`.
+  `porta=`, `portb=`, `debit=`, `vlans=`, `mode=`, `natif=`, `lag=`, `lacp=`, `mtu=`, `stp=`,
+  `subnet=`, `ipa=`, `ipb=`, `vrf=`, `routage=`. Sur la ligne d'un équipement, `bascule=`
+  renseigne le mécanisme de haute disponibilité (`vss`, `vpc`, `fgcp`, `vsphere-ha`…).
 
 - **Type de liaison déduit** — deux pare-feu d'une même grappe se relient par un battement de
   cœur, deux switches cœur par un lien de pile, un onduleur par une liaison électrique. Le

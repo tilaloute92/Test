@@ -1,6 +1,7 @@
 import { hasDevice, LINKS, searchDevices } from './catalog'
 import { uid } from './ids'
 import { suggestLinkKind } from './linkRules'
+import { trouverMecanisme } from './haTech'
 import { analyserVlans } from './vlanImport'
 import type { Diagram, HaRole, LinkKind, NetLink, NetNode, VlanDef } from '../types'
 
@@ -332,6 +333,16 @@ export function parseQuickImport(text: string, existing?: Diagram): ImportResult
           node.role = ROLE_WORDS[normalize(value)] ?? undefined
           if (!node.role) warnings.push(`${where} : rôle « ${value} » inconnu.`)
           break
+        case 'bascule':
+        case 'hatech':
+        case 'mecanisme':
+        case 'ha': {
+          // « bascule=vss », « bascule=StackWise Virtual », « bascule=stackwise-virtual ».
+          const mecanisme = trouverMecanisme(value)
+          if (mecanisme) node.haTech = mecanisme.id
+          else warnings.push(`${where} : mécanisme de bascule « ${value} » inconnu.`)
+          break
+        }
         case 'alim':
         case 'power':
           node.dualPower = /^(oui|yes|ab|a\/b|true|1)$/i.test(value)

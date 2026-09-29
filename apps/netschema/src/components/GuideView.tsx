@@ -1114,6 +1114,56 @@ deux onduleurs`}</pre>
           </P>
 
           <p className="pt-1 text-[12.5px] font-semibold text-slate-700">
+            Châssis virtuels : deux boîtiers, un commutateur
+          </p>
+          <P>
+            Un StackWise Virtual, un VSS, un IRF, un VSF, un Virtual Chassis : deux châssis,
+            mais <b>un seul plan de contrôle</b> et un seul jeu d'interfaces de niveau 3. Le
+            réseau desservi l'est donc par les deux, et la vue routage les raccorde tous les
+            deux — le second en pointillés, pour ne pas superposer deux traits identiques.
+          </P>
+          <Note>
+            Pour que l'application le sache, il faut lui dire. Sur <b>chaque</b> membre :
+            la même <b>grappe</b>, et surtout le <b>mécanisme de bascule</b> — c'est lui qui
+            porte l'information « plan de contrôle commun ». Sans mécanisme déclaré, deux
+            commutateurs en grappe restent deux commutateurs distincts, et le réseau ne se
+            raccroche qu'au premier.
+          </Note>
+          <List
+            items={[
+              <>
+                <b>Grappe</b> : le même nom sur les deux châssis (CORE-VSS, STACK-ACCES…).
+              </>,
+              <>
+                <b>Mécanisme de bascule</b> : StackWise Virtual / VSS, StackWise, VSF, IRF,
+                Virtual Chassis, SummitStack, iStack/CSS. Le bouton <b>Déduire</b> du panneau{' '}
+                <b>Haute dispo</b> le remplit tout seul d'après le matériel et le lien tracé —
+                deux Catalyst 9500 reliés par un lien de pile donnent StackWise Virtual.
+              </>,
+              <>
+                <b>Le lien entre les deux</b>, de type pile : c'est le SVL, le lien
+                d'empilement. L'analyse le réclame s'il manque.
+              </>,
+              <>
+                <b>Rôles</b> actif et passif, et le <b>modèle</b> : l'analyse vérifie la
+                gamme, vPC n'étant pas un mécanisme Catalyst et VSX pas un mécanisme CX 6000.
+              </>,
+              <>
+                À l'import rapide : <code>cluster=CORE-VSS ; bascule=vss ; role=actif</code>.
+                Le champ <code>bascule=</code> accepte l'identifiant, l'abréviation ou le nom
+                complet.
+              </>,
+            ]}
+          />
+          <P>
+            Attention à ce que cela veut dire : un châssis virtuel n'est <b>pas</b> un vPC, un
+            VSX, un MLAG ou un VLT. Ceux-là gardent <b>deux</b> plans de contrôle — ce sont
+            bien deux commutateurs, et la vue logique les traite comme tels. C'est aussi
+            pourquoi l'analyse signale le plan de contrôle commun comme une réserve : la
+            grappe protège d'une panne matérielle, pas d'une mise à jour ratée.
+          </P>
+
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">
             Importer le plan d'adressage
           </p>
           <P>

@@ -1118,6 +1118,30 @@ const ALIAS: Record<string, string> = {
   'pan-ha': 'pan-ha-ap',
 }
 
+/**
+ * Retrouve un mécanisme d'après ce qu'on en dit : son identifiant, un alias, ou son libellé —
+ * « stackwise-virtual », « vss », « StackWise Virtual ». Sert aux imports, où l'on écrit le
+ * nom d'usage plutôt que l'identifiant interne.
+ */
+export function trouverMecanisme(valeur: string): MecanismeHa | undefined {
+  const propre = valeur.trim()
+  if (!propre) return undefined
+  const direct = mecanismeHa(propre.toLowerCase())
+  if (direct) return direct
+  const simple = (texte: string) =>
+    texte
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+  const cherche = simple(propre)
+  return (
+    MECANISMES_HA.find((mecanisme) => simple(mecanisme.label) === cherche) ??
+    MECANISMES_HA.find((mecanisme) => simple(mecanisme.label).includes(cherche) && cherche.length >= 3)
+  )
+}
+
 export function mecanismeHa(id?: string): MecanismeHa | undefined {
   if (!id) return undefined
   return PAR_ID.get(id) ?? PAR_ID.get(ALIAS[id] ?? '')
