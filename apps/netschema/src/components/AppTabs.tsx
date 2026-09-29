@@ -1,6 +1,7 @@
 import { useDiagram } from '../store/useDiagram'
 import { canEdit, useSession } from '../store/useSession'
 import type { AppView } from '../types'
+import { APP_VERSION } from '../lib/version'
 
 /**
  * Bandeau serveur : présent seulement quand l'application est servie par le service
@@ -99,8 +100,12 @@ export function AppTabs() {
 
   return (
     <nav className="flex items-center gap-3 border-b border-slate-200 bg-slate-900 px-3 py-1.5">
-      <span className="rounded-md bg-white/10 px-2 py-1 text-[11px] font-bold tracking-wide text-white">
+      <span
+        className="flex items-baseline gap-1.5 rounded-md bg-white/10 px-2 py-1 text-[11px] font-bold tracking-wide text-white"
+        title={`NetSchema ${APP_VERSION} — la version qui a produit ce schéma est inscrite dans le fichier enregistré, le dossier technique et la page interactive.`}
+      >
         NETSCHEMA
+        <span className="font-medium tracking-normal text-slate-400">v{APP_VERSION}</span>
       </span>
       <div className="flex gap-1">
         {TABS.map((tab) => (

@@ -25,6 +25,7 @@ import type {
   StpRole,
   VlanDef,
 } from '../types'
+import { APP_SIGNATURE } from './version'
 
 const STORAGE_KEY = 'netschema:diagram:v1'
 const FILE_VERSION = 1
@@ -445,7 +446,21 @@ export function classeurJson(classeur: Classeur): Record<string, unknown> {
 }
 
 export function diagramFileContent(classeur: Classeur): string {
-  return JSON.stringify({ version: FILE_VERSION, diagram: classeurJson(classeur) }, null, 2)
+  /*
+    `version` est celle du format de fichier ; `application` celle du logiciel qui l'a écrit.
+    Les deux servent à des choses différentes : la première dit comment relire, la seconde
+    permet de savoir, des mois plus tard, avec quoi le document a été produit.
+  */
+  return JSON.stringify(
+    {
+      version: FILE_VERSION,
+      application: APP_SIGNATURE,
+      ecritLe: new Date().toISOString(),
+      diagram: classeurJson(classeur),
+    },
+    null,
+    2,
+  )
 }
 
 export async function readDiagramFile(file: File): Promise<Diagram> {

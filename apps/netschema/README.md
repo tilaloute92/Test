@@ -39,6 +39,14 @@ npm run lint
 Le build utilise `base: './'` : le contenu de `dist/` fonctionne depuis n'importe quel
 sous-répertoire d'un serveur web (IIS, nginx, partage réseau).
 
+### Version
+
+La version vient de `package.json` et n'est écrite qu'à un seul endroit : `vite.config.ts`
+l'injecte au build, `src/lib/version.ts` l'expose, et c'est la même qui nomme le paquet
+d'installation Windows. Elle apparaît dans la barre de modules (`NETSCHEMA v1.1.0`), dans
+l'en-tête du guide, au pied du dossier technique et de la page interactive exportée, et dans
+le fichier JSON enregistré — un schéma qui circule porte ainsi la version qui l'a produit.
+
 ## Le « semi-automatisé » en pratique
 
 Le placement automatique (`src/lib/layout.ts`) fait le gros du travail :
@@ -481,6 +489,26 @@ Le même découpage, avec le routage : un cadre par VLAN, sa passerelle, et un t
 point de routage central. **Chaque trait est un franchissement de routeur** — donc un endroit
 où l'on filtre. Un VLAN sans trait ne sort pas du niveau 2 : la synchronisation de grappe, le
 VLAN natif, tout ce qui doit rester confiné se voit immédiatement.
+
+### Les VLAN suivent les trunks
+
+Un VLAN ne vit pas là où on l'écrit, il vit là où il est **étendu**. Déclarez `10,20,30` dans
+le champ **VLAN** d'un switch cœur : les trois atteindront tout ce que ses liaisons en **mode
+trunk** desservent, de commutateur en commutateur, et les vues logiques le montreront.
+
+- la propagation ne passe que par les **trunks** — liaison de type trunk ou pile, ou dont un
+  port est déclaré en mode trunk. Un port d'accès ne porte qu'un VLAN et n'étend rien ;
+- une **liste de VLAN autorisés** renseignée sur la liaison fait autorité : le VLAN qui n'y
+  figure pas s'arrête là. Une liaison qui ne dit rien laisse tout passer, comme un trunk non
+  restreint ;
+- seuls les équipements qui **commutent** relaient : un serveur entre dans le domaine, il ne
+  le prolonge pas ;
+- un équipement atteint par propagation le dit au survol : « VLAN 20 reçu par trunk, non
+  déclaré sur cet équipement ».
+
+Le panneau **L2/L3** affiche la portée de chaque VLAN — combien d'équipements, dont combien
+atteints par trunk — et la case *Suivre les VLAN sur les trunks* revient à la seule lecture
+littérale.
 
 ### Projecteur VLAN
 

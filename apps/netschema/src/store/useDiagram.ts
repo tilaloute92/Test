@@ -169,6 +169,13 @@ interface DiagramStore {
   vlanFocus: string | null
   setVlanFocus: (id: string | null) => void
   /**
+   * Suivre les VLAN le long des trunks. Un VLAN déclaré sur le cœur de réseau atteint tout
+   * ce que les trunks desservent : c'est la réalité du domaine de diffusion, et c'est ce
+   * qu'on veut voir en vue logique. Débrayable pour ne montrer que ce qui est écrit.
+   */
+  vlanPropagation: boolean
+  setVlanPropagation: (actif: boolean) => void
+  /**
    * Le schéma tel qu'il est affiché. C'est le document lui-même partout, sauf dans les vues
    * logiques projetées, qui en sont une lecture calculée.
    */
@@ -472,6 +479,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   showLags: true,
   vueLogique: 'routage' as VueLogique,
   vlanFocus: null as string | null,
+  vlanPropagation: true,
   viewMode: 'architecture',
   appView: 'diagram',
   mode: 'select',
@@ -2644,6 +2652,15 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     get().fitView()
   },
 
+  setVlanPropagation: (actif) => {
+    set({ vlanPropagation: actif })
+    get().notify(
+      actif
+        ? 'Les VLAN sont suivis le long des trunks : les vues logiques montrent leur portée réelle.'
+        : 'Les VLAN ne sont plus suivis : seul ce qui est écrit sur les équipements et les liaisons compte.',
+    )
+  },
+
   setVlanFocus: (id) => {
     set({ vlanFocus: id })
     if (id) {
@@ -2655,8 +2672,10 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   schemaAffiche: () => {
-    const { diagram, viewMode, vueLogique, layout } = get()
-    return viewMode === 'logique' ? projectionLogique(diagram, vueLogique, layout) : diagram
+    const { diagram, viewMode, vueLogique, layout, vlanPropagation } = get()
+    return viewMode === 'logique'
+      ? projectionLogique(diagram, vueLogique, layout, vlanPropagation)
+      : diagram
   },
 
   estProjection: () => get().viewMode === 'logique',
@@ -2741,6 +2760,12 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       bounds.maxY = Math.max(bounds.maxY, annotation.y, annotation.y + annotation.h)
     }
     if (get().showLegend || diagram.titleBlock?.show) bounds.maxY += 190
+    /*
+      Les noms de couches s'écrivent dans la marge gauche, hors du nuage d'équipements. En
+      vue « plan VLAN » ils portent le sous-réseau et la passerelle : les ignorer reviendrait
+      à cadrer sur un schéma dont il manque la légende de chaque rail.
+    */
+    if (get().showLayerLabels) bounds.minX -= diagram.layerColors ? 230 : 120
     const width = bounds.maxX - bounds.minX
     const height = bounds.maxY - bounds.minY
     const zoom = Math.min(

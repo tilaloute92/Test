@@ -1,6 +1,7 @@
 import { autoLayout } from './layout'
 import { deviceMeta } from './catalog'
-import { linkInView, parseVlanList, usedVlans, vlanColor } from './osi'
+import { linkInView, vlanColor } from './osi'
+import { porteeVlans, type OrigineVlan } from './vlanReach'
 import type { Diagram, LayoutOptions, NetLink, NetNode, VlanDef } from '../types'
 
 /**
@@ -41,6 +42,8 @@ export interface MembresVlan {
   couleur: string
   /** Équipements du domaine de diffusion, infrastructure d'abord. */
   membres: NetNode[]
+  /** Pourquoi chacun en fait partie : déclaré sur place, ou atteint par un trunk. */
+  origines: Map<string, OrigineVlan>
   /** Équipement qui porte la passerelle, quand on sait le désigner. */
   passerelle?: NetNode
 }
@@ -53,32 +56,27 @@ export interface MembresVlan {
  * du domaine, et c'est ce qui permet de voir qu'un VLAN traverse un bâtiment qu'il ne devrait
  * pas traverser.
  */
-export function membresParVlan(diagram: Diagram): MembresVlan[] {
+export function membresParVlan(diagram: Diagram, propager = true): MembresVlan[] {
   const parId = new Map(diagram.nodes.map((node) => [node.id, node]))
-  const utilises = usedVlans(diagram)
+  const portees = porteeVlans(diagram, propager)
   const declares = new Map((diagram.vlans ?? []).map((vlan) => [vlan.id, vlan]))
 
-  const ids = [...new Set([...utilises.keys(), ...declares.keys()])].sort(
+  const ids = [...new Set([...portees.keys(), ...declares.keys()])].sort(
     (a, b) => (Number(a) || 0) - (Number(b) || 0),
   )
 
   return ids.map((id) => {
     const vlan = declares.get(id) ?? { id }
-    const trouves = new Map<string, NetNode>()
-    const usage = utilises.get(id)
-    for (const nodeId of usage?.nodes ?? []) {
+    const portee = portees.get(id)
+    const origines = new Map<string, OrigineVlan>()
+    const trouves: NetNode[] = []
+    for (const [nodeId, origine] of portee?.nodes ?? []) {
       const node = parId.get(nodeId)
-      if (node) trouves.set(node.id, node)
+      if (!node) continue
+      trouves.push(node)
+      origines.set(node.id, origine)
     }
-    for (const linkId of usage?.links ?? []) {
-      const link = diagram.links.find((item) => item.id === linkId)
-      if (!link) continue
-      for (const extremite of [link.from, link.to]) {
-        const node = parId.get(extremite)
-        if (node) trouves.set(node.id, node)
-      }
-    }
-    const membres = [...trouves.values()].sort((a, b) => {
+    const membres = trouves.sort((a, b) => {
       const ra = deviceMeta(a.kind).rank
       const rb = deviceMeta(b.kind).rank
       return ra - rb || a.name.localeCompare(b.name)
@@ -88,7 +86,7 @@ export function membresParVlan(diagram: Diagram): MembresVlan[] {
           (node) => node.ip?.trim() === vlan.gateway?.trim() || node.vip?.trim() === vlan.gateway?.trim(),
         )
       : undefined
-    return { vlan, couleur: vlanColor(id, diagram.vlans), membres, passerelle }
+    return { vlan, couleur: vlanColor(id, diagram.vlans), membres, origines, passerelle }
   })
 }
 
@@ -124,8 +122,8 @@ const lien = (id: string, from: string, to: string, kind: NetLink['kind'], extra
  * qui relie, et c'est justement ce qu'on veut dire : dans un domaine de diffusion, tout le
  * monde se parle directement.
  */
-function railsVlan(diagram: Diagram): Diagram {
-  const groupes = membresParVlan(diagram).filter((groupe) => groupe.membres.length > 0)
+function railsVlan(diagram: Diagram, propager: boolean): Diagram {
+  const groupes = membresParVlan(diagram, propager).filter((groupe) => groupe.membres.length > 0)
   const nodes: NetNode[] = []
   const layerNames: Record<string, string> = {}
   const layerColors: Record<string, string> = {}
@@ -138,6 +136,7 @@ function railsVlan(diagram: Diagram): Diagram {
       et leurs cadres traverseraient les rails. Seul compte le domaine de diffusion.
     */
     for (const membre of groupe.membres) {
+      const parTrunk = groupe.origines.get(membre.id) === 'trunk'
       nodes.push(
         noeud(`vlan${groupe.vlan.id}~${membre.id}`, membre.kind, membre.name, {
           rank: rang,
@@ -145,7 +144,9 @@ function railsVlan(diagram: Diagram): Diagram {
           vlan: groupe.vlan.id,
           model: membre.model,
           vendor: membre.vendor,
-          notes: membre.notes,
+          notes: parTrunk
+            ? `VLAN ${groupe.vlan.id} reçu par trunk, non déclaré sur cet équipement.`
+            : membre.notes,
         }),
       )
     }
@@ -169,8 +170,8 @@ function railsVlan(diagram: Diagram): Diagram {
  * point de routage central. Ce qui ne rejoint pas le centre n'est pas routé : la lecture est
  * immédiate.
  */
-function domainesVlan(diagram: Diagram): Diagram {
-  const groupes = membresParVlan(diagram).filter((groupe) => groupe.membres.length > 0)
+function domainesVlan(diagram: Diagram, propager: boolean): Diagram {
+  const groupes = membresParVlan(diagram, propager).filter((groupe) => groupe.membres.length > 0)
   const nodes: NetNode[] = []
   const links: NetLink[] = []
   const layerNames: Record<string, string> = { '0': 'Routage inter-VLAN' }
@@ -235,7 +236,14 @@ function domainesVlan(diagram: Diagram): Diagram {
           vlan: groupe.vlan.id,
           model: membre.model,
           vendor: membre.vendor,
-          notes: routable ? membre.notes : 'VLAN non routé : ce domaine ne sort pas du niveau 2.',
+          notes: [
+            groupe.origines.get(membre.id) === 'trunk'
+              ? `VLAN ${groupe.vlan.id} reçu par trunk, non déclaré sur cet équipement.`
+              : membre.notes,
+            routable ? '' : 'VLAN non routé : ce domaine ne sort pas du niveau 2.',
+          ]
+            .filter(Boolean)
+            .join(' '),
         }),
       )
     }
@@ -259,7 +267,7 @@ function domainesVlan(diagram: Diagram): Diagram {
  * commutation par les réseaux qu'elles desservent : un schéma de routage tient sur une page
  * et se lit comme un plan d'adressage.
  */
-function routageL3(diagram: Diagram): Diagram {
+function routageL3(diagram: Diagram, propager: boolean): Diagram {
   /*
     Ne survit que ce qui décide d'un chemin : les routeurs, les pare-feu, les répartiteurs,
     le cœur de niveau 3, les extrémités WAN — et tout équipement qui porte une passerelle.
@@ -300,7 +308,7 @@ function routageL3(diagram: Diagram): Diagram {
   const rangReseaux =
     Math.max(0, ...nodes.map((node) => deviceMeta(node.kind).rank)) + 1
 
-  for (const groupe of membresParVlan(diagram)) {
+  for (const groupe of membresParVlan(diagram, propager)) {
     const reseau = groupe.vlan.subnet?.trim()
     if (!reseau || groupe.membres.length === 0) continue
     const cible = groupe.passerelle && ids.has(groupe.passerelle.id) ? groupe.passerelle : rattachement
@@ -338,34 +346,49 @@ function routageL3(diagram: Diagram): Diagram {
   Le calcul est refait à chaque rendu du plan : on garde le dernier résultat, qui ne dépend que
   du document, de la vue et des options de placement.
 */
-let cache: { diagram: Diagram; vue: VueLogique; layout: LayoutOptions; resultat: Diagram } | null = null
+let cache:
+  | { diagram: Diagram; vue: VueLogique; layout: LayoutOptions; propager: boolean; resultat: Diagram }
+  | null = null
 
 /** Projection logique du document, prête à être dessinée. */
-export function projectionLogique(diagram: Diagram, vue: VueLogique, layout: LayoutOptions): Diagram {
-  if (cache && cache.diagram === diagram && cache.vue === vue && cache.layout === layout) {
+export function projectionLogique(
+  diagram: Diagram,
+  vue: VueLogique,
+  layout: LayoutOptions,
+  propager = true,
+): Diagram {
+  if (
+    cache &&
+    cache.diagram === diagram &&
+    cache.vue === vue &&
+    cache.layout === layout &&
+    cache.propager === propager
+  ) {
     return cache.resultat
   }
   const brut =
-    vue === 'rails' ? railsVlan(diagram) : vue === 'domaines' ? domainesVlan(diagram) : routageL3(diagram)
+    vue === 'rails'
+      ? railsVlan(diagram, propager)
+      : vue === 'domaines'
+        ? domainesVlan(diagram, propager)
+        : routageL3(diagram, propager)
   const resultat = { ...brut, nodes: autoLayout(brut, layout) }
-  cache = { diagram, vue, layout, resultat }
+  cache = { diagram, vue, layout, propager, resultat }
   return resultat
 }
 
-/** Équipements et liaisons que porte un VLAN donné : le « projecteur » du plan. */
-export function porteurs(diagram: Diagram, vlanId: string): { nodes: Set<string>; links: Set<string> } {
-  const nodes = new Set<string>()
-  const links = new Set<string>()
-  for (const node of diagram.nodes) {
-    if (parseVlanList(node.vlan?.replace(/vlan/gi, '')).includes(vlanId)) nodes.add(node.id)
+/**
+ * Équipements et liaisons que porte un VLAN donné : le « projecteur » du plan. Il suit les
+ * trunks comme le reste — sinon il n'éclairerait que l'endroit où le VLAN a été saisi.
+ */
+export function porteurs(
+  diagram: Diagram,
+  vlanId: string,
+  propager = true,
+): { nodes: Set<string>; links: Set<string> } {
+  const portee = porteeVlans(diagram, propager).get(vlanId)
+  return {
+    nodes: new Set(portee?.nodes.keys() ?? []),
+    links: new Set(portee?.links.keys() ?? []),
   }
-  for (const link of diagram.links) {
-    const portes = parseVlanList(link.vlans)
-    if (link.nativeVlan?.trim()) portes.push(link.nativeVlan.trim())
-    if (!portes.includes(vlanId)) continue
-    links.add(link.id)
-    nodes.add(link.from)
-    nodes.add(link.to)
-  }
-  return { nodes, links }
 }

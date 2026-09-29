@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Btn, Checkbox, Field, TextInput } from './ui'
 import type { Severity } from '../lib/ha'
-import { checkOsi, LAYER_LABELS_OSI, usedVlans, vlanColor } from '../lib/osi'
+import { checkOsi, LAYER_LABELS_OSI, vlanColor } from '../lib/osi'
+import { porteeVlans, resumePortee } from '../lib/vlanReach'
 import { useDiagram } from '../store/useDiagram'
 import type { OsiView, VlanDef } from '../types'
 
@@ -37,7 +38,9 @@ export function VlanPanel() {
   const [draft, setDraft] = useState({ id: '', name: '', subnet: '', gateway: '' })
 
   const vlans = diagram.vlans ?? []
-  const usage = useMemo(() => usedVlans(diagram), [diagram])
+  const propagation = useDiagram((s) => s.vlanPropagation)
+  const setPropagation = useDiagram((s) => s.setVlanPropagation)
+  const portees = useMemo(() => porteeVlans(diagram, propagation), [diagram, propagation])
   const findings = useMemo(() => checkOsi(diagram), [diagram])
 
   const add = () => {
@@ -104,12 +107,32 @@ export function VlanPanel() {
           </button>
         </div>
 
+        {/*
+          Un VLAN déclaré sur le cœur de réseau ne s'arrête pas au cœur : il atteint tout ce
+          que les trunks desservent. C'est ce que compte la portée, et ce que montrent les
+          vues logiques.
+        */}
+        <label className="mb-2 flex cursor-pointer items-start gap-2 rounded-lg bg-slate-50 p-2 text-[11px] leading-snug text-slate-600">
+          <input
+            type="checkbox"
+            checked={propagation}
+            onChange={(event) => setPropagation(event.target.checked)}
+            className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-slate-300 accent-blue-600"
+          />
+          <span>
+            <b className="text-slate-700">Suivre les VLAN sur les trunks.</b> Un VLAN déclaré
+            sur un commutateur atteint ses voisins par les liaisons en mode trunk, tant que la
+            liste des VLAN autorisés ne l'en empêche pas. Décochez pour ne compter que ce qui
+            est écrit.
+          </span>
+        </label>
+
         <ul className="flex flex-col gap-1.5">
           {vlans.map((vlan) => (
             <VlanRow
               key={vlan.id}
               vlan={vlan}
-              used={(usage.get(vlan.id)?.nodes.length ?? 0) + (usage.get(vlan.id)?.links.length ?? 0)}
+              portee={resumePortee(portees.get(vlan.id))}
               onChange={upsertVlan}
               onRemove={() => removeVlan(vlan.id)}
             />
@@ -188,12 +211,12 @@ export function VlanPanel() {
 
 function VlanRow({
   vlan,
-  used,
+  portee,
   onChange,
   onRemove,
 }: {
   vlan: VlanDef
-  used: number
+  portee: { equipements: number; liaisons: number; parTrunk: number }
   onChange: (vlan: VlanDef) => void
   onRemove: () => void
 }) {
@@ -213,6 +236,14 @@ function VlanRow({
           {vlan.name ? ` — ${vlan.name}` : ''}
         </span>
         <span className="shrink-0 text-[10px] text-slate-400">{vlan.subnet ?? '—'}</span>
+        <span
+          className="shrink-0 rounded bg-slate-100 px-1 text-[10px] font-medium text-slate-500"
+          title={`${portee.equipements} équipement(s) dans ce domaine de diffusion${
+            portee.parTrunk > 0 ? `, dont ${portee.parTrunk} atteint(s) par trunk` : ''
+          }`}
+        >
+          {portee.equipements}
+        </span>
       </button>
       {open && (
         <div className="flex flex-col gap-2 border-t border-slate-100 p-2">
@@ -226,7 +257,10 @@ function VlanRow({
             <TextInput value={vlan.gateway ?? ''} onChange={(gateway) => onChange({ ...vlan, gateway })} />
           </Field>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-400">{used} utilisation(s) dans le schéma</span>
+            <span className="text-[11px] text-slate-400">
+              {portee.equipements} équipement(s), {portee.liaisons} liaison(s)
+              {portee.parTrunk > 0 ? ` — dont ${portee.parTrunk} atteint(s) par trunk` : ''}
+            </span>
             <button type="button" onClick={onRemove} className="text-[11px] text-red-600 hover:underline">
               Supprimer
             </button>

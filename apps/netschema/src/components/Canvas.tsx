@@ -168,6 +168,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const vueLogique = useDiagram((s) => s.vueLogique)
   const layout = useDiagram((s) => s.layout)
   const vlanFocus = useDiagram((s) => s.vlanFocus)
+  const vlanPropagation = useDiagram((s) => s.vlanPropagation)
   const view = useDiagram((s) => s.view)
   const mode = useDiagram((s) => s.mode)
   const connectFrom = useDiagram((s) => s.connectFrom)
@@ -217,8 +218,8 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   */
   const projection = viewMode === 'logique'
   const diagram = useMemo(
-    () => (projection ? projectionLogique(document_, vueLogique, layout) : document_),
-    [document_, projection, vueLogique, layout],
+    () => (projection ? projectionLogique(document_, vueLogique, layout, vlanPropagation) : document_),
+    [document_, projection, vueLogique, layout, vlanPropagation],
   )
   const locked = verrouille || projection
 
@@ -243,12 +244,12 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   */
   const eteints = useMemo(() => {
     if (!vlanFocus) return null
-    const { nodes, links } = porteurs(diagram, vlanFocus)
+    const { nodes, links } = porteurs(diagram, vlanFocus, vlanPropagation)
     return {
       nodes: new Set(display.nodes.filter((node) => !nodes.has(node.id)).map((node) => node.id)),
       links: new Set(display.links.filter((link) => !links.has(link.id)).map((link) => link.id)),
     }
-  }, [diagram, display.links, display.nodes, vlanFocus])
+  }, [diagram, display.links, display.nodes, vlanFocus, vlanPropagation])
 
   const nodeById = useMemo(() => new Map(display.nodes.map((n) => [n.id, n])), [display.nodes])
 

@@ -1,4 +1,5 @@
 import { MODES_LACP } from './aggregates'
+import { APP_SIGNATURE } from './version'
 import { deviceMeta, LINKS } from './catalog'
 import { mecanismeHa } from './haTech'
 import { LAYER_LABELS_OSI, linkEnd, linkLayers } from './osi'
@@ -687,7 +688,7 @@ ${svgVues}
 </main>
 
 <div id="bulle"></div>
-<footer>Page autonome produite par NetSchema — aucune connexion requise. Toutes les pages, leurs vues et l'intégralité des informations sont dans ce seul fichier.</footer>
+<footer>Page autonome produite par ${APP_SIGNATURE} — aucune connexion requise. Toutes les pages, leurs vues et l'intégralité des informations sont dans ce seul fichier.</footer>
 
 <script type="application/json" id="donnees">${json}</script>
 <script>${SCRIPT}</script>

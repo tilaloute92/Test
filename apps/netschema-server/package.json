@@ -1,10 +1,12 @@
 {
   "name": "netschema-server",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Serveur NetSchema : authentification, schémas partagés, diffusion de l'application web.",
   "type": "module",
-  "engines": { "node": ">=20.11" },
+  "engines": {
+    "node": ">=20.11"
+  },
   "scripts": {
     "build": "tsc -b",
     "start": "node dist/index.js",

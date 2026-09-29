@@ -12,6 +12,7 @@
  */
 
 import { agregats, formaterDebit, MODES_LACP } from './aggregates'
+import { APP_SIGNATURE } from './version'
 import { deviceMeta, LAYER_LABELS, LINKS, ROLES } from './catalog'
 import { controlerMatrice, FLOW_ACTIONS } from './flows'
 import { auditDiagram } from './ha'
@@ -276,7 +277,7 @@ export function dossierTechnique(titre: string, pages: PageDossier[]): string {
         <li>Haute disponibilité</li>
         <li>Réserves et points d’attention</li>
       </ol>
-      <p class="pied">Document produit le ${echapper(aujourdhui)} par NetSchema. Les informations
+      <p class="pied">Document produit le ${echapper(aujourdhui)} par ${echapper(APP_SIGNATURE)}. Les informations
       proviennent du schéma : elles ne reflètent pas une lecture des configurations réelles.</p>
     </section>
   `

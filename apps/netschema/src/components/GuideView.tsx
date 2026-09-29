@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Btn } from './ui'
 import { VOICE_EXAMPLE_GROUPS } from '../lib/voice'
+import { APP_VERSION } from '../lib/version'
 import { useDiagram } from '../store/useDiagram'
 import type { AppView } from '../types'
 
@@ -1112,6 +1113,45 @@ deux onduleurs`}</pre>
             confiné se voit immédiatement.
           </P>
 
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">
+            Les VLAN suivent les trunks
+          </p>
+          <P>
+            Un VLAN ne vit pas là où on l'écrit, il vit là où il est <b>étendu</b>. Déclarez
+            « 10,20,30 » sur le champ <b>VLAN</b> d'un switch cœur : les trois atteindront
+            tout ce que ses liaisons en <b>mode trunk</b> desservent, de commutateur en
+            commutateur, et les vues logiques le montreront. C'est ce qui distingue le domaine
+            de diffusion réel de la seule case où l'on a saisi le numéro.
+          </P>
+          <List
+            items={[
+              <>
+                La propagation ne passe que par les <b>trunks</b> : une liaison de type trunk
+                ou pile, ou dont un port est déclaré en mode trunk. Un port d'accès ne porte
+                qu'un VLAN et n'étend rien.
+              </>,
+              <>
+                Une <b>liste de VLAN autorisés</b> renseignée sur la liaison fait autorité :
+                le VLAN qui n'y figure pas s'arrête là — c'est précisément à quoi sert cette
+                liste. Une liaison qui ne dit rien laisse tout passer, comme un trunk qu'on
+                n'a pas restreint.
+              </>,
+              <>
+                Seuls les équipements qui <b>commutent</b> relaient : un serveur ou un poste
+                entre dans le domaine, il ne le prolonge pas.
+              </>,
+              <>
+                Au survol, un équipement atteint par propagation le dit : « VLAN 20 reçu par
+                trunk, non déclaré sur cet équipement ».
+              </>,
+              <>
+                Le panneau <b>L2/L3</b> affiche la portée de chaque VLAN — combien
+                d'équipements, dont combien atteints par trunk — et la case <i>Suivre les VLAN
+                sur les trunks</i> permet de revenir à la seule lecture littérale.
+              </>,
+            ]}
+          />
+
           <p className="pt-1 text-[12.5px] font-semibold text-slate-700">Projecteur VLAN</p>
           <P>
             Indépendant des trois lectures, et disponible dans <b>toutes</b> les vues : le
@@ -1718,8 +1758,9 @@ deux onduleurs`}</pre>
       <div className="min-w-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-5 px-5 py-6">
           <header className="flex flex-col gap-2">
-            <h1 className="text-[20px] font-semibold text-slate-900">
+            <h1 className="flex items-baseline gap-2 text-[20px] font-semibold text-slate-900">
               Guide d'utilisation de NetSchema
+              <span className="text-[12px] font-medium text-slate-400">version {APP_VERSION}</span>
             </h1>
             <p className="text-[13px] leading-relaxed text-slate-600">
               Comment dessiner, documenter et contrôler une infrastructure : les gestes, les
