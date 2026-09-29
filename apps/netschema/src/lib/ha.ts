@@ -7,7 +7,7 @@ import {
   mecanismeHa,
   proposerMecanisme,
 } from './haTech'
-import type { Diagram, LinkKind, NetLink, NetNode } from '../types'
+import type { Diagram, HaRole, LinkKind, NetLink, NetNode } from '../types'
 
 export type Severity = 'critique' | 'avertissement' | 'info'
 
@@ -334,9 +334,17 @@ function controlerMecanisme(
     })
   }
 
-  // Rôles cohérents avec le mécanisme.
+  /*
+    Rôles cohérents avec le mécanisme.
+
+    Un châssis virtuel se déclare « actif / passif », mais cela ne vaut que pour le plan de
+    contrôle : les deux boîtiers commutent en permanence. Déclarer « actif / actif » décrit
+    alors le plan de données, et ce n'est pas une faute — on l'accepte sans rien signaler.
+  */
+  const rolesAdmis = new Set<HaRole>(mecanisme.roles)
+  if (mecanisme.planDeDonnees) rolesAdmis.add('active-active')
   const rolesIncoherents = membresActifs.filter(
-    (m) => m.role && m.role !== 'standalone' && !mecanisme.roles.includes(m.role),
+    (m) => m.role && m.role !== 'standalone' && !rolesAdmis.has(m.role),
   )
   if (rolesIncoherents.length > 0) {
     add({
@@ -356,7 +364,9 @@ function controlerMecanisme(
       id: `hatech-controle:${cluster.name}`,
       severity: 'info',
       title: `« ${cluster.name} » ne forme qu'un seul plan de contrôle`,
-      detail: `${mecanisme.label} : les membres se comportent comme un équipement unique. La grappe protège d'une panne matérielle, pas d'un bogue logiciel ni d'une mise à jour ratée — ${mecanisme.note}`,
+      detail: `${mecanisme.label} : les membres se comportent comme un équipement unique. ${
+        mecanisme.planDeDonnees ?? ''
+      } La grappe protège d'une panne matérielle, pas d'un bogue logiciel ni d'une mise à jour ratée — ${mecanisme.note}`,
       nodeIds: ids,
     })
   }

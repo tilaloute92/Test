@@ -119,6 +119,13 @@ export interface NetLink {
   speed?: string
   /** Liaison redondante / secours : tracée en pointillés. */
   redundant?: boolean
+  /**
+   * Pointillé de tracé seul, sans rien dire du rôle de la liaison.
+   *
+   * Les deux boîtiers d'un châssis virtuel desservent réellement le réseau : superposer deux
+   * traits pleins identiques n'apprendrait rien, mais les marquer « secours » serait faux.
+   */
+  dashed?: boolean
 
   // ─── Tracé ────────────────────────────────────────────────────────────────
   /** Points de passage imposés à la main ; vide = tracé automatique. */

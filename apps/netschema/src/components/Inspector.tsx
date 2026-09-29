@@ -569,6 +569,11 @@ function MecanismeHaField({ node, onChange }: { node: NetNode; onChange: (id: st
               Plan de contrôle commun : protège du matériel, pas d’un bogue logiciel.
             </p>
           )}
+          {choisi.planDeDonnees && (
+            <p className="pt-0.5">
+              <b className="font-semibold text-slate-700">Plan de données :</b> {choisi.planDeDonnees}
+            </p>
+          )}
           {(choisi.liensComplementaires ?? []).length > 0 && (
             <ul className="list-disc pl-4 pt-1">
               {choisi.liensComplementaires?.map((lien) => (

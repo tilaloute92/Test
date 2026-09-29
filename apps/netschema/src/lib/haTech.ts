@@ -83,6 +83,15 @@ export interface MecanismeHa {
    * matériel, pas du logiciel. C'est la nuance que le schéma ne montre jamais.
    */
   planDeControleCommun?: boolean
+  /**
+   * Ce que fait le plan de données quand il ne suit pas le plan de contrôle.
+   *
+   * Un châssis virtuel élit un actif et un veilleur — et pourtant les deux châssis commutent
+   * en permanence. Écrire « actif / passif » sans le préciser laisse croire que l'un des deux
+   * ne travaille pas : on dimensionnerait le trafic sur un seul, et l'on croirait pouvoir en
+   * débrancher un sans conséquence.
+   */
+  planDeDonnees?: string
   /** Témoin / quorum externe indispensable. */
   temoin?: boolean
   /** Adresse virtuelle attendue (VRRP, VIP de grappe…). */
@@ -127,6 +136,8 @@ export const MECANISMES_HA: MecanismeHa[] = [
     membres: { min: 2, max: 8 },
     lien: { kind: ['stack'], nom: 'câbles de pile StackWise' },
     planDeControleCommun: true,
+    planDeDonnees:
+      "Tous les membres commutent en permanence : le rôle ne désigne que le porteur du plan de contrôle. Un agrégat réparti sur plusieurs membres utilise les ports de chacun.",
     gammes: ['catalyst (9[23]|29|38)', 'c9[23]\\d\\d'],
     roles: ['active', 'passive', 'standalone'],
     bascule: '< 1 s (SSO) après perte du membre actif',
@@ -141,6 +152,8 @@ export const MECANISMES_HA: MecanismeHa[] = [
     membres: { min: 2, max: 2 },
     lien: { kind: ['stack'], nom: 'lien SVL (StackWise Virtual Link)' },
     planDeControleCommun: true,
+    planDeDonnees:
+      "Les deux châssis commutent en permanence : « actif / passif » ne décrit que le plan de contrôle (SSO). Un MEC réparti sur les deux utilise les ports des deux, et le trafic se répartit.",
     vip: true,
     gammes: ['catalyst (9[456])', 'c9[456]\\d\\d', 'catalyst (45|65)00'],
     roles: ['active', 'passive'],
@@ -164,6 +177,8 @@ export const MECANISMES_HA: MecanismeHa[] = [
     membres: { min: 2, max: 10 },
     lien: { kind: ['stack'], nom: 'liens VSF' },
     planDeControleCommun: true,
+    planDeDonnees:
+      "Les deux membres commutent en permanence : le rôle ne concerne que le plan de contrôle.",
     gammes: ['cx 6[0-9]', '6[12345]00'],
     roles: ['active', 'passive'],
     bascule: '1 à 2 s',
@@ -178,6 +193,8 @@ export const MECANISMES_HA: MecanismeHa[] = [
     membres: { min: 2, max: 9 },
     lien: { kind: ['stack'], nom: 'ports IRF' },
     planDeControleCommun: true,
+    planDeDonnees:
+      "Tous les membres commutent en permanence : le rôle ne désigne que le maître du plan de contrôle.",
     gammes: ['comware', 's1[25]', 's5[567]', 's6[89]', 'flexfabric', 'flexnetwork'],
     roles: ['active', 'passive'],
     bascule: '< 1 s',
@@ -192,6 +209,8 @@ export const MECANISMES_HA: MecanismeHa[] = [
     membres: { min: 2, max: 10 },
     lien: { kind: ['stack'], nom: 'ports VCP' },
     planDeControleCommun: true,
+    planDeDonnees:
+      "Tous les membres commutent en permanence : « routing engine » maître et secours ne concernent que le plan de contrôle.",
     gammes: ['ex[234]', 'ex 4', 'omniswitch'],
     roles: ['active', 'passive'],
     bascule: '< 1 s avec NSSU/GRES',
@@ -206,6 +225,8 @@ export const MECANISMES_HA: MecanismeHa[] = [
     membres: { min: 2, max: 8 },
     lien: { kind: ['stack'], nom: 'ports d’empilement' },
     planDeControleCommun: true,
+    planDeDonnees:
+      "Tous les membres commutent en permanence : le rôle ne désigne que le maître de la pile.",
     roles: ['active', 'passive'],
     bascule: '< 2 s',
     note: 'Empilement Extreme : plan de contrôle unique, mise à jour groupée de la pile.',
@@ -219,6 +240,8 @@ export const MECANISMES_HA: MecanismeHa[] = [
     membres: { min: 2, max: 9 },
     lien: { kind: ['stack'], nom: 'câbles de pile' },
     planDeControleCommun: true,
+    planDeDonnees:
+      "Tous les membres commutent en permanence : le rôle ne désigne que le porteur du plan de contrôle.",
     roles: ['active', 'passive'],
     bascule: '< 1 s',
     note: 'Empilement Huawei (iStack pour les séries fixes, CSS pour les châssis). Activez la détection de double actif (DAD).',

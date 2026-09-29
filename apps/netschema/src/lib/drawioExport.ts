@@ -36,7 +36,7 @@ function styleLien(link: NetLink): string {
     'endArrow=none',
     'startArrow=none',
   ]
-  if (meta?.dash || link.redundant) morceaux.push('dashed=1')
+  if (meta?.dash || link.redundant || link.dashed) morceaux.push('dashed=1')
   return morceaux.join(';')
 }
 

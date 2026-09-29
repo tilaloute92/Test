@@ -505,7 +505,7 @@ function analyserPage(
       titre: `${chassisUnique.length} grappe(s) à plan de contrôle commun`,
       detail: `${chassisUnique
         .map(([nom]) => nom)
-        .join(', ')} : empilement ou châssis virtuel. La panne matérielle d'un membre est couverte, une mise à jour ou un bogue logiciel ne l'est pas.`,
+        .join(', ')} : empilement ou châssis virtuel. Tous les membres commutent — le plan de données est réparti, pas en veille — mais ils ne forment qu'un seul plan de contrôle : la panne matérielle d'un membre est couverte, une mise à jour ou un bogue logiciel ne l'est pas.`,
       action:
         'Vérifiez qu’un second chemin existe hors de cette grappe, et planifiez les mises à jour en conséquence.',
       cibles: chassisUnique.flatMap(([, membres]) => membres.map((membre) => membre.id)),

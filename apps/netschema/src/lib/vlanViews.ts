@@ -358,9 +358,9 @@ function routageL3(diagram: Diagram, propager: boolean): Diagram {
     )
     for (const [rang, membre] of attaches.entries()) {
       /*
-        Le premier brin porte l'étiquette, les suivants sont tracés en pointillés : les deux
-        châssis desservent réellement le réseau, mais superposer deux traits pleins identiques
-        n'apprendrait rien. Chacun reste le chemin de secours de l'autre.
+        Le premier brin porte l'étiquette, les suivants sont tracés en pointillés — pointillé
+        de lisibilité, pas de secours : sur un châssis virtuel les deux boîtiers commutent en
+        permanence, et les marquer « liaison de secours » ferait croire que l'un chôme.
       */
       links.push(
         lien(`l~${id}~${membre.id}`, membre.id, id, 'ethernet', {
@@ -369,11 +369,11 @@ function routageL3(diagram: Diagram, propager: boolean): Diagram {
               ? groupe.vlan.gateway
                 ? `passerelle ${groupe.vlan.gateway}`
                 : undefined
-              : 'second châssis du commutateur logique',
+              : 'desservi aussi par ce châssis',
           subnet: reseau,
           vlans: groupe.vlan.id,
           layers: ['l3'],
-          redundant: rang > 0,
+          dashed: rang > 0,
         }),
       )
     }

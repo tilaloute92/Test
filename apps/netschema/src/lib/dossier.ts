@@ -138,7 +138,9 @@ function lignesGrappes(diagram: Diagram): string[][] {
       const mecanisme = declares.length === 1 ? mecanismeHa(declares[0]) : undefined
       const temoin = membres.find((m) => m.role === 'witness' || m.kind === 'witness')
       const reserves = [
-        mecanisme?.planDeControleCommun ? 'Plan de contrôle commun' : '',
+        mecanisme?.planDeControleCommun
+          ? `Plan de contrôle commun${mecanisme.planDeDonnees ? ' ; plan de données réparti entre les membres' : ''}`
+          : '',
         mecanisme?.temoin && !temoin ? 'Témoin d’arbitrage manquant' : '',
         declares.length > 1 ? 'Mécanismes divergents' : '',
         !mecanisme && declares.length === 0 ? 'Mécanisme non documenté' : '',

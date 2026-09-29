@@ -224,6 +224,9 @@ function GrappesSection() {
                     {grappe.mecanisme.planDeControleCommun && (
                       <span className="text-amber-700"> · plan de contrôle commun</span>
                     )}
+                    {grappe.mecanisme.planDeDonnees && (
+                      <span className="text-emerald-700"> · plan de données réparti</span>
+                    )}
                     {grappe.mecanisme.temoin &&
                       (grappe.temoin ? (
                         <span className="text-emerald-700"> · témoin {grappe.temoin.name}</span>

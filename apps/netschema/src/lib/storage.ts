@@ -245,6 +245,7 @@ export function parseDiagram(raw: unknown): Diagram {
       label: str(item.label),
       speed: str(item.speed),
       redundant: item.redundant === true,
+      dashed: item.dashed === true ? true : undefined,
       layers: layers && layers.length > 0 ? layers : undefined,
       waypoints: Array.isArray(item.waypoints)
         ? item.waypoints

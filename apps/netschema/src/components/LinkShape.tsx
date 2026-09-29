@@ -76,7 +76,7 @@ export function LinkShape({
         fill="none"
         stroke={color}
         strokeWidth={width}
-        strokeDasharray={link.redundant ? '8 6' : meta.dash}
+        strokeDasharray={link.redundant || link.dashed ? '8 6' : meta.dash}
         strokeLinecap="round"
         strokeLinejoin="round"
       />

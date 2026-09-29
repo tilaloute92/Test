@@ -497,6 +497,17 @@ seul plan de contrôle** et un seul jeu d'interfaces de niveau 3. Le réseau des
 par les deux, et la vue routage les raccorde **tous les deux** — le second en pointillés, pour
 ne pas superposer deux traits identiques.
 
+**Un châssis virtuel est actif / actif**, et le schéma doit le montrer. « Actif » et « passif »
+ne décrivent que le **plan de contrôle** : un seul châssis tient la configuration, le protocole
+de routage et les sessions, l'autre le suit par SSO et reprend en moins d'une seconde. Le **plan
+de données**, lui, ne se met jamais en veille : les deux châssis commutent en permanence, un
+agrégat réparti sur les deux (MEC) utilise les ports des deux, et la charge se répartit. C'est
+pourquoi le second trait de la vue routage est un pointillé de lisibilité et non une « liaison
+de secours » : il n'en est pas une. Conséquence pratique : ne dimensionnez pas le trafic sur un
+seul châssis, et ne considérez pas le « passif » comme débranchable. Ce qu'il faut retenir de la
+mention *plan de contrôle commun*, c'est l'inverse — la panne à craindre n'est pas matérielle,
+elle est logicielle, et elle touche les deux à la fois.
+
 Encore faut-il le lui dire. Sur **chaque** membre :
 
 | Champ | Valeur |
@@ -504,7 +515,7 @@ Encore faut-il le lui dire. Sur **chaque** membre :
 | **Grappe** | Le même nom sur les deux châssis (`CORE-VSS`) |
 | **Mécanisme de bascule** | StackWise Virtual / VSS, StackWise, VSF, IRF, Virtual Chassis, SummitStack, iStack/CSS — c'est lui qui porte l'information « plan de contrôle commun » |
 | **Lien entre les deux** | De type pile (le SVL) ; l'analyse le réclame s'il manque |
-| **Rôles** | Actif / passif |
+| **Rôles** | Actif / passif (le plan de contrôle) ou actif / actif (le plan de données) : l'analyse accepte les deux sur un châssis virtuel |
 | **Modèle** | Facultatif mais utile : l'analyse vérifie la gamme |
 
 Le bouton **Déduire** du panneau *Haute dispo* remplit le mécanisme tout seul d'après le

@@ -1122,6 +1122,22 @@ deux onduleurs`}</pre>
             réseau desservi l'est donc par les deux, et la vue routage les raccorde tous les
             deux — le second en pointillés, pour ne pas superposer deux traits identiques.
           </P>
+          <P>
+            <b>Un châssis virtuel est actif / actif</b>, et le schéma doit le montrer.
+            « Actif » et « passif » ne décrivent que le <b>plan de contrôle</b> : un seul
+            châssis tient la configuration, le protocole de routage et les sessions, l'autre
+            le suit par SSO et reprend en moins d'une seconde. Le <b>plan de données</b>, lui,
+            ne se met jamais en veille : les deux châssis commutent en permanence, un agrégat
+            réparti sur les deux (MEC) utilise les ports des deux, et la charge se répartit.
+            C'est pour cela que le second trait de la vue routage est en pointillés de
+            lisibilité et non marqué « liaison de secours » : il n'en est pas une.
+          </P>
+          <Note>
+            Conséquence pratique : ne dimensionnez pas le trafic sur un seul châssis, et ne
+            considérez pas le « passif » comme débranchable. Ce qu'il faut retenir de la
+            mention <i>plan de contrôle commun</i>, c'est l'inverse : la panne à craindre
+            n'est pas matérielle, elle est logicielle, et elle touche les deux à la fois.
+          </Note>
           <Note>
             Pour que l'application le sache, il faut lui dire. Sur <b>chaque</b> membre :
             la même <b>grappe</b>, et surtout le <b>mécanisme de bascule</b> — c'est lui qui
@@ -1145,8 +1161,11 @@ deux onduleurs`}</pre>
                 d'empilement. L'analyse le réclame s'il manque.
               </>,
               <>
-                <b>Rôles</b> actif et passif, et le <b>modèle</b> : l'analyse vérifie la
-                gamme, vPC n'étant pas un mécanisme Catalyst et VSX pas un mécanisme CX 6000.
+                <b>Rôles</b> : actif et passif pour décrire le plan de contrôle, ou
+                actif / actif pour décrire le plan de données — l'analyse accepte les deux sur
+                un châssis virtuel, et ne signale que les rôles qui n'ont pas de sens pour le
+                mécanisme. Le <b>modèle</b> est vérifié au passage : vPC n'est pas un mécanisme
+                Catalyst, et VSX pas un mécanisme CX 6000.
               </>,
               <>
                 À l'import rapide : <code>cluster=CORE-VSS ; bascule=vss ; role=actif</code>.
@@ -1442,7 +1461,9 @@ deux onduleurs`}</pre>
               <>
                 <b>Plan de contrôle commun</b> : un empilement ou un châssis virtuel se met à
                 jour d'un bloc. La grappe protège du matériel, pas d'un bogue logiciel —
-                l'analyse le dit explicitement.
+                l'analyse le dit explicitement. Elle précise dans la foulée ce que fait le{' '}
+                <b>plan de données</b>, qui lui ne s'arrête pas : tous les membres commutent,
+                même celui que le rôle annonce « passif ».
               </>,
               <>
                 <b>Déduire</b> : le bouton du panneau propose un mécanisme pour les grappes qui

@@ -59,6 +59,11 @@ export function NodeTooltip({
 }) {
   const meta = deviceMeta(node.kind)
   const role = node.role && node.role !== 'standalone' ? ROLES[node.role] : undefined
+  /*
+    Sur un châssis virtuel, le rôle affiché ne vaut que pour le plan de contrôle : les deux
+    boîtiers commutent. L'infobulle le dit, faute de quoi « Passif » se lit comme « en veille ».
+  */
+  const mecanisme = mecanismeHa(node.haTech)
   const voisins = links
     .filter((link) => link.from === node.id || link.to === node.id)
     .map((link) => {
@@ -108,7 +113,7 @@ export function NodeTooltip({
         <Row label="Site" value={node.site} />
         <Row label="Zone" value={node.zone} />
         <Row label="Grappe" value={node.cluster ? `${node.cluster}${node.vip ? ` · VIP ${node.vip}` : ''}` : undefined} />
-        <Row label="Bascule" value={mecanismeHa(node.haTech)?.label} />
+        <Row label="Bascule" value={mecanisme?.label} />
         <Row
           label="Baie"
           value={node.rack ? `${node.rack}${node.rackUnit ? ` · U${node.rackUnit}` : ''}` : undefined}
@@ -118,6 +123,10 @@ export function NodeTooltip({
         <Row label="Puissance" value={node.powerW ? `${node.powerW} W` : undefined} />
         <Row label="Alimentation" value={node.dualPower ? 'Double chaîne A/B' : undefined} />
       </div>
+
+      {mecanisme?.planDeDonnees && (
+        <p className="pt-1 text-[11px] leading-snug text-slate-500">{mecanisme.planDeDonnees}</p>
+      )}
 
       {garantie && (
         <p className={`pt-1 text-[11px] ${perimee ? 'font-semibold text-red-600' : 'text-slate-500'}`}>
