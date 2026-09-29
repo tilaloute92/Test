@@ -63,3 +63,36 @@ export const sendDailyProgrammes = (date: string, memberIds?: string[]) =>
     method: 'POST',
     body: JSON.stringify({ date, memberIds }),
   });
+
+/** Réglages du relais SMTP, modifiables depuis Paramètres (réservé à l'administrateur).
+ *  Le mot de passe n'en fait jamais partie : le serveur ne renvoie que `passSet`. */
+export interface MailConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  from: string;
+  dailyMailAt: string;
+  tlsRejectUnauthorized: boolean;
+  passSet: boolean;
+  configured: boolean;
+  /** Rien n'a encore été enregistré depuis l'application : ce qui s'affiche vient du .env. */
+  fromEnvOnly: boolean;
+}
+
+/** Ce qu'on envoie pour enregistrer. `pass` omis = mot de passe inchangé côté serveur. */
+export type MailConfigInput = Omit<MailConfig, 'passSet' | 'configured' | 'fromEnvOnly'> & { pass?: string };
+
+export const fetchMailConfig = () => request<MailConfig>('/config');
+
+export const saveMailConfig = (cfg: MailConfigInput) =>
+  request<MailConfig>('/config', { method: 'PUT', body: JSON.stringify(cfg) });
+
+/** Envoi réel vers une adresse choisie. Distinct de `verifyMailRelay` : un relais peut
+ *  accepter la connexion puis refuser le message (expéditeur non autorisé, relayage
+ *  interdit pour cette IP) — seul un envoi le montre. */
+export const sendTestMail = (to: string) =>
+  request<{ ok: boolean; accepted: string[]; rejected: string[]; response: string }>('/test', {
+    method: 'POST',
+    body: JSON.stringify({ to }),
+  });

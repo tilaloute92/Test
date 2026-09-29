@@ -9,6 +9,7 @@ import { useViewMode } from '../hooks/useViewMode';
 import { bucketTasksByDueDate, KANBAN_STATUSES } from '../lib/taskViews';
 import { nextSort, sortTasks, type TaskSort, type TaskSortKey } from '../lib/taskSort';
 import type { Priority, ProjectTask, TaskStatus, TaskType, TeamMember } from '../types';
+import { useModalDismiss } from './Modal';
 
 type ConfirmFn = ReturnType<typeof useConfirm>;
 
@@ -637,6 +638,7 @@ function TaskForm({
   onCreate: (payload: TaskFormPayload) => void;
   onUpdate: (id: string, patch: TaskFormPayload) => void;
 }) {
+  const dismiss = useModalDismiss(onCancel, initial ? 'cette tâche' : 'cette nouvelle tâche');
   const [title, setTitle] = useState(initial?.title ?? '');
   const [type, setType] = useState<TaskType>(initial?.type ?? 'Incident');
   const [project, setProject] = useState(initial?.project ?? '');
@@ -673,8 +675,8 @@ function TaskForm({
   };
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" {...dismiss.backdrop}>
+      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" {...dismiss.content}>
         <div className="mb-3">
           <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{initial ? 'Modifier la tâche' : 'Nouvelle tâche'}</h3>
           {initial?.updatedBy && initial?.updatedAt && (

@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore';
 import { Card, PrintButton, PrintHeader } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import type { ApiAuthType, ApiConnection, HttpMethod, KeyValue } from '../types';
+import { useModalDismiss } from './Modal';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 const AUTH_LABELS: Record<ApiAuthType, string> = {
@@ -411,6 +412,7 @@ function ConnectionForm({
   onCancel: () => void;
   onSave: (p: Omit<ApiConnection, 'id'>) => void;
 }) {
+  const dismiss = useModalDismiss(onCancel, 'cette connexion API');
   const [name, setName] = useState(initial?.name ?? '');
   const [baseUrl, setBaseUrl] = useState(initial?.baseUrl ?? 'https://');
   const [authType, setAuthType] = useState<ApiAuthType>(initial?.authType ?? 'none');
@@ -421,8 +423,8 @@ function ConnectionForm({
   const [headers, setHeaders] = useState<KeyValue[]>(initial?.headers.length ? initial.headers : [{ key: 'Accept', value: 'application/json' }]);
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" {...dismiss.backdrop}>
+      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" {...dismiss.content}>
         <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">{initial ? 'Modifier la connexion' : 'Nouvelle connexion API'}</h3>
         <div className="space-y-2.5">
           <input placeholder="Nom (ex : GLPI - Ticketing)" value={name} onChange={(e) => setName(e.target.value)} className="input" />

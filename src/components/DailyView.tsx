@@ -7,6 +7,7 @@ import { Avatar, Card, ModeSwitcher, PriorityBadge, PrintButton, PrintHeader, Ta
 import { useConfirm } from './ConfirmProvider';
 import { DailyMailModal } from './DailyMailModal';
 import type { Absence, Period, PlanningSlot, ProjectTask, TaskStatus, TeamMember, TimeEntry } from '../types';
+import { useModalDismiss } from './Modal';
 
 const PERIOD_LABEL: Record<Period, string> = { matin: 'Matin — MCO & incidents', apres_midi: 'Après-midi — Projets' };
 const PERIOD_SHORT: Record<Period, string> = { matin: 'Matin', apres_midi: 'Après-midi' };
@@ -34,6 +35,7 @@ export function DailyView() {
   const [logging, setLogging] = useState<LoggingTarget | null>(null);
   const [hours, setHours] = useState('3.5');
   const [note, setNote] = useState('');
+  const dismiss = useModalDismiss(() => setLogging(null), 'cette saisie de temps');
   const [showMail, setShowMail] = useState(false);
 
 
@@ -217,8 +219,8 @@ export function DailyView() {
       {showMail && <DailyMailModal date={iso} onClose={() => setShowMail(false)} />}
 
       {logging && (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={() => setLogging(null)}>
-          <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" {...dismiss.backdrop}>
+          <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" {...dismiss.content}>
             <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Saisir le temps passé</h3>
             <label className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Heures</label>
             <input

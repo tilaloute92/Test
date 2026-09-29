@@ -249,6 +249,70 @@ Le script affiche les identifiants existants — jamais les mots de passe, qui n
 que sous forme d'empreinte. `Test-SuiviInfra.ps1` les affiche également, lorsqu'il est lancé
 depuis une console élevée.
 
+### Annuaire Active Directory (LDAP)
+
+Tout se règle depuis **Paramètres → Annuaire Active Directory**, compte `admin`. Deux
+façons de retrouver la personne dans l'annuaire :
+
+| Mode | Ce que la personne tape | Compte de service | Restriction par groupe |
+| --- | --- | --- | --- |
+| **Motif** | Son UPN complet (`prenom.nom@monentreprise.local`) | Aucun | Possible si l'annuaire renvoie `memberOf` |
+| **Recherche** | Son identifiant Windows court (`rnelson`) | Oui, en **lecture seule** | Oui |
+
+Le mode Recherche est celui que demandent la plupart des déploiements AD : c'est le seul
+qui accepte l'identifiant court, celui que les gens connaissent.
+
+| Réglage | À quoi il sert |
+| --- | --- |
+| Base de recherche | `DC=monentreprise,DC=local`, ou une OU précise |
+| Filtre | `(sAMAccountName={username})` pour l'identifiant court, `(userPrincipalName={username})` pour l'UPN |
+| Attribut du nom affiché | `displayName` — sans lui, l'application afficherait l'identifiant de connexion partout au lieu du nom |
+| Groupe exigé | Nom simple ou DN complet. **Laissé vide, tout compte valide de l'annuaire peut entrer**, y compris prestataires et comptes de service |
+| Vérifier le certificat | À décocher seulement si votre `ldaps://` utilise une autorité interne inconnue du serveur |
+
+Le mot de passe du compte de service est conservé dans `data\config.json`, protégé par les
+mêmes droits que les empreintes de mots de passe, et **n'est jamais renvoyé à un
+navigateur** : le champ reste vide et le laisser vide ne l'efface pas.
+
+Le bouton **Tester** éprouve la configuration enregistrée sans se déconnecter, et nomme
+l'étape qui échoue :
+
+```
+✔ connexion — Serveur ldaps://dc01.monentreprise.local:636 joignable
+✔ service   — Compte de service connecté (CN=svc_suivi,...)
+✔ recherche — Trouvé : CN=R. Nelson,OU=Utilisateurs,DC=...
+✔ bind      — Mot de passe accepté par le contrôleur de domaine
+✘ groupe    — NON membre de Techniciens Infra — accès refusé
+```
+
+Auparavant, éprouver un réglage imposait de fermer sa session et d'essayer : en cas
+d'erreur, on se retrouvait dehors sans pouvoir la corriger.
+
+### Envoi de mail
+
+Tout se règle depuis **Paramètres → Envoi de mail**, compte `admin` : serveur SMTP, port,
+identifiants, adresse d'expéditeur et heure d'envoi automatique. Le service prend les
+changements en compte immédiatement, **sans redémarrage**.
+
+`server/.env` (`SMTP_HOST`, `SMTP_FROM`, `DAILY_MAIL_AT`…) reste la valeur de départ : ce
+qu'il contient sert tant que rien n'a été enregistré depuis l'application. Une
+installation déjà configurée continue donc de fonctionner à l'identique après mise à jour.
+
+Deux boutons, parce qu'ils ne disent pas la même chose :
+
+| Bouton | Ce qu'il prouve |
+| --- | --- |
+| **Vérifier la connexion** | Le relais répond et accepte la connexion |
+| **Envoyer un test** | Le relais accepte aussi de **remettre** le message |
+
+Un relais accepte souvent la connexion puis refuse le message — expéditeur non autorisé,
+relayage interdit pour cette adresse IP. Seul le second bouton le montre, et c'est
+précisément ce cas qui fait perdre le plus de temps.
+
+> Le port 587 utilise STARTTLS : laissez « Chiffrement dès la connexion » **décoché**.
+> Cette case ne concerne que le port 465 ; la cocher sur 587 fait échouer la connexion sans
+> message clair.
+
 ### Qui peut configurer l'application
 
 La **configuration** — comptes locaux, annuaire LDAP, connexion Microsoft, mode de

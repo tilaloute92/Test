@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { verifyLocalLogin, listLocalUsers, upsertLocalUser, removeLocalUser, usesDefaultPassword } from '../auth/localAuth.js';
-import { verifyLdapLogin, getLdapConfig, setLdapConfig } from '../auth/ldapAuth.js';
+import { verifyLdapLogin, getPublicLdapConfig, setLdapConfig, testLdap } from '../auth/ldapAuth.js';
 import { verifySsoToken } from '../auth/ssoAuth.js';
 import { issueSession, clearSession, requireAuth, currentUser } from '../auth/session.js';
 import { isAdminUsername, requireAdmin } from '../auth/admin.js';
@@ -116,11 +116,45 @@ authRouter.delete('/local-users/:username', requireAuth, requireAdmin, (req, res
 
 // --- Configuration LDAP (réservée à l'administrateur) ---
 authRouter.get('/ldap-config', requireAuth, requireAdmin, (_req, res) => {
-  res.json(getLdapConfig());
+  // Version publique : le mot de passe du compte de service n'en sort jamais, seul un
+  // indicateur dit s'il est renseigné.
+  res.json(getPublicLdapConfig());
 });
 
 authRouter.put('/ldap-config', requireAuth, requireAdmin, (req, res) => {
-  const { enabled, url, userDnPattern } = req.body || {};
-  const next = setLdapConfig({ enabled: Boolean(enabled), url: url || '', userDnPattern: userDnPattern || '' });
+  const b = req.body || {};
+  const next = setLdapConfig({
+    enabled: Boolean(b.enabled),
+    url: String(b.url || ''),
+    mode: b.mode === 'search' ? 'search' : 'pattern',
+    userDnPattern: String(b.userDnPattern || ''),
+    baseDN: String(b.baseDN || ''),
+    userFilter: String(b.userFilter || ''),
+    bindDN: String(b.bindDN || ''),
+    // Absent ou vide = on garde le mot de passe en place (voir setLdapConfig) ; le
+    // navigateur ne l'a jamais reçu, il ne peut donc pas le renvoyer.
+    bindPassword: b.bindPassword,
+    displayNameAttribute: String(b.displayNameAttribute || 'displayName'),
+    mailAttribute: String(b.mailAttribute || 'mail'),
+    requiredGroup: String(b.requiredGroup || ''),
+    tlsRejectUnauthorized: b.tlsRejectUnauthorized !== false,
+    timeoutMs: Number(b.timeoutMs) > 0 ? Number(b.timeoutMs) : 5000,
+  });
   res.json(next);
+});
+
+/**
+ * Test de la configuration LDAP, sans se déconnecter.
+ *
+ * Jusqu'ici la seule façon d'éprouver un réglage était de fermer sa session et d'essayer :
+ * en cas d'erreur de configuration, on se retrouvait dehors sans pouvoir la corriger.
+ * Les identifiants fournis ne sont ni stockés ni journalisés — ils servent au seul bind.
+ */
+authRouter.post('/ldap-test', requireAuth, requireAdmin, async (req, res) => {
+  const { username, password } = req.body || {};
+  try {
+    res.json(await testLdap({ username, password }));
+  } catch (error) {
+    res.status(200).json({ ok: false, journal: [{ etape: 'erreur', ok: false, detail: error.message }] });
+  }
 });

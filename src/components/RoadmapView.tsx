@@ -4,6 +4,7 @@ import { Avatar, Card, ModeSwitcher, PriorityBadge, PrintButton, PrintHeader, Ro
 import { useConfirm } from './ConfirmProvider';
 import { useViewMode } from '../hooks/useViewMode';
 import type { Priority, ProjectTask, RoadmapDomain, RoadmapItem, RoadmapQuarter, RoadmapStatus, TeamMember } from '../types';
+import { useModalDismiss } from './Modal';
 
 const FDR_VIEW_MODES = ['trimestres', 'liste', 'timeline'] as const;
 type FdrViewMode = (typeof FDR_VIEW_MODES)[number];
@@ -598,6 +599,7 @@ function RoadmapForm({
   onCreate: (payload: Omit<RoadmapItem, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onUpdate: (id: string, patch: Partial<RoadmapItem>) => void;
 }) {
+  const dismiss = useModalDismiss(onCancel, initial ? 'ce point de feuille de route' : 'ce nouveau point');
   const [title, setTitle] = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [domain, setDomain] = useState<RoadmapDomain>(initial?.domain ?? 'Infrastructure');
@@ -639,8 +641,8 @@ function RoadmapForm({
   };
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" {...dismiss.backdrop}>
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" {...dismiss.content}>
         <div className="mb-3">
           <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{initial ? "Modifier l'initiative" : 'Nouvelle initiative'}</h3>
           {initial?.updatedBy && (

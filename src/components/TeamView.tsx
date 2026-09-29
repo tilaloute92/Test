@@ -4,6 +4,7 @@ import { toISODate } from '../lib/date';
 import { Avatar, Card, PrintButton, PrintHeader } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import type { AbsenceType, TeamMember } from '../types';
+import { useModalDismiss } from './Modal';
 
 const COLORS = ['#7c3aed', '#0ea5e9', '#db2777', '#16a34a', '#ea580c', '#64748b', '#0891b2', '#ca8a04'];
 
@@ -186,6 +187,7 @@ function MemberForm({
   onCancel: () => void;
   onSave: (p: MemberFormPayload) => void;
 }) {
+  const dismiss = useModalDismiss(onCancel, initial ? 'cette fiche' : 'ce nouveau membre');
   const [name, setName] = useState(initial?.name ?? '');
   const [role, setRole] = useState(initial?.role ?? '');
   const [email, setEmail] = useState(initial?.email ?? '');
@@ -193,8 +195,8 @@ function MemberForm({
   const [weeklyHours, setWeeklyHours] = useState(String(initial?.weeklyHours ?? 35));
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" {...dismiss.backdrop}>
+      <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" {...dismiss.content}>
         <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">{initial ? 'Modifier le membre' : 'Ajouter un membre'}</h3>
         <div className="space-y-2.5">
           <input placeholder="Nom complet" value={name} onChange={(e) => setName(e.target.value)} className="input" />
@@ -248,6 +250,7 @@ function AbsenceForm({
   onCancel: () => void;
   onCreate: (p: { memberId: string; startDate: string; endDate: string; period: 'jour' | 'matin' | 'apres_midi'; type: AbsenceType; label?: string }) => void;
 }) {
+  const dismiss = useModalDismiss(onCancel, 'cette absence');
   const [memberId, setMemberId] = useState(members[0]?.id ?? '');
   const today = toISODate(new Date());
   const [startDate, setStartDate] = useState(today);
@@ -259,8 +262,8 @@ function AbsenceForm({
   const rangeInvalid = endDate < startDate;
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" {...dismiss.backdrop}>
+      <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" {...dismiss.content}>
         <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Déclarer une absence</h3>
         <div className="space-y-2.5">
           <select value={memberId} onChange={(e) => setMemberId(e.target.value)} className="input">

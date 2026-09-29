@@ -20,6 +20,7 @@ import { exportCopilPptx } from '../lib/copilPptx';
 import { makeId } from '../lib/ids';
 import { Avatar, Card, ModeSwitcher, PrintButton, PrintHeader, RoadmapDomainBadge, StatusBadge } from './ui';
 import type { Copil, CopilAction, CopilStatus, RoadmapItem, TaskStatus, TeamMember } from '../types';
+import { useModalDismiss } from './Modal';
 
 const COPIL_VIEW_MODES = ['seances', 'actions', 'calendrier'] as const;
 type CopilViewMode = (typeof COPIL_VIEW_MODES)[number];
@@ -877,6 +878,7 @@ function CopilForm({
   onCreate: (payload: CopilFormPayload) => void;
   onUpdate: (id: string, patch: Partial<Copil>) => void;
 }) {
+  const dismiss = useModalDismiss(onCancel, initial ? 'ce COPIL' : 'ce nouveau COPIL');
   const [title, setTitle] = useState(initial?.title ?? 'COPIL Infrastructure & Réseau');
   const [date, setDate] = useState(initial?.date ?? toISODate(new Date()));
   const [time, setTime] = useState(initial?.time ?? '');
@@ -918,8 +920,8 @@ function CopilForm({
   };
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" {...dismiss.backdrop}>
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" {...dismiss.content}>
         <div className="mb-3">
           <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{initial ? 'Modifier la séance' : 'Nouvelle séance de COPIL'}</h3>
           {initial?.updatedBy && (

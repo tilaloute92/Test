@@ -12,7 +12,9 @@ import {
   getLdapConfig,
   listLocalUsers,
   saveLdapConfig,
+  testLdapConfig,
   type LdapConfig,
+  type LdapTestResult,
 } from '../auth/backendAuth';
 import {
   exportBackupFile,
@@ -28,10 +30,12 @@ import { getSyncUser, isSyncActive, onSyncActiveChange, type SyncUser } from '..
 import { useAppMode, useLinkState } from '../hooks/useAppStatus';
 import { clearLocalArchive, countArchived, readLocalArchive } from '../lib/localArchive';
 import { findExpired, RETENTION_DAYS } from '../lib/retention';
+import { fetchMailConfig, saveMailConfig, sendTestMail, verifyMailRelay, type MailConfig } from '../lib/mailApi';
 
 const NOT_LOGGED_IN_HINT =
   "Connectez-vous d'abord avec un compte local ou LDAP existant (celui créé via `npm run create-user` sur le serveur, par exemple) pour gérer ceci depuis l'application.";
 import type { AccountInfo } from '@azure/msal-browser';
+import { useModalDismiss } from './Modal';
 
 /**
  * @param canEdit  Ce compte peut-il modifier la configuration ? Décidé par le serveur
@@ -364,6 +368,7 @@ export function SettingsView({ canEdit = true }: { canEdit?: boolean }) {
       {/*    survive à un vidage du stockage local ou un changement de poste).*/}
       {/* ------------------------------------------------------------------ */}
       <BackupCard confirm={confirm} />
+      <MailConfigCard confirm={confirm} />
       <RetentionCard confirm={confirm} />
       <ArchivedDataCard confirm={confirm} />
       </fieldset>
@@ -376,6 +381,7 @@ type ConfirmFn = ReturnType<typeof useConfirm>;
 function LocalAccountsCard({ confirm }: { confirm: ConfirmFn }) {
   const [users, setUsers] = useState<{ username: string; name: string }[] | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const dismiss = useModalDismiss(() => setShowForm(false), 'ce nouveau compte');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -448,8 +454,8 @@ function LocalAccountsCard({ confirm }: { confirm: ConfirmFn }) {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowForm(false)}>
-          <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" {...dismiss.backdrop}>
+          <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" {...dismiss.content}>
             <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Nouveau compte local</h3>
             <div className="space-y-2.5">
               <input placeholder="Identifiant" value={username} onChange={(e) => setUsername(e.target.value)} className="input" />
@@ -480,6 +486,15 @@ function LdapConfigCard({ confirm }: { confirm: ConfirmFn }) {
   const [draft, setDraft] = useState<LdapConfig | null>(null);
   const [saved, setSaved] = useState<LdapConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Vide = « ne change pas le mot de passe ». Le navigateur ne l'a jamais reçu, il ne
+  // peut donc pas le réafficher, et un champ pré-rempli de faux caractères mentirait.
+  const [bindPassword, setBindPassword] = useState('');
+  const [test, setTest] = useState<{ user: string; pass: string; busy: boolean; result: LdapTestResult | null }>({
+    user: '',
+    pass: '',
+    busy: false,
+    result: null,
+  });
 
   useEffect(() => {
     getLdapConfig()
@@ -494,80 +509,246 @@ function LdapConfigCard({ confirm }: { confirm: ConfirmFn }) {
     return (
       <Card className="p-4">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Annuaire Active Directory (LDAP)</h2>
-        {error ? (
-          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
-        ) : (
-          <p className="mt-2 text-xs text-slate-400">Chargement…</p>
-        )}
+        {error ? <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p> : <p className="mt-2 text-xs text-slate-400">Chargement…</p>}
       </Card>
     );
   }
 
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved) || bindPassword !== '';
+  const set = (patch: Partial<LdapConfig>) => setDraft({ ...draft, ...patch });
 
   const save = async () => {
-    if (await confirm({ title: 'Confirmer la modification', message: 'Enregistrer ces paramètres de connexion LDAP ?' })) {
-      const next = await saveLdapConfig(draft);
+    setError(null);
+    if (!(await confirm({ title: 'Confirmer la modification', message: "Enregistrer ces paramètres d'annuaire ?" }))) return;
+    try {
+      const next = await saveLdapConfig({ ...draft, bindPassword: bindPassword || undefined });
       setSaved(next);
       setDraft(next);
+      setBindPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
+  const runTest = async () => {
+    setTest((t) => ({ ...t, busy: true, result: null }));
+    try {
+      setTest((t) => ({ ...t, busy: false, result: null }));
+      const r = await testLdapConfig(test.user, test.pass);
+      setTest((t) => ({ ...t, busy: false, result: r }));
+    } catch (err) {
+      setTest((t) => ({
+        ...t,
+        busy: false,
+        result: { ok: false, journal: [{ etape: 'erreur', ok: false, detail: err instanceof Error ? err.message : String(err) }] },
+      }));
+    }
+  };
+
+  const recherche = draft.mode === 'search';
+
   return (
-    <Card className="space-y-3 p-4">
+    <Card className="space-y-4 p-4">
       <div>
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Annuaire Active Directory (LDAP)</h2>
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          Le serveur vérifie le mot de passe en tentant une connexion ("bind") directement auprès de votre contrôleur de domaine — il ne le
-          stocke jamais. À utiliser pour les comptes qui n'existent que dans votre AD local, sans synchronisation vers Entra ID.
+          Le serveur vérifie le mot de passe en tentant une connexion («&nbsp;bind&nbsp;») directement auprès de votre contrôleur de
+          domaine — il ne le stocke jamais. À utiliser pour les comptes qui n'existent que dans votre AD local, sans synchronisation
+          vers Entra ID.
         </p>
       </div>
 
       <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-        <input type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} />
+        <input type="checkbox" checked={draft.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
         Activer la connexion LDAP
       </label>
 
-      <label className="block">
-        <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">URL du contrôleur de domaine</span>
-        <input
-          value={draft.url}
-          onChange={(e) => setDraft({ ...draft, url: e.target.value })}
-          placeholder="ldap://dc01.monentreprise.local:389"
-          className="input"
-        />
-      </label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">URL du contrôleur de domaine</span>
+          <input value={draft.url} onChange={(e) => set({ url: e.target.value })} placeholder="ldap://dc01.monentreprise.local:389" className="input" />
+          <span className="mt-1 block text-xs text-slate-400">
+            <code>ldap://</code> port 389, ou <code>ldaps://</code> port 636 (chiffré — à préférer, les mots de passe transitent ici).
+          </span>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Délai d'attente (ms)</span>
+          <input
+            type="number"
+            min={1000}
+            step={500}
+            value={draft.timeoutMs}
+            onChange={(e) => set({ timeoutMs: Number(e.target.value) || 5000 })}
+            className="input"
+          />
+        </label>
+      </div>
 
-      <label className="block">
-        <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">
-          Motif d'identifiant ("{'{username}'}" est remplacé par ce que la personne saisit)
-        </span>
-        <input
-          value={draft.userDnPattern}
-          onChange={(e) => setDraft({ ...draft, userDnPattern: e.target.value })}
-          placeholder="{username}@monentreprise.local"
-          className="input font-mono text-xs"
-        />
-        <span className="mt-1 block text-xs text-slate-400">
-          Le plus simple avec Active Directory : <code>{'{username}'}@monentreprise.local</code> (nom d'utilisateur principal / UPN).
-        </span>
-      </label>
+      {draft.url.startsWith('ldaps://') && (
+        <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={draft.tlsRejectUnauthorized}
+            onChange={(e) => set({ tlsRejectUnauthorized: e.target.checked })}
+          />
+          <span>
+            Vérifier le certificat du contrôleur de domaine
+            <span className="mt-0.5 block text-xs text-slate-400">
+              À décocher uniquement si votre certificat vient d'une autorité interne que ce serveur ne reconnaît pas. La liaison reste
+              chiffrée, mais l'identité du serveur n'est plus vérifiée : la bonne solution reste d'installer votre autorité racine sur
+              le serveur.
+            </span>
+          </span>
+        </label>
+      )}
+
+      {/* --- Comment retrouver la personne dans l'annuaire --- */}
+      <div className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Comment retrouver la personne</span>
+        <div className="flex flex-col gap-1.5">
+          <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
+            <input type="radio" className="mt-1" checked={!recherche} onChange={() => set({ mode: 'pattern' })} />
+            <span>
+              <strong>Motif d'identifiant</strong> — le plus simple, aucun compte de service
+              <span className="mt-0.5 block text-xs text-slate-400">
+                Chacun se connecte avec son UPN complet (prenom.nom@monentreprise.local).
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
+            <input type="radio" className="mt-1" checked={recherche} onChange={() => set({ mode: 'search' })} />
+            <span>
+              <strong>Recherche dans l'annuaire</strong> — identifiant Windows court, et restriction par groupe possible
+              <span className="mt-0.5 block text-xs text-slate-400">
+                Un compte de service en lecture seule retrouve la personne. Le seul mode qui accepte l'identifiant court
+                (<code>rnelson</code>) et qui permet de n'ouvrir l'application qu'à un groupe.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        {!recherche ? (
+          <label className="block pt-1">
+            <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">
+              Motif ({'{username}'} est remplacé par ce que la personne saisit)
+            </span>
+            <input
+              value={draft.userDnPattern}
+              onChange={(e) => set({ userDnPattern: e.target.value })}
+              placeholder="{username}@monentreprise.local"
+              className="input font-mono text-xs"
+            />
+            <span className="mt-1 block text-xs text-slate-400">
+              Le plus courant avec Active Directory : <code>{'{username}'}@monentreprise.local</code>. Un DN complet fonctionne aussi :{' '}
+              <code>CN={'{username}'},OU=Utilisateurs,DC=monentreprise,DC=local</code>.
+            </span>
+          </label>
+        ) : (
+          <div className="space-y-2.5 pt-1">
+            <label className="block">
+              <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Base de recherche (baseDN)</span>
+              <input value={draft.baseDN} onChange={(e) => set({ baseDN: e.target.value })} placeholder="DC=monentreprise,DC=local" className="input font-mono text-xs" />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Filtre de recherche</span>
+              <input value={draft.userFilter} onChange={(e) => set({ userFilter: e.target.value })} placeholder="(sAMAccountName={username})" className="input font-mono text-xs" />
+              <span className="mt-1 block text-xs text-slate-400">
+                <code>(sAMAccountName={'{username}'})</code> pour l'identifiant Windows court, <code>(userPrincipalName={'{username}'})</code> pour l'UPN.
+              </span>
+            </label>
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Compte de service (DN)</span>
+                <input value={draft.bindDN} onChange={(e) => set({ bindDN: e.target.value })} placeholder="CN=svc_suivi,OU=Services,DC=..." className="input font-mono text-xs" />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">
+                  Mot de passe {draft.bindPasswordSet && <span className="text-emerald-600 dark:text-emerald-400">— enregistré</span>}
+                </span>
+                <input
+                  type="password"
+                  value={bindPassword}
+                  onChange={(e) => setBindPassword(e.target.value)}
+                  placeholder={draft.bindPasswordSet ? 'Laisser vide pour ne pas le changer' : 'Mot de passe du compte de service'}
+                  autoComplete="new-password"
+                  className="input"
+                />
+              </label>
+            </div>
+            <p className="text-xs text-slate-400">
+              Un compte <strong>en lecture seule</strong> suffit : il ne sert qu'à retrouver le DN de la personne. Le mot de passe est
+              conservé sur le serveur, dans le dossier réservé aux administrateurs, et n'est jamais renvoyé à un navigateur.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* --- Ce qu'on lit dans l'annuaire --- */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Attribut du nom affiché</span>
+          <input value={draft.displayNameAttribute} onChange={(e) => set({ displayNameAttribute: e.target.value })} className="input font-mono text-xs" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Attribut de l'adresse mail</span>
+          <input value={draft.mailAttribute} onChange={(e) => set({ mailAttribute: e.target.value })} className="input font-mono text-xs" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Groupe exigé (optionnel)</span>
+          <input value={draft.requiredGroup} onChange={(e) => set({ requiredGroup: e.target.value })} placeholder="Techniciens Infra" className="input" />
+        </label>
+      </div>
+      <p className="-mt-2 text-xs text-slate-400">
+        Sans nom d'attribut, l'application afficherait l'identifiant de connexion partout au lieu du nom de la personne. Le groupe
+        restreint l'accès : laissé vide, <strong>tout compte valide de l'annuaire peut entrer</strong> — y compris les prestataires et
+        les comptes de service. Un nom simple ou un DN complet conviennent.
+        {recherche ? '' : " La vérification du groupe exige que l'annuaire accepte de renvoyer memberOf à la personne elle-même."}
+      </p>
 
       <div className="flex items-center gap-3 print:hidden">
-        <button
-          onClick={save}
-          disabled={!dirty}
-          className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
-        >
+        <button onClick={save} disabled={!dirty} className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40">
           Enregistrer
         </button>
         {dirty && <span className="text-xs text-amber-600 dark:text-amber-400">Modifications non enregistrées</span>}
       </div>
-      <p className="text-xs text-slate-400 print:hidden">
-        Pas de bouton "Tester" ici : essayez simplement de vous déconnecter puis de vous reconnecter avec un identifiant LDAP depuis l'écran
-        de connexion.
-      </p>
       {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+
+      {/* --- Test, sans se déconnecter --- */}
+      <div className="space-y-2 rounded-lg bg-slate-50 p-3 dark:bg-slate-800/60 print:hidden">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Tester la configuration enregistrée</span>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Le test porte sur ce qui est <strong>enregistré</strong>, pas sur ce qui est affiché : enregistrez d'abord. Les identifiants
+          saisis ici ne servent qu'à la vérification, ils ne sont ni conservés ni journalisés. Sans identifiants, seule la
+          joignabilité du serveur est vérifiée.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <input placeholder="Identifiant à tester" value={test.user} onChange={(e) => setTest((t) => ({ ...t, user: e.target.value }))} className="input flex-1" autoComplete="off" />
+          <input type="password" placeholder="Mot de passe" value={test.pass} onChange={(e) => setTest((t) => ({ ...t, pass: e.target.value }))} className="input flex-1" autoComplete="new-password" />
+          <button onClick={runTest} disabled={test.busy} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-white disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900">
+            {test.busy ? 'Test…' : 'Tester'}
+          </button>
+        </div>
+        {test.result && (
+          <div className="space-y-1 pt-1">
+            {test.result.journal.map((etape, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs">
+                <span className={etape.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>{etape.ok ? '✔' : '✘'}</span>
+                <span className="text-slate-600 dark:text-slate-300">
+                  <span className="font-medium">{etape.etape}</span> — {etape.detail}
+                </span>
+              </div>
+            ))}
+            <p className={`pt-1 text-xs font-medium ${test.result.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+              {test.result.ok
+                ? test.result.user
+                  ? `Connexion réussie — cette personne apparaîtra sous le nom « ${test.result.user.name} ».`
+                  : 'Serveur joignable. Renseignez un identifiant pour éprouver une connexion complète.'
+                : "Échec — l'étape marquée ✘ ci-dessus indique quoi corriger."}
+            </p>
+          </div>
+        )}
+      </div>
     </Card>
   );
 }
@@ -666,6 +847,232 @@ function ModeCard() {
  * référence — mais les supprimer sans les proposer reviendrait à effacer du travail sans le
  * dire. Elles restent donc exportables tant que l'utilisateur ne les a pas écartées lui-même.
  */
+/**
+ * Réglages du relais SMTP.
+ *
+ * Ils n'existaient que dans server/.env : changer le nom du relais ou l'heure d'envoi
+ * demandait une session sur le serveur, un éditeur de texte et un redémarrage du service —
+ * pour un réglage qu'on ajuste rarement du premier coup.
+ *
+ * Deux boutons plutôt qu'un, parce qu'ils ne disent pas la même chose : « Vérifier » teste
+ * la connexion au relais, « Envoyer un test » lui remet réellement un message. Un relais
+ * accepte souvent la connexion puis refuse le message — expéditeur non autorisé, relayage
+ * interdit pour cette adresse IP — et c'est ce second cas qui fait perdre le plus de temps.
+ */
+function MailConfigCard({ confirm }: { confirm: ConfirmFn }) {
+  const [cfg, setCfg] = useState<MailConfig | null>(null);
+  const [saved, setSaved] = useState<MailConfig | null>(null);
+  const [pass, setPass] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [testTo, setTestTo] = useState('');
+  const [busy, setBusy] = useState<'verify' | 'send' | null>(null);
+  const [resultat, setResultat] = useState<{ ok: boolean; texte: string } | null>(null);
+
+  useEffect(() => {
+    fetchMailConfig()
+      .then((c) => {
+        setCfg(c);
+        setSaved(c);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  }, []);
+
+  if (!cfg) {
+    return (
+      <Card className="p-4 print:hidden">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Envoi de mail (programme du jour)</h2>
+        {error ? (
+          <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+            {error}
+            <span className="mt-1 block text-slate-400">
+              L'envoi de mail suppose le service (mode client/serveur) : un site statique ne peut pas remettre un message à un relais SMTP.
+            </span>
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-slate-400">Chargement…</p>
+        )}
+      </Card>
+    );
+  }
+
+  const dirty = JSON.stringify(cfg) !== JSON.stringify(saved) || pass !== '';
+  const set = (patch: Partial<MailConfig>) => setCfg({ ...cfg, ...patch });
+
+  const save = async () => {
+    setError(null);
+    setResultat(null);
+    if (!(await confirm({ title: 'Confirmer la modification', message: "Enregistrer ces paramètres d'envoi de mail ?" }))) return;
+    try {
+      const next = await saveMailConfig({
+        host: cfg.host,
+        port: cfg.port,
+        secure: cfg.secure,
+        user: cfg.user,
+        from: cfg.from,
+        dailyMailAt: cfg.dailyMailAt,
+        tlsRejectUnauthorized: cfg.tlsRejectUnauthorized,
+        pass: pass || undefined,
+      });
+      setCfg(next);
+      setSaved(next);
+      setPass('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const verifier = async () => {
+    setBusy('verify');
+    setResultat(null);
+    try {
+      await verifyMailRelay();
+      setResultat({ ok: true, texte: 'Le relais répond et accepte la connexion. Envoyez un message de test pour vérifier qu\'il accepte aussi de le remettre.' });
+    } catch (err) {
+      setResultat({ ok: false, texte: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const envoyer = async () => {
+    setBusy('send');
+    setResultat(null);
+    try {
+      const r = await sendTestMail(testTo);
+      setResultat({
+        ok: true,
+        texte: `Message remis au relais pour ${r.accepted.join(', ') || testTo}.${r.rejected?.length ? ` Refusé pour : ${r.rejected.join(', ')}.` : ''} Réponse du serveur : ${r.response}`,
+      });
+    } catch (err) {
+      setResultat({ ok: false, texte: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Card className="space-y-4 p-4 print:hidden">
+      <div>
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Envoi de mail (programme du jour)</h2>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          L'application ne délivre rien elle-même : elle remet le message à votre relais SMTP (Exchange, Microsoft 365, ou un relais
+          interne), qui s'en charge. Chaque personne reçoit son programme à l'adresse renseignée dans l'onglet Équipe.
+        </p>
+        {cfg.fromEnvOnly && (cfg.host || cfg.from) && (
+          <p className="mt-1.5 text-xs text-slate-400">
+            Ces valeurs viennent de <code>server/.env</code> et n'ont jamais été enregistrées ici. Le premier enregistrement depuis
+            cette page les reprend et prend le pas sur le fichier.
+          </p>
+        )}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className="block sm:col-span-2">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Serveur SMTP</span>
+          <input value={cfg.host} onChange={(e) => set({ host: e.target.value })} placeholder="smtp.monentreprise.local" className="input" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Port</span>
+          <input type="number" value={cfg.port} onChange={(e) => set({ port: Number(e.target.value) || 25 })} className="input" />
+        </label>
+      </div>
+
+      <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
+        <input type="checkbox" className="mt-0.5" checked={cfg.secure} onChange={(e) => set({ secure: e.target.checked })} />
+        <span>
+          Chiffrement dès la connexion (port 465)
+          <span className="mt-0.5 block text-xs text-slate-400">
+            À laisser décoché sur les ports 25 et 587 : la connexion y démarre en clair puis bascule en TLS d'elle-même (STARTTLS).
+            Cocher cette case sur le port 587 fait échouer la connexion sans message clair.
+          </span>
+        </span>
+      </label>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Identifiant (optionnel)</span>
+          <input value={cfg.user} onChange={(e) => set({ user: e.target.value })} placeholder="Vide si le relais accepte par adresse IP" className="input" autoComplete="off" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">
+            Mot de passe {cfg.passSet && <span className="text-emerald-600 dark:text-emerald-400">— enregistré</span>}
+          </span>
+          <input
+            type="password"
+            value={pass}
+            onChange={(e) => setPass(e.target.value)}
+            placeholder={cfg.passSet ? 'Laisser vide pour ne pas le changer' : 'Mot de passe SMTP'}
+            className="input"
+            autoComplete="new-password"
+          />
+        </label>
+      </div>
+      <p className="-mt-2 text-xs text-slate-400">
+        Un relais interne accepte souvent les messages sans authentification, sur la seule foi de l'adresse IP du serveur : laissez
+        alors ces deux champs vides.
+      </p>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Adresse d'expéditeur</span>
+          <input value={cfg.from} onChange={(e) => set({ from: e.target.value })} placeholder="suivi-infra@monentreprise.fr" className="input" />
+          <span className="mt-1 block text-xs text-slate-400">
+            Votre relais n'acceptera de l'expédier que si cette adresse lui est autorisée.
+          </span>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Heure d'envoi automatique (HH:MM)</span>
+          <input value={cfg.dailyMailAt} onChange={(e) => set({ dailyMailAt: e.target.value })} placeholder="07:45" className="input" />
+          <span className="mt-1 block text-xs text-slate-400">
+            Vide = aucun envoi automatique, l'envoi reste possible à la demande depuis Activité du jour. Le service rattrape l'envoi du
+            jour s'il était arrêté à l'heure dite.
+          </span>
+        </label>
+      </div>
+
+      {cfg.secure && (
+        <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <input type="checkbox" checked={cfg.tlsRejectUnauthorized} onChange={(e) => set({ tlsRejectUnauthorized: e.target.checked })} />
+          <span>
+            Vérifier le certificat du relais
+            <span className="ml-1 text-xs text-slate-400">(à décocher pour un relais interne à certificat auto-signé)</span>
+          </span>
+        </label>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button onClick={save} disabled={!dirty} className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40">
+          Enregistrer
+        </button>
+        {dirty && <span className="text-xs text-amber-600 dark:text-amber-400">Modifications non enregistrées</span>}
+        {!dirty && cfg.configured && <span className="text-xs text-emerald-600 dark:text-emerald-400">Configuration complète</span>}
+        {!dirty && !cfg.configured && <span className="text-xs text-slate-400">Serveur et expéditeur sont nécessaires pour envoyer.</span>}
+      </div>
+
+      <div className="space-y-2 rounded-lg bg-slate-50 p-3 dark:bg-slate-800/60">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Éprouver la configuration enregistrée</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={verifier} disabled={busy !== null} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-white disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900">
+            {busy === 'verify' ? 'Vérification…' : 'Vérifier la connexion'}
+          </button>
+          <input type="email" placeholder="votre.adresse@monentreprise.fr" value={testTo} onChange={(e) => setTestTo(e.target.value)} className="input min-w-56 flex-1" />
+          <button onClick={envoyer} disabled={busy !== null || !testTo.trim()} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-white disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900">
+            {busy === 'send' ? 'Envoi…' : 'Envoyer un test'}
+          </button>
+        </div>
+        <p className="text-xs text-slate-400">
+          Ces deux boutons portent sur ce qui est <strong>enregistré</strong> : enregistrez d'abord vos modifications.
+        </p>
+        {resultat && (
+          <p className={`text-xs ${resultat.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{resultat.texte}</p>
+        )}
+      </div>
+
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+    </Card>
+  );
+}
+
 /**
  * Purge automatique. Carte volontairement informative : la règle est fixe, et ce qui
  * manquerait le plus à un administrateur n'est pas un réglage de plus mais de savoir CE QUI

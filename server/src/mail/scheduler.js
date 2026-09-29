@@ -1,5 +1,5 @@
-import { config } from '../config.js';
 import { readJson, writeJson } from '../dataStore.js';
+import { getMailConfig } from './mailConfig.js';
 import { isMailConfigured } from './transport.js';
 import { sendDailyProgrammes } from './send.js';
 import { toISODate } from './dailyProgramme.js';
@@ -25,7 +25,12 @@ export function getMailState() {
 }
 
 function isDue(now, state) {
-  const [h, m] = config.dailyMailAt.split(':').map(Number);
+  // Relu à chaque réveil, et non capturé au démarrage : l'heure se règle désormais depuis
+  // la page Paramètres, et attendre un redémarrage du service pour qu'elle prenne effet
+  // ferait croire le réglage sans effet.
+  const heure = getMailConfig().dailyMailAt;
+  if (!heure) return false;
+  const [h, m] = heure.split(':').map(Number);
   if (Number.isNaN(h) || Number.isNaN(m)) return false;
   const today = toISODate(now);
   if (state.lastSentDate === today) return false;
@@ -35,6 +40,7 @@ function isDue(now, state) {
 }
 
 async function tick() {
+  if (!isMailConfigured()) return;
   const state = readState();
   if (!isDue(new Date(), state)) return;
   try {
@@ -50,12 +56,17 @@ async function tick() {
 }
 
 export function startMailScheduler() {
-  if (!config.dailyMailAt) return;
-  if (!isMailConfigured()) {
-    console.warn(`[mail] DAILY_MAIL_AT=${config.dailyMailAt} est défini mais SMTP n'est pas configuré : aucun envoi automatique.`);
-    return;
+  // Le planificateur tourne toujours : l'heure d'envoi et la configuration SMTP peuvent
+  // être renseignées en cours de route depuis la page Paramètres, et un planificateur qui
+  // aurait renoncé au démarrage ne s'en apercevrait jamais.
+  const cfg = getMailConfig();
+  if (cfg.dailyMailAt && !isMailConfigured()) {
+    console.warn(`[mail] Heure d'envoi ${cfg.dailyMailAt} définie mais SMTP incomplet : aucun envoi tant que le relais n'est pas renseigné.`);
+  } else if (cfg.dailyMailAt) {
+    console.log(`[mail] Envoi automatique du programme du jour à ${cfg.dailyMailAt}.`);
+  } else {
+    console.log("[mail] Aucun envoi automatique (heure non renseignée dans Paramètres → Envoi de mail).");
   }
-  console.log(`[mail] Envoi automatique du programme du jour à ${config.dailyMailAt}.`);
   setInterval(() => void tick(), MINUTE).unref();
   void tick();
 }
