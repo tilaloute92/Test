@@ -52,6 +52,60 @@ export const FAMILLES_HA: Record<FamilleHa, string> = {
   energie: 'Énergie',
 }
 
+/**
+ * Qui traite le trafic en régime normal — l'axe que les rôles « actif » et « passif » ne
+ * suffisent pas à décrire.
+ *
+ * Deux plans cohabitent dans toute grappe : celui qui **décide** (la configuration, les
+ * protocoles, l'élection) et celui qui **achemine**. On ne les confond jamais dans un
+ * dossier d'exploitation, et pourtant un schéma les confond toujours, parce qu'il n'écrit
+ * qu'un rôle par équipement. Un châssis virtuel est « actif / passif » au plan de contrôle
+ * et actif / actif au plan de données ; un pare-feu en actif/passif est passif des deux
+ * côtés ; un FGCP en actif/actif ne répartit que l'inspection. Les trois se dessinent de la
+ * même façon et ne se dimensionnent pas du tout pareil.
+ *
+ * D'où cet axe, posé une fois pour chaque mécanisme.
+ */
+export type PlanDeDonnees =
+  /** Tous les membres acheminent en permanence. */
+  | 'tous'
+  /** Un seul achemine ; les autres ne voient passer aucun paquet avant la bascule. */
+  | 'un-seul'
+  /** Le mécanisme accepte les deux, et c'est la configuration qui tranche. */
+  | 'selon-mode'
+  /** Le mécanisme ne porte pas de trafic de production (sauvegarde…). */
+  | 'sans-objet'
+
+export const PLANS_DE_DONNEES: Record<
+  PlanDeDonnees,
+  { label: string; court: string; detail: string }
+> = {
+  tous: {
+    label: 'Tous les membres acheminent',
+    court: 'plan de données réparti',
+    detail:
+      "Aucun membre n'est en veille : la charge se répartit en permanence. La perte d'un membre reporte sa part sur les survivants — au-delà de 50 % de charge par membre sur une paire, l'incident sature le rescapé.",
+  },
+  'un-seul': {
+    label: 'Un seul membre achemine',
+    court: 'plan de données sur un seul membre',
+    detail:
+      "Le veilleur ne voit passer aucun paquet avant la bascule. Il doit donc être dimensionné comme l'actif, et sa capacité n'est éprouvée que le jour où elle sert : testez la bascule en charge, pas à vide.",
+  },
+  'selon-mode': {
+    label: 'Selon le mode configuré',
+    court: 'plan de données selon le mode',
+    detail:
+      "Ce mécanisme s'exploite en actif / passif ou en actif / actif, et le choix ne change pas que le dimensionnement : le câblage et les prérequis diffèrent. Déclarez le rôle des membres pour que le schéma le dise.",
+  },
+  'sans-objet': {
+    label: 'Ne porte pas de trafic de production',
+    court: 'hors plan de données',
+    detail:
+      "Ce mécanisme ne maintient pas un service en ligne : il permet de le reconstruire. Il ne se compte pas dans un calcul de disponibilité.",
+  },
+}
+
 export interface MecanismeHa {
   /** Identifiant stable, enregistré dans le schéma. */
   id: string
@@ -84,14 +138,16 @@ export interface MecanismeHa {
    */
   planDeControleCommun?: boolean
   /**
-   * Ce que fait le plan de données quand il ne suit pas le plan de contrôle.
+   * Qui traite le trafic en régime normal.
    *
-   * Un châssis virtuel élit un actif et un veilleur — et pourtant les deux châssis commutent
-   * en permanence. Écrire « actif / passif » sans le préciser laisse croire que l'un des deux
-   * ne travaille pas : on dimensionnerait le trafic sur un seul, et l'on croirait pouvoir en
-   * débrancher un sans conséquence.
+   * La question se pose pour **tous** les mécanismes, pas seulement pour les châssis
+   * virtuels : un FGCP en actif/passif laisse un pare-feu muet, un FGSP les fait travailler
+   * les deux, un VRRP n'achemine que par son maître, une paire MLAG commute des deux côtés.
+   * Le champ est obligatoire pour qu'aucun mécanisme n'entre dans la base sans y répondre.
    */
-  planDeDonnees?: string
+  planDeDonnees: PlanDeDonnees
+  /** Ce que le plan de données fait de particulier ici : le détail qui change le dimensionnement. */
+  noteDonnees?: string
   /** Témoin / quorum externe indispensable. */
   temoin?: boolean
   /** Adresse virtuelle attendue (VRRP, VIP de grappe…). */
@@ -131,12 +187,13 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'stackwise',
     label: 'StackWise / StackWise-480 (empilement)',
     famille: 'chassis',
+    planDeDonnees: 'tous',
     vendors: ['cisco'],
     kinds: ['switch', 'access-switch', 'core-switch'],
     membres: { min: 2, max: 8 },
     lien: { kind: ['stack'], nom: 'câbles de pile StackWise' },
     planDeControleCommun: true,
-    planDeDonnees:
+    noteDonnees:
       "Tous les membres commutent en permanence : le rôle ne désigne que le porteur du plan de contrôle. Un agrégat réparti sur plusieurs membres utilise les ports de chacun.",
     gammes: ['catalyst (9[23]|29|38)', 'c9[23]\\d\\d'],
     roles: ['active', 'passive', 'standalone'],
@@ -147,12 +204,13 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'stackwise-virtual',
     label: 'StackWise Virtual / VSS (châssis virtuel)',
     famille: 'chassis',
+    planDeDonnees: 'tous',
     vendors: ['cisco'],
     kinds: ['core-switch', 'switch'],
     membres: { min: 2, max: 2 },
     lien: { kind: ['stack'], nom: 'lien SVL (StackWise Virtual Link)' },
     planDeControleCommun: true,
-    planDeDonnees:
+    noteDonnees:
       "Les deux châssis commutent en permanence : « actif / passif » ne décrit que le plan de contrôle (SSO). Un MEC réparti sur les deux utilise les ports des deux, et le trafic se répartit.",
     vip: true,
     gammes: ['catalyst (9[456])', 'c9[456]\\d\\d', 'catalyst (45|65)00'],
@@ -172,12 +230,13 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'vsf',
     label: 'VSF (Virtual Switching Framework)',
     famille: 'chassis',
+    planDeDonnees: 'tous',
     vendors: ['aruba', 'hpe'],
     kinds: ['switch', 'access-switch', 'core-switch'],
     membres: { min: 2, max: 10 },
     lien: { kind: ['stack'], nom: 'liens VSF' },
     planDeControleCommun: true,
-    planDeDonnees:
+    noteDonnees:
       "Les deux membres commutent en permanence : le rôle ne concerne que le plan de contrôle.",
     gammes: ['cx 6[0-9]', '6[12345]00'],
     roles: ['active', 'passive'],
@@ -188,12 +247,13 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'irf',
     label: 'IRF (Intelligent Resilient Framework)',
     famille: 'chassis',
+    planDeDonnees: 'tous',
     vendors: ['hpe', 'h3c'],
     kinds: ['core-switch', 'switch'],
     membres: { min: 2, max: 9 },
     lien: { kind: ['stack'], nom: 'ports IRF' },
     planDeControleCommun: true,
-    planDeDonnees:
+    noteDonnees:
       "Tous les membres commutent en permanence : le rôle ne désigne que le maître du plan de contrôle.",
     gammes: ['comware', 's1[25]', 's5[567]', 's6[89]', 'flexfabric', 'flexnetwork'],
     roles: ['active', 'passive'],
@@ -204,12 +264,13 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'virtual-chassis',
     label: 'Virtual Chassis',
     famille: 'chassis',
+    planDeDonnees: 'tous',
     vendors: ['juniper', 'alcatel-lucent'],
     kinds: ['switch', 'access-switch', 'core-switch'],
     membres: { min: 2, max: 10 },
     lien: { kind: ['stack'], nom: 'ports VCP' },
     planDeControleCommun: true,
-    planDeDonnees:
+    noteDonnees:
       "Tous les membres commutent en permanence : « routing engine » maître et secours ne concernent que le plan de contrôle.",
     gammes: ['ex[234]', 'ex 4', 'omniswitch'],
     roles: ['active', 'passive'],
@@ -220,12 +281,13 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'summitstack',
     label: 'SummitStack',
     famille: 'chassis',
+    planDeDonnees: 'tous',
     vendors: ['extreme networks'],
     kinds: ['switch', 'access-switch'],
     membres: { min: 2, max: 8 },
     lien: { kind: ['stack'], nom: 'ports d’empilement' },
     planDeControleCommun: true,
-    planDeDonnees:
+    noteDonnees:
       "Tous les membres commutent en permanence : le rôle ne désigne que le maître de la pile.",
     roles: ['active', 'passive'],
     bascule: '< 2 s',
@@ -235,12 +297,13 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'istack-css',
     label: 'iStack / CSS',
     famille: 'chassis',
+    planDeDonnees: 'tous',
     vendors: ['huawei'],
     kinds: ['switch', 'access-switch', 'core-switch'],
     membres: { min: 2, max: 9 },
     lien: { kind: ['stack'], nom: 'câbles de pile' },
     planDeControleCommun: true,
-    planDeDonnees:
+    noteDonnees:
       "Tous les membres commutent en permanence : le rôle ne désigne que le porteur du plan de contrôle.",
     roles: ['active', 'passive'],
     bascule: '< 1 s',
@@ -252,6 +315,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'vpc',
     label: 'vPC (virtual PortChannel)',
     famille: 'paire-l2',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux Nexus commutent le trafic de l'agrégat en parallèle. La perte d'un membre reporte tout sur l'autre, et le peer-link doit alors écouler le trafic des ports orphelins : dimensionnez-le pour cela, pas pour la seule synchronisation.",
     vendors: ['cisco'],
     kinds: ['core-switch', 'leaf', 'spine', 'switch'],
     membres: { min: 2, max: 2 },
@@ -276,6 +342,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'vsx',
     label: 'VSX (Virtual Switching Extension)',
     famille: 'paire-l2',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux commutateurs acheminent en permanence ; l'ISL reprend le trafic des ports non doublés quand un membre tombe.",
     vendors: ['aruba', 'hpe'],
     kinds: ['core-switch', 'leaf', 'switch'],
     membres: { min: 2, max: 2 },
@@ -300,6 +369,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'mlag',
     label: 'MLAG (paire de châssis)',
     famille: 'paire-l2',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux châssis acheminent en parallèle. Le peer-link n'est pas un lien de secours : il porte le trafic des équipements raccordés à un seul côté.",
     vendors: [],
     kinds: ['core-switch', 'leaf', 'switch'],
     membres: { min: 2, max: 2 },
@@ -312,6 +384,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'vlt',
     label: 'VLT (Virtual Link Trunking)',
     famille: 'paire-l2',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux châssis acheminent en parallèle ; le VLTi écoule en plus le trafic orphelin à la perte d'un uplink.",
     vendors: ['dell'],
     kinds: ['core-switch', 'leaf', 'switch'],
     membres: { min: 2, max: 2 },
@@ -324,6 +399,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'mc-lag',
     label: 'MC-LAG (ICCP)',
     famille: 'paire-l2',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux équipements acheminent en parallèle ; ICCP ne porte que l'état.",
     vendors: ['juniper', 'nokia'],
     kinds: ['core-switch', 'leaf', 'switch'],
     membres: { min: 2, max: 2 },
@@ -336,6 +414,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'm-lag',
     label: 'M-LAG (DFS group)',
     famille: 'paire-l2',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux commutateurs acheminent en parallèle ; le peer-link porte l'état et le trafic orphelin.",
     vendors: ['huawei'],
     kinds: ['core-switch', 'leaf', 'switch'],
     membres: { min: 2, max: 2 },
@@ -348,6 +429,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'evpn-esi',
     label: 'EVPN multihoming (ESI-LAG)',
     famille: 'paire-l2',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Tous les membres de l'ESI acheminent en parallèle, et la répartition se fait par hachage de flux. Sans peer-link, le trafic orphelin passe par la fabric.",
     vendors: [],
     kinds: ['leaf', 'spine', 'core-switch'],
     membres: { min: 2 },
@@ -361,6 +445,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'vrrp',
     label: 'VRRP (RFC 5798)',
     famille: 'passerelle',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Un seul routeur achemine par groupe VRRP : le veilleur ne voit passer aucun paquet. On répartit en alternant le maître d'un VLAN à l'autre — il reste alors un seul actif par VLAN, et chacun doit pouvoir porter les deux.",
     vendors: [],
     kinds: ['router', 'core-switch', 'switch', 'firewall', 'ngfw', 'loadbalancer'],
     membres: { min: 2 },
@@ -381,6 +468,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'hsrp',
     label: 'HSRP',
     famille: 'passerelle',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Un seul routeur achemine par groupe HSRP. Répartir suppose plusieurs groupes avec des priorités croisées, chaque routeur devant absorber la totalité si l'autre tombe.",
     vendors: ['cisco'],
     kinds: ['router', 'core-switch', 'switch'],
     membres: { min: 2 },
@@ -393,6 +483,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'glbp',
     label: 'GLBP',
     famille: 'passerelle',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Plusieurs passerelles répondent en parallèle, chacune pour une part des clients. La répartition suit la distribution des MAC virtuelles, pas la charge réelle : elle est approximative.",
     vendors: ['cisco'],
     kinds: ['router', 'core-switch'],
     membres: { min: 2, max: 4 },
@@ -405,6 +498,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'anycast-gateway',
     label: 'Passerelle anycast distribuée (EVPN)',
     famille: 'passerelle',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Chaque leaf route localement pour ses propres clients : il n'y a pas de passerelle centrale à saturer, et rien à basculer.",
     vendors: [],
     kinds: ['leaf', 'core-switch', 'spine'],
     membres: { min: 2 },
@@ -419,6 +515,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'fgcp',
     label: 'FGCP (FortiGate Clustering Protocol)',
     famille: 'pare-feu',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "En actif/passif le veilleur ne traite aucun paquet. En actif/actif, le maître reçoit tout le trafic et ne délègue que l'inspection aux secondaires : le débit de session ne se répartit pas, seule la charge d'analyse le fait.",
     vendors: ['fortinet'],
     kinds: PARE_FEU,
     membres: { min: 2, max: 4 },
@@ -443,6 +542,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'fgsp',
     label: 'FGSP (synchronisation de sessions)',
     famille: 'pare-feu',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Chaque pare-feu traite ses propres flux ; la table de sessions partagée sert à ce qu'un flux dérouté vers l'autre membre ne soit pas rejeté. C'est le routage qui répartit, pas la grappe.",
     vendors: ['fortinet'],
     kinds: PARE_FEU,
     membres: { min: 2, max: 16 },
@@ -455,6 +557,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'pan-ha-ap',
     label: 'HA actif / passif (PAN-OS)',
     famille: 'pare-feu',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Le passif ne traite aucun paquet : ses interfaces sont configurées mais silencieuses. Il doit donc être dimensionné comme l'actif, et sa capacité n'est éprouvée qu'au jour de la bascule.",
     vendors: ['palo alto networks'],
     kinds: PARE_FEU,
     membres: { min: 2, max: 2 },
@@ -482,6 +587,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'pan-ha-aa',
     label: 'HA actif / actif (PAN-OS)',
     famille: 'pare-feu',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux membres traitent du trafic, mais chaque session appartient à un seul d'entre eux : HA3 transfère les paquets vers son propriétaire. Le débit ne double pas — dimensionnez chaque membre pour la totalité.",
     vendors: ['palo alto networks'],
     kinds: PARE_FEU,
     membres: { min: 2, max: 2 },
@@ -511,6 +619,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'pan-ha-cluster',
     label: 'Grappe HA PAN-OS (HA4, jusqu’à 16)',
     famille: 'pare-feu',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "Le partage de la table de sessions permet à un membre de reprendre les connexions d'un autre, mais ne répartit pas le trafic de lui-même : c'est le routage ou l'équilibrage amont qui le fait.",
     vendors: ['palo alto networks'],
     kinds: PARE_FEU,
     membres: { min: 2, max: 16 },
@@ -531,6 +642,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'panorama-ha',
     label: 'Panorama en actif / passif',
     famille: 'services',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Le secondaire n'administre rien avant la bascule — et aucun des deux ne porte de trafic de production.",
     vendors: ['palo alto networks'],
     kinds: ['siem', 'nms'],
     membres: { min: 2, max: 2 },
@@ -551,6 +665,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'clusterxl',
     label: 'ClusterXL',
     famille: 'pare-feu',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "En High Availability, un seul membre filtre. En Load Sharing, tous filtrent — mais le mode unicast fait entrer tout le trafic par un membre pivot qui le redistribue, ce qui en fait le point de dimensionnement.",
     vendors: ['check point'],
     kinds: PARE_FEU,
     membres: { min: 2, max: 5 },
@@ -572,6 +689,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'srx-chassis-cluster',
     label: 'Chassis cluster SRX',
     famille: 'pare-feu',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "Avec les seuls RG0/RG1, un nœud traite tout. Avec plusieurs groupes de redondance répartis, chaque nœud est actif pour une part du trafic — mais un flux donné reste traité de bout en bout par un seul nœud.",
     vendors: ['juniper'],
     kinds: PARE_FEU,
     membres: { min: 2, max: 2 },
@@ -593,6 +713,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'ftd-ha',
     label: 'Basculement (failover) Secure Firewall',
     famille: 'pare-feu',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "L'unité de secours ne traite aucun paquet avant la bascule. Pour faire travailler plusieurs unités en parallèle, il faut le clustering, qui est un autre mécanisme.",
     vendors: ['cisco'],
     kinds: PARE_FEU,
     membres: { min: 2, max: 2 },
@@ -617,6 +740,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'sns-ha',
     label: 'Haute disponibilité SNS',
     famille: 'pare-feu',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Le passif ne traite aucun paquet : il se contente de suivre l'état de l'actif.",
     vendors: ['stormshield'],
     kinds: PARE_FEU,
     membres: { min: 2, max: 2 },
@@ -630,6 +756,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'firecluster',
     label: 'FireCluster',
     famille: 'pare-feu',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "L'actif/actif répartit les connexions entre les deux boîtiers, mais exige un routage symétrique : un retour par l'autre membre fait tomber la session.",
     vendors: ['watchguard'],
     kinds: PARE_FEU,
     membres: { min: 2, max: 2 },
@@ -642,6 +771,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'xgs-ha',
     label: 'HA Sophos XGS',
     famille: 'pare-feu',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "Le mode se choisit à la configuration de la paire ; en actif/passif le secondaire ne traite rien.",
     vendors: ['sophos'],
     kinds: PARE_FEU,
     membres: { min: 2, max: 2 },
@@ -656,6 +788,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'fw-ap',
     label: 'Grappe actif / passif (à préciser)',
     famille: 'pare-feu',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Le passif ne traite aucun paquet avant la bascule : dimensionnez-le comme l'actif.",
     vendors: [],
     kinds: PARE_FEU,
     membres: { min: 2, max: 2 },
@@ -669,6 +804,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'adc-ha',
     label: 'Paire de répartiteurs (VIP flottante)',
     famille: 'repartiteur',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "Une adresse virtuelle flottante n'est servie que par un membre. Répartir suppose plusieurs adresses virtuelles, réparties entre les membres — chacun devant pouvoir porter les autres.",
     vendors: [],
     kinds: ['loadbalancer', 'waf'],
     membres: { min: 2 },
@@ -683,6 +821,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'f5-dsc',
     label: 'Device Service Clustering (traffic groups)',
     famille: 'repartiteur',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "Chaque traffic-group n'est actif que sur un équipement, mais plusieurs traffic-groups peuvent être répartis entre les équipements. Le dimensionnement se fait donc par équipement, pour la somme des traffic-groups qu'il peut reprendre.",
     vendors: ['f5'],
     kinds: ['loadbalancer', 'waf'],
     membres: { min: 2, max: 8 },
@@ -696,6 +837,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'citrix-ha',
     label: 'Paire HA NetScaler',
     famille: 'repartiteur',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Le secondaire ne traite aucun trafic : il reçoit la configuration et attend.",
     vendors: ['citrix'],
     kinds: ['loadbalancer', 'waf'],
     membres: { min: 2, max: 2 },
@@ -709,6 +853,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'keepalived',
     label: 'Keepalived / VRRP logiciel',
     famille: 'repartiteur',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "Une adresse virtuelle n'a qu'un maître. On répartit en déclarant plusieurs adresses virtuelles avec des priorités croisées, ce qui reste un seul maître par adresse.",
     vendors: [],
     kinds: ['loadbalancer', 'waf', 'server', 'ztna', 'api-gateway'],
     membres: { min: 2 },
@@ -723,6 +870,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'vsphere-ha',
     label: 'vSphere HA',
     famille: 'calcul',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Tous les hôtes exécutent des machines virtuelles en permanence. HA ne fait que redémarrer ailleurs celles de l'hôte perdu : réservez la capacité correspondante (admission control), sinon le redémarrage échoue faute de ressources.",
     vendors: ['vmware', 'dell', 'hpe', 'lenovo', 'cisco'],
     kinds: CALCUL,
     membres: { min: 2 },
@@ -745,6 +895,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'vsan-stretched',
     label: 'vSAN étiré + témoin',
     famille: 'calcul',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux sites servent les lectures locales et écrivent en synchrone. La perte d'un site laisse l'autre porter toute la charge : dimensionnez chaque site pour la totalité.",
     vendors: ['vmware', 'dell', 'hpe', 'lenovo'],
     kinds: [...CALCUL, 'storage'],
     membres: { min: 3 },
@@ -757,6 +910,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'nutanix-ha',
     label: 'Nutanix HA (RF2 / RF3)',
     famille: 'calcul',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Tous les nœuds exécutent des machines virtuelles et servent des entrées/sorties. Après la perte d'un nœud, les survivants portent sa charge en plus de la reconstruction des données.",
     vendors: ['nutanix', 'dell', 'hpe', 'lenovo'],
     kinds: ['hci', 'hypervisor'],
     membres: { min: 3 },
@@ -776,6 +932,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'nutanix-metro',
     label: 'Nutanix Metro Availability + témoin',
     famille: 'calcul',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Un conteneur n'est actif que sur un site à la fois. On peut croiser la direction conteneur par conteneur, mais chaque conteneur n'a qu'un site actif.",
     vendors: ['nutanix'],
     kinds: ['hci'],
     membres: { min: 2 },
@@ -788,6 +947,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'wsfc',
     label: 'Cluster de basculement Windows (WSFC)',
     famille: 'calcul',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "Un groupe de ressources n'est actif que sur un nœud ; plusieurs groupes peuvent être répartis entre les nœuds. Le dimensionnement se fait par nœud, pour tous les groupes qu'il peut reprendre.",
     vendors: ['microsoft', 'dell', 'hpe', 'lenovo'],
     kinds: [...CALCUL, 'managed-db'],
     membres: { min: 2 },
@@ -801,6 +963,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'proxmox-ha',
     label: 'Proxmox HA (Corosync)',
     famille: 'calcul',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Tous les nœuds exécutent des machines virtuelles ; HA les redémarre ailleurs, avec coupure. Gardez la capacité d'un nœud libre.",
     vendors: ['proxmox'],
     kinds: CALCUL,
     membres: { min: 3 },
@@ -813,6 +978,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'scale-ha',
     label: 'Scale Computing HC3 HA',
     famille: 'calcul',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Tous les nœuds exécutent des machines virtuelles et servent des entrées/sorties.",
     vendors: ['scale computing'],
     kinds: ['hci'],
     membres: { min: 3 },
@@ -824,6 +992,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'pacemaker',
     label: 'Pacemaker / Corosync',
     famille: 'calcul',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "Une ressource primitive n'est active que sur un nœud ; une ressource clonée l'est sur tous. Le plan de données dépend donc de la nature des ressources, pas du cluster.",
     vendors: [],
     kinds: ['server', 'baremetal', 'managed-db', 'ipbx'],
     membres: { min: 2 },
@@ -839,6 +1010,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'dual-controller',
     label: 'Baie à deux contrôleurs',
     famille: 'stockage',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux contrôleurs servent en permanence, mais chaque volume appartient à l'un des deux (ALUA) : la perte d'un contrôleur transfère ses volumes à l'autre, qui doit alors absorber toute la charge. Un contrôleur chargé à plus de 50 % promet une dégradation, pas une continuité.",
     vendors: [],
     kinds: STOCKAGE,
     membres: { min: 1, max: 1 },
@@ -850,6 +1024,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'netapp-ha-pair',
     label: 'Paire HA (takeover / giveback)',
     famille: 'stockage',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Chaque contrôleur sert ses propres agrégats : les deux travaillent. Un takeover met toute la charge sur le survivant.",
     vendors: ['netapp'],
     kinds: STOCKAGE,
     membres: { min: 2, max: 2 },
@@ -870,6 +1047,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'metrocluster',
     label: 'MetroCluster + médiateur',
     famille: 'stockage',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux sites servent leurs propres volumes en écriture synchrone ; chacun doit pouvoir porter les deux.",
     vendors: ['netapp'],
     kinds: STOCKAGE,
     membres: { min: 2 },
@@ -890,6 +1070,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'activecluster',
     label: 'ActiveCluster + médiateur',
     famille: 'stockage',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux baies servent le même volume en écriture : c'est un actif/actif réel, et non un actif/veilleur.",
     vendors: ['pure storage'],
     kinds: STOCKAGE,
     membres: { min: 2 },
@@ -902,6 +1085,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'peer-persistence',
     label: 'Peer Persistence + témoin',
     famille: 'stockage',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Un volume est servi par une seule baie à la fois ; les chemins vers l'autre existent mais ne sont pas optimisés. On peut alterner le site primaire volume par volume.",
     vendors: ['hpe'],
     kinds: STOCKAGE,
     membres: { min: 2 },
@@ -914,6 +1100,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'powerstore-metro',
     label: 'Metro Volume / réplication synchrone',
     famille: 'stockage',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux appliances servent le même volume : les chemins des deux côtés sont utilisables en permanence.",
     vendors: ['dell'],
     kinds: STOCKAGE,
     membres: { min: 2 },
@@ -926,6 +1115,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'hypermetro',
     label: 'HyperMetro + serveur de quorum',
     famille: 'stockage',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux baies servent le même LUN ; les chemins des deux côtés sont actifs.",
     vendors: ['huawei'],
     kinds: STOCKAGE,
     membres: { min: 2 },
@@ -938,6 +1130,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'synology-sha',
     label: 'Synology High Availability (SHA)',
     famille: 'stockage',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Le passif ne sert aucun partage : la bascule interrompt les services le temps du démarrage.",
     vendors: ['synology'],
     kinds: STOCKAGE,
     membres: { min: 2, max: 2 },
@@ -951,6 +1146,7 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'backup-3-2-1',
     label: 'Sauvegarde 3-2-1-1-0 (copie immuable)',
     famille: 'stockage',
+    planDeDonnees: 'sans-objet',
     vendors: [],
     kinds: ['backup', 'tape-backup'],
     membres: { min: 1 },
@@ -964,6 +1160,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'wlc-sso',
     label: 'HA SSO (paire de contrôleurs)',
     famille: 'sans-fil',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Le contrôleur de secours ne termine aucun tunnel avant la bascule ; il en garde l'état, ce qui évite la réassociation des bornes.",
     vendors: ['cisco'],
     kinds: ['wlan-controller'],
     membres: { min: 2, max: 2 },
@@ -984,6 +1183,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'wlc-n1',
     label: 'Redondance N+1',
     famille: 'sans-fil',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Le contrôleur de secours ne porte aucune borne avant la bascule, et doit pouvoir absorber celles du contrôleur perdu.",
     vendors: ['cisco', 'aruba', 'huawei'],
     kinds: ['wlan-controller'],
     membres: { min: 2 },
@@ -995,6 +1197,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'aruba-cluster',
     label: 'Cluster de contrôleurs',
     famille: 'sans-fil',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Bornes et clients sont répartis entre tous les membres : chaque membre doit pouvoir absorber la part d'un autre.",
     vendors: ['aruba'],
     kinds: ['wlan-controller'],
     membres: { min: 2, max: 12 },
@@ -1006,6 +1211,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'smartzone-cluster',
     label: 'Cluster SmartZone',
     famille: 'sans-fil',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les bornes sont réparties entre les nœuds du cluster.",
     vendors: ['ruckus'],
     kinds: ['wlan-controller'],
     membres: { min: 3, max: 4 },
@@ -1019,6 +1227,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'dns-anycast',
     label: 'DNS/DHCP redondé (anycast ou paire)',
     famille: 'services',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "En anycast, tous les nœuds répondent et le routage choisit le plus proche. Une paire primaire/secondaire DNS répond aussi des deux côtés. Un failover DHCP, lui, partage les plages entre deux serveurs : ce n'est ni l'un ni l'autre.",
     vendors: ['infoblox', 'efficientip'],
     kinds: ['ddi'],
     membres: { min: 2 },
@@ -1031,6 +1242,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'ad-multi-dc',
     label: 'Annuaire multi-contrôleurs',
     famille: 'services',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Tous les contrôleurs traitent des authentifications ; les clients choisissent par site et par DNS.",
     vendors: ['microsoft'],
     kinds: ['idp'],
     membres: { min: 2 },
@@ -1042,6 +1256,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'sql-ag',
     label: 'Groupe de disponibilité SQL Server',
     famille: 'services',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "Les écritures vont toujours au réplica primaire. Les secondaires ne traitent du trafic que si la lecture seule y est activée et que les applications s'y adressent explicitement.",
     vendors: ['microsoft'],
     kinds: ['managed-db', 'server'],
     membres: { min: 2 },
@@ -1055,6 +1272,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'ipbx-cluster',
     label: 'Grappe IPBX (survivabilité de site)',
     famille: 'services',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "Selon le montage : postes répartis entre les nœuds, ou nœud de secours inactif. La survivabilité locale, elle, ne s'active qu'à la coupure du lien central.",
     vendors: ['cisco', 'alcatel-lucent', 'mitel', '3cx'],
     kinds: ['ipbx', 'voice-gateway'],
     membres: { min: 2 },
@@ -1068,6 +1288,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'bgp-multihoming',
     label: 'Multihoming BGP (deux opérateurs)',
     famille: 'wan',
+    planDeDonnees: 'selon-mode',
+    noteDonnees:
+      "Deux accès réellement actifs, ou un accès rendu moins attractif (AS-path, MED, communautés) qui ne porte rien en régime normal. Dans les deux cas, vérifiez que l'accès restant absorbe la totalité du trafic.",
     vendors: [],
     kinds: ['router', 'ngfw', 'firewall', 'sdwan'],
     membres: { min: 2 },
@@ -1079,6 +1302,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'sdwan-dual-hub',
     label: 'SD-WAN à double concentrateur',
     famille: 'wan',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les tunnels vers les deux concentrateurs sont montés et utilisés en parallèle, le choix se faisant flux par flux sur la qualité mesurée.",
     vendors: [],
     kinds: ['sdwan', 'router', 'ngfw'],
     membres: { min: 2 },
@@ -1090,6 +1316,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'lte-backup',
     label: 'Secours 4G/5G',
     famille: 'wan',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Le lien ne porte rien tant que l'accès principal fonctionne. Son débit n'a rien de comparable : décrivez le service réellement rendu en mode dégradé, pas la bande passante nominale.",
     vendors: [],
     kinds: ['router-5g', 'router', 'sdwan'],
     membres: { min: 1 },
@@ -1103,6 +1332,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'ups-2n',
     label: 'Double chaîne ondulée (2N)',
     famille: 'energie',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Les deux chaînes alimentent la charge en parallèle, chacune pour environ la moitié. Au-delà de 50 % par chaîne, la perte d'une chaîne fait disjoncter l'autre : c'est le piège classique du 2N, et il se vérifie sur les relevés, pas sur le schéma.",
     vendors: [],
     kinds: ['ups', 'pdu'],
     membres: { min: 2 },
@@ -1122,6 +1354,9 @@ export const MECANISMES_HA: MecanismeHa[] = [
     id: 'ups-n1',
     label: 'Onduleurs en parallèle (N+1)',
     famille: 'energie',
+    planDeDonnees: 'tous',
+    noteDonnees:
+      "Tous les modules débitent en parallèle. Le module supplémentaire n'est une réserve que si la charge reste sous la capacité de N modules.",
     vendors: [],
     kinds: ['ups'],
     membres: { min: 2 },
@@ -1168,6 +1403,33 @@ export function trouverMecanisme(valeur: string): MecanismeHa | undefined {
 export function mecanismeHa(id?: string): MecanismeHa | undefined {
   if (!id) return undefined
   return PAR_ID.get(id) ?? PAR_ID.get(ALIAS[id] ?? '')
+}
+
+/**
+ * Plan de données réellement en vigueur dans une grappe.
+ *
+ * Quinze mécanismes sur soixante-cinq acceptent les deux modes : pour eux, la réponse n'est
+ * pas dans la base, elle est dans ce qui a été déclaré. Un rôle « actif / actif » sur un
+ * membre dit que tous acheminent ; un « passif » dit qu'un seul le fait. Tant que rien n'est
+ * déclaré, la question reste ouverte — et c'est bien ce que la fonction renvoie, plutôt que
+ * de trancher à la place de celui qui exploite.
+ */
+export function planDeDonneesEffectif(mecanisme: MecanismeHa, roles: HaRole[]): PlanDeDonnees {
+  if (mecanisme.planDeDonnees !== 'selon-mode') return mecanisme.planDeDonnees
+  if (roles.includes('active-active')) return 'tous'
+  if (roles.includes('passive')) return 'un-seul'
+  return 'selon-mode'
+}
+
+/**
+ * Le rôle déclaré ne décrit-il que le plan de contrôle ?
+ *
+ * C'est le cas du châssis virtuel, et de lui seul : le mécanisme élit un actif et un
+ * veilleur, et pourtant tous les membres acheminent. Partout ailleurs, « passif » veut bien
+ * dire « ne traite rien ».
+ */
+export function roleDecritLeControleSeul(mecanisme: MecanismeHa): boolean {
+  return mecanisme.planDeDonnees === 'tous' && mecanisme.roles.includes('passive')
 }
 
 /** Le mécanisme concerne-t-il ce constructeur ? (liste vide = tous). */

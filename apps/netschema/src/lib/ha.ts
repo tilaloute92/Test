@@ -5,7 +5,10 @@ import {
   constructeurDe,
   mecanismeDeLaGamme,
   mecanismeHa,
+  PLANS_DE_DONNEES,
+  planDeDonneesEffectif,
   proposerMecanisme,
+  roleDecritLeControleSeul,
 } from './haTech'
 import type { Diagram, HaRole, LinkKind, NetLink, NetNode } from '../types'
 
@@ -338,22 +341,30 @@ function controlerMecanisme(
     Rôles cohérents avec le mécanisme.
 
     Un châssis virtuel se déclare « actif / passif », mais cela ne vaut que pour le plan de
-    contrôle : les deux boîtiers commutent en permanence. Déclarer « actif / actif » décrit
-    alors le plan de données, et ce n'est pas une faute — on l'accepte sans rien signaler.
+    contrôle : tous ses membres acheminent en permanence. Y déclarer « actif / actif » décrit
+    donc le plan de données, et ce n'est pas une faute. La tolérance se déduit du mécanisme et
+    non d'une liste d'exceptions : elle vaut pour les sept châssis virtuels, et pour eux seuls.
   */
   const rolesAdmis = new Set<HaRole>(mecanisme.roles)
-  if (mecanisme.planDeDonnees) rolesAdmis.add('active-active')
+  if (roleDecritLeControleSeul(mecanisme)) rolesAdmis.add('active-active')
   const rolesIncoherents = membresActifs.filter(
     (m) => m.role && m.role !== 'standalone' && !rolesAdmis.has(m.role),
   )
   if (rolesIncoherents.length > 0) {
+    // Le reproche le plus fréquent — « actif / actif » sur un mécanisme qui n'achemine que
+    // d'un côté — mérite qu'on dise pourquoi, et pas seulement que c'est inattendu.
+    const trompeurs = rolesIncoherents.some((m) => m.role === 'active-active')
     add({
       id: `hatech-role:${cluster.name}`,
       severity: 'info',
       title: `Rôle inattendu pour « ${mecanisme.label} »`,
       detail: `${rolesIncoherents.map((m) => m.name).join(', ')} : ce mécanisme fonctionne en ${mecanisme.roles
         .map((role) => ROLES[role].label.toLowerCase())
-        .join(' ou ')}.`,
+        .join(' ou ')}.${
+        trompeurs && mecanisme.planDeDonnees === 'un-seul'
+          ? ` ${PLANS_DE_DONNEES['un-seul'].detail}`
+          : ''
+      }`,
       nodeIds: rolesIncoherents.map((m) => m.id),
     })
   }
@@ -364,10 +375,50 @@ function controlerMecanisme(
       id: `hatech-controle:${cluster.name}`,
       severity: 'info',
       title: `« ${cluster.name} » ne forme qu'un seul plan de contrôle`,
-      detail: `${mecanisme.label} : les membres se comportent comme un équipement unique. ${
-        mecanisme.planDeDonnees ?? ''
-      } La grappe protège d'une panne matérielle, pas d'un bogue logiciel ni d'une mise à jour ratée — ${mecanisme.note}`,
+      detail: `${mecanisme.label} : les membres se comportent comme un équipement unique. La grappe protège d'une panne matérielle, pas d'un bogue logiciel ni d'une mise à jour ratée — ${mecanisme.note}`,
       nodeIds: ids,
+    })
+  }
+
+  /*
+    ── Le plan de données : qui achemine réellement ───────────────────────────
+
+    Deux plans cohabitent dans une grappe, et un schéma n'en écrit qu'un. On contrôle donc
+    les deux, avec la même règle pour les soixante-cinq mécanismes : ce que le mécanisme
+    impose, complété par ce que les rôles déclarent quand il laisse le choix.
+  */
+  const rolesDeclares = membresActifs
+    .map((m) => m.role)
+    .filter((role): role is HaRole => !!role && role !== 'standalone')
+  const planEffectif = planDeDonneesEffectif(mecanisme, rolesDeclares)
+
+  // Le mode n'est pas tranché : ni le dimensionnement ni le câblage ne peuvent l'être.
+  if (mecanisme.planDeDonnees === 'selon-mode' && planEffectif === 'selon-mode') {
+    add({
+      id: `hatech-mode:${cluster.name}`,
+      severity: 'info',
+      title: `« ${mecanisme.label} » s'exploite en actif / passif ou en actif / actif`,
+      detail: `Déclarez le rôle des membres de « ${cluster.name} » : le mode choisi change le dimensionnement, le câblage et les prérequis.${
+        mecanisme.noteDonnees ? ` ${mecanisme.noteDonnees}` : ''
+      }`,
+      nodeIds: ids,
+    })
+  }
+
+  /*
+    Le rôle déclaré ne décrit que le plan de contrôle. Sans cette précision, « passif » se lit
+    « en veille » : on dimensionne le trafic sur un seul membre et l'on croit pouvoir
+    débrancher l'autre sans conséquence.
+  */
+  if (roleDecritLeControleSeul(mecanisme) && membresActifs.some((m) => m.role === 'passive')) {
+    add({
+      id: `hatech-plans:${cluster.name}`,
+      severity: 'info',
+      title: `Dans « ${cluster.name} », « passif » ne veut pas dire « en veille »`,
+      detail: `${mecanisme.label} : le rôle ne décrit que le plan de contrôle.${
+        mecanisme.noteDonnees ? ` ${mecanisme.noteDonnees}` : ''
+      } ${PLANS_DE_DONNEES.tous.detail}`,
+      nodeIds: membresActifs.filter((m) => m.role === 'passive').map((m) => m.id),
     })
   }
 

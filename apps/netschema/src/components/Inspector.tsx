@@ -7,7 +7,7 @@ import { ImpactPanel } from './ImpactPanel'
 import { VlanPanel } from './VlanPanel'
 import { ANNOTATION_COLORS, annotationColors } from '../lib/annotations'
 import { aujourdhui } from '../lib/storage'
-import { constructeurDe, mecanismeHa, mecanismesPour } from '../lib/haTech'
+import { constructeurDe, mecanismeHa, mecanismesPour, PLANS_DE_DONNEES } from '../lib/haTech'
 import { linkLayers } from '../lib/osi'
 import { VUES_LOGIQUES, type VueLogique } from '../lib/vlanViews'
 import {
@@ -569,11 +569,11 @@ function MecanismeHaField({ node, onChange }: { node: NetNode; onChange: (id: st
               Plan de contrôle commun : protège du matériel, pas d’un bogue logiciel.
             </p>
           )}
-          {choisi.planDeDonnees && (
-            <p className="pt-0.5">
-              <b className="font-semibold text-slate-700">Plan de données :</b> {choisi.planDeDonnees}
-            </p>
-          )}
+          <p className="pt-0.5">
+            <b className="font-semibold text-slate-700">Plan de données :</b>{' '}
+            {PLANS_DE_DONNEES[choisi.planDeDonnees].label.toLowerCase()}.{' '}
+            {choisi.noteDonnees ?? PLANS_DE_DONNEES[choisi.planDeDonnees].detail}
+          </p>
           {(choisi.liensComplementaires ?? []).length > 0 && (
             <ul className="list-disc pl-4 pt-1">
               {choisi.liensComplementaires?.map((lien) => (

@@ -1,6 +1,6 @@
 import { deviceMeta, LINKS, ROLES } from '../lib/catalog'
-import { mecanismeHa } from '../lib/haTech'
-import type { AssetStatus, NetLink, NetNode } from '../types'
+import { mecanismeHa, PLANS_DE_DONNEES, planDeDonneesEffectif, roleDecritLeControleSeul } from '../lib/haTech'
+import type { AssetStatus, HaRole, NetLink, NetNode } from '../types'
 
 /**
  * Info-bulle d'un équipement.
@@ -60,10 +60,21 @@ export function NodeTooltip({
   const meta = deviceMeta(node.kind)
   const role = node.role && node.role !== 'standalone' ? ROLES[node.role] : undefined
   /*
-    Sur un châssis virtuel, le rôle affiché ne vaut que pour le plan de contrôle : les deux
-    boîtiers commutent. L'infobulle le dit, faute de quoi « Passif » se lit comme « en veille ».
+    Le rôle affiché ne dit pas qui achemine : sur un châssis virtuel il ne vaut que pour le
+    plan de contrôle, et sur un mécanisme à deux modes il dépend de ce qui a été déclaré.
+    L'infobulle donne donc les deux, faute de quoi « Passif » se lit comme « en veille ».
   */
   const mecanisme = mecanismeHa(node.haTech)
+  const grappe = node.cluster?.trim()
+  const planEffectif = mecanisme
+    ? planDeDonneesEffectif(
+        mecanisme,
+        nodes
+          .filter((autre) => grappe && autre.cluster?.trim() === grappe)
+          .map((autre) => autre.role)
+          .filter((role): role is HaRole => !!role && role !== 'standalone'),
+      )
+    : undefined
   const voisins = links
     .filter((link) => link.from === node.id || link.to === node.id)
     .map((link) => {
@@ -115,6 +126,10 @@ export function NodeTooltip({
         <Row label="Grappe" value={node.cluster ? `${node.cluster}${node.vip ? ` · VIP ${node.vip}` : ''}` : undefined} />
         <Row label="Bascule" value={mecanisme?.label} />
         <Row
+          label="Plan de données"
+          value={planEffectif ? PLANS_DE_DONNEES[planEffectif].label.toLowerCase() : undefined}
+        />
+        <Row
           label="Baie"
           value={node.rack ? `${node.rack}${node.rackUnit ? ` · U${node.rackUnit}` : ''}` : undefined}
         />
@@ -124,8 +139,10 @@ export function NodeTooltip({
         <Row label="Alimentation" value={node.dualPower ? 'Double chaîne A/B' : undefined} />
       </div>
 
-      {mecanisme?.planDeDonnees && (
-        <p className="pt-1 text-[11px] leading-snug text-slate-500">{mecanisme.planDeDonnees}</p>
+      {mecanisme && roleDecritLeControleSeul(mecanisme) && node.role === 'passive' && (
+        <p className="pt-1 text-[11px] leading-snug text-slate-500">
+          {mecanisme.noteDonnees ?? PLANS_DE_DONNEES.tous.detail}
+        </p>
       )}
 
       {garantie && (

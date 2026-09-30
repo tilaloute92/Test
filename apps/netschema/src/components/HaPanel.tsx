@@ -3,9 +3,9 @@ import { Btn } from './ui'
 import { HA_PATTERNS } from '../lib/patterns'
 import { useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
-import { mecanismeHa } from '../lib/haTech'
+import { mecanismeHa, PLANS_DE_DONNEES, planDeDonneesEffectif } from '../lib/haTech'
 import type { Severity } from '../lib/ha'
-import type { NetNode } from '../types'
+import type { HaRole, NetNode } from '../types'
 
 const SEVERITY_STYLE: Record<Severity, { dot: string; text: string; label: string }> = {
   critique: { dot: '#dc2626', text: 'text-red-700', label: 'Critique' },
@@ -168,10 +168,16 @@ function GrappesSection() {
     return [...parNom.entries()]
       .map(([nom, membres]) => {
         const declares = [...new Set(membres.map((m) => m.haTech?.trim()).filter(Boolean))] as string[]
+        const mecanisme = declares.length === 1 ? mecanismeHa(declares[0]) : undefined
+        // Le plan de données tient compte des rôles déclarés, pour les mécanismes à deux modes.
+        const roles = membres
+          .map((m) => m.role)
+          .filter((role): role is HaRole => !!role && role !== 'standalone')
         return {
           nom,
           membres,
-          mecanisme: declares.length === 1 ? mecanismeHa(declares[0]) : undefined,
+          mecanisme,
+          plan: mecanisme ? planDeDonneesEffectif(mecanisme, roles) : undefined,
           divergent: declares.length > 1,
           temoin: membres.find((m) => m.role === 'witness' || m.kind === 'witness'),
         }
@@ -224,8 +230,15 @@ function GrappesSection() {
                     {grappe.mecanisme.planDeControleCommun && (
                       <span className="text-amber-700"> · plan de contrôle commun</span>
                     )}
-                    {grappe.mecanisme.planDeDonnees && (
-                      <span className="text-emerald-700"> · plan de données réparti</span>
+                    {grappe.plan && (
+                      <span
+                        className={
+                          grappe.plan === 'selon-mode' ? 'text-amber-700' : 'text-emerald-700'
+                        }
+                      >
+                        {' '}
+                        · {PLANS_DE_DONNEES[grappe.plan].court}
+                      </span>
                     )}
                     {grappe.mecanisme.temoin &&
                       (grappe.temoin ? (

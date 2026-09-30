@@ -497,16 +497,14 @@ seul plan de contrôle** et un seul jeu d'interfaces de niveau 3. Le réseau des
 par les deux, et la vue routage les raccorde **tous les deux** — le second en pointillés, pour
 ne pas superposer deux traits identiques.
 
-**Un châssis virtuel est actif / actif**, et le schéma doit le montrer. « Actif » et « passif »
-ne décrivent que le **plan de contrôle** : un seul châssis tient la configuration, le protocole
-de routage et les sessions, l'autre le suit par SSO et reprend en moins d'une seconde. Le **plan
-de données**, lui, ne se met jamais en veille : les deux châssis commutent en permanence, un
-agrégat réparti sur les deux (MEC) utilise les ports des deux, et la charge se répartit. C'est
-pourquoi le second trait de la vue routage est un pointillé de lisibilité et non une « liaison
-de secours » : il n'en est pas une. Conséquence pratique : ne dimensionnez pas le trafic sur un
-seul châssis, et ne considérez pas le « passif » comme débranchable. Ce qu'il faut retenir de la
-mention *plan de contrôle commun*, c'est l'inverse — la panne à craindre n'est pas matérielle,
-elle est logicielle, et elle touche les deux à la fois.
+**Un châssis virtuel est actif / actif** au plan de données, et le schéma doit le montrer.
+« Actif » et « passif » ne décrivent que le **plan de contrôle** : un seul châssis tient la
+configuration et les protocoles, l'autre le suit par SSO et reprend en moins d'une seconde. Les
+deux, eux, commutent en permanence — un agrégat réparti sur les deux (MEC) utilise les ports des
+deux. C'est pourquoi le second trait de la vue routage est un pointillé de lisibilité et non une
+« liaison de secours » : il n'en est pas une. La distinction vaut pour **tous** les mécanismes,
+pas seulement pour les châssis virtuels : voir [Plan de contrôle, plan de
+données](#plan-de-contrôle-plan-de-données--qui-décide-qui-achemine).
 
 Encore faut-il le lui dire. Sur **chaque** membre :
 
@@ -1278,7 +1276,36 @@ Cisco et une paire **VSX** Aruba se ressemblent sur un schéma et n'ont rien à 
 exploitation : le premier n'a qu'un plan de contrôle — une mise à jour logicielle emporte les
 deux châssis — le second en a deux.
 
-L'application embarque donc une base de **65 mécanismes**, classés en dix familles et
+### Plan de contrôle, plan de données : qui décide, qui achemine
+
+Une grappe fait deux choses, et un schéma n'en écrit qu'une. Le **plan de contrôle** décide : il
+porte la configuration, les protocoles, l'élection. Le **plan de données** achemine. Les rôles
+*actif* et *passif* notés sur les équipements décrivent le premier — et c'est le second qui sert
+à dimensionner. Confondre les deux mène à des conclusions fausses dans les deux sens : croire
+qu'un membre chôme alors qu'il porte la moitié du trafic, ou compter sur deux équipements alors
+qu'un seul travaille.
+
+La question est donc posée à chacun des 65 mécanismes, et la réponse s'affiche partout où le
+rôle apparaît : fiche du mécanisme dans l'inspecteur, infobulle d'équipement, panneau *Haute
+dispo*, colonne **Plan de données** du dossier technique.
+
+| Réponse | Mécanismes | Ce qu'il faut en faire |
+| --- | --- | --- |
+| **Tous les membres acheminent** | 35 — châssis virtuel, vPC / VSX / MLAG / VLT, GLBP, passerelle anycast EVPN, FGSP, actif/actif PAN-OS, paire HA NetApp, cluster de contrôleurs Wi-Fi, double chaîne 2N… | Aucun membre n'est en veille. Au-delà de 50 % de charge par membre sur une paire, l'incident sature le rescapé — le piège du 2N, et le même calcul pour un cœur de réseau. |
+| **Un seul membre achemine** | 14 — VRRP et HSRP par groupe, actif/passif PAN-OS, HA SNS, basculement Secure Firewall, paire HA NetScaler, HA SSO et N+1 Wi-Fi, Synology SHA, Peer Persistence, secours 4G/5G… | Le veilleur ne voit passer **aucun paquet** avant la bascule. Il doit être dimensionné comme l'actif, et sa capacité n'est éprouvée que le jour où elle sert : testez la bascule en charge. |
+| **Selon le mode configuré** | 15 — FGCP, ClusterXL, chassis cluster SRX, FireCluster, HA Sophos XGS, F5 DSC, keepalived, WSFC, Pacemaker, groupe de disponibilité SQL, multihoming BGP… | Déclarez le rôle des membres : sans lui, ni le dimensionnement ni le câblage ne sont décidables. L'analyse le signale comme une réserve du dossier. |
+
+**Les faux actif/actif**, que la base signale au cas par cas : en FGCP actif/actif le maître
+reçoit tout le trafic et ne délègue que l'inspection ; en ClusterXL Load Sharing unicast tout
+entre par un membre pivot ; en actif/actif PAN-OS chaque session appartient à un seul membre et
+HA3 lui renvoie les paquets. Dans les trois cas le débit ne double pas.
+
+**Les faux actif/passif**, symétriquement : un châssis virtuel élit un actif et un veilleur au
+plan de contrôle, et pourtant tous ses membres commutent. C'est le seul cas où le rôle déclaré
+ne décrit pas le plan de données — l'application y accepte donc *actif / passif* comme
+*actif / actif*, et rappelle que « passif » ne veut pas dire « en veille ».
+
+L'application embarque une base de **65 mécanismes**, classés en dix familles et
 rattachés aux types d'équipements et aux constructeurs qui les mettent en œuvre :
 
 | Famille | Mécanismes |

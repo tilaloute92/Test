@@ -16,11 +16,11 @@ import { APP_SIGNATURE } from './version'
 import { deviceMeta, LAYER_LABELS, LINKS, ROLES } from './catalog'
 import { controlerMatrice, FLOW_ACTIONS } from './flows'
 import { auditDiagram } from './ha'
-import { mecanismeHa } from './haTech'
+import { mecanismeHa, PLANS_DE_DONNEES, planDeDonneesEffectif } from './haTech'
 import { linkEnd } from './osi'
 import { controlerDossier } from './quality'
 import { heightOf } from './racks'
-import type { Diagram } from '../types'
+import type { Diagram, HaRole } from '../types'
 
 export interface PageDossier {
   nom: string
@@ -137,10 +137,13 @@ function lignesGrappes(diagram: Diagram): string[][] {
       const declares = [...new Set(membres.map((m) => texte(m.haTech)).filter(Boolean))]
       const mecanisme = declares.length === 1 ? mecanismeHa(declares[0]) : undefined
       const temoin = membres.find((m) => m.role === 'witness' || m.kind === 'witness')
+      const roles = membres
+        .map((m) => m.role)
+        .filter((role): role is HaRole => !!role && role !== 'standalone')
+      const plan = mecanisme ? planDeDonneesEffectif(mecanisme, roles) : undefined
       const reserves = [
-        mecanisme?.planDeControleCommun
-          ? `Plan de contrôle commun${mecanisme.planDeDonnees ? ' ; plan de données réparti entre les membres' : ''}`
-          : '',
+        mecanisme?.planDeControleCommun ? 'Plan de contrôle commun' : '',
+        plan === 'selon-mode' ? 'Mode actif/passif ou actif/actif non précisé' : '',
         mecanisme?.temoin && !temoin ? 'Témoin d’arbitrage manquant' : '',
         declares.length > 1 ? 'Mécanismes divergents' : '',
         !mecanisme && declares.length === 0 ? 'Mécanisme non documenté' : '',
@@ -152,6 +155,9 @@ function lignesGrappes(diagram: Diagram): string[][] {
           .join(', '),
         mecanisme?.label ?? (declares.length > 1 ? declares.join(' / ') : ''),
         mecanisme?.bascule ?? '',
+        plan
+          ? `${PLANS_DE_DONNEES[plan].label}${mecanisme?.noteDonnees ? ` — ${mecanisme.noteDonnees}` : ''}`
+          : '',
         mecanisme?.lien?.nom ?? '',
         temoin?.name ?? '',
         texte(membres.find((m) => texte(m.vip))?.vip),
@@ -436,7 +442,7 @@ export function dossierTechnique(titre: string, pages: PageDossier[]): string {
     <section class="feuille">
       <h2>Haute disponibilité</h2>
       ${tableau(
-        ['Grappe', 'Membres et rôles', 'Mécanisme de bascule', 'Bascule attendue', 'À câbler entre les membres', 'Témoin', 'Adresse virtuelle', 'Réserves'],
+        ['Grappe', 'Membres et rôles', 'Mécanisme de bascule', 'Bascule attendue', 'Plan de données', 'À câbler entre les membres', 'Témoin', 'Adresse virtuelle', 'Réserves'],
         pages.flatMap((page) => lignesGrappes(page.diagram)),
       )}
       ${(() => {
@@ -462,6 +468,12 @@ export function dossierTechnique(titre: string, pages: PageDossier[]): string {
           )
           .join('')}`
       })()}
+      <p class="note">La colonne <b>rôles</b> décrit le plan de contrôle — qui porte la
+      configuration et l’élection. La colonne <b>plan de données</b> dit qui achemine
+      réellement le trafic, ce qui n’est pas la même chose : un châssis virtuel est
+      « actif / passif » au plan de contrôle et fait commuter tous ses membres, tandis qu’un
+      pare-feu en actif/passif laisse son veilleur muet. C’est la seconde colonne qui sert au
+      dimensionnement.</p>
       <p class="note">Les temps de bascule sont des ordres de grandeur propres au mécanisme
       déclaré : ils dépendent de la version logicielle, de la charge et du dimensionnement, et
       n’engagent que la documentation. Seul un test de bascule les vérifie.</p>

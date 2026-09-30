@@ -1123,21 +1123,16 @@ deux onduleurs`}</pre>
             deux — le second en pointillés, pour ne pas superposer deux traits identiques.
           </P>
           <P>
-            <b>Un châssis virtuel est actif / actif</b>, et le schéma doit le montrer.
-            « Actif » et « passif » ne décrivent que le <b>plan de contrôle</b> : un seul
-            châssis tient la configuration, le protocole de routage et les sessions, l'autre
-            le suit par SSO et reprend en moins d'une seconde. Le <b>plan de données</b>, lui,
-            ne se met jamais en veille : les deux châssis commutent en permanence, un agrégat
-            réparti sur les deux (MEC) utilise les ports des deux, et la charge se répartit.
-            C'est pour cela que le second trait de la vue routage est en pointillés de
-            lisibilité et non marqué « liaison de secours » : il n'en est pas une.
+            <b>Un châssis virtuel est actif / actif</b> au plan de données, et le schéma doit
+            le montrer. « Actif » et « passif » ne décrivent que le <b>plan de contrôle</b> :
+            un seul châssis tient la configuration et les protocoles, l'autre le suit par SSO
+            et reprend en moins d'une seconde. Les deux, eux, commutent en permanence — un
+            agrégat réparti sur les deux (MEC) utilise les ports des deux. C'est pour cela que
+            le second trait de la vue routage est un pointillé de lisibilité et non une
+            « liaison de secours » : il n'en est pas une. La distinction vaut pour tous les
+            mécanismes, pas seulement pour les châssis virtuels : voir{' '}
+            <i>Haute disponibilité, pannes et audit</i>.
           </P>
-          <Note>
-            Conséquence pratique : ne dimensionnez pas le trafic sur un seul châssis, et ne
-            considérez pas le « passif » comme débranchable. Ce qu'il faut retenir de la
-            mention <i>plan de contrôle commun</i>, c'est l'inverse : la panne à craindre
-            n'est pas matérielle, elle est logicielle, et elle touche les deux à la fois.
-          </Note>
           <Note>
             Pour que l'application le sache, il faut lui dire. Sur <b>chaque</b> membre :
             la même <b>grappe</b>, et surtout le <b>mécanisme de bascule</b> — c'est lui qui
@@ -1416,7 +1411,7 @@ deux onduleurs`}</pre>
     {
       id: 'ha',
       title: 'Haute disponibilité',
-      keywords: 'haute disponibilite ha redondance spof panne cluster grappe vip actif passif temoin score audit onduleur alimentation mecanisme bascule vpc vsx mlag fgcp clusterxl vrrp hsrp vsphere metrocluster stack empilement',
+      keywords: 'haute disponibilite ha redondance spof panne cluster grappe vip actif passif actif-actif plan de controle plan de donnees dimensionnement temoin score audit onduleur alimentation mecanisme bascule vpc vsx mlag fgcp clusterxl vrrp hsrp vsphere metrocluster stack empilement',
       body: (
         <>
           <P>
@@ -1461,9 +1456,12 @@ deux onduleurs`}</pre>
               <>
                 <b>Plan de contrôle commun</b> : un empilement ou un châssis virtuel se met à
                 jour d'un bloc. La grappe protège du matériel, pas d'un bogue logiciel —
-                l'analyse le dit explicitement. Elle précise dans la foulée ce que fait le{' '}
-                <b>plan de données</b>, qui lui ne s'arrête pas : tous les membres commutent,
-                même celui que le rôle annonce « passif ».
+                l'analyse le dit explicitement.
+              </>,
+              <>
+                <b>Plan de données</b> : qui achemine réellement le trafic. La question est
+                posée aux soixante-cinq mécanismes, et la réponse ne se lit pas dans le rôle
+                déclaré (voir ci-dessous).
               </>,
               <>
                 <b>Déduire</b> : le bouton du panneau propose un mécanisme pour les grappes qui
@@ -1487,6 +1485,67 @@ deux onduleurs`}</pre>
               </>,
             ]}
           />
+          <p className="pt-2 text-[12.5px] font-semibold text-slate-700">
+            Deux plans, deux questions : qui décide, qui achemine
+          </p>
+          <P>
+            Une grappe fait deux choses, et un schéma n'en écrit qu'une. Le <b>plan de
+            contrôle</b> décide : il porte la configuration, les protocoles, l'élection. Le{' '}
+            <b>plan de données</b> achemine. Les rôles <i>actif</i> et <i>passif</i> que l'on
+            note sur les équipements décrivent le premier — et c'est le second qui sert à
+            dimensionner. Confondre les deux mène à des conclusions fausses dans les deux
+            sens : croire qu'un membre chôme alors qu'il porte la moitié du trafic, ou compter
+            sur deux équipements alors qu'un seul travaille.
+          </P>
+          <P>
+            La base répond donc à la question pour chacun des 65 mécanismes, et l'application
+            l'affiche partout où le rôle apparaît : fiche du mécanisme dans l'inspecteur,
+            infobulle d'équipement, panneau <b>Haute dispo</b>, colonne <b>Plan de données</b>{' '}
+            du dossier technique. Trois réponses possibles :
+          </P>
+          <List
+            items={[
+              <>
+                <b>Tous les membres acheminent</b> (35 mécanismes) : châssis virtuel, paire vPC
+                / VSX / MLAG / VLT, GLBP, passerelle anycast EVPN, FGSP, actif/actif PAN-OS,
+                paire HA NetApp, cluster de contrôleurs Wi-Fi, double chaîne ondulée 2N… Aucun
+                membre n'est en veille. <b>Conséquence</b> : au-delà de 50 % de charge par
+                membre sur une paire, l'incident sature le rescapé. C'est le piège du 2N, et
+                c'est le même calcul pour un cœur de réseau.
+              </>,
+              <>
+                <b>Un seul membre achemine</b> (14 mécanismes) : VRRP et HSRP par groupe,
+                actif/passif PAN-OS, HA SNS, basculement Secure Firewall, paire HA NetScaler,
+                HA SSO et N+1 Wi-Fi, Synology SHA, Peer Persistence, secours 4G/5G… Le veilleur
+                ne voit passer <b>aucun paquet</b> avant la bascule. <b>Conséquence</b> : il
+                doit être dimensionné comme l'actif, et sa capacité n'est éprouvée que le jour
+                où elle sert — d'où l'intérêt de tester la bascule en charge, pas à vide.
+              </>,
+              <>
+                <b>Selon le mode configuré</b> (15 mécanismes) : FGCP, ClusterXL, chassis
+                cluster SRX, FireCluster, HA Sophos XGS, F5 DSC, keepalived, WSFC, Pacemaker,
+                groupe de disponibilité SQL, multihoming BGP… Le mécanisme accepte les deux, et
+                c'est la configuration qui tranche. <b>Déclarez le rôle des membres</b> : sans
+                lui, ni le dimensionnement ni le câblage ne sont décidables, et l'analyse le
+                signale comme une réserve du dossier.
+              </>,
+            ]}
+          />
+          <Note>
+            Attention aux faux actif/actif, que la base signale au cas par cas : en FGCP
+            actif/actif, le maître reçoit tout le trafic et ne délègue que l'inspection ; en
+            ClusterXL Load Sharing unicast, tout entre par un membre pivot ; en actif/actif
+            PAN-OS, chaque session appartient à un seul membre et HA3 lui renvoie les paquets.
+            Dans les trois cas, le débit ne double pas : chaque membre doit être dimensionné
+            pour la totalité.
+          </Note>
+          <Note>
+            Et aux faux actif/passif, symétriquement : un châssis virtuel élit un actif et un
+            veilleur au plan de contrôle, et pourtant tous ses membres commutent. C'est le seul
+            cas où le rôle déclaré ne décrit pas le plan de données — l'application l'y accepte
+            donc aussi bien en <i>actif / passif</i> qu'en <i>actif / actif</i>, et l'analyse
+            rappelle alors que « passif » ne veut pas dire « en veille ».
+          </Note>
           <div className="flex flex-wrap gap-2 pt-1">
             <Btn onClick={() => openIn('diagram', () => setPanel('ha'))}>Ouvrir l'analyse</Btn>
           </div>

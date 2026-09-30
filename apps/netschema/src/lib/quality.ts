@@ -14,11 +14,11 @@
 import { agregats } from './aggregates'
 import { deviceMeta, LINKS, rankOf } from './catalog'
 import { auditDiagram } from './ha'
-import { mecanismeHa } from './haTech'
+import { mecanismeHa, planDeDonneesEffectif } from './haTech'
 import { controlerMatrice } from './flows'
 import { checkOsi, parseSubnet, usedVlans } from './osi'
 import { heightOf, isRackable } from './racks'
-import type { Diagram, NetNode } from '../types'
+import type { Diagram, HaRole, NetNode } from '../types'
 
 export type GraviteQualite = 'critique' | 'majeur' | 'mineur' | 'info'
 
@@ -509,6 +509,35 @@ function analyserPage(
       action:
         'Vérifiez qu’un second chemin existe hors de cette grappe, et planifiez les mises à jour en conséquence.',
       cibles: chassisUnique.flatMap(([, membres]) => membres.map((membre) => membre.id)),
+      page: suffixe,
+    })
+  }
+
+  /*
+    Le mode d'une grappe qui accepte les deux : c'est l'information qui manque le plus souvent
+    dans un dossier repris, et sans elle on ne peut ni dimensionner les équipements, ni savoir
+    ce qu'il faut câbler entre eux (HA3 chez Palo Alto, routage symétrique chez WatchGuard).
+  */
+  const modeIndecis = [...grappes.entries()].filter(([, membres]) => {
+    const mecanisme = membres.map((membre) => mecanismeHa(membre.haTech)).find(Boolean)
+    if (!mecanisme) return false
+    const roles = membres
+      .map((membre) => membre.role)
+      .filter((role): role is HaRole => !!role && role !== 'standalone')
+    return planDeDonneesEffectif(mecanisme, roles) === 'selon-mode'
+  })
+  if (modeIndecis.length > 0) {
+    constats.push({
+      id: cle('ha-mode-indecis'),
+      categorie: 'Exploitation',
+      gravite: 'mineur',
+      titre: `${modeIndecis.length} grappe(s) dont le mode actif/passif ou actif/actif n’est pas précisé`,
+      detail: `${modeIndecis
+        .map(([nom]) => nom)
+        .slice(0, 5)
+        .join(', ')} : ces mécanismes s’exploitent dans les deux modes, et le choix change le dimensionnement autant que le câblage. Tant qu’il n’est pas écrit, le dossier ne dit pas combien de trafic chaque membre doit pouvoir absorber.`,
+      action: 'Déclarez le rôle des membres : « Actif / passif » ou « Actif / actif ».',
+      cibles: modeIndecis.flatMap(([, membres]) => membres.map((membre) => membre.id)),
       page: suffixe,
     })
   }

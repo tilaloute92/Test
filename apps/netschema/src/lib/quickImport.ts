@@ -330,7 +330,11 @@ export function parseQuickImport(text: string, existing?: Diagram): ImportResult
           node.model = value
           break
         case 'role':
-          node.role = ROLE_WORDS[normalize(value)] ?? undefined
+          /*
+            « actif / actif » est la graphie de l'interface et du dossier : la barre oblique
+            doit être acceptée au même titre que le tiret, avec ou sans espaces autour.
+          */
+          node.role = ROLE_WORDS[normalize(value).replace(/[/-]+/g, '-')] ?? undefined
           if (!node.role) warnings.push(`${where} : rôle « ${value} » inconnu.`)
           break
         case 'bascule':

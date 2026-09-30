@@ -21,11 +21,11 @@
  */
 
 import { allDevices, deviceMeta, LAYER_LABELS, rankOf } from './catalog'
-import { proposerMecanisme } from './haTech'
+import { mecanismeHa, planDeDonneesEffectif, proposerMecanisme } from './haTech'
 import { suggestLinkKind } from './linkRules'
 import { prepareSpeech } from './speech'
 import { vendorMark } from './vendorMarks'
-import type { Diagram, LinkKind, NetLink, NetNode } from '../types'
+import type { Diagram, HaRole, LinkKind, NetLink, NetNode } from '../types'
 
 // ─── Plan ────────────────────────────────────────────────────────────────────
 
@@ -372,6 +372,26 @@ function analyserClause(
 // ─── Construction du plan ────────────────────────────────────────────────────
 
 /** Liaison de synchronisation d'une grappe, selon ce que ses membres sont. */
+/**
+ * Les équipements d'en face acheminent-ils tous les deux ?
+ *
+ * Un double raccordement vers une paire MLAG, un vPC ou un châssis virtuel n'a pas de brin de
+ * secours : les deux brins forment un agrégat et travaillent ensemble. Vers deux équipements
+ * indépendants, en revanche, le second brin est bien un chemin de secours — et c'est alors
+ * seulement qu'il se dessine en pointillés.
+ */
+function paireQuiAchemine(nodes: NetNode[]): boolean {
+  if (nodes.length < 2) return false
+  const grappe = nodes[0].cluster?.trim()
+  if (!grappe || nodes.some((node) => node.cluster?.trim() !== grappe)) return false
+  const mecanisme = nodes.map((node) => mecanismeHa(node.haTech)).find(Boolean)
+  if (!mecanisme) return false
+  const roles = nodes
+    .map((node) => node.role)
+    .filter((role): role is HaRole => !!role && role !== 'standalone')
+  return planDeDonneesEffectif(mecanisme, roles) === 'tous'
+}
+
 function lienDeGrappe(kind: string): LinkKind {
   const commutation = ['core-switch', 'switch', 'access-switch', 'spine', 'leaf']
   return commutation.includes(kind) ? 'stack' : 'heartbeat'
@@ -524,6 +544,15 @@ export function analyserDescription(texte: string, diagram: Diagram): PlanAssist
       // Deux équipements en face : double attachement. Au-delà, on répartit.
       const cibles =
         hautNoms.length <= 2 ? hautNoms : [hautNoms[index % hautNoms.length]]
+      /*
+        Vers une paire qui achemine des deux côtés, les deux brins travaillent : aucun n'est
+        un secours. C'est le cas d'un cœur en châssis virtuel ou en vPC déjà présent au schéma.
+      */
+      const faceQuiAchemine = paireQuiAchemine(
+        cibles
+          .map((cible) => diagram.nodes.find((node) => node.name === cible))
+          .filter((node): node is NetNode => !!node),
+      )
       for (const [position, cible] of cibles.entries()) {
         const kind = suggestLinkKind(
           { id: '', kind: bas.kind, name: nom, x: 0, y: 0, cluster: bas.cluster },
@@ -534,7 +563,7 @@ export function analyserDescription(texte: string, diagram: Diagram): PlanAssist
           de: cible,
           vers: nom,
           kind,
-          patch: position > 0 ? { redundant: true } : undefined,
+          patch: position > 0 && !faceQuiAchemine ? { redundant: true } : undefined,
         })
         liaisons += 1
       }
@@ -730,7 +759,7 @@ export function suggestionsAssistant(diagram: Diagram): Suggestion[] {
           de: second.name,
           vers: node.name,
           kind: suggestLinkKind(second, node),
-          patch: { redundant: true },
+          patch: paireQuiAchemine([amont, second]) ? undefined : { redundant: true },
         },
       ],
     })
