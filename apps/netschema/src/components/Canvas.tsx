@@ -19,6 +19,7 @@ import { analyseImpact, COULEURS_IMPACT } from '../lib/impact'
 import { noterPointeur } from '../lib/pointeur'
 import { agregats, ovaleAgregat, type Agregat, type OvaleAgregat } from '../lib/aggregates'
 import { porteurs, projectionLogique, VUES_LOGIQUES } from '../lib/vlanViews'
+import { usagesVlans } from '../lib/vlanUsage'
 import { AggregateShape } from './AggregateShape'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
 import {
@@ -221,6 +222,35 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     () => (projection ? projectionLogique(document_, vueLogique, layout, vlanPropagation) : document_),
     [document_, projection, vueLogique, layout, vlanPropagation],
   )
+
+  /*
+    L'écart entre le plan physique et le plan logique, dit en une ligne.
+
+    Les VLAN d'interconnexion existent bel et bien sur le câblage — ils sont autorisés sur des
+    trunks, ils se voient en vue physique — mais ils ne portent aucun utilisateur. Le plan de
+    routage les traite donc autrement : la synchronisation disparaît, le transit devient une
+    adjacence. Encore faut-il le dire, sinon on cherche un VLAN qu'on ne trouve plus.
+  */
+  const ecartLogique = useMemo(() => {
+    if (!projection) return ''
+    const usages = usagesVlans(document_, vlanPropagation)
+    const synchro = [...usages.entries()].filter(([, usage]) => usage === 'synchro').map(([id]) => id)
+    const transit = [...usages.entries()].filter(([, usage]) => usage === 'transit').map(([id]) => id)
+    const morceaux: string[] = []
+    if (vueLogique === 'routage') {
+      if (synchro.length > 0) {
+        morceaux.push(`VLAN ${synchro.join(', ')} : synchronisation de grappe, non routée — absente de cette vue`)
+      }
+      if (transit.length > 0) {
+        morceaux.push(`VLAN ${transit.join(', ')} : transit, tracé comme adjacence et non comme réseau desservi`)
+      }
+    } else if (synchro.length + transit.length > 0) {
+      morceaux.push(
+        `${synchro.length + transit.length} VLAN d’interconnexion, regroupés en bas : ils ne portent aucun utilisateur`,
+      )
+    }
+    return morceaux.join(' · ')
+  }, [projection, document_, vueLogique, vlanPropagation])
   const locked = verrouille || projection
 
   const display = useMemo(
@@ -2146,10 +2176,21 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       {projection && (
         <div
           data-export="false"
-          className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-full bg-blue-600/90 px-3.5 py-1.5 text-[11.5px] font-medium text-white shadow-sm"
+          className="pointer-events-none absolute left-1/2 top-4 flex -translate-x-1/2 flex-col items-center gap-1"
         >
-          {VUES_LOGIQUES.find((item) => item.value === vueLogique)?.label} — lecture du document,
-          rien n’y est modifiable
+          <div className="rounded-full bg-blue-600/90 px-3.5 py-1.5 text-[11.5px] font-medium text-white shadow-sm">
+            {VUES_LOGIQUES.find((item) => item.value === vueLogique)?.label} — lecture du document,
+            rien n’y est modifiable
+          </div>
+          {/*
+            Ce que la vue logique a fait des VLAN d'interconnexion. Sans cette ligne, on cherche
+            le VLAN de synchronisation sur le plan de routage et l'on croit à une perte.
+          */}
+          {ecartLogique && (
+            <div className="rounded-full bg-white/95 px-3 py-1 text-[11px] text-slate-600 shadow-sm ring-1 ring-slate-200">
+              {ecartLogique}
+            </div>
+          )}
         </div>
       )}
 

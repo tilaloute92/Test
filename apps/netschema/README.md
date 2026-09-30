@@ -490,6 +490,35 @@ point de routage central. **Chaque trait est un franchissement de routeur** — 
 où l'on filtre. Un VLAN sans trait ne sort pas du niveau 2 : la synchronisation de grappe, le
 VLAN natif, tout ce qui doit rester confiné se voit immédiatement.
 
+### VLAN d'interconnexion : ce que la vue physique montre et que la vue logique tait
+
+Tous les VLAN ne portent pas des utilisateurs. Le HA2 d'une paire Palo Alto, le peer-link d'un
+vPC, le /29 de transit entre un pare-feu et un cœur : ce sont des **VLAN d'interconnexion**. Sur
+un plan de câblage ils existent — un numéro, une autorisation sur un trunk, un câble. Sur un
+plan logique ils n'ont rien à y faire : les dessiner en domaine de diffusion donne à lire un
+réseau là où il n'y a qu'un cordon entre deux boîtiers.
+
+Chaque VLAN est donc classé, en le **déduisant du schéma** — rien à saisir dans la plupart des
+cas — et les deux vues le traitent différemment :
+
+| Nature | Reconnue à | Vue physique | Vue logique |
+| --- | --- | --- | --- |
+| **Service** | le cas par défaut | le VLAN sur ses trunks | un domaine de diffusion, un rail, un réseau desservi |
+| **Transit** | masque /29 ou plus étroit, ou ne relie que des équipements qui routent | le VLAN sur ses trunks | une **adjacence** — le trait entre les deux équipements, étiqueté du sous-réseau —, pas un réseau de plus. Une grappe compte pour une seule extrémité |
+| **Synchronisation** | ne circule que sur des liaisons de grappe (battement de cœur, pile, réplication) | le VLAN sur ses cordons HA | **absent** du plan de routage : il ne se route pas. Regroupé en bas sur le plan VLAN et les domaines |
+
+Un bandeau sous le titre de la projection dit à chaque fois ce qui a été écarté et pourquoi :
+on ne cherche pas un VLAN qu'on ne retrouve plus.
+
+Deux contrôles en découlent. On ne réclame plus de plan d'adressage à un VLAN de
+synchronisation — il n'en veut pas. Et l'on signale au contraire **celui qui circule hors de sa
+grappe**, autorisé par erreur sur des trunks de production : le battement de cœur y est exposé à
+toute perturbation du réseau, et une grappe qui perd son battement bascule, ou se dédouble.
+
+Pour trancher soi-même : panneau **L2/L3**, dépliez un VLAN, champ **Usage** — laissé sur
+*Déduit du schéma*, il suit le document. À l'import du plan d'adressage, une colonne *usage*
+(ou *nature*, *type*) est reconnue, avec les mots courants : interco, HA, heartbeat, prod…
+
 ### Châssis virtuels : deux boîtiers, un commutateur
 
 Un StackWise Virtual, un VSS, un IRF, un VSF, un Virtual Chassis : deux châssis, mais **un

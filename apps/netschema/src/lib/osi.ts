@@ -6,6 +6,7 @@ import type {
   NetLink,
   NetNode,
   OsiLayer,
+  UsageVlan,
   OsiView,
   PortMode,
   StpRole,
@@ -445,7 +446,14 @@ export interface OsiFinding {
  * trunks sans VLAN, sous-réseaux en double, agrégats à MTU divergent, boucle de niveau 2
  * sans spanning-tree documenté.
  */
-export function checkOsi(diagram: Diagram): OsiFinding[] {
+/**
+ * Contrôles L2/L3 du plan d'adressage.
+ *
+ * `usages` vient du dessus plutôt que d'être calculé ici : `vlanUsage` s'appuie sur la portée
+ * des VLAN, qui s'appuie elle-même sur ce module. Le passer en paramètre évite une dépendance
+ * circulaire sans dupliquer la règle.
+ */
+export function checkOsi(diagram: Diagram, usages?: Map<string, UsageVlan>): OsiFinding[] {
   const findings: OsiFinding[] = []
   const vlans = diagram.vlans ?? []
   const declared = new Map(vlans.map((vlan) => [vlan.id, vlan]))
@@ -467,9 +475,13 @@ export function checkOsi(diagram: Diagram): OsiFinding[] {
   const subnets = new Map<string, string[]>()
   for (const vlan of vlans) {
     if (!vlan.subnet?.trim()) {
-      // Un VLAN commenté est un choix assumé (VLAN natif, lien de synchronisation…) :
-      // inutile de le rappeler.
+      /*
+        Un VLAN commenté est un choix assumé, et un VLAN d'interconnexion n'a pas à être
+        adressé : le battement de cœur d'une grappe se passe très bien de sous-réseau, et le
+        lui reprocher envoie l'exploitant en inventer un.
+      */
       if (vlan.notes?.trim()) continue
+      if ((usages?.get(vlan.id) ?? 'service') !== 'service') continue
       findings.push({
         id: `vlan-nosubnet:${vlan.id}`,
         severity: 'info',

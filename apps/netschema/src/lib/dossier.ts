@@ -17,10 +17,11 @@ import { deviceMeta, LAYER_LABELS, LINKS, ROLES } from './catalog'
 import { controlerMatrice, FLOW_ACTIONS } from './flows'
 import { auditDiagram } from './ha'
 import { mecanismeHa, PLANS_DE_DONNEES, planDeDonneesEffectif } from './haTech'
+import { USAGES_VLAN, usagesVlans } from './vlanUsage'
 import { linkEnd } from './osi'
 import { controlerDossier } from './quality'
 import { heightOf } from './racks'
-import type { Diagram, HaRole } from '../types'
+import type { Diagram, HaRole, UsageVlan } from '../types'
 
 export interface PageDossier {
   nom: string
@@ -376,19 +377,38 @@ export function dossierTechnique(titre: string, pages: PageDossier[]): string {
     </section>
   `
 
+  // La nature de chaque VLAN, déclarée ou déduite : c'est elle qui dit lesquels attendent un
+  // plan d'adressage et lesquels n'ont rien à faire sur un plan logique.
+  const usages = principale ? usagesVlans(principale) : new Map<string, UsageVlan>()
+  const interconnexions = (principale?.vlans ?? []).filter(
+    (vlan) => (usages.get(vlan.id) ?? 'service') !== 'service',
+  )
+
   const adressage = `
     <section class="feuille">
       <h2>Plan d’adressage</h2>
       ${tableau(
-        ['VLAN', 'Nom', 'Sous-réseau', 'Passerelle', 'Commentaire'],
+        ['VLAN', 'Nom', 'Sous-réseau', 'Passerelle', 'Usage', 'Commentaire'],
         (principale?.vlans ?? []).map((vlan) => [
           vlan.id,
           texte(vlan.name),
           texte(vlan.subnet),
           texte(vlan.gateway),
+          USAGES_VLAN[usages.get(vlan.id) ?? 'service'].label,
           texte(vlan.notes),
         ]),
       )}
+      ${
+        interconnexions.length > 0
+          ? `<p class="note">${interconnexions.length} VLAN d’interconnexion
+             (${interconnexions.map((vlan) => `VLAN ${echapper(vlan.id)}`).join(', ')}) :
+             ils existent sur le câblage et apparaissent en vue physique, mais ne portent aucun
+             utilisateur. Le plan de routage écarte les VLAN de synchronisation, qui ne se
+             routent pas, et trace les VLAN de transit comme des adjacences entre équipements
+             plutôt que comme des réseaux desservis. C’est là toute la différence entre les deux
+             lectures du même document.</p>`
+          : ''
+      }
       <h3>Couches du schéma</h3>
       ${tableau(
         ['Rang', 'Couche', 'Équipements'],

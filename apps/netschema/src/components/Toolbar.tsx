@@ -1,13 +1,14 @@
 import { VUES_LOGIQUES, type VueLogique } from '../lib/vlanViews'
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { Btn } from './ui'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
 import { pageInteractive, type PageExportee } from '../lib/exportHtml'
 import { capturerPages } from '../lib/capture'
 import { diagramFileContent, readProjectFile } from '../lib/storage'
+import { USAGES_VLAN, usagesVlans } from '../lib/vlanUsage'
 import { useDiagram } from '../store/useDiagram'
 import { modeDefinition, VIEW_MODES } from '../lib/viewModes'
-import type { DetailLevel, OsiView, ViewMode, VlanDef } from '../types'
+import type { DetailLevel, OsiView, UsageVlan, ViewMode, VlanDef } from '../types'
 import { useAudit } from '../store/useAudit'
 
 /** Tableau vide partagé : une constante, pour que le sélecteur rende toujours la même valeur. */
@@ -31,6 +32,12 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
   // `?? []` dans un sélecteur rendrait un tableau neuf à chaque appel, donc une boucle
   // de rendu sans fin : on garde la valeur du magasin et on la remplace à l'usage.
   const vlans = useDiagram((s) => s.diagram.vlans) ?? SANS_VLAN
+  const document_ = useDiagram((s) => s.diagram)
+  const vlanPropagation = useDiagram((s) => s.vlanPropagation)
+  const usagesVlan = useMemo(
+    () => (vlans.length > 0 ? usagesVlans(document_, vlanPropagation) : new Map<string, UsageVlan>()),
+    [document_, vlanPropagation, vlans.length],
+  )
   const viewMode = useDiagram((s) => s.viewMode)
   // Une vue logique est une lecture calculée du document : on n'y dessine pas.
   const locked = useDiagram((s) => s.diagram.locked === true || s.viewMode === 'logique')
@@ -347,11 +354,17 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
           }`}
         >
           <option value="">Tous les VLAN</option>
-          {vlans.map((vlan) => (
-            <option key={vlan.id} value={vlan.id}>
-              {vlan.name ? `VLAN ${vlan.id} — ${vlan.name}` : `VLAN ${vlan.id}`}
-            </option>
-          ))}
+          {vlans.map((vlan) => {
+            // La nature se voit dès le choix : un VLAN d'interconnexion ne se cherche pas
+            // comme un VLAN d'utilisateurs, et il ne se lit pas pareil en vue logique.
+            const usage = usagesVlan.get(vlan.id) ?? 'service'
+            const titre = vlan.name ? `VLAN ${vlan.id} — ${vlan.name}` : `VLAN ${vlan.id}`
+            return (
+              <option key={vlan.id} value={vlan.id}>
+                {usage === 'service' ? titre : `${titre} · ${USAGES_VLAN[usage].court}`}
+              </option>
+            )
+          })}
         </select>
       )}
 

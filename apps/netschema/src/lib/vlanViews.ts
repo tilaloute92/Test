@@ -3,6 +3,7 @@ import { deviceMeta } from './catalog'
 import { mecanismeHa } from './haTech'
 import { linkInView, vlanColor } from './osi'
 import { porteeVlans, type OrigineVlan } from './vlanReach'
+import { estInterconnexion, extremitesTransit, usagesVlans, USAGES_VLAN } from './vlanUsage'
 import type { Diagram, LayoutOptions, NetLink, NetNode, VlanDef } from '../types'
 
 /**
@@ -148,13 +149,28 @@ const lien = (id: string, from: string, to: string, kind: NetLink['kind'], extra
  * monde se parle directement.
  */
 function railsVlan(diagram: Diagram, propager: boolean): Diagram {
-  const groupes = membresParVlan(diagram, propager).filter((groupe) => groupe.membres.length > 0)
+  const usages = usagesVlans(diagram, propager)
+  /*
+    Deux blocs, dans cet ordre : les VLAN qui portent des utilisateurs, puis ceux qui ne font
+    que relier des équipements. Mélangés, le plan d'adressage se lit mal — on cherche le VLAN
+    bureautique et l'on tombe sur le battement de cœur du pare-feu.
+  */
+  const groupes = membresParVlan(diagram, propager)
+    .filter((groupe) => groupe.membres.length > 0)
+    .sort((a, b) => {
+      const ia = estInterconnexion(usages.get(a.vlan.id) ?? 'service') ? 1 : 0
+      const ib = estInterconnexion(usages.get(b.vlan.id) ?? 'service') ? 1 : 0
+      return ia - ib || Number(a.vlan.id) - Number(b.vlan.id)
+    })
   const nodes: NetNode[] = []
   const layerNames: Record<string, string> = {}
   const layerColors: Record<string, string> = {}
 
   groupes.forEach((groupe, rang) => {
-    layerNames[String(rang)] = titreVlan(groupe.vlan)
+    const usage = usages.get(groupe.vlan.id) ?? 'service'
+    layerNames[String(rang)] = estInterconnexion(usage)
+      ? `${titreVlan(groupe.vlan)} · ${USAGES_VLAN[usage].court}`
+      : titreVlan(groupe.vlan)
     layerColors[String(rang)] = groupe.couleur
     /*
       Ni site, ni zone, ni grappe : sur un plan VLAN, ces regroupements-là n'ont rien à dire
@@ -196,7 +212,14 @@ function railsVlan(diagram: Diagram, propager: boolean): Diagram {
  * immédiate.
  */
 function domainesVlan(diagram: Diagram, propager: boolean): Diagram {
-  const groupes = membresParVlan(diagram, propager).filter((groupe) => groupe.membres.length > 0)
+  const usages = usagesVlans(diagram, propager)
+  const groupes = membresParVlan(diagram, propager)
+    .filter((groupe) => groupe.membres.length > 0)
+    .sort((a, b) => {
+      const ia = estInterconnexion(usages.get(a.vlan.id) ?? 'service') ? 1 : 0
+      const ib = estInterconnexion(usages.get(b.vlan.id) ?? 'service') ? 1 : 0
+      return ia - ib || Number(a.vlan.id) - Number(b.vlan.id)
+    })
   const nodes: NetNode[] = []
   const links: NetLink[] = []
   const layerNames: Record<string, string> = { '0': 'Routage inter-VLAN' }
@@ -224,8 +247,18 @@ function domainesVlan(diagram: Diagram, propager: boolean): Diagram {
   groupes.forEach((groupe, index) => {
     const rang = index + 1
     const zone = titreVlan(groupe.vlan)
+    const usage = usages.get(groupe.vlan.id) ?? 'service'
     const routable = !!groupe.vlan.gateway?.trim()
-    layerNames[String(rang)] = routable ? zone : `${zone} · non routé`
+    /*
+      Un VLAN de service sans passerelle est un oubli probable ; un VLAN d'interconnexion sans
+      passerelle est normal. Le libellé dit lequel des deux, au lieu du seul « non routé » qui
+      se lisait comme un reproche.
+    */
+    layerNames[String(rang)] = estInterconnexion(usage)
+      ? `${zone} · ${USAGES_VLAN[usage].court}`
+      : routable
+        ? zone
+        : `${zone} · non routé`
     layerColors[String(rang)] = groupe.couleur
 
     if (routable) {
@@ -362,9 +395,50 @@ function routageL3(diagram: Diagram, propager: boolean): Diagram {
     n'importe quelle mise en page.
   */
   const retenus: { groupe: MembresVlan; reseau: string; attaches: NetNode[] }[] = []
+  const usages = usagesVlans(diagram, propager)
+  /** Couples déjà reliés par une liaison du schéma : on n'ajoute pas d'adjacence en double. */
+  const dejaRelies = new Set(links.map((link) => [link.from, link.to].sort().join('~')))
+
   for (const groupe of membresParVlan(diagram, propager)) {
+    const usage = usages.get(groupe.vlan.id) ?? 'service'
+    // Un VLAN de synchronisation ne se route pas : il n'a rien à faire sur un plan de niveau 3.
+    if (usage === 'synchro') continue
     const reseau = groupe.vlan.subnet?.trim()
     if (!reseau || groupe.membres.length === 0) continue
+
+    /*
+      Un VLAN de transit n'est pas un réseau desservi, c'est une adjacence : le /29 entre le
+      pare-feu et le cœur est le trait qui les relie, pas un domaine de diffusion à montrer.
+      On le dessine donc comme tel — une grappe comptant pour une seule extrémité.
+    */
+    if (usage === 'transit') {
+      const extremites = extremitesTransit(groupe.membres.filter((membre) => ids.has(membre.id)))
+      if (extremites.length >= 2) {
+        const [depart, ...autres] = extremites
+        for (const arrivee of autres) {
+          for (const cible of [arrivee.principal, ...arrivee.secondaires]) {
+            for (const source of [depart.principal, ...depart.secondaires]) {
+              const couple = [source.id, cible.id].sort().join('~')
+              if (dejaRelies.has(couple)) continue
+              dejaRelies.add(couple)
+              const principal = source.id === depart.principal.id && cible.id === arrivee.principal.id
+              links.push(
+                lien(`t~${groupe.vlan.id}~${source.id}~${cible.id}`, source.id, cible.id, 'ethernet', {
+                  label: principal ? `transit VLAN ${groupe.vlan.id}` : 'second châssis',
+                  subnet: reseau,
+                  vlans: groupe.vlan.id,
+                  layers: ['l3'],
+                  dashed: !principal,
+                }),
+              )
+            }
+          }
+        }
+        continue
+      }
+      // Une seule extrémité gardée : faute de mieux, on le montre comme un réseau.
+    }
+
     const cible = groupe.passerelle && ids.has(groupe.passerelle.id) ? groupe.passerelle : rattachement
     if (!cible) continue
     // Un châssis virtuel dessert par ses deux boîtiers : on les raccroche tous les deux.

@@ -1,5 +1,5 @@
 import { normalizeHeader, splitCsvLine } from './inventory'
-import type { VlanDef } from '../types'
+import type { UsageVlan, VlanDef } from '../types'
 
 /**
  * Import du plan d'adressage.
@@ -30,7 +30,27 @@ const COLONNES: { champ: keyof VlanDef; entetes: string[] }[] = [
   { champ: 'gateway', entetes: ['passerelle', 'gateway', 'gw', 'routeur', 'svi', 'default gateway'] },
   { champ: 'notes', entetes: ['notes', 'note', 'commentaire', 'commentaires', 'remarque', 'remarques', 'usage'] },
   { champ: 'color', entetes: ['couleur', 'color'] },
+  { champ: 'usage', entetes: ['usage', 'nature', 'type', 'role', 'rôle', 'fonction', 'categorie', 'catégorie'] },
 ]
+
+/**
+ * Nature d'un VLAN, telle qu'elle s'écrit dans un tableau.
+ *
+ * Les plans d'adressage qui portent cette colonne la remplissent en toutes lettres et sans
+ * vocabulaire commun : « interco », « point à point », « HA », « heartbeat », « prod ». On
+ * accepte donc les mots d'usage plutôt que d'imposer trois valeurs.
+ */
+const USAGES: [RegExp, UsageVlan][] = [
+  [/^(synchro|synchronisation|ha|heartbeat|battement|peer.?link|keepalive|pile|stack|grappe|cluster)/i, 'synchro'],
+  [/^(transit|interco|interconnexion|point.?a.?point|p2p|liaison|uplink|backbone|core.?link)/i, 'transit'],
+  [/^(service|utilisateur|production|prod|metier|métier|donnees|données|acces|accès|serveur|user)/i, 'service'],
+]
+
+function lireUsage(valeur: string): UsageVlan | undefined {
+  const propre = valeur.trim()
+  for (const [motif, usage] of USAGES) if (motif.test(propre)) return usage
+  return undefined
+}
 
 const PAR_ENTETE = new Map<string, keyof VlanDef>()
 for (const colonne of COLONNES) {
@@ -38,7 +58,7 @@ for (const colonne of COLONNES) {
 }
 
 /** Ordre des colonnes quand le tableau n'a pas d'en-tête : celui qu'on écrit spontanément. */
-const ORDRE_IMPLICITE: (keyof VlanDef)[] = ['id', 'name', 'subnet', 'gateway', 'notes']
+const ORDRE_IMPLICITE: (keyof VlanDef)[] = ['id', 'name', 'subnet', 'gateway', 'notes', 'usage']
 
 /** « VLAN 20 », « vlan0020 », « 20 » — on ne garde que le numéro. */
 export function numeroVlan(valeur: string): string | null {
@@ -184,6 +204,10 @@ export function analyserVlans(texte: string): ImportVlans {
       if (champ === 'id') {
         const numero = numeroVlan(valeur)
         if (numero) vlan.id = numero
+      } else if (champ === 'usage') {
+        const usage = lireUsage(valeur)
+        if (usage) vlan.usage = usage
+        else avertissements.push(`Usage « ${valeur} » non reconnu : le VLAN sera classé d'après le schéma.`)
       } else vlan[champ] = valeur
     }
     if (!vlan.id) {
@@ -196,7 +220,9 @@ export function analyserVlans(texte: string): ImportVlans {
 
   return {
     vlans: fusionner(brut, avertissements),
-    format: avecEntete ? 'tableau avec en-tête' : 'tableau sans en-tête (numéro, nom, sous-réseau, passerelle)',
+      format: avecEntete
+      ? 'tableau avec en-tête'
+      : 'tableau sans en-tête (numéro, nom, sous-réseau, passerelle, commentaire, usage)',
     avertissements,
   }
 }
@@ -225,21 +251,24 @@ function fusionner(vlans: VlanDef[], avertissements: string[]): VlanDef[] {
 
 /** Le plan d'adressage en CSV, pour le relire dans un tableur ou le réimporter tel quel. */
 export function vlansVersCsv(vlans: VlanDef[]): string {
-  const entete = ['VLAN', 'Nom', 'Sous-réseau', 'Passerelle', 'Commentaire']
+  const entete = ['VLAN', 'Nom', 'Sous-réseau', 'Passerelle', 'Usage', 'Commentaire']
   const echapper = (valeur: string | undefined) => {
     const texte = valeur ?? ''
     return /[";\r\n]/.test(texte) ? `"${texte.replace(/"/g, '""')}"` : texte
   }
   const lignes = [...vlans]
     .sort((a, b) => Number(a.id) - Number(b.id))
-    .map((vlan) => [vlan.id, vlan.name, vlan.subnet, vlan.gateway, vlan.notes].map(echapper).join(';'))
+    .map((vlan) =>
+      [vlan.id, vlan.name, vlan.subnet, vlan.gateway, vlan.usage, vlan.notes].map(echapper).join(';'),
+    )
   return `﻿${[entete.join(';'), ...lignes].join('\r\n')}\r\n`
 }
 
 /** Exemple affiché dans la zone de collage : il doit marcher tel quel. */
-export const EXEMPLE_VLANS = `VLAN;Nom;Sous-réseau;Passerelle;Commentaire
-10;Serveurs;10.10.0.0/24;10.10.0.254;
-20;Bureautique Bât. A;10.10.20.0/24;10.10.20.254;
-30;Bureautique Bât. B;10.10.30.0/24;10.10.30.254;
-40;Wi-Fi;10.10.40.0/24;10.10.40.254;SSID interne
-999;Synchronisation HA;;;Non routé`
+export const EXEMPLE_VLANS = `VLAN;Nom;Sous-réseau;Passerelle;Usage;Commentaire
+10;Serveurs;10.10.0.0/24;10.10.0.254;service;
+20;Bureautique Bât. A;10.10.20.0/24;10.10.20.254;service;
+30;Bureautique Bât. B;10.10.30.0/24;10.10.30.254;service;
+40;Wi-Fi;10.10.40.0/24;10.10.40.254;service;SSID interne
+100;Transit pare-feu;10.10.100.0/29;10.10.100.1;transit;
+999;Synchronisation HA;;;synchro;Non routé`

@@ -223,6 +223,23 @@ export interface NetLink {
  * Un VLAN et, quand il est routé, le sous-réseau et la passerelle qui vont avec :
  * c'est la table qui fait le lien entre le schéma de niveau 2 et celui de niveau 3.
  */
+/**
+ * À quoi sert un VLAN.
+ *
+ * Tous les VLAN ne portent pas des utilisateurs. Un VLAN de transit relie deux routeurs et
+ * n'héberge rien ; un VLAN de synchronisation porte le battement de cœur d'une grappe et ne
+ * se route jamais. Les traiter comme des VLAN de service conduit à deux erreurs symétriques :
+ * réclamer un plan d'adressage à un VLAN qui n'en veut pas, et dessiner en vue logique un
+ * domaine de diffusion là où il n'y a qu'un câble entre deux équipements.
+ */
+export type UsageVlan =
+  /** Porte des équipements : serveurs, postes, bornes. C'est le cas courant. */
+  | 'service'
+  /** Interconnexion routée entre deux équipements, sans hôte : /30, /29, transit pare-feu. */
+  | 'transit'
+  /** Interconnexion non routée d'une grappe : HA1/HA2, peer-link, keepalive. */
+  | 'synchro'
+
 export interface VlanDef {
   /** Identifiant 802.1Q (1–4094), gardé en chaîne pour accepter les saisies libres. */
   id: string
@@ -233,6 +250,12 @@ export interface VlanDef {
   /** Couleur d'affichage ; attribuée automatiquement si absente. */
   color?: string
   notes?: string
+  /**
+   * Nature du VLAN. Absente, elle est déduite du schéma — c'est le cas le plus fréquent,
+   * personne ne saisit cela à la main. La déclarer sert à trancher ce que le schéma ne dit
+   * pas, et à faire contrôler ce qui est attendu.
+   */
+  usage?: UsageVlan
 }
 
 /**

@@ -1065,7 +1065,7 @@ deux onduleurs`}</pre>
       id: 'vues-logiques',
       title: 'Vues logiques : routage, plan VLAN, domaines de diffusion',
       keywords:
-        'vue logique vues logiques vlan vlans routage couche 3 l3 svi passerelle gateway domaine de diffusion broadcast rail rails plan vlan projecteur focus segment sous-reseau subnet inter-vlan',
+        'vue logique vues logiques vlan vlans routage couche 3 l3 svi passerelle gateway domaine de diffusion broadcast rail rails plan vlan projecteur focus segment sous-reseau subnet inter-vlan interconnexion transit synchronisation ha1 ha2 peer-link keepalive vue physique',
       body: (
         <>
           <P>
@@ -1112,6 +1112,58 @@ deux onduleurs`}</pre>
             niveau 2 : la synchronisation de grappe, le VLAN natif, tout ce qui doit rester
             confiné se voit immédiatement.
           </P>
+
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">
+            VLAN d'interconnexion : ce que la vue physique montre et que la vue logique tait
+          </p>
+          <P>
+            Tous les VLAN ne portent pas des utilisateurs. Le HA2 d'une paire Palo Alto, le
+            peer-link d'un vPC, le /29 de transit entre un pare-feu et un cœur : ce sont des{' '}
+            <b>VLAN d'interconnexion</b>. Sur un plan de câblage ils existent — ils ont un
+            numéro, ils sont autorisés sur un trunk, ils se voient sur le câble. Sur un plan
+            logique ils n'ont rien à y faire : les dessiner en domaine de diffusion donne à
+            lire un réseau là où il n'y a qu'un cordon entre deux boîtiers.
+          </P>
+          <P>
+            L'application classe donc chaque VLAN, en le déduisant du schéma — vous n'avez rien
+            à saisir dans la plupart des cas — et traite les deux vues différemment :
+          </P>
+          <List
+            items={[
+              <>
+                <b>VLAN de service</b> : il porte des équipements. Il veut un sous-réseau et une
+                passerelle, et il apparaît partout.
+              </>,
+              <>
+                <b>VLAN de transit</b> — un /29 entre un pare-feu et un cœur, reconnu à son
+                masque étroit ou au fait qu'il ne relie que des équipements qui routent. En vue
+                physique, c'est un VLAN sur un trunk. En <b>vue routage</b>, c'est une{' '}
+                <b>adjacence</b> : le trait entre les deux équipements, étiqueté du sous-réseau,
+                et non un réseau desservi de plus. Une grappe y compte pour une seule extrémité.
+              </>,
+              <>
+                <b>VLAN de synchronisation</b> — HA1/HA2, peer-link, keepalive, lien de pile,
+                reconnu au fait qu'il ne circule que sur des liaisons de grappe. En vue physique
+                il se voit sur les cordons ; en <b>vue routage</b> il <b>disparaît</b>, puisqu'il
+                ne se route pas. Sur le plan VLAN et les domaines de diffusion, il est regroupé
+                en bas avec les autres interconnexions.
+              </>,
+            ]}
+          />
+          <Note>
+            Un bandeau sous le titre de la projection dit à chaque fois ce qui a été écarté et
+            pourquoi : on ne cherche pas un VLAN qu'on ne retrouve plus. Et deux contrôles en
+            découlent : on ne réclame plus de plan d'adressage à un VLAN de synchronisation — il
+            n'en veut pas —, et l'on signale au contraire celui qui <b>circule hors de sa
+            grappe</b>, autorisé par erreur sur des trunks de production, ce qui expose le
+            battement de cœur à toute perturbation du réseau.
+          </Note>
+          <Note>
+            Pour trancher vous-même : panneau <b>L2/L3</b>, dépliez un VLAN, champ{' '}
+            <b>Usage</b>. Laissé sur <i>Déduit du schéma</i>, il suit le document. À l'import du
+            plan d'adressage, une colonne <i>usage</i> (ou <i>nature</i>, <i>type</i>) est
+            reconnue, avec les mots courants : interco, HA, heartbeat, prod…
+          </Note>
 
           <p className="pt-1 text-[12.5px] font-semibold text-slate-700">
             Châssis virtuels : deux boîtiers, un commutateur

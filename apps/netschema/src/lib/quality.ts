@@ -15,10 +15,12 @@ import { agregats } from './aggregates'
 import { deviceMeta, LINKS, rankOf } from './catalog'
 import { auditDiagram } from './ha'
 import { mecanismeHa, planDeDonneesEffectif } from './haTech'
+import { LIENS_DE_GRAPPE, usagesVlans } from './vlanUsage'
+import { porteeVlans } from './vlanReach'
 import { controlerMatrice } from './flows'
 import { checkOsi, parseSubnet, usedVlans } from './osi'
 import { heightOf, isRackable } from './racks'
-import type { Diagram, HaRole, NetNode } from '../types'
+import type { Diagram, HaRole, NetLink, NetNode } from '../types'
 
 export type GraviteQualite = 'critique' | 'majeur' | 'mineur' | 'info'
 
@@ -252,16 +254,62 @@ function analyserPage(
     })
   }
 
-  const sansSousReseau = (page.vlans ?? []).filter((vlan) => !rempli(vlan.subnet))
+  /*
+    Tous les VLAN ne veulent pas d'un plan d'adressage : un VLAN de synchronisation n'en a
+    justement pas, et le lui reprocher envoie l'exploitant en inventer un. On ne réclame donc
+    l'adressage qu'aux VLAN qui portent des équipements.
+  */
+  const usages = usagesVlans(page)
+  const sansSousReseau = (page.vlans ?? []).filter(
+    (vlan) => !rempli(vlan.subnet) && (usages.get(vlan.id) ?? 'service') === 'service',
+  )
   if (sansSousReseau.length > 0) {
     constats.push({
       id: cle('vlan-subnet'),
       categorie: 'Adressage',
       gravite: 'mineur',
-      titre: `${sansSousReseau.length} VLAN sans sous-réseau`,
-      detail: 'Un VLAN sans plan d’adressage ne permet ni de router, ni de filtrer, ni de dépanner.',
-      action: 'Complétez le sous-réseau (CIDR) et la passerelle de ces VLAN.',
+      titre:
+        sansSousReseau.length === 1
+          ? `Le VLAN de service ${sansSousReseau[0].id} n’a pas de sous-réseau`
+          : `${sansSousReseau.length} VLAN de service sans sous-réseau`,
+      detail: `VLAN ${sansSousReseau.map((vlan) => vlan.id).slice(0, 8).join(', ')} : un VLAN qui porte des équipements et n’a pas de plan d’adressage ne permet ni de router, ni de filtrer, ni de dépanner.`,
+      action:
+        'Complétez le sous-réseau (CIDR) et la passerelle — ou, s’il s’agit d’une interconnexion, déclarez son usage dans le panneau L2/L3.',
       cibles: [],
+      page: suffixe,
+    })
+  }
+
+  /*
+    Un VLAN de synchronisation qui sort de sa grappe.
+
+    C'est le défaut qu'on ne voit jamais sur un schéma et qui se paie cher : le HA2 d'une paire
+    de pare-feu autorisé sur les trunks de production traverse le réseau, et la moindre
+    saturation ou boucle emporte la grappe avec elle.
+  */
+  const portees = porteeVlans(page)
+  const fuites = (page.vlans ?? [])
+    .filter((vlan) => (usages.get(vlan.id) ?? 'service') === 'synchro')
+    .map((vlan) => {
+      const portee = portees.get(vlan.id)
+      const hors = [...(portee?.links.keys() ?? [])]
+        .map((id) => page.links.find((link) => link.id === id))
+        .filter((link): link is NetLink => !!link && !LIENS_DE_GRAPPE.has(link.kind))
+      return { vlan, hors }
+    })
+    .filter((item) => item.hors.length > 0)
+  if (fuites.length > 0) {
+    constats.push({
+      id: cle('vlan-synchro-fuite'),
+      categorie: 'Sécurité',
+      gravite: 'majeur',
+      titre:
+        fuites.length === 1
+          ? `Le VLAN de synchronisation ${fuites[0].vlan.id} circule hors de sa grappe`
+          : `${fuites.length} VLAN de synchronisation circulent hors de leur grappe`,
+      detail: `VLAN ${fuites.map((item) => item.vlan.id).join(', ')} : ce VLAN ne devrait exister qu’entre les membres de la grappe. Autorisé sur des trunks de production, il expose le battement de cœur à toute perturbation du réseau — et une grappe qui perd son battement bascule, ou se dédouble.`,
+      action: 'Retirez ce VLAN des trunks qui ne relient pas les membres, ou corrigez son usage déclaré.',
+      cibles: fuites.flatMap((item) => item.hors.flatMap((link) => [link.from, link.to])),
       page: suffixe,
     })
   }
@@ -624,7 +672,7 @@ export function controlerDossier(pages: Diagram[], titre: string): RapportQualit
     })
   }
 
-  for (const constat of checkOsi(principale).filter((item) => item.severity === 'critique').slice(0, 6)) {
+  for (const constat of checkOsi(principale, usagesVlans(principale)).filter((item) => item.severity === 'critique').slice(0, 6)) {
     constats.push({
       id: `osi:${constat.id}`,
       categorie: 'Adressage',

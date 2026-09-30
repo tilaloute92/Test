@@ -3,10 +3,11 @@ import { Btn, Checkbox, Field, TextInput } from './ui'
 import type { Severity } from '../lib/ha'
 import { checkOsi, LAYER_LABELS_OSI, vlanColor } from '../lib/osi'
 import { porteeVlans, resumePortee } from '../lib/vlanReach'
+import { USAGES_VLAN, usagesVlans, usageVlan } from '../lib/vlanUsage'
 import { EXEMPLE_VLANS, vlansVersCsv } from '../lib/vlanImport'
 import { downloadBlob, slugify } from '../lib/exportImage'
 import { useDiagram } from '../store/useDiagram'
-import type { OsiView, VlanDef } from '../types'
+import type { OsiView, UsageVlan, VlanDef } from '../types'
 
 const SEVERITY_DOT: Record<Severity, string> = {
   critique: '#dc2626',
@@ -64,7 +65,8 @@ export function VlanPanel() {
   const propagation = useDiagram((s) => s.vlanPropagation)
   const setPropagation = useDiagram((s) => s.setVlanPropagation)
   const portees = useMemo(() => porteeVlans(diagram, propagation), [diagram, propagation])
-  const findings = useMemo(() => checkOsi(diagram), [diagram])
+  const usages = useMemo(() => usagesVlans(diagram, propagation), [diagram, propagation])
+  const findings = useMemo(() => checkOsi(diagram, usages), [diagram, usages])
 
   const add = () => {
     const id = draft.id.trim()
@@ -165,7 +167,9 @@ export function VlanPanel() {
             <p className="text-[11px] leading-snug text-slate-600">
               Collez un tableau (point-virgule, tabulation, virgule ou Markdown), avec ou sans
               ligne d’en-tête, ou la sortie brute d’un <code>show vlan</code>. Colonnes
-              reconnues : numéro, nom, sous-réseau, passerelle, commentaire.
+              reconnues : numéro, nom, sous-réseau, passerelle, commentaire et usage
+              (<i>service</i>, <i>transit</i>, <i>synchro</i> — ou les mots courants :
+              interco, HA, heartbeat, prod…). Sans cette colonne, l’usage est déduit du schéma.
             </p>
             <textarea
               value={colle}
@@ -237,6 +241,7 @@ export function VlanPanel() {
               key={vlan.id}
               vlan={vlan}
               portee={resumePortee(portees.get(vlan.id))}
+              usage={usageVlan(vlan, diagram, portees.get(vlan.id))}
               onChange={upsertVlan}
               onRemove={() => removeVlan(vlan.id)}
             />
@@ -316,11 +321,14 @@ export function VlanPanel() {
 function VlanRow({
   vlan,
   portee,
+  usage,
   onChange,
   onRemove,
 }: {
   vlan: VlanDef
   portee: { equipements: number; liaisons: number; parTrunk: number }
+  /** Nature retenue : celle qui est déclarée, ou celle que le schéma laisse déduire. */
+  usage: UsageVlan
   onChange: (vlan: VlanDef) => void
   onRemove: () => void
 }) {
@@ -339,6 +347,14 @@ function VlanRow({
           <span className="font-semibold">VLAN {vlan.id}</span>
           {vlan.name ? ` — ${vlan.name}` : ''}
         </span>
+        {usage !== 'service' && (
+          <span
+            className="shrink-0 rounded bg-violet-50 px-1 text-[10px] font-medium text-violet-700"
+            title={USAGES_VLAN[usage].detail}
+          >
+            {USAGES_VLAN[usage].court}
+          </span>
+        )}
         <span className="shrink-0 text-[10px] text-slate-400">{vlan.subnet ?? '—'}</span>
         <span
           className="shrink-0 rounded bg-slate-100 px-1 text-[10px] font-medium text-slate-500"
@@ -360,6 +376,28 @@ function VlanRow({
           <Field label="Passerelle">
             <TextInput value={vlan.gateway ?? ''} onChange={(gateway) => onChange({ ...vlan, gateway })} />
           </Field>
+          {/*
+            La nature du VLAN. Laissée sur « déduit », elle suit le schéma — c'est ce qu'on veut
+            dans la quasi-totalité des cas. On la fige quand le schéma ne suffit pas à trancher,
+            ou pour faire contrôler ce qui est attendu.
+          */}
+          <Field label="Usage">
+            <select
+              value={vlan.usage ?? ''}
+              onChange={(event) =>
+                onChange({ ...vlan, usage: (event.target.value || undefined) as UsageVlan | undefined })
+              }
+              className="w-full rounded-lg border border-slate-200 px-2 py-1 text-[12px] outline-none focus:border-blue-400"
+            >
+              <option value="">Déduit du schéma — {USAGES_VLAN[usage].label.toLowerCase()}</option>
+              {(Object.keys(USAGES_VLAN) as UsageVlan[]).map((cle) => (
+                <option key={cle} value={cle}>
+                  {USAGES_VLAN[cle].label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <p className="text-[11px] leading-snug text-slate-500">{USAGES_VLAN[usage].detail}</p>
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-slate-400">
               {portee.equipements} équipement(s), {portee.liaisons} liaison(s)

@@ -1323,6 +1323,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         gateway: arrivant.gateway ?? present.gateway,
         notes: arrivant.notes ?? present.notes,
         color: arrivant.color ?? present.color,
+        usage: arrivant.usage ?? present.usage,
       }
       if (JSON.stringify(fusion) !== JSON.stringify(present)) completes += 1
       resultat.set(arrivant.id, fusion)

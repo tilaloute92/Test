@@ -23,9 +23,13 @@ import type {
   PortMode,
   RoutingProtocol,
   StpRole,
+  UsageVlan,
   VlanDef,
 } from '../types'
 import { APP_SIGNATURE } from './version'
+
+/** Natures de VLAN acceptées à la relecture : tout le reste sera déduit du schéma. */
+const USAGES_VLAN_VALIDES = new Set(['service', 'transit', 'synchro'])
 
 const STORAGE_KEY = 'netschema:diagram:v1'
 const FILE_VERSION = 1
@@ -306,6 +310,7 @@ export function parseDiagram(raw: unknown): Diagram {
       gateway: str(item.gateway),
       color: str(item.color),
       notes: str(item.notes),
+      usage: USAGES_VLAN_VALIDES.has(String(item.usage)) ? (item.usage as UsageVlan) : undefined,
     })
   }
 
