@@ -1695,7 +1695,12 @@ deux onduleurs`}</pre>
               <>
                 <b>Import rapide</b> (<Keys>Ctrl</Keys> <Keys>I</Keys>) : une ligne par liaison,
                 <code> SW-CORE-01 &gt; FW-01</code>. Les équipements manquants sont créés, leur
-                type déduit du nom.
+                type déduit du nom. Sur leur ligne : <code>ip=</code>, <code>vlan=</code>,
+                <code>site=</code>, <code>zone=</code>, <code>cluster=</code>,{' '}
+                <code>bascule=</code>, <code>role=</code>, <code>modele=</code>,{' '}
+                <code>alim=</code> et <code>couche=</code> (0 à 8) pour forcer la couche quand
+                celle du type ne convient pas — un switch d'interconnexion entre le pare-feu et
+                le cœur, par exemple, tomberait sinon en distribution, sous le cœur qu'il dessert.
               </>,
               <>
                 <b>CSV d'inventaire</b> : colonnes libres (nom, modèle, série, garantie,

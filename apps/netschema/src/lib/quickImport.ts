@@ -347,6 +347,20 @@ export function parseQuickImport(text: string, existing?: Diagram): ImportResult
           else warnings.push(`${where} : mécanisme de bascule « ${value} » inconnu.`)
           break
         }
+        case 'couche':
+        case 'rang':
+        case 'layer':
+        case 'rank': {
+          /*
+            La couche que l'inspecteur permet déjà de forcer. Un switch d'interconnexion entre
+            le pare-feu et le cœur est un cas courant : sans cela, il tombe en distribution,
+            sous le cœur qu'il dessert, et le schéma se lit à l'envers.
+          */
+          const rang = Number(value)
+          if (Number.isInteger(rang) && rang >= 0 && rang <= 8) node.rank = rang
+          else warnings.push(`${where} : couche « ${value} » hors de l'échelle 0 à 8.`)
+          break
+        }
         case 'alim':
         case 'power':
           node.dualPower = /^(oui|yes|ab|a\/b|true|1)$/i.test(value)

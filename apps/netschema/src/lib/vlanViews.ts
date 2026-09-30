@@ -37,6 +37,18 @@ export const VUES_LOGIQUES: { value: VueLogique; label: string; hint: string }[]
   },
 ]
 
+/**
+ * Ce qui décide d'un chemin.
+ *
+ * Sert deux fois : à garder les équipements sur le plan de routage, et à désigner celui qui
+ * porte la passerelle d'un VLAN quand aucune adresse ne permet de trancher.
+ */
+const ROUTEURS = new Set([
+  'router', 'sdwan', 'router-5g', 'firewall', 'ngfw', 'loadbalancer', 'waf', 'ztna', 'swg',
+  'core-switch', 'spine', 'wan', 'internet', 'cloud', 'cloud-region', 'vpc',
+  'cloud-interconnect', 'sase-pop', 'cdn', 'modem', 'vpn-concentrator', 'ot-gateway',
+])
+
 /** Membres d'un VLAN : ce que le VLAN porte, équipements de transit compris. */
 export interface MembresVlan {
   vlan: VlanDef
@@ -82,10 +94,22 @@ export function membresParVlan(diagram: Diagram, propager = true): MembresVlan[]
       const rb = deviceMeta(b.kind).rank
       return ra - rb || a.name.localeCompare(b.name)
     })
-    const passerelle = vlan.gateway
-      ? diagram.nodes.find(
-          (node) => node.ip?.trim() === vlan.gateway?.trim() || node.vip?.trim() === vlan.gateway?.trim(),
-        )
+    /*
+      L'équipement qui porte la passerelle.
+
+      La correspondance exacte d'abord : l'adresse du VLAN contre celle de l'équipement. Mais
+      un pare-feu ou un cœur de réseau porte une passerelle par VLAN — vingt sous-interfaces,
+      vingt adresses — et sa fiche n'en retient qu'une. À défaut, on retient donc celui qui
+      route et qui déclare ce VLAN : c'est lui qui le sert, et c'est écrit noir sur blanc.
+    */
+    const adresse = vlan.gateway?.trim()
+    const passerelle = adresse
+      ? (diagram.nodes.find(
+          (node) => node.ip?.trim() === adresse || node.vip?.trim() === adresse,
+        ) ??
+        trouves
+          .filter((node) => ROUTEURS.has(node.kind) && origines.get(node.id) === 'declare')
+          .sort((a, b) => deviceMeta(a.kind).rank - deviceMeta(b.kind).rank)[0])
       : undefined
     return { vlan, couleur: vlanColor(id, diagram.vlans), membres, origines, passerelle }
   })
@@ -299,11 +323,7 @@ function routageL3(diagram: Diagram, propager: boolean): Diagram {
     Un serveur, même adressé, n'est pas un routeur : il est représenté par le réseau auquel
     il appartient, et c'est ce qui fait tenir la vue sur une page.
   */
-  const ROUTE = new Set([
-    'router', 'sdwan', 'router-5g', 'firewall', 'ngfw', 'loadbalancer', 'waf', 'ztna', 'swg',
-    'core-switch', 'spine', 'wan', 'internet', 'cloud', 'cloud-region', 'vpc',
-    'cloud-interconnect', 'sase-pop', 'cdn', 'modem', 'vpn-concentrator', 'ot-gateway',
-  ])
+  const ROUTE = ROUTEURS
   const passerelles = new Set(
     (diagram.vlans ?? []).map((vlan) => vlan.gateway?.trim()).filter(Boolean) as string[],
   )
@@ -333,6 +353,15 @@ function routageL3(diagram: Diagram, propager: boolean): Diagram {
   const rangReseaux =
     Math.max(0, ...nodes.map((node) => deviceMeta(node.kind).rank)) + 1
 
+  /*
+    Les réseaux d'abord recensés, placés ensuite.
+
+    Un plan d'adressage de vingt VLAN posé sur une seule rangée donne une bande de deux mètres
+    de large, que l'ajustement ramène à 35 % : plus rien n'est lisible, et les liaisons se
+    croisent par dizaines. On retombe donc à la ligne au-delà de huit réseaux, comme le ferait
+    n'importe quelle mise en page.
+  */
+  const retenus: { groupe: MembresVlan; reseau: string; attaches: NetNode[] }[] = []
   for (const groupe of membresParVlan(diagram, propager)) {
     const reseau = groupe.vlan.subnet?.trim()
     if (!reseau || groupe.membres.length === 0) continue
@@ -340,11 +369,22 @@ function routageL3(diagram: Diagram, propager: boolean): Diagram {
     if (!cible) continue
     // Un châssis virtuel dessert par ses deux boîtiers : on les raccroche tous les deux.
     const porteurs = chassisLogique(diagram, cible).filter((membre) => ids.has(membre.id))
-    const attaches = porteurs.length > 0 ? porteurs : [cible]
+    retenus.push({ groupe, reseau, attaches: porteurs.length > 0 ? porteurs : [cible] })
+  }
+
+  const PAR_RANGEE = 8
+  const rangees = Math.max(1, Math.ceil(retenus.length / PAR_RANGEE))
+  const noms: Record<string, string> = {}
+  for (let rangee = 0; rangee < rangees; rangee += 1) {
+    noms[String(rangReseaux + rangee)] =
+      rangees > 1 ? `Réseaux desservis (${rangee + 1}/${rangees})` : 'Réseaux desservis'
+  }
+
+  for (const [index, { groupe, reseau, attaches }] of retenus.entries()) {
     const id = `net~${groupe.vlan.id}`
     nodes.push(
       noeud(id, 'cloud', titreVlan(groupe.vlan), {
-        rank: rangReseaux,
+        rank: rangReseaux + Math.floor(index / PAR_RANGEE),
         vlan: groupe.vlan.id,
         notes: [
           `${groupe.membres.length} équipement(s) dans ce domaine de diffusion.`,
@@ -385,7 +425,7 @@ function routageL3(diagram: Diagram, propager: boolean): Diagram {
     links,
     vlans: diagram.vlans,
     annotations: [],
-    layerNames: { [String(rangReseaux)]: 'Réseaux desservis' },
+    layerNames: noms,
     locked: true,
   }
 }

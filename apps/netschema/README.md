@@ -1184,7 +1184,11 @@ Les outils pensés pour que trente ou cent équipements restent lisibles :
   Les champs de niveau 1, 2 et 3 s'écrivent directement sur la ligne de liaison :
   `porta=`, `portb=`, `debit=`, `vlans=`, `mode=`, `natif=`, `lag=`, `lacp=`, `mtu=`, `stp=`,
   `subnet=`, `ipa=`, `ipb=`, `vrf=`, `routage=`. Sur la ligne d'un équipement, `bascule=`
-  renseigne le mécanisme de haute disponibilité (`vss`, `vpc`, `fgcp`, `vsphere-ha`…).
+  renseigne le mécanisme de haute disponibilité (`vss`, `vpc`, `fgcp`, `vsphere-ha`…),
+  `role=` son rôle (`actif`, `passif`, `actif/actif`, `temoin`) et `couche=` la couche du
+  schéma, de 0 à 8, quand la couche déduite du type ne convient pas — un switch
+  d'interconnexion placé entre le pare-feu et le cœur, par exemple, tomberait sinon en
+  distribution, sous le cœur qu'il dessert.
 
 - **Type de liaison déduit** — deux pare-feu d'une même grappe se relient par un battement de
   cœur, deux switches cœur par un lien de pile, un onduleur par une liaison électrique. Le
