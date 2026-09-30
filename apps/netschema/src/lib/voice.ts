@@ -144,7 +144,9 @@ export type ToggleKey =
   | 'showZones'
   | 'showSites'
   | 'showClusters'
-  | 'showDetails'
+  | 'showIp'
+  | 'showVlans'
+  | 'showSpeeds'
   | 'showLayerLabels'
   | 'showAudit'
   | 'showHops'
@@ -248,7 +250,16 @@ const TOGGLE_WORDS: { pattern: RegExp; key: ToggleKey }[] = [
   { pattern: /zones?/, key: 'showZones' },
   { pattern: /sites?/, key: 'showSites' },
   { pattern: /grappes?|clusters?/, key: 'showClusters' },
-  { pattern: /details?|ip|adresses|debits/, key: 'showDetails' },
+  /*
+    Trois cases, visées séparément comme dans l'inspecteur.
+
+    Les motifs sont bornés, à la différence des autres : « montre le vlan 20 » demande le
+    projecteur, pas l'affichage des VLAN, et cette règle-ci passe avant celle du projecteur.
+    Sans les ancres, le numéro était avalé et le projecteur devenait inatteignable à la voix.
+  */
+  { pattern: /^(ip|adressage|adresses?( ip)?)$/, key: 'showIp' },
+  { pattern: /^vlans?$/, key: 'showVlans' },
+  { pattern: /^(debits?|vitesses?)$/, key: 'showSpeeds' },
   { pattern: /couches?|libelles/, key: 'showLayerLabels' },
   { pattern: /alertes?|points critiques|defaillances?/, key: 'showAudit' },
   { pattern: /croisements?|ponts?|sauts?/, key: 'showHops' },
@@ -1194,6 +1205,9 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'Mode présentation',
       'Vue technique',
       'Masque les croisements',
+      'Masque les VLAN',
+      'Affiche les adresses IP',
+      'Masque les débits',
       'Mets FW-01 au premier plan',
       'Place SW-ACC-A1 en arrière-plan',
       'Masque la grille',

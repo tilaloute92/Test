@@ -59,7 +59,7 @@ function overlaps(a: Rect, b: Rect): boolean {
  * toujours la place libre la plus proche.
  */
 const TRIES: { across: number; along: number }[] = [{ across: 0, along: 0 }]
-for (let ring = 1; ring <= 6; ring += 1) {
+for (let ring = 1; ring <= 8; ring += 1) {
   TRIES.push(
     { across: ring, along: 0 },
     { across: -ring, along: 0 },
@@ -111,13 +111,33 @@ export function placeLabels(
     const ux = candidate.dir.dx / length
     const uy = candidate.dir.dy / length
 
+    /*
+      Le pas de recherche suit la forme de l'étiquette, pas une valeur fixe.
+
+      Deux étiquettes empilées en travers du trait se dégagent quand elles s'écartent d'une
+      hauteur ; deux étiquettes posées l'une derrière l'autre le long du trait, quand elles
+      s'écartent d'une largeur. Un pas de quinze pixels ne dégageait donc jamais une étiquette
+      large de deux cents : elle passait par huit essais tous en recouvrement, et l'on se
+      retrouvait à empiler du texte.
+    */
+    const pasTravers = Math.max(step, candidate.height + 4)
+    const pasLong = Math.max(step, candidate.width * 0.55)
+
     let chosen: Placement | null = null
     // À défaut de place entièrement libre, on retient le moindre mal : la position qui
     // recouvre le moins. Une étiquette un peu à l'étroit vaut mieux qu'une pile illisible.
     let best: { placement: Placement; score: number } | null = null
     for (const attempt of TRIES) {
-      const x = candidate.anchor.x + candidate.base.dx + (-uy * attempt.across + ux * attempt.along) * step
-      const y = candidate.anchor.y + candidate.base.dy + (ux * attempt.across + uy * attempt.along) * step
+      const x =
+        candidate.anchor.x +
+        candidate.base.dx +
+        -uy * attempt.across * pasTravers +
+        ux * attempt.along * pasLong
+      const y =
+        candidate.anchor.y +
+        candidate.base.dy +
+        ux * attempt.across * pasTravers +
+        uy * attempt.along * pasLong
       const rect = { x, y, width: candidate.width, height: candidate.height }
       const moved = attempt.across !== 0 || attempt.along !== 0
       if (!placed.some((other) => overlaps(rect, other))) {
@@ -147,5 +167,73 @@ export function placeLabels(
 export function labelSize(lines: string[], size: number): { width: number; height: number } {
   const longest = lines.reduce((max, line) => Math.max(max, line.length), 0)
   const lineHeight = size + 2.5
-  return { width: longest * size * 0.62 + 10, height: lines.length * lineHeight + 4 }
+  return { width: longest * size * 0.62 + 12, height: lines.length * lineHeight + 6 }
+}
+
+/**
+ * Largeur maximale d'une étiquette, en pixels du plan.
+ *
+ * Un peu moins de deux boîtes d'équipement (148 px chacune) : au-delà, l'étiquette cesse
+ * d'accompagner le trait et se met à traverser le schéma.
+ */
+export const LARGEUR_ETIQUETTE_MAX = 210
+
+/** Coupe au caractère : dernier recours, quand un seul mot dépasse déjà la largeur. */
+function couperBrut(texte: string, parLigne: number): string[] {
+  const sortie: string[] = []
+  let reste = texte
+  while (reste.length > parLigne) {
+    sortie.push(reste.slice(0, parLigne))
+    reste = reste.slice(parLigne)
+  }
+  if (reste) sortie.push(reste)
+  return sortie
+}
+
+/** Regroupe des morceaux en lignes, en recoupant ceux qui dépassent encore. */
+function regrouper(morceaux: string[], parLigne: number, separateur: string): string[] {
+  const sortie: string[] = []
+  let courante = ''
+  for (const morceau of morceaux) {
+    const candidat = courante ? courante + separateur + morceau : morceau
+    if (candidat.length <= parLigne) {
+      courante = candidat
+      continue
+    }
+    if (courante) {
+      sortie.push(courante)
+      courante = ''
+    }
+    const sous = couperMorceau(morceau, parLigne)
+    sortie.push(...sous.slice(0, -1))
+    courante = sous[sous.length - 1] ?? ''
+  }
+  if (courante) sortie.push(courante)
+  return sortie
+}
+
+/** Un morceau encore trop long : on tente la virgule des listes, puis le caractère. */
+function couperMorceau(texte: string, parLigne: number): string[] {
+  if (texte.length <= parLigne) return [texte]
+  const bouts = texte.split(/(?<=,)/)
+  return bouts.length > 1 ? regrouper(bouts, parLigne, '') : couperBrut(texte, parLigne)
+}
+
+/**
+ * Coupe les lignes trop longues d'une étiquette.
+ *
+ * On essaie les séparations naturelles avant de couper au caractère : d'abord le point médian
+ * qui sépare les informations (« Te1/0/1 · T 10,20 · Po1 »), puis la virgule des listes de
+ * VLAN. Couper là où le lecteur s'arrête déjà donne des lignes qui se relisent ; couper au
+ * milieu d'un numéro de VLAN donne une étiquette fausse à la lecture rapide.
+ */
+export function couperLignes(
+  lines: string[],
+  size: number,
+  largeurMax = LARGEUR_ETIQUETTE_MAX,
+): string[] {
+  const parLigne = Math.max(10, Math.floor((largeurMax - 10) / (size * 0.62)))
+  return lines.flatMap((ligne) =>
+    ligne.length <= parLigne ? [ligne] : regrouper(ligne.split(' · '), parLigne, ' · '),
+  )
 }

@@ -816,9 +816,9 @@ deux onduleurs`}</pre>
             items={[
               <>les <b>quatre vues</b> en onglets — architecture, technique, logique, présentation ;</>,
               <>
-                des <b>cases à cocher</b> pour montrer ou masquer les étiquettes de liaison,
-                les ports et adresses des extrémités, les détails des équipements, les cadres
-                de groupes et les noms de couches ;
+                des <b>cases à cocher</b> pour montrer ou masquer séparément les adresses IP,
+                les VLAN et les débits, ainsi que les cadres de groupes et les noms de
+                couches ;
               </>,
               <>le <b>zoom</b> à la molette, le déplacement en glissant, un bouton <i>Ajuster</i> ;</>,
               <>la <b>fiche</b> d'un équipement d'un clic, le <b>détail d'une liaison</b> au survol ;</>,
@@ -1024,11 +1024,30 @@ deux onduleurs`}</pre>
               </>,
               <>
                 <b>Étiquettes lisibles et déplaçables</b> : débits, VLAN, ports et adresses se
-                posent à côté du trait, à un endroit libre — jamais sur une boîte ni sur une
-                autre étiquette. Une qui ne vous convient pas se <b>glisse</b> où vous voulez ;
-                un trait de rappel la relie alors à sa liaison, elle suit l'équipement quand il
-                se déplace, et les autres s'arrangent autour d'elle. Double-clic dessus pour
-                revenir au placement automatique.
+                posent à côté du trait, à un endroit libre — jamais sur une boîte, sur une
+                pastille d'agrégat ni sur une autre étiquette. Une qui ne vous convient pas se{' '}
+                <b>glisse</b> où vous voulez ; un trait de rappel la relie alors à sa liaison,
+                elle suit l'équipement quand il se déplace, et les autres s'arrangent autour
+                d'elle. Double-clic dessus pour revenir au placement automatique.
+              </>,
+              <>
+                <b>Une étiquette ne dépasse jamais deux boîtes de large</b> : au-delà, elle
+                revient à la ligne — sur le point médian qui sépare les informations, puis sur
+                la virgule des listes, jamais au milieu d'un numéro de VLAN. Et les{' '}
+                <b>listes de VLAN sont résumées</b> : les suites deviennent des intervalles
+                (<code>5,6,7,9</code> → <code>5-7,9</code>) et, au-delà de six groupes, le reste
+                se compte — <code>T 5,8,11,14,17,20 +64</code>. Un trunk de cœur porte
+                couramment soixante-dix VLAN : recopiés tels quels, ils donnaient une étiquette
+                qui traversait le plan sans rien apprendre. La liste entière reste dans
+                l'info-bulle de la liaison et dans le dossier technique.
+              </>,
+              <>
+                <b>Trois cases indépendantes</b> — adresses IP, VLAN, débits — décident de ce
+                qui s'écrit, sur les boîtes comme sur les liaisons. Elles n'encombrent pas un
+                plan pour les mêmes raisons : on veut couramment le plan d'adressage sans les
+                listes de VLAN, ou les débits seuls pour parler dimensionnement. Ce qui n'entre
+                dans aucune des trois — ports, libellé, MTU, rôle spanning-tree, nom d'agrégat —
+                suit le mode de visualisation.
               </>,
               <>
                 <b>Croisements visibles</b> : quand deux liaisons se coupent sans se

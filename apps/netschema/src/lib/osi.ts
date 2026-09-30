@@ -180,6 +180,53 @@ export function parseVlanList(value?: string): string[] {
   return [...new Set(out)]
 }
 
+/**
+ * Liste de VLAN telle qu'elle s'écrit sur une étiquette.
+ *
+ * Un trunk de cœur porte couramment soixante-dix VLAN. Recopiés tels quels, ils donnent une
+ * étiquette de deux mètres de large qui traverse le plan, recouvre les boîtes et rend le
+ * schéma illisible — sans rien apprendre, puisque personne ne lit soixante-dix numéros sur un
+ * dessin. On compresse donc les suites en intervalles, et l'on s'arrête après quelques
+ * groupes : le compte des VLAN restants suffit à dire qu'il y en a d'autres, et l'info-bulle
+ * de la liaison porte la liste entière.
+ */
+export function resumerVlans(valeur: string | undefined, maxGroupes = 6): string {
+  const ids = parseVlanList(valeur)
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id))
+    .sort((a, b) => a - b)
+  if (ids.length === 0) return valeur?.trim() ?? ''
+
+  // Compression en intervalles : 5,6,7,9 devient « 5-7,9 ».
+  const groupes: string[] = []
+  let debut = ids[0]
+  let fin = ids[0]
+  let couverts = 0
+  const fermer = () => {
+    groupes.push(fin - debut >= 1 ? `${debut}-${fin}` : String(debut))
+    couverts += fin - debut + 1
+  }
+  for (const id of ids.slice(1)) {
+    if (id === fin + 1) {
+      fin = id
+      continue
+    }
+    fermer()
+    debut = id
+    fin = id
+  }
+  fermer()
+
+  if (groupes.length <= maxGroupes) return groupes.join(',')
+  const gardes = groupes.slice(0, maxGroupes)
+  // Combien de VLAN le résumé laisse de côté : c'est ce nombre qui dit qu'il en reste.
+  const montres = gardes.reduce((total, groupe) => {
+    const [a, b] = groupe.split('-').map(Number)
+    return total + (b === undefined ? 1 : b - a + 1)
+  }, 0)
+  return `${gardes.join(',')} +${couverts - montres}`
+}
+
 const VLAN_COLORS = [
   '#2563eb',
   '#059669',
@@ -251,13 +298,36 @@ const STP_SHORT: Record<StpRole, string> = {
   edge: 'edge',
 }
 
+/**
+ * Ce que l'on accepte de lire sur les étiquettes.
+ *
+ * Trois natures d'information encombrent un plan chacune pour ses raisons : les adresses, les
+ * listes de VLAN et les débits. On les filtre séparément — masquer les trois d'un bloc oblige
+ * à choisir entre un plan illisible et un plan muet, alors qu'on veut presque toujours garder
+ * l'une des trois.
+ */
+export interface FiltreEtiquettes {
+  /** Adresses IP et sous-réseaux. */
+  ip: boolean
+  /** VLAN, VLAN natif et mode de port. */
+  vlans: boolean
+  /** Débits annoncés. */
+  debits: boolean
+}
+
+/** Filtre par défaut : tout s'écrit. Les exports et le dossier n'ont rien à masquer. */
+export const TOUTES_ETIQUETTES: FiltreEtiquettes = { ip: true, vlans: true, debits: true }
+
 /** Résumé de couche 2 d'une extrémité : mode et VLAN, VLAN natif, agrégat, rôle STP. */
-function l2Summary(config: LinkEndConfig): string {
+function l2Summary(config: LinkEndConfig, filtre: FiltreEtiquettes): string {
   const parts: string[] = []
-  if (config.mode === 'trunk') parts.push(config.vlans ? `T ${config.vlans}` : 'trunk')
-  else if (config.mode === 'access') parts.push(config.vlans ? `A ${config.vlans}` : 'accès')
-  else if (config.vlans) parts.push(`VLAN ${config.vlans}`)
-  if (config.nativeVlan) parts.push(`natif ${config.nativeVlan}`)
+  if (filtre.vlans) {
+    const liste = resumerVlans(config.vlans)
+    if (config.mode === 'trunk') parts.push(liste ? `T ${liste}` : 'trunk')
+    else if (config.mode === 'access') parts.push(liste ? `A ${liste}` : 'accès')
+    else if (liste) parts.push(`VLAN ${liste}`)
+    if (config.nativeVlan) parts.push(`natif ${config.nativeVlan}`)
+  }
   if (config.lag) parts.push(config.lag)
   if (config.stp) parts.push(`STP ${STP_SHORT[config.stp]}`)
   return parts.join(' · ')
@@ -283,6 +353,7 @@ export function linkEndLabels(
   link: NetLink,
   view: OsiView,
   complet = false,
+  filtre: FiltreEtiquettes = TOUTES_ETIQUETTES,
 ): { a?: string[]; b?: string[] } {
   if (view === 'l1') {
     return { a: [link.portA?.trim()].filter(Boolean) as string[], b: [link.portB?.trim()].filter(Boolean) as string[] }
@@ -290,11 +361,12 @@ export function linkEndLabels(
   if (view === 'l2') {
     const lines = (end: 'a' | 'b') => {
       const config = linkEnd(link, end)
-      return [config.port, l2Summary(config)].filter(Boolean) as string[]
+      return [config.port, l2Summary(config, filtre)].filter(Boolean) as string[]
     }
     return { a: lines('a'), b: lines('b') }
   }
   if (view === 'l3') {
+    if (!filtre.ip) return {}
     return {
       a: [linkEnd(link, 'a').ip].filter(Boolean) as string[],
       b: [linkEnd(link, 'b').ip].filter(Boolean) as string[],
@@ -303,7 +375,9 @@ export function linkEndLabels(
   if (complet) {
     const lignes = (end: 'a' | 'b') => {
       const config = linkEnd(link, end)
-      return [config.port, l2Summary(config), config.ip].filter(Boolean) as string[]
+      return [config.port, l2Summary(config, filtre), filtre.ip ? config.ip : undefined].filter(
+        Boolean,
+      ) as string[]
     }
     return { a: lignes('a'), b: lignes('b') }
   }
@@ -311,15 +385,23 @@ export function linkEndLabels(
 }
 
 /** Vrai si la liaison porte au moins une information à afficher à ses extrémités. */
-export function hasEndLabels(link: NetLink, view: OsiView): boolean {
-  const labels = linkEndLabels(link, view)
+export function hasEndLabels(
+  link: NetLink,
+  view: OsiView,
+  filtre: FiltreEtiquettes = TOUTES_ETIQUETTES,
+): boolean {
+  const labels = linkEndLabels(link, view, false, filtre)
   return (labels.a?.length ?? 0) > 0 || (labels.b?.length ?? 0) > 0
 }
 
-export function linkLabelFor(link: NetLink, view: OsiView): string {
+export function linkLabelFor(
+  link: NetLink,
+  view: OsiView,
+  filtre: FiltreEtiquettes = TOUTES_ETIQUETTES,
+): string {
   const parts: string[] = []
   if (view === 'l1') {
-    if (link.speed) parts.push(link.speed)
+    if (link.speed && filtre.debits) parts.push(link.speed)
     if (parts.length === 0 && link.label) parts.push(link.label)
     return parts.join(' · ')
   }
@@ -327,23 +409,25 @@ export function linkLabelFor(link: NetLink, view: OsiView): string {
     // Mode, VLAN, agrégat et rôle STP sont écrits côté équipement : au milieu ne reste que
     // ce qui vaut pour tout le câble.
     if (link.mtu) parts.push(`MTU ${link.mtu}`)
-    if (!hasEndLabels(link, 'l2')) {
-      const vlans = link.vlans?.trim()
-      if (link.mode === 'trunk') parts.unshift(vlans ? `T ${vlans}` : 'trunk')
-      else if (link.mode === 'access') parts.unshift(vlans ? `A ${vlans}` : 'accès')
-      else if (vlans) parts.unshift(`VLAN ${vlans}`)
+    if (!hasEndLabels(link, 'l2', filtre)) {
+      if (filtre.vlans) {
+        const vlans = resumerVlans(link.vlans)
+        if (link.mode === 'trunk') parts.unshift(vlans ? `T ${vlans}` : 'trunk')
+        else if (link.mode === 'access') parts.unshift(vlans ? `A ${vlans}` : 'accès')
+        else if (vlans) parts.unshift(`VLAN ${vlans}`)
+      }
       if (parts.length === 0 && link.label) parts.push(link.label)
     }
     return parts.join(' · ')
   }
   if (view === 'l3') {
-    if (link.subnet) parts.push(link.subnet)
+    if (link.subnet && filtre.ip) parts.push(link.subnet)
     if (link.vrf) parts.push(`VRF ${link.vrf}`)
     if (link.routing) parts.push(link.routing.toUpperCase())
     if (parts.length === 0 && link.label) parts.push(link.label)
     return parts.join(' · ')
   }
-  return [link.label, link.speed].filter(Boolean).join(' · ')
+  return [link.label, filtre.debits ? link.speed : undefined].filter(Boolean).join(' · ')
 }
 
 /** Couleur de tracé d'une liaison dans la vue niveau 2 : celle de son VLAN s'il est unique. */

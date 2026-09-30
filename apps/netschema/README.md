@@ -682,10 +682,20 @@ qu'on lit la valeur d'une liaison alors qu'on lit celle d'à côté. Elles sont 
 pas seulement posées :
 
 - chaque étiquette (débit, VLAN, port, adresse) se pose **à côté du trait**, au plus près de
-  son point d'ancrage, à un emplacement qui ne recouvre **ni une boîte ni une autre
-  étiquette** — l'application essaie des positions de plus en plus éloignées, de part et
-  d'autre du trait puis le long de celui-ci, et retient la première libre ;
+  son point d'ancrage, à un emplacement qui ne recouvre **ni une boîte, ni une pastille
+  d'agrégat, ni une autre étiquette** — l'application essaie des positions de plus en plus
+  éloignées, de part et d'autre du trait puis le long de celui-ci, et retient la première
+  libre. Le pas d'écartement suit la forme de l'étiquette — une hauteur en travers du trait,
+  une largeur le long : un pas fixe ne dégageait jamais une étiquette large ;
 - quand la place manque vraiment, elle retient le moindre recouvrement plutôt que d'empiler ;
+- **une étiquette ne dépasse jamais 210 px** (moins de deux boîtes d'équipement). Au-delà,
+  elle revient à la ligne — d'abord sur le point médian qui sépare les informations, puis sur
+  la virgule des listes de VLAN, jamais au milieu d'un numéro ;
+- **les listes de VLAN sont résumées** : les suites deviennent des intervalles (`5,6,7,9` →
+  `5-7,9`) et, au-delà de six groupes, le reste se compte (`T 5,8,11,14,17,20 +64`). Un trunk
+  de cœur porte couramment soixante-dix VLAN : recopiés tels quels, ils donnaient une étiquette
+  de deux mètres de large qui traversait le plan. La liste entière reste dans l'info-bulle de
+  la liaison et dans le dossier technique ;
 - **glissez une étiquette** pour la mettre où vous voulez : un trait de rappel en pointillés
   la relie à sa liaison, elle suit l'équipement quand il se déplace, et les autres se replacent
   autour d'elle (une étiquette déplacée à la main est posée en premier) ;
@@ -694,6 +704,17 @@ pas seulement posées :
 
 Sur le schéma d'exemple : **0 recouvrement** sur les 30 étiquettes de la vue d'ensemble, 6 sur
 les 66 de la vue L2 (contre 41 avant).
+
+### Choisir ce qui s'écrit
+
+Trois cases indépendantes, dans l'inspecteur → *Mise en page* : **adresses IP**, **VLAN**,
+**débits**. Elles valent pour les boîtes d'équipement comme pour les étiquettes de liaison, et
+se commandent aussi à la voix (« masque les VLAN », « affiche les débits »).
+
+Elles n'encombrent pas un plan pour les mêmes raisons et ne se masquent donc pas ensemble : on
+veut couramment le plan d'adressage sans les listes de VLAN, ou les débits seuls pour parler
+dimensionnement. Ce qui n'entre dans aucune des trois — ports, libellé, MTU, rôle STP, nom
+d'agrégat — suit le mode de visualisation, comme avant.
 
 ## Croisements de liaisons
 

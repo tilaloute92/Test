@@ -1191,7 +1191,9 @@ function LayoutForm() {
   const showSites = useDiagram((s) => s.showSites)
   const showClusters = useDiagram((s) => s.showClusters)
   const showLayerLabels = useDiagram((s) => s.showLayerLabels)
-  const showDetails = useDiagram((s) => s.showDetails)
+  const showIp = useDiagram((s) => s.showIp)
+  const showVlans = useDiagram((s) => s.showVlans)
+  const showSpeeds = useDiagram((s) => s.showSpeeds)
   const showHops = useDiagram((s) => s.showHops)
   const spreadLinks = useDiagram((s) => s.spreadLinks)
   const showLags = useDiagram((s) => s.showLags)
@@ -1286,7 +1288,9 @@ function LayoutForm() {
           />
         </Field>
         <div className="flex flex-col gap-1.5 pt-1">
-          <Checkbox checked={showDetails} onChange={(v) => setDisplay({ showDetails: v })} label="Afficher IP, VLAN, débits" />
+          <Checkbox checked={showIp} onChange={(v) => setDisplay({ showIp: v })} label="Afficher les adresses IP" />
+          <Checkbox checked={showVlans} onChange={(v) => setDisplay({ showVlans: v })} label="Afficher les VLAN" />
+          <Checkbox checked={showSpeeds} onChange={(v) => setDisplay({ showSpeeds: v })} label="Afficher les débits" />
           <Checkbox checked={showSites} onChange={(v) => setDisplay({ showSites: v })} label="Afficher les sites" />
           <Checkbox checked={showZones} onChange={(v) => setDisplay({ showZones: v })} label="Afficher les zones" />
           <Checkbox checked={showClusters} onChange={(v) => setDisplay({ showClusters: v })} label="Afficher les grappes HA" />

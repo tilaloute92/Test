@@ -154,15 +154,22 @@ export function LinkShape({
                     ? 'Étiquette déplacée à la main — double-clic pour la replacer automatiquement'
                     : 'Glisser pour déplacer l’étiquette'}
               </title>
+              {/*
+                La pastille ne reste une pastille qu'à une ligne : arrondie de moitié sur trois
+                lignes, elle devient un ovale qui mange son propre texte. Au-delà, un coin
+                franc. Le liséré s'efface aussi un peu : sur un plan dense, quarante contours
+                pleins se disputent l'attention avec les câbles qu'ils annotent.
+              */}
               <rect
                 x={-label.width / 2}
                 y={-label.height / 2}
                 width={label.width}
                 height={label.height}
-                rx={label.which === 'mid' ? label.height / 2 : 3}
+                rx={label.which === 'mid' && label.lines.length === 1 ? label.height / 2 : 5}
                 fill="#ffffff"
                 stroke={color}
                 strokeWidth={label.manual ? 1.1 : 0.8}
+                strokeOpacity={label.manual ? 0.9 : 0.55}
                 opacity={0.95}
               />
               {label.lines.map((line, index) => (

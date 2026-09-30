@@ -142,7 +142,20 @@ interface DiagramStore {
   showSites: boolean
   showClusters: boolean
   showLayerLabels: boolean
-  showDetails: boolean
+  /*
+    Trois natures d'information, trois cases.
+
+    Elles n'encombrent pas un plan pour les mêmes raisons et ne se masquent donc pas ensemble :
+    on veut couramment le plan d'adressage sans les listes de VLAN, ou les débits seuls pour
+    parler dimensionnement. Une case unique obligeait à choisir entre un plan illisible et un
+    plan muet.
+  */
+  /** Adresses IP des équipements et des interfaces, sous-réseaux. */
+  showIp: boolean
+  /** Listes de VLAN, VLAN natif et mode de port. */
+  showVlans: boolean
+  /** Débits annoncés, sur les liaisons comme sur les agrégats. */
+  showSpeeds: boolean
   showAudit: boolean
   /** Ponts dessinés là où deux liaisons se croisent. */
   showHops: boolean
@@ -400,7 +413,9 @@ interface DiagramStore {
         | 'showSites'
         | 'showClusters'
         | 'showLayerLabels'
-        | 'showDetails'
+        | 'showIp'
+        | 'showVlans'
+        | 'showSpeeds'
         | 'showAudit'
         | 'showHops'
         | 'spreadLinks'
@@ -493,7 +508,9 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   showSites: true,
   showClusters: true,
   showLayerLabels: true,
-  showDetails: true,
+  showIp: true,
+  showVlans: true,
+  showSpeeds: true,
   showAudit: true,
   showHops: true,
   spreadLinks: true,

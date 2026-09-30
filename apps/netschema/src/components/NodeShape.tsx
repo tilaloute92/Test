@@ -14,7 +14,8 @@ interface Props {
   node: DisplayNode
   selected: boolean
   isConnectSource: boolean
-  showDetails: boolean
+  showIp: boolean
+  showVlans: boolean
   /** Signalé par l'analyse de haute disponibilité comme point de défaillance critique. */
   flagged: boolean
   /** Hors de la couche OSI regardée : estompé plutôt que masqué. */
@@ -31,7 +32,8 @@ export function NodeShape({
   node,
   selected,
   isConnectSource,
-  showDetails,
+  showIp,
+  showVlans,
   flagged,
   dimmed,
   style,
@@ -43,9 +45,20 @@ export function NodeShape({
   const group = node.group
   // En mode technique, l'adressage et le matériel restent affichés : c'est ce qu'on vient y
   // chercher. En présentation, la boîte ne porte que son nom.
-  const withDetails = style.details && showDetails
+  /*
+    Le mode décide s'il y a une seconde ligne ; les trois cases décident de ce qu'elle porte.
+    Le matériel n'est ni une adresse, ni un VLAN, ni un débit : il suit le mode seul.
+  */
+  const withDetails = style.details
   const details = withDetails
-    ? [node.ip, node.vlan, node.model, style.dense ? node.serial : undefined].filter(Boolean).join(' · ')
+    ? [
+        showIp ? node.ip : undefined,
+        showVlans ? node.vlan : undefined,
+        node.model,
+        style.dense ? node.serial : undefined,
+      ]
+        .filter(Boolean)
+        .join(' · ')
     : ''
   const context = withDetails
     ? [

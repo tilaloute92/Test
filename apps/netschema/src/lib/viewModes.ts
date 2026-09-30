@@ -49,7 +49,10 @@ export interface ModeDefinition {
   hint: string
   /** Réglages d'affichage appliqués au choix du mode. */
   display: {
-    showDetails: boolean
+    /* Les trois natures d'information se règlent séparément, ici comme dans l'inspecteur. */
+    showIp: boolean
+    showVlans: boolean
+    showSpeeds: boolean
     showGrid: boolean
     showLayerLabels: boolean
     showZones: boolean
@@ -71,7 +74,9 @@ export const VIEW_MODES: ModeDefinition[] = [
     label: 'Architecture',
     hint: 'Lecture d’ensemble : qui parle à qui. Boîtes colorées par type, groupes marqués, liaisons épaisses annotées du débit — ni adressage, ni ports.',
     display: {
-      showDetails: true,
+      showIp: true,
+      showVlans: true,
+      showSpeeds: true,
       showGrid: false,
       showLayerLabels: true,
       showZones: true,
@@ -101,7 +106,9 @@ export const VIEW_MODES: ModeDefinition[] = [
     label: 'Technique',
     hint: 'Documentation d’exploitation : adressage, modèle, numéro de série sur chaque boîte, ports et VLAN aux deux bouts de chaque liaison, grille de repérage.',
     display: {
-      showDetails: true,
+      showIp: true,
+      showVlans: true,
+      showSpeeds: true,
       showGrid: true,
       showLayerLabels: true,
       showZones: true,
@@ -131,7 +138,9 @@ export const VIEW_MODES: ModeDefinition[] = [
     label: 'Logique',
     hint: 'Trois lectures du même document : le routage (couche 3), le plan VLAN rail par rail, ou les domaines de diffusion. Ce sont des projections : on les regarde, on n’y dessine pas.',
     display: {
-      showDetails: true,
+      showIp: true,
+      showVlans: true,
+      showSpeeds: true,
       showGrid: false,
       showLayerLabels: true,
       showZones: true,
@@ -165,7 +174,9 @@ export const VIEW_MODES: ModeDefinition[] = [
     label: 'Présentation',
     hint: 'Pour projeter ou coller dans un document : noms seuls, très lisibles, traits épais, aucune étiquette technique.',
     display: {
-      showDetails: false,
+      showIp: false,
+      showVlans: false,
+      showSpeeds: false,
       showGrid: false,
       showLayerLabels: false,
       showZones: true,

@@ -17,7 +17,7 @@ import { crossingCount, linkCrossings, overlappingPairs, type Crossing } from '.
 import { modeStyle } from '../lib/viewModes'
 import { analyseImpact, COULEURS_IMPACT } from '../lib/impact'
 import { noterPointeur } from '../lib/pointeur'
-import { agregats, ovaleAgregat, type Agregat, type OvaleAgregat } from '../lib/aggregates'
+import { agregats, libelleAgregat, ovaleAgregat, type Agregat, type OvaleAgregat } from '../lib/aggregates'
 import { porteurs, projectionLogique, VUES_LOGIQUES } from '../lib/vlanViews'
 import { marqueInterconnexion, usagesVlans } from '../lib/vlanUsage'
 import { AggregateShape } from './AggregateShape'
@@ -34,7 +34,7 @@ import {
   resolveSide,
   type LinkGeometry,
 } from '../lib/routing'
-import { labelSize, placeLabels, type LabelCandidate, type Rect } from '../lib/labels'
+import { couperLignes, labelSize, placeLabels, type LabelCandidate, type Rect } from '../lib/labels'
 import { assignLanes, corridorOf, spreadAnchors, type SpreadResult } from '../lib/spread'
 import { GRID, useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
@@ -183,7 +183,14 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const showClusters = useDiagram((s) => s.showClusters)
   const showAudit = useDiagram((s) => s.showAudit)
   const showLayerLabels = useDiagram((s) => s.showLayerLabels)
-  const showDetails = useDiagram((s) => s.showDetails)
+  const showIp = useDiagram((s) => s.showIp)
+  const showVlans = useDiagram((s) => s.showVlans)
+  const showSpeeds = useDiagram((s) => s.showSpeeds)
+  // Le filtre des étiquettes, tel que les trois cases le décrivent.
+  const filtreEtiquettes = useMemo(
+    () => ({ ip: showIp, vlans: showVlans, debits: showSpeeds }),
+    [showIp, showVlans, showSpeeds],
+  )
   const linkStyle = useDiagram((s) => s.linkStyle)
   const canvasSize = useDiagram((s) => s.canvasSize)
   /** Schéma verrouillé : lecture seule. Étiquettes verrouillées : elles ne se déplacent plus. */
@@ -1073,6 +1080,37 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     )
   }, [display.links, geometries, showHops])
 
+  /*
+    Agrégats de liens. On les calcule sur les liaisons affichées : un groupe replié fusionne
+    ses câbles, et il n'y a alors plus de faisceau à encercler.
+  */
+  const ovales = useMemo(() => {
+    if (!showLags) return []
+    const obstacles = display.nodes.map((node) => ({ x: node.x, y: node.y }))
+    return agregats({ nodes: display.nodes, links: display.links })
+      // Un ovale masqué à la main ne se dessine plus, mais l'agrégat continue d'exister :
+      // l'inspecteur, le dossier et les contrôles de cohérence le voient toujours.
+      .filter((agregat) => !agregat.masque)
+      .map((agregat) => {
+        const membres = agregat.membres
+          .map((membre) => {
+            const geometry = geometries.get(membre.id)
+            if (!geometry) return null
+            return { points: geometry.points, depuisLaFin: membre.to === agregat.proprietaire }
+          })
+          .filter(
+            (membre): membre is { points: { x: number; y: number }[]; depuisLaFin: boolean } =>
+              membre !== null,
+          )
+        const ovale = ovaleAgregat(membres, agregat.position, obstacles, {
+          glissement: agregat.glissement,
+          decalage: agregat.decalage,
+        })
+        return ovale ? { agregat, ovale } : null
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+  }, [display.links, display.nodes, geometries, showLags])
+
   /**
    * Étiquettes : leur position est calculée ici, où l'on voit à la fois toutes les liaisons
    * et toutes les boîtes. Chacune se pose au plus près de son point d'ancrage, sans recouvrir
@@ -1081,8 +1119,6 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
    */
   const labels = useMemo(() => {
     const byLink = new Map<string, PlacedLabel[]>()
-    if (!showDetails) return byLink
-
     const size = style.labelSize
     const candidates: LabelCandidate[] = []
     const content = new Map<string, { lines: string[]; width: number; height: number; anchor: { x: number; y: number } }>()
@@ -1094,17 +1130,24 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       // Chaque mode montre ce qu'on vient y chercher : l'architecture, le débit ; la
       // documentation, les ports des deux bouts ; la présentation, rien du tout.
       const middle = style.linkLabels
-        ? linkLabelFor(link, osi) || (style.labelAlways ? [link.label, link.speed].filter(Boolean).join(' · ') : '')
+        ? linkLabelFor(link, osi, filtreEtiquettes) ||
+          (style.labelAlways
+            ? [link.label, showSpeeds ? link.speed : undefined].filter(Boolean).join(' · ')
+            : '')
         : ''
       // Deux raisons d'écrire aux extrémités : le mode technique, qui documente tout, et une
       // couche OSI choisie explicitement — on y vient pour voir les ports ou les adresses.
-      const ends = style.endLabels || osi !== 'all' ? linkEndLabels(link, osi, style.endLabels) : {}
+      const ends =
+        style.endLabels || osi !== 'all'
+          ? linkEndLabels(link, osi, style.endLabels, filtreEtiquettes)
+          : {}
       const entries: { which: 'mid' | 'a' | 'b'; lines: string[]; manual?: { dx: number; dy: number } }[] = []
       if (middle) entries.push({ which: 'mid', lines: [middle], manual: link.labelOffset })
       if (ends.a && ends.a.length > 0) entries.push({ which: 'a', lines: ends.a, manual: link.labelOffsetA })
       if (ends.b && ends.b.length > 0) entries.push({ which: 'b', lines: ends.b, manual: link.labelOffsetB })
 
       for (const entry of entries) {
+        entry.lines = couperLignes(entry.lines, entry.which === 'mid' ? size : size - 1)
         const spot =
           entry.which === 'mid'
             ? pointAlong(geometry.points, pathLength(geometry.points) / 2, false, 0.5)
@@ -1129,12 +1172,27 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       }
     }
 
-    const obstacles: Rect[] = display.nodes.map((node) => ({
-      x: node.x,
-      y: node.y,
-      width: NODE_W + 4,
-      height: NODE_H + 4,
-    }))
+    /*
+      Ce qu'une étiquette ne doit pas recouvrir : les boîtes d'équipement, et les pastilles des
+      agrégats. Ces dernières sont posées sur le trait, exactement là où une étiquette de
+      liaison voudrait aller — les oublier revenait à empiler « Po21 · 2 × 10 Gb/s » sur la
+      liste des VLAN du même câble.
+    */
+    const obstacles: Rect[] = [
+      ...display.nodes.map((node) => ({
+        x: node.x,
+        y: node.y,
+        width: NODE_W + 4,
+        height: NODE_H + 4,
+      })),
+      ...ovales.map(({ agregat, ovale }) => ({
+        x: ovale.labelX,
+        y: ovale.labelY,
+        // Même mesure que la pastille elle-même (AggregateShape) : largeur au caractère.
+        width: libelleAgregat(agregat, true).length * 5 + 16,
+        height: 18,
+      })),
+    ]
     const placements = placeLabels(candidates, obstacles)
 
     for (const candidate of candidates) {
@@ -1170,38 +1228,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     useDiagram.getState().publishLabelPlacements(offsets)
 
     return byLink
-  }, [display.links, display.nodes, geometries, osi, showDetails, style])
-
-  /*
-    Agrégats de liens. On les calcule sur les liaisons affichées : un groupe replié fusionne
-    ses câbles, et il n'y a alors plus de faisceau à encercler.
-  */
-  const ovales = useMemo(() => {
-    if (!showLags) return []
-    const obstacles = display.nodes.map((node) => ({ x: node.x, y: node.y }))
-    return agregats({ nodes: display.nodes, links: display.links })
-      // Un ovale masqué à la main ne se dessine plus, mais l'agrégat continue d'exister :
-      // l'inspecteur, le dossier et les contrôles de cohérence le voient toujours.
-      .filter((agregat) => !agregat.masque)
-      .map((agregat) => {
-        const membres = agregat.membres
-          .map((membre) => {
-            const geometry = geometries.get(membre.id)
-            if (!geometry) return null
-            return { points: geometry.points, depuisLaFin: membre.to === agregat.proprietaire }
-          })
-          .filter(
-            (membre): membre is { points: { x: number; y: number }[]; depuisLaFin: boolean } =>
-              membre !== null,
-          )
-        const ovale = ovaleAgregat(membres, agregat.position, obstacles, {
-          glissement: agregat.glissement,
-          decalage: agregat.decalage,
-        })
-        return ovale ? { agregat, ovale } : null
-      })
-      .filter((item): item is NonNullable<typeof item> => item !== null)
-  }, [display.links, display.nodes, geometries, showLags])
+  }, [display.links, display.nodes, geometries, osi, ovales, filtreEtiquettes, showSpeeds, style])
 
   /**
    * Survol d'une liaison. Un court délai évite que l'info-bulle clignote quand on traverse
@@ -1771,7 +1798,8 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 node={node}
                 selected={own.every((id) => selectedNodes.includes(id))}
                 isConnectSource={connectFrom === node.id}
-                showDetails={showDetails}
+                showIp={showIp}
+                showVlans={showVlans}
                 flagged={own.some((id) => flagged.has(id))}
                 dimmed={display.dimmed.has(node.id) || eteints?.nodes.has(node.id) === true}
                 style={style}
@@ -1938,7 +1966,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 agregat={agregat}
                 ovale={ovale}
                 surbrillance={agregat.membres.some((membre) => selectedLinks.includes(membre.id))}
-                details={showDetails}
+                details={showSpeeds}
                 editable={!locked}
                 onSelect={
                   locked
