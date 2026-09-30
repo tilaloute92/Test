@@ -155,6 +155,14 @@ interface DiagramStore {
    * bundle LACP se dessinent pareil — et ne veulent pourtant pas dire la même chose.
    */
   showLags: boolean
+  /**
+   * Marque en couleur les câbles qui portent des VLAN d'interconnexion (HA, transit).
+   *
+   * Sur un plan de câblage, tout VLAN se ressemble. Repérer d'un coup d'œil ce qui ne porte
+   * que du battement de cœur — et ce qui en porte alors qu'il ne devrait pas — est justement
+   * ce qu'un schéma ne montre jamais.
+   */
+  showInterco: boolean
   /** Mode de visualisation : architecture, technique, présentation. */
   viewMode: ViewMode
   /**
@@ -398,6 +406,7 @@ interface DiagramStore {
         | 'spreadLinks'
         | 'showLegend'
         | 'showLags'
+        | 'showInterco'
       >
     >,
   ) => void
@@ -490,6 +499,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   spreadLinks: true,
   showLegend: false,
   showLags: true,
+  showInterco: true,
   vueLogique: 'routage' as VueLogique,
   vlanFocus: null as string | null,
   vlanPropagation: true,

@@ -12,6 +12,12 @@
  */
 
 import { deviceMeta, LINKS } from './catalog'
+import {
+  COULEUR_INTERCONNEXION,
+  marqueInterconnexion,
+  usagesVlans,
+  type MarqueInterconnexion,
+} from './vlanUsage'
 import { NODE_H, NODE_W, type Diagram, type NetLink } from '../types'
 
 function echapper(valeur: string): string {
@@ -22,8 +28,14 @@ function echapper(valeur: string): string {
     .replace(/"/g, '&quot;')
 }
 
-/** Style d'une liaison, traduit dans la grammaire de draw.io. */
-function styleLien(link: NetLink): string {
+/**
+ * Style d'une liaison, traduit dans la grammaire de draw.io.
+ *
+ * La convention des VLAN d'interconnexion part avec le reste : un câble qui n'en porte que
+ * prend le violet. draw.io ne sait pas superposer un liseré sur une arête, donc le cas
+ * « mêlé » garde la couleur de son type — l'étiquette continue d'énumérer les VLAN.
+ */
+function styleLien(link: NetLink, interco: MarqueInterconnexion = 'aucune'): string {
   const meta = LINKS[link.kind]
   const morceaux = [
     'edgeStyle=orthogonalEdgeStyle',
@@ -31,7 +43,7 @@ function styleLien(link: NetLink): string {
     'html=1',
     'jettySize=auto',
     'orthogonalLoop=1',
-    `strokeColor=${meta?.color ?? '#475569'}`,
+    `strokeColor=${interco === 'totale' ? COULEUR_INTERCONNEXION : (meta?.color ?? '#475569')}`,
     `strokeWidth=${Math.max(1, Math.round(meta?.width ?? 2))}`,
     'endArrow=none',
     'startArrow=none',
@@ -74,10 +86,11 @@ function pageXml(diagram: Diagram, nom: string): string {
     )
   }
 
+  const usages = usagesVlans(diagram)
   for (const link of diagram.links) {
     cellules.push(
       `<mxCell id="${echapper(link.id)}" value="${echapper(libelleLien(link))}" ` +
-        `style="${styleLien(link)}" edge="1" parent="1" ` +
+        `style="${styleLien(link, marqueInterconnexion(link, usages))}" edge="1" parent="1" ` +
         `source="${echapper(link.from)}" target="${echapper(link.to)}">` +
         `<mxGeometry relative="1" as="geometry"/></mxCell>`,
     )

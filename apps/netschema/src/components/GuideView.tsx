@@ -1164,6 +1164,23 @@ deux onduleurs`}</pre>
             plan d'adressage, une colonne <i>usage</i> (ou <i>nature</i>, <i>type</i>) est
             reconnue, avec les mots courants : interco, HA, heartbeat, prod…
           </Note>
+          <P>
+            <b>Sur le plan physique, les câbles sont marqués.</b> Un câble qui ne porte que des
+            VLAN d'interconnexion — les cordons HA1/HA2 d'une paire de pare-feu, un trunk de
+            transit dédié — est tracé en <b>vert olive</b>. Un câble qui en porte parmi des VLAN
+            de service reçoit un <b>liseré pointillé</b> de la même couleur : la question « ce
+            trunk transporte-t-il du HA ? » se lit alors d'un coup d'œil, et un battement de
+            cœur autorisé par erreur sur un lien de production saute aux yeux avant d'avoir
+            ouvert l'analyse.
+          </P>
+          <Note>
+            Le vert olive n'est la couleur d'aucun type de liaison — c'est la seule plage de
+            teintes que les douze types laissaient libre —, de sorte qu'un câble marqué ne se
+            confond avec aucun média. La convention apparaît dans la <b>légende</b> quand le
+            schéma en contient, et part dans les exports SVG, PNG, HTML et draw.io. Pour la
+            retirer : inspecteur → <i>Mise en page</i> → décochez <b>Marquer les VLAN
+            d'interconnexion</b>.
+          </Note>
 
           <p className="pt-1 text-[12.5px] font-semibold text-slate-700">
             Châssis virtuels : deux boîtiers, un commutateur

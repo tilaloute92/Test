@@ -1,6 +1,7 @@
 import { MODES_LACP } from './aggregates'
 import { APP_SIGNATURE } from './version'
 import { deviceMeta, LINKS } from './catalog'
+import { COULEUR_INTERCONNEXION, marqueInterconnexion, usagesVlans } from './vlanUsage'
 import { mecanismeHa } from './haTech'
 import { LAYER_LABELS_OSI, linkEnd, linkLayers } from './osi'
 import type { Diagram, NetLink, NetNode, ViewMode } from '../types'
@@ -522,7 +523,26 @@ function legende(pages: PageExportee[]): string {
       return `<div><i style="${trait}"></i>${echapper(meta.label)}</div>`
     })
     .join('')
-  return `<h2>Types de liaisons</h2><div class="legende">${lignes}</div>`
+  /*
+    La convention des VLAN d'interconnexion accompagne les types de liaison : le plan capturé
+    la porte, la légende de la page doit donc la nommer, faute de quoi le lecteur voit une
+    couleur qu'aucune ligne n'explique.
+  */
+  const marques = pages.flatMap((page) => {
+    const usages = usagesVlans(page.diagram)
+    return page.diagram.links.map((link) => marqueInterconnexion(link, usages))
+  })
+  const totale = marques.filter((marque) => marque === 'totale').length
+  const partielle = marques.filter((marque) => marque === 'partielle').length
+  const interco = [
+    totale > 0
+      ? `<div><i style="border-top-color:${COULEUR_INTERCONNEXION}"></i>VLAN d’interconnexion seuls (${totale})</div>`
+      : '',
+    partielle > 0
+      ? `<div><i style="border-top-color:${COULEUR_INTERCONNEXION};border-top-style:dotted"></i>… mêlés à des VLAN de service (${partielle})</div>`
+      : '',
+  ].join('')
+  return `<h2>Types de liaisons</h2><div class="legende">${lignes}${interco}</div>`
 }
 
 export function pageInteractive(titre: string, pages: PageExportee[]): string {

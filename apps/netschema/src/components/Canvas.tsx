@@ -19,7 +19,7 @@ import { analyseImpact, COULEURS_IMPACT } from '../lib/impact'
 import { noterPointeur } from '../lib/pointeur'
 import { agregats, ovaleAgregat, type Agregat, type OvaleAgregat } from '../lib/aggregates'
 import { porteurs, projectionLogique, VUES_LOGIQUES } from '../lib/vlanViews'
-import { usagesVlans } from '../lib/vlanUsage'
+import { marqueInterconnexion, usagesVlans } from '../lib/vlanUsage'
 import { AggregateShape } from './AggregateShape'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
 import {
@@ -39,7 +39,7 @@ import { assignLanes, corridorOf, spreadAnchors, type SpreadResult } from '../li
 import { GRID, useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
 import { DRAG_MIME } from '../lib/dnd'
-import { NODE_H, NODE_W, type Annotation, type Attach, type DeviceKind, type NetLink } from '../types'
+import { NODE_H, NODE_W, type Annotation, type Attach, type DeviceKind, type NetLink, type UsageVlan } from '../types'
 
 interface DragState {
   pointerId: number
@@ -203,6 +203,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const collapsed = useDiagram((s) => s.collapsed)
   const detail = useDiagram((s) => s.detail)
   const showLags = useDiagram((s) => s.showLags)
+  const showInterco = useDiagram((s) => s.showInterco)
   const osi = useDiagram((s) => s.osi)
   const strictOsi = useDiagram((s) => s.strictOsi)
 
@@ -231,6 +232,15 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     routage les traite donc autrement : la synchronisation disparaît, le transit devient une
     adjacence. Encore faut-il le dire, sinon on cherche un VLAN qu'on ne trouve plus.
   */
+  /*
+    Nature des VLAN du schéma affiché. Sur une projection, les VLAN d'interconnexion ont déjà
+    été écartés ou transformés : le liseré n'a plus rien à y marquer.
+  */
+  const usagesAffiches = useMemo(
+    () => (projection || !showInterco ? new Map<string, UsageVlan>() : usagesVlans(diagram, vlanPropagation)),
+    [projection, showInterco, diagram, vlanPropagation],
+  )
+
   const ecartLogique = useMemo(() => {
     if (!projection) return ''
     const usages = usagesVlans(document_, vlanPropagation)
@@ -1724,6 +1734,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 labels={labels.get(link.id) ?? []}
                 hops={crossings.get(link.id) ?? []}
                 color={linkColorFor(link, osi, diagram.vlans) ?? LINKS[link.kind].color}
+                interco={showInterco ? marqueInterconnexion(link, usagesAffiches) : undefined}
                 dimmed={display.dimmed.has(link.id) || eteints?.links.has(link.id) === true}
                 editable={!locked && isRealLink(link.id)}
                 labelsEditable={!locked && !labelsLocked}

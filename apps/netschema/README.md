@@ -519,6 +519,19 @@ Pour trancher soi-même : panneau **L2/L3**, dépliez un VLAN, champ **Usage** �
 *Déduit du schéma*, il suit le document. À l'import du plan d'adressage, une colonne *usage*
 (ou *nature*, *type*) est reconnue, avec les mots courants : interco, HA, heartbeat, prod…
 
+**Sur le plan physique, les câbles sont marqués.** Un câble qui ne porte que des VLAN
+d'interconnexion — les cordons HA1/HA2 d'une paire de pare-feu, un trunk de transit dédié — est
+tracé en **vert olive**. Un câble qui en porte parmi des VLAN de service reçoit un **liseré
+pointillé** de la même couleur : la question « ce trunk transporte-t-il du HA ? » se lit d'un
+coup d'œil, et un battement de cœur autorisé par erreur sur un lien de production saute aux yeux
+avant d'avoir ouvert l'analyse.
+
+Le vert olive n'est la couleur d'aucun type de liaison — c'est la seule plage de teintes que les
+douze types laissaient libre, à plus de soixante degrés de la plus proche —, de sorte qu'un câble
+marqué ne se confond avec aucun média. La convention apparaît dans la **légende** quand le schéma
+en contient, et part dans les exports SVG, PNG, HTML et draw.io. Pour la retirer : inspecteur →
+*Mise en page* → décochez **Marquer les VLAN d'interconnexion**.
+
 ### Châssis virtuels : deux boîtiers, un commutateur
 
 Un StackWise Virtual, un VSS, un IRF, un VSF, un Virtual Chassis : deux châssis, mais **un

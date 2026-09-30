@@ -1195,6 +1195,7 @@ function LayoutForm() {
   const showHops = useDiagram((s) => s.showHops)
   const spreadLinks = useDiagram((s) => s.spreadLinks)
   const showLags = useDiagram((s) => s.showLags)
+  const showInterco = useDiagram((s) => s.showInterco)
   const vueLogique = useDiagram((s) => s.vueLogique)
   const setVueLogique = useDiagram((s) => s.setVueLogique)
   const vlanFocus = useDiagram((s) => s.vlanFocus)
@@ -1293,6 +1294,11 @@ function LayoutForm() {
             checked={showLags}
             onChange={(v) => setDisplay({ showLags: v })}
             label="Encercler les agrégats (port-channels)"
+          />
+          <Checkbox
+            checked={showInterco}
+            onChange={(v) => setDisplay({ showInterco: v })}
+            label="Marquer les VLAN d’interconnexion (HA, transit)"
           />
           <Checkbox checked={showLayerLabels} onChange={(v) => setDisplay({ showLayerLabels: v })} label="Afficher les noms de couches" />
           <Checkbox

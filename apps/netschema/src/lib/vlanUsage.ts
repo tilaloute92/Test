@@ -1,4 +1,6 @@
+import { LINKS } from './catalog'
 import { mecanismeHa, planDeDonneesEffectif } from './haTech'
+import { parseVlanList } from './osi'
 import { porteeVlans } from './vlanReach'
 import type { PorteeVlan } from './vlanReach'
 import type { Diagram, HaRole, NetLink, NetNode, UsageVlan, VlanDef } from '../types'
@@ -130,6 +132,74 @@ export function usagesVlans(diagram: Diagram, propager = true): Map<string, Usag
 /** Un VLAN d'interconnexion ne porte pas d'utilisateur : transit ou synchronisation. */
 export function estInterconnexion(usage: UsageVlan): boolean {
   return usage !== 'service'
+}
+
+/**
+ * Couleur des VLAN d'interconnexion sur le plan physique.
+ *
+ * Sur un plan de câblage, « ce câble porte-t-il du HA ? » doit se lire d'un coup d'œil — et
+ * la réponse ne doit jamais se confondre avec un type de média. Les douze types de liaison
+ * occupent déjà les rouges, les oranges, les verts-bleus, les bleus, les violets et les
+ * roses ; la seule plage franchement libre est le vert-jaune, autour de la teinte 100, à plus
+ * de soixante degrés de la plus proche. D'où cet olive, qui ne ressemble à aucun câble et se
+ * détache sur fond blanc (contraste 5,2:1).
+ *
+ * Le premier violet essayé était exactement celui de « Stack / MLAG / VSS » : un lien de pile
+ * se serait marqué tout seul, sans qu'on puisse dire si la couleur venait du type ou de la
+ * convention. L'assertion ci-dessous existe pour que la question se repose si un type de
+ * liaison vient un jour occuper cette teinte.
+ */
+export const COULEUR_INTERCONNEXION = '#3f7a1f'
+
+if (import.meta.env?.DEV) {
+  const collision = Object.entries(LINKS).find(
+    ([, meta]) => meta.color.toLowerCase() === COULEUR_INTERCONNEXION,
+  )
+  if (collision) {
+    console.error(
+      `COULEUR_INTERCONNEXION (${COULEUR_INTERCONNEXION}) est déjà la couleur du type de liaison « ${collision[0]} » : ` +
+        'la marque des VLAN d’interconnexion ne se distinguerait plus d’un type de média. Choisissez une autre teinte.',
+    )
+  }
+}
+
+/** Ce qu'un câble porte comme VLAN d'interconnexion : rien, une partie, ou seulement cela. */
+export type MarqueInterconnexion = 'aucune' | 'partielle' | 'totale'
+
+/**
+ * VLAN cités sur une liaison, les deux extrémités et le VLAN natif compris.
+ *
+ * On lit la liaison telle qu'elle est écrite, sans propagation : ce qu'on marque sur un câble,
+ * c'est ce que ce câble transporte, pas ce que le VLAN atteint plus loin.
+ */
+function vlansDuLien(link: NetLink): string[] {
+  return [
+    ...parseVlanList(link.vlans),
+    ...parseVlanList(link.vlansA),
+    ...parseVlanList(link.vlansB),
+    ...[link.nativeVlan, link.nativeVlanA, link.nativeVlanB]
+      .map((valeur) => valeur?.trim())
+      .filter((valeur): valeur is string => !!valeur),
+  ]
+}
+
+/**
+ * Faut-il marquer ce câble comme portant de l'interconnexion ?
+ *
+ * « Totale » quand il ne porte que cela — le cordon HA, le trunk de transit dédié : le trait
+ * entier prend la couleur. « Partielle » quand de l'interconnexion voyage sur un câble qui
+ * porte aussi des utilisateurs : un liseré suffit, et c'est précisément ce qu'on veut voir
+ * sauter aux yeux, car un HA2 sur un trunk de production n'a rien à y faire.
+ */
+export function marqueInterconnexion(
+  link: NetLink,
+  usages: Map<string, UsageVlan>,
+): MarqueInterconnexion {
+  const cites = [...new Set(vlansDuLien(link))]
+  if (cites.length === 0) return 'aucune'
+  const interco = cites.filter((id) => estInterconnexion(usages.get(id) ?? 'service'))
+  if (interco.length === 0) return 'aucune'
+  return interco.length === cites.length ? 'totale' : 'partielle'
 }
 
 /**

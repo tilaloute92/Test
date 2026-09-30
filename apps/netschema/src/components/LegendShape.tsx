@@ -1,6 +1,7 @@
 import { agregats } from '../lib/aggregates'
 import { deviceMeta, LINKS } from '../lib/catalog'
 import { DeviceIcon } from '../lib/icons'
+import { COULEUR_INTERCONNEXION, marqueInterconnexion, usagesVlans } from '../lib/vlanUsage'
 import { LARGEUR_LEGENDE } from '../lib/layoutBlocks'
 import type { Diagram, LinkKind } from '../types'
 
@@ -42,11 +43,25 @@ export function LegendShape({ diagram, x, y }: LegendShapeProps) {
   )
   const groupes = familles(diagram)
   const faisceaux = agregats(diagram)
-  const lignesLiaisons = kinds.length + (faisceaux.length > 0 ? 1 : 0)
+  /*
+    Le violet des VLAN d'interconnexion : il ne figure dans la légende que si le schéma en
+    porte, comme le reste. Une légende qui annonce une convention absente fait douter de
+    toutes les autres.
+  */
+  const usages = usagesVlans(diagram)
+  const marques = diagram.links.map((link) => marqueInterconnexion(link, usages))
+  const interco = {
+    totale: marques.filter((marque) => marque === 'totale').length,
+    partielle: marques.filter((marque) => marque === 'partielle').length,
+  }
+  const lignesInterco = (interco.totale > 0 ? 1 : 0) + (interco.partielle > 0 ? 1 : 0)
+  const lignesLiaisons = kinds.length + (faisceaux.length > 0 ? 1 : 0) + lignesInterco
   const separateur = kinds.length > 0 && groupes.length > 0 ? 14 : 0
   const hauteur = 30 + (lignesLiaisons + groupes.length) * LIGNE + separateur + 10
   const yLiaisons = y + 40
   const yAgregat = yLiaisons + kinds.length * LIGNE
+  const yInterco = yAgregat + (faisceaux.length > 0 ? LIGNE : 0)
+  const yIntercoPartiel = yInterco + (interco.totale > 0 ? LIGNE : 0)
   const yFamilles = yLiaisons + lignesLiaisons * LIGNE + separateur
 
   return (
@@ -103,6 +118,56 @@ export function LegendShape({ diagram, x, y }: LegendShapeProps) {
           </text>
           <text x={x + LARGEUR - 12} y={yAgregat} fontSize={10} fill="#94a3b8" textAnchor="end">
             {faisceaux.length}
+          </text>
+        </g>
+      )}
+
+      {/* Le violet des VLAN d'interconnexion : une convention de couleur ne se devine pas. */}
+      {interco.totale > 0 && (
+        <g>
+          <line
+            x1={x + 12}
+            y1={yInterco - 4}
+            x2={x + 44}
+            y2={yInterco - 4}
+            stroke={COULEUR_INTERCONNEXION}
+            strokeWidth={2.4}
+            strokeLinecap="round"
+          />
+          <text x={x + 52} y={yInterco} fontSize={10.5} fill="#475569">
+            VLAN d’interconnexion seuls
+          </text>
+          <text x={x + LARGEUR - 12} y={yInterco} fontSize={10} fill="#94a3b8" textAnchor="end">
+            {interco.totale}
+          </text>
+        </g>
+      )}
+      {interco.partielle > 0 && (
+        <g>
+          <line
+            x1={x + 12}
+            y1={yIntercoPartiel - 4}
+            x2={x + 44}
+            y2={yIntercoPartiel - 4}
+            stroke="#94a3b8"
+            strokeWidth={2.4}
+            strokeLinecap="round"
+          />
+          <line
+            x1={x + 12}
+            y1={yIntercoPartiel - 4}
+            x2={x + 44}
+            y2={yIntercoPartiel - 4}
+            stroke={COULEUR_INTERCONNEXION}
+            strokeWidth={1.2}
+            strokeDasharray="2 7"
+            strokeLinecap="round"
+          />
+          <text x={x + 52} y={yIntercoPartiel} fontSize={10.5} fill="#475569">
+            … mêlés à des VLAN de service
+          </text>
+          <text x={x + LARGEUR - 12} y={yIntercoPartiel} fontSize={10} fill="#94a3b8" textAnchor="end">
+            {interco.partielle}
           </text>
         </g>
       )}

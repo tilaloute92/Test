@@ -2,6 +2,7 @@ import { LINKS } from '../lib/catalog'
 import { pathFrom, type LinkGeometry, type Point } from '../lib/routing'
 import type { Crossing } from '../lib/crossings'
 import type { ModeStyle } from '../lib/viewModes'
+import { COULEUR_INTERCONNEXION, type MarqueInterconnexion } from '../lib/vlanUsage'
 import type { NetLink } from '../types'
 
 /** Étiquette déjà placée par le plan de travail : il est le seul à voir toutes les autres. */
@@ -32,6 +33,14 @@ interface Props {
   color: string
   /** Hors de la couche regardée : conservée pour le contexte, mais estompée. */
   dimmed?: boolean
+  /**
+   * VLAN d'interconnexion portés par ce câble.
+   *
+   * « Totale » repeint le trait : le câble ne sert qu'à cela. « Partielle » pose un liseré :
+   * de l'interconnexion voyage sur un câble qui porte aussi des utilisateurs, ce qui se
+   * remarque alors au premier coup d'œil.
+   */
+  interco?: MarqueInterconnexion
   /** Les poignées de tracé ne sont proposées que sur le schéma réel, pas sur une vue dérivée. */
   editable?: boolean
   /** Étiquettes déplaçables : faux si elles sont verrouillées ou le schéma en lecture seule. */
@@ -52,6 +61,7 @@ export function LinkShape({
   hops,
   color,
   dimmed,
+  interco,
   editable,
   labelsEditable,
   style,
@@ -74,12 +84,28 @@ export function LinkShape({
       <path
         d={d}
         fill="none"
-        stroke={color}
+        stroke={interco === 'totale' ? COULEUR_INTERCONNEXION : color}
         strokeWidth={width}
         strokeDasharray={link.redundant || link.dashed ? '8 6' : meta.dash}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+      {/*
+        Le liseré d'interconnexion. Posé par-dessus le trait, en pointillé fin, il appartient
+        au dessin et part donc dans les exports : c'est une information du schéma, pas un
+        ornement de l'éditeur.
+      */}
+      {interco === 'partielle' && (
+        <path
+          d={d}
+          fill="none"
+          stroke={COULEUR_INTERCONNEXION}
+          strokeWidth={Math.max(1.2, width * 0.42)}
+          strokeDasharray="2 7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      )}
       <path
         data-export="false"
         d={d}
