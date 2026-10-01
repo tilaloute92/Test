@@ -1200,6 +1200,7 @@ function LayoutForm() {
   const showLags = useDiagram((s) => s.showLags)
   const showInterco = useDiagram((s) => s.showInterco)
   const minimapOpen = useDiagram((s) => s.minimapOpen)
+  const showFamilies = useDiagram((s) => s.showFamilies)
   const vueLogique = useDiagram((s) => s.vueLogique)
   const setVueLogique = useDiagram((s) => s.setVueLogique)
   const vlanFocus = useDiagram((s) => s.vlanFocus)
@@ -1296,6 +1297,25 @@ function LayoutForm() {
           <Checkbox checked={showSites} onChange={(v) => setDisplay({ showSites: v })} label="Afficher les sites" />
           <Checkbox checked={showZones} onChange={(v) => setDisplay({ showZones: v })} label="Afficher les zones" />
           <Checkbox checked={showClusters} onChange={(v) => setDisplay({ showClusters: v })} label="Afficher les grappes HA" />
+          {/*
+            Les familles sont une quatrième façon de cadrer le plan. Les afficher par-dessus les
+            sites et les zones empile trois niveaux de cadres sur les mêmes boîtes : on éteint
+            donc les deux autres, en le disant, plutôt que de laisser l'exploitant découvrir un
+            plan illisible et chercher ce qu'il a bien pu cocher.
+          */}
+          <Checkbox
+            checked={showFamilies}
+            onChange={(v) => {
+              const store = useDiagram.getState()
+              if (v && (store.showSites || store.showZones)) {
+                setDisplay({ showFamilies: true, showSites: false, showZones: false })
+                store.notify('Cadres de site et de zone masqués : trois niveaux de cadres se superposeraient.')
+              } else {
+                setDisplay({ showFamilies: v })
+              }
+            }}
+            label="Afficher les familles d’équipements"
+          />
           <Checkbox
             checked={showLags}
             onChange={(v) => setDisplay({ showLags: v })}

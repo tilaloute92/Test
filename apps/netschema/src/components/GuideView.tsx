@@ -565,7 +565,7 @@ deux onduleurs`}</pre>
     {
       id: 'zones',
       title: 'Info-bulles, bandeaux, zones et couches',
-      keywords: 'info bulle infobulle survol fiche equipement bandeau palette inspecteur masquer cacher plein ecran zone site grappe couche renommer libelle bande perimetre distribution coeur de reseau',
+      keywords: 'info bulle infobulle survol fiche equipement bandeau palette inspecteur masquer cacher plein ecran zone site grappe couche renommer libelle bande perimetre distribution coeur de reseau famille familles type couleur cadre serveurs switchs',
       body: (
         <>
           <P>
@@ -586,6 +586,16 @@ deux onduleurs`}</pre>
                 droite — sur un portable, le plan de travail y gagne la moitié de sa largeur.
                 Une languette sur le bord les ramène, et le réglage est retenu d'une séance à
                 l'autre (il appartient au poste, pas au document).
+              </>,
+              <>
+                <b>Cadres par famille d'équipements</b> (inspecteur → <i>Afficher les familles
+                d'équipements</i>) : une lecture par métier plutôt que par lieu. Tous les
+                commutateurs dans un cadre, les serveurs dans un autre, l'énergie à part, chacun
+                à sa couleur. C'est là où les couches ne disent rien que cette lecture sert : les
+                switches de cœur et de distribution se retrouvent ensemble alors qu'ils vivent
+                sur deux rangs, et la couche des serveurs se sépare en calcul, stockage et
+                supervision. Cocher cette case éteint les cadres de site et de zone : trois
+                niveaux de cadres sur les mêmes boîtes ne se lisent plus.
               </>,
               <>
                 <b>Renommer une zone, un site, une grappe ou une couche</b> : double-clic sur

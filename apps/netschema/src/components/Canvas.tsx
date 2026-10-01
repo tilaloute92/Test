@@ -24,6 +24,7 @@ import { porteurs, projectionLogique, VUES_LOGIQUES } from '../lib/vlanViews'
 import { marqueInterconnexion, usagesVlans } from '../lib/vlanUsage'
 import { AggregateShape } from './AggregateShape'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
+import { couleurFamille, familleDe } from '../lib/familles'
 import {
   insertIndexAt,
   linkGeometry,
@@ -183,6 +184,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const showZones = useDiagram((s) => s.showZones)
   const showSites = useDiagram((s) => s.showSites)
   const showClusters = useDiagram((s) => s.showClusters)
+  const showFamilies = useDiagram((s) => s.showFamilies)
   const showAudit = useDiagram((s) => s.showAudit)
   const showLayerLabels = useDiagram((s) => s.showLayerLabels)
   const showIp = useDiagram((s) => s.showIp)
@@ -978,6 +980,20 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
     () => (showClusters ? groupBoxes(framed, (n) => n.cluster, 11, 13, direction) : []),
     [showClusters, framed, direction],
   )
+  /*
+    Cadres par famille d'équipements. Même machinerie que les sites et les zones — y compris le
+    découpage en rangées, qui évite qu'un cadre n'enjambe des équipements qui ne lui
+    appartiennent pas. La marge est la plus large des quatre : la famille est le groupement le
+    plus englobant, et son cadre doit rester lisible par-dessus les autres.
+  */
+  const familles = useMemo(() => {
+    // La famille vient du catalogue, qui arrive après le premier rendu : son compteur de
+    // révision est la dépendance réelle, invisible pour l'analyse statique.
+    void catalogRevision
+    // Écart maximal entre deux membres d'un même tronçon : au-delà d'une boîte et demie,
+    // c'est qu'une autre famille s'est intercalée et qu'il faut ouvrir un second cadre.
+    return showFamilies ? groupBoxes(framed, (n) => familleDe(n), 34, 26, direction, NODE_W * 0.9) : []
+  }, [showFamilies, framed, direction, catalogRevision])
 
   // Étalement des liaisons parallèles (deux équipements reliés par plusieurs câbles).
   const linkOffsets = useMemo(() => {
@@ -1541,6 +1557,41 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const scene = useMemo(
     () => (
       <>
+            {familles.map((famille) => {
+              // Les rangées de continuation n'ont pas de libellé : la clé « famille#rangée » le garde.
+              const teinte = couleurFamille(famille.label || famille.key.split('#')[0])
+              return (
+                <g key={`famille-${famille.key}`} data-couche="groupe">
+                  <rect
+                    x={famille.x}
+                    y={famille.y}
+                    width={famille.width}
+                    height={famille.height}
+                    rx={20}
+                    fill={teinte}
+                    fillOpacity={0.07 * style.groupStrength}
+                    stroke={teinte}
+                    strokeOpacity={0.55}
+                    strokeWidth={1.6 * style.groupStrength}
+                    strokeDasharray="9 6"
+                  />
+                  {famille.label && (
+                    <text
+                      data-couche="groupe"
+                      x={famille.x + 16}
+                      y={famille.y + 20}
+                      fontSize={12}
+                      fontWeight={700}
+                      fill={teinte}
+                      pointerEvents="none"
+                    >
+                      {famille.label.toUpperCase()}
+                    </text>
+                  )}
+                </g>
+              )
+            })}
+
             {sites.map((site) => (
               <g key={`site-${site.key}`} data-couche="groupe">
                 <rect
@@ -2099,7 +2150,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       </>
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bands, bounds, cadresCouches, clusterVips, clusters, connectFrom, crossings, detail, diagram, direction, display, eteints, flagged, geometries, impact, labels, labelsLocked, linkOffsets, linkStyle, locked, nodeById, osi, ovales, rails, realIds, selectedAnnotations, selectedLinks, selectedNodes, showInterco, showIp, showLags, showLegend, showSpeeds, showVlans, sites, source, style, usagesAffiches, zones, beginEndpointDragStable, beginLabelDragStable, beginLagDragStable, beginLayerDragStable, beginWaypointDragStable, onAnnotationHandleDownStable, onAnnotationPointerDownStable, onLinkHoverStable, onLinkPointerDownStable, onNodeHoverStable, onNodePointerDownStable, ouvrirEditionStable, ouvrirEditionAnnotationStable, removeWaypointStable, isRealLinkStable],
+    [bands, bounds, cadresCouches, clusterVips, clusters, connectFrom, crossings, detail, diagram, direction, display, eteints, familles, flagged, geometries, impact, labels, labelsLocked, linkOffsets, linkStyle, locked, nodeById, osi, ovales, rails, realIds, selectedAnnotations, selectedLinks, selectedNodes, showInterco, showIp, showLags, showLegend, showSpeeds, showVlans, sites, source, style, usagesAffiches, zones, beginEndpointDragStable, beginLabelDragStable, beginLagDragStable, beginLayerDragStable, beginWaypointDragStable, onAnnotationHandleDownStable, onAnnotationPointerDownStable, onLinkHoverStable, onLinkPointerDownStable, onNodeHoverStable, onNodePointerDownStable, ouvrirEditionStable, ouvrirEditionAnnotationStable, removeWaypointStable, isRealLinkStable],
   )
 
 

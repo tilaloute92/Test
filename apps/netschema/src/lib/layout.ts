@@ -212,6 +212,17 @@ export function groupBoxes(
   padding: number,
   topSpace = 14,
   direction: LayoutOptions['direction'] = 'TB',
+  /*
+    Couper une rangée en tronçons quand ses membres ne se touchent pas.
+
+    Un cadre s'étire par défaut du premier au dernier membre de sa rangée, quitte à enjamber
+    des équipements qui ne lui appartiennent pas — c'est voulu pour un site ou une zone, où
+    l'on veut une forme d'un seul tenant. Mais là où plusieurs groupes s'entremêlent sur une
+    même rangée, cela donne des cadres superposés qui ne se lisent plus : la famille
+    « Données » encadrerait alors les serveurs de calcul posés entre deux baies. Avec cette
+    option, un écart supérieur à la valeur donnée ouvre un nouveau tronçon.
+  */
+  ecartMax?: number,
 ): GroupBox[] {
   const buckets = new Map<string, NetNode[]>()
   for (const node of nodes) {
@@ -239,7 +250,27 @@ export function groupBoxes(
       else rows.push([node])
     }
 
-    const rects = rows.map((row) => {
+    // Chaque rangée se découpe en tronçons contigus quand l'appelant le demande.
+    const troncons = ecartMax
+      ? rows.flatMap((row) => {
+          const enLigne = [...row].sort((a, b) => (vertical ? a.x - b.x : a.y - b.y))
+          const morceaux: NetNode[][] = []
+          for (const node of enLigne) {
+            const courant = morceaux[morceaux.length - 1]
+            const precedent = courant?.[courant.length - 1]
+            const ecart = precedent
+              ? vertical
+                ? node.x - precedent.x - NODE_W
+                : node.y - precedent.y - NODE_H
+              : 0
+            if (courant && ecart <= ecartMax) courant.push(node)
+            else morceaux.push([node])
+          }
+          return morceaux
+        })
+      : rows
+
+    const rects = troncons.map((row) => {
       const minX = Math.min(...row.map((n) => n.x - NODE_W / 2)) - padding
       const maxX = Math.max(...row.map((n) => n.x + NODE_W / 2)) + padding
       const minY = Math.min(...row.map((n) => n.y - NODE_H / 2)) - padding
@@ -247,13 +278,15 @@ export function groupBoxes(
       return { minX, maxX, minY, maxY }
     })
 
-    rects.forEach((rect, i) => {
-      const next = rects[i + 1]
-      if (!next) return
-      // Rangées qui se suivent : on étire la précédente jusqu'à la suivante pour souder le cadre.
-      if (vertical && next.minY - rect.maxY < 170) rect.maxY = next.minY
-      if (!vertical && next.minX - rect.maxX < 170) rect.maxX = next.minX
-    })
+    if (!ecartMax) {
+      rects.forEach((rect, i) => {
+        const next = rects[i + 1]
+        if (!next) return
+        // Rangées qui se suivent : on étire la précédente jusqu'à la suivante pour souder le cadre.
+        if (vertical && next.minY - rect.maxY < 170) rect.maxY = next.minY
+        if (!vertical && next.minX - rect.maxX < 170) rect.maxX = next.minX
+      })
+    }
 
     rects.forEach((rect, i) => {
       const labelled = i === 0

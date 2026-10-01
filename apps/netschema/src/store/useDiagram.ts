@@ -143,6 +143,8 @@ interface DiagramStore {
   showZones: boolean
   showSites: boolean
   showClusters: boolean
+  /** Cadres par famille d'équipements : une lecture par métier, à part des sites et des zones. */
+  showFamilies: boolean
   showLayerLabels: boolean
   /*
     Trois natures d'information, trois cases.
@@ -416,6 +418,7 @@ interface DiagramStore {
         | 'showZones'
         | 'showSites'
         | 'showClusters'
+        | 'showFamilies'
         | 'showLayerLabels'
         | 'showIp'
         | 'showVlans'
@@ -511,6 +514,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   showZones: true,
   showSites: true,
   showClusters: true,
+  showFamilies: false,
   showLayerLabels: true,
   showIp: true,
   showVlans: true,
