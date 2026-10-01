@@ -1198,6 +1198,7 @@ function LayoutForm() {
   const spreadLinks = useDiagram((s) => s.spreadLinks)
   const showLags = useDiagram((s) => s.showLags)
   const showInterco = useDiagram((s) => s.showInterco)
+  const minimapOpen = useDiagram((s) => s.minimapOpen)
   const vueLogique = useDiagram((s) => s.vueLogique)
   const setVueLogique = useDiagram((s) => s.setVueLogique)
   const vlanFocus = useDiagram((s) => s.vlanFocus)
@@ -1314,6 +1315,11 @@ function LayoutForm() {
             checked={showHops}
             onChange={(v) => setDisplay({ showHops: v })}
             label="Enjamber les croisements de liaisons"
+          />
+          <Checkbox
+            checked={minimapOpen}
+            onChange={(v) => useDiagram.getState().setPanelOpen('minicarte', v)}
+            label="Afficher la minicarte (vue d’ensemble)"
           />
           <Checkbox checked={showGrid} onChange={(v) => setDisplay({ showGrid: v })} label="Afficher la grille" />
           <Checkbox checked={snap} onChange={(v) => setDisplay({ snap: v })} label="Aimanter à la grille" />

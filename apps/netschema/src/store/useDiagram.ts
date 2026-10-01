@@ -73,7 +73,9 @@ import type {
  */
 const CLE_PANNEAUX = 'netschema:panneaux'
 
-function lirePanneau(nom: 'palette' | 'inspecteur'): boolean {
+type Panneau = 'palette' | 'inspecteur' | 'minicarte'
+
+function lirePanneau(nom: Panneau): boolean {
   try {
     const brut = localStorage.getItem(CLE_PANNEAUX)
     if (!brut) return true
@@ -84,7 +86,7 @@ function lirePanneau(nom: 'palette' | 'inspecteur'): boolean {
   }
 }
 
-function ecrirePanneau(nom: 'palette' | 'inspecteur', ouvert: boolean) {
+function ecrirePanneau(nom: Panneau, ouvert: boolean) {
   try {
     const brut = localStorage.getItem(CLE_PANNEAUX)
     const etat = brut ? (JSON.parse(brut) as Record<string, unknown>) : {}
@@ -225,6 +227,8 @@ interface DiagramStore {
   /** Bandeaux latéraux : la palette à gauche, l'inspecteur à droite. */
   paletteOpen: boolean
   inspectorOpen: boolean
+  /** Minicarte du plan, en bas à gauche : une vue d'ensemble quand le schéma dépasse l'écran. */
+  minimapOpen: boolean
   commandOpen: boolean
   importOpen: boolean
   /** Panneau de commande vocale ouvert. */
@@ -366,7 +370,7 @@ interface DiagramStore {
   assistantOpen: boolean
   setAssistantOpen: (open: boolean) => void
   /** Afficher ou masquer un bandeau latéral. Le choix est propre au poste, pas au document. */
-  setPanelOpen: (panneau: 'palette' | 'inspecteur', ouvert: boolean) => void
+  setPanelOpen: (panneau: Panneau, ouvert: boolean) => void
   setCommandOpen: (open: boolean) => void
   setImportOpen: (open: boolean) => void
   setVoiceOpen: (open: boolean) => void
@@ -531,6 +535,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   strictOsi: false,
   paletteOpen: lirePanneau('palette'),
   inspectorOpen: lirePanneau('inspecteur'),
+  minimapOpen: lirePanneau('minicarte'),
   pannes: { nodes: [], links: [] },
   commandOpen: false,
   importOpen: false,
@@ -1609,8 +1614,10 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   },
 
   setPanelOpen: (panneau, ouvert) => {
-    ecrirePanneau(panneau === 'palette' ? 'palette' : 'inspecteur', ouvert)
-    set(panneau === 'palette' ? { paletteOpen: ouvert } : { inspectorOpen: ouvert })
+    ecrirePanneau(panneau, ouvert)
+    if (panneau === 'palette') set({ paletteOpen: ouvert })
+    else if (panneau === 'inspecteur') set({ inspectorOpen: ouvert })
+    else set({ minimapOpen: ouvert })
   },
 
   togglePanne: (type, id) =>

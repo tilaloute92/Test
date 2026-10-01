@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useHandler } from '../lib/useHandler'
 import { LinkHandles } from './LinkHandles'
 import { LinkShape, type PlacedLabel } from './LinkShape'
 import { LinkTooltip } from './LinkTooltip'
@@ -8,6 +9,7 @@ import { TitleBlockShape } from './TitleBlockShape'
 import { legendSize, titleBlockSize } from '../lib/layoutBlocks'
 import { NodeTooltip } from './NodeTooltip'
 import { NodeShape } from './NodeShape'
+import { Minimap } from './Minimap'
 import { LINKS, rankOf } from '../lib/catalog'
 import { deriveDiagram, groupMembers, type DisplayNode } from '../lib/derive'
 import { setDiagramSvg } from '../lib/exportRegistry'
@@ -213,6 +215,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const showInterco = useDiagram((s) => s.showInterco)
   const osi = useDiagram((s) => s.osi)
   const strictOsi = useDiagram((s) => s.strictOsi)
+  const minimapOpen = useDiagram((s) => s.minimapOpen)
 
   /**
    * Le plan de travail n'affiche pas le schéma brut mais sa version dérivée : niveau de
@@ -868,9 +871,31 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
 
   // Les cadres de groupe ne s'appuient que sur les équipements réellement affichés :
   // un groupe replié est déjà représenté par son bloc, inutile de l'encadrer.
-  const framed = display.nodes.filter((node) => !node.group)
-  const bounds = diagramBounds(display.nodes)
-  const bands = showLayerLabels ? layerBands(display.nodes, direction, diagram.layerNames) : []
+  /*
+    Ces cinq valeurs alimentent la scène mémoïsée : recalculées à chaque rendu, elles
+    n'étaient jamais identiques d'une fois sur l'autre et suffisaient à en annuler l'effet.
+    Un tableau vide littéral est déjà un objet neuf.
+  */
+  const framed = useMemo(() => display.nodes.filter((node) => !node.group), [display.nodes])
+  const bounds = useMemo(() => diagramBounds(display.nodes), [display.nodes])
+
+  /*
+    Le schéma tient-il dans le champ visible ? C'est la seule question qui décide d'afficher
+    la minicarte. On garde une marge de 5 % : sans elle, la vignette clignoterait à chaque
+    coup de molette autour du point d'équilibre.
+  */
+  const deborde = useMemo(() => {
+    if (display.nodes.length < 8) return false
+    const largeur = bounds.maxX - bounds.minX + NODE_W
+    const hauteur = bounds.maxY - bounds.minY + NODE_H
+    return (
+      largeur * view.zoom > canvasSize.width * 1.05 || hauteur * view.zoom > canvasSize.height * 1.05
+    )
+  }, [bounds, canvasSize.height, canvasSize.width, display.nodes.length, view.zoom])
+  const bands = useMemo(
+    () => (showLayerLabels ? layerBands(display.nodes, direction, diagram.layerNames) : []),
+    [showLayerLabels, display.nodes, direction, diagram.layerNames],
+  )
 
   /*
     Un rail par couche colorée : c'est la vue « plan VLAN ». Le trait passe au milieu de la
@@ -941,9 +966,18 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
         }
       })
   }, [showLayerLabels, display.nodes, direction, diagram.layerPads, catalogRevision])
-  const sites = showSites ? groupBoxes(framed, (n) => n.site, 50, 28, direction) : []
-  const zones = showZones ? groupBoxes(framed, (n) => n.zone, 26, 14, direction) : []
-  const clusters = showClusters ? groupBoxes(framed, (n) => n.cluster, 11, 13, direction) : []
+  const sites = useMemo(
+    () => (showSites ? groupBoxes(framed, (n) => n.site, 50, 28, direction) : []),
+    [showSites, framed, direction],
+  )
+  const zones = useMemo(
+    () => (showZones ? groupBoxes(framed, (n) => n.zone, 26, 14, direction) : []),
+    [showZones, framed, direction],
+  )
+  const clusters = useMemo(
+    () => (showClusters ? groupBoxes(framed, (n) => n.cluster, 11, 13, direction) : []),
+    [showClusters, framed, direction],
+  )
 
   // Étalement des liaisons parallèles (deux équipements reliés par plusieurs câbles).
   const linkOffsets = useMemo(() => {
@@ -1470,6 +1504,605 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const source = connectFrom ? nodeById.get(connectFrom) : undefined
   const gridStep = GRID * view.zoom
 
+  /*
+    ── La scène, mémoïsée ──────────────────────────────────────────────────────
+
+    Zoomer ou déplacer la vue ne change qu'une chose : la matrice de transformation posée
+    sur le groupe qui contient tout. Rien du contenu ne bouge. React, lui, re-parcourait
+    les trois mille cinq cents éléments à chaque cran de molette — quatre-vingt-quatorze
+    millisecondes de réconciliation par image sur un plan de deux cents équipements, pour
+    un résultat identique au pixel près.
+
+    On fige donc l'arbre : tant que les données du plan ne changent pas, `useMemo` rend le
+    même objet, React reconnaît l'identité et saute le sous-arbre entier. Seul le navigateur
+    travaille encore, ce qu'on ne peut lui éviter.
+
+    Deux conditions pour que cela tienne, et elles sont toutes les deux vérifiées ici : les
+    gestionnaires d'événements doivent être stables (`useHandler` s'en charge), et la liste
+    de dépendances doit être complète — d'où son étendue, qui recense tout ce que la scène
+    lit. Les repères d'accroche, seuls à dépendre du zoom, sont dessinés en dehors.
+  */
+  const beginEndpointDragStable = useHandler(beginEndpointDrag)
+  const beginLabelDragStable = useHandler(beginLabelDrag)
+  const beginLagDragStable = useHandler(beginLagDrag)
+  const beginLayerDragStable = useHandler(beginLayerDrag)
+  const beginWaypointDragStable = useHandler(beginWaypointDrag)
+  const onAnnotationHandleDownStable = useHandler(onAnnotationHandleDown)
+  const onAnnotationPointerDownStable = useHandler(onAnnotationPointerDown)
+  const onLinkHoverStable = useHandler(onLinkHover)
+  const onLinkPointerDownStable = useHandler(onLinkPointerDown)
+  const onNodeHoverStable = useHandler(onNodeHover)
+  const onNodePointerDownStable = useHandler(onNodePointerDown)
+  const ouvrirEditionStable = useHandler(ouvrirEdition)
+  const ouvrirEditionAnnotationStable = useHandler(ouvrirEditionAnnotation)
+  const removeWaypointStable = useHandler(removeWaypoint)
+  const isRealLinkStable = useHandler(isRealLink)
+
+  const scene = useMemo(
+    () => (
+      <>
+            {sites.map((site) => (
+              <g key={`site-${site.key}`} data-couche="groupe">
+                <rect
+                  x={site.x}
+                  y={site.y}
+                  width={site.width}
+                  height={site.height}
+                  rx={22}
+                  fill="#0f172a"
+                  fillOpacity={0.03 * style.groupStrength}
+                  stroke={style.groupStrength > 1 ? '#94a3b8' : '#cbd5e1'}
+                  strokeWidth={1.6 * style.groupStrength}
+                />
+                {site.label && (
+                  <text
+                    data-couche="groupe"
+                    data-renommer={`site:${site.label}`}
+                    x={site.x + 18}
+                    y={site.y + 22}
+                    fontSize={12.5}
+                    fontWeight={700}
+                    fill="#64748b"
+                    pointerEvents="all"
+                    style={{ cursor: 'text' }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => {
+                      event.stopPropagation()
+                      ouvrirEditionStable('site', site.label, site.label, { x: site.x + 18, y: site.y + 10 })
+                    }}
+                  >
+                    <title>Double-clic pour renommer ce site</title>
+                    {`SITE — ${site.label.toUpperCase()}`}
+                  </text>
+                )}
+              </g>
+            ))}
+
+            {zones.map((zone) => (
+              <g key={`zone-${zone.key}`} data-couche="groupe">
+                <rect
+                  x={zone.x}
+                  y={zone.y}
+                  width={zone.width}
+                  height={zone.height}
+                  rx={16}
+                  fill="#0f172a"
+                  fillOpacity={0.025 * style.groupStrength}
+                  stroke="#94a3b8"
+                  strokeWidth={1.2 * style.groupStrength}
+                  strokeDasharray="7 6"
+                />
+                {zone.label && (
+                  <text
+                    data-couche="groupe"
+                    data-renommer={`zone:${zone.label}`}
+                    x={zone.x + 14}
+                    y={zone.y + 17}
+                    fontSize={11}
+                    fontWeight={700}
+                    fill="#64748b"
+                    pointerEvents="all"
+                    style={{ cursor: 'text' }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => {
+                      event.stopPropagation()
+                      ouvrirEditionStable('zone', zone.label, zone.label, { x: zone.x + 14, y: zone.y + 6 })
+                    }}
+                  >
+                    <title>Double-clic pour renommer cette zone</title>
+                    {zone.label.toUpperCase()}
+                  </text>
+                )}
+              </g>
+            ))}
+
+            {clusters.map((cluster) => (
+              <g key={`cluster-${cluster.key}`} data-couche="groupe">
+                <rect
+                  x={cluster.x}
+                  y={cluster.y}
+                  width={cluster.width}
+                  height={cluster.height}
+                  rx={12}
+                  fill="#db2777"
+                  fillOpacity={0.04 * style.groupStrength}
+                  stroke="#db2777"
+                  strokeWidth={1.2 * style.groupStrength}
+                  strokeDasharray="4 4"
+                />
+                {cluster.label && (
+                  <text
+                    data-couche="groupe"
+                    data-renommer={`cluster:${cluster.label}`}
+                    x={cluster.x + 12}
+                    y={cluster.y + 16}
+                    fontSize={9.5}
+                    fontWeight={700}
+                    fill="#db2777"
+                    pointerEvents="all"
+                    style={{ cursor: 'text' }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => {
+                      event.stopPropagation()
+                      ouvrirEditionStable('cluster', cluster.label, cluster.label, { x: cluster.x + 12, y: cluster.y + 6 })
+                    }}
+                  >
+                    <title>Double-clic pour renommer cette grappe</title>
+                    {/* L'adresse virtuelle est une donnée d'exploitation : elle n'a rien à faire
+                        sur une vue de présentation. */}
+                    {`GRAPPE ${cluster.label}${
+                      style.annotations && clusterVips.get(cluster.label)
+                        ? ` · VIP ${clusterVips.get(cluster.label)}`
+                        : ''
+                    }`}
+                  </text>
+                )}
+              </g>
+            ))}
+
+            {/*
+              Cadres de couche : saisissables. Le corps déplace la couche entière, les bords longs
+              l'étalent ou la resserrent, les bords en travers règlent la marge du cadre.
+            */}
+            {cadresCouches.map((cadre) => (
+              <g key={`couche-${cadre.rang}`} data-couche="bande">
+                {/* Le cadre ne prend pas les clics : à l'intérieur, on doit pouvoir saisir un
+                    équipement ou une liaison comme d'habitude. */}
+                <rect
+                  data-cadre={`couche-${cadre.rang}`}
+                  x={cadre.x}
+                  y={cadre.y}
+                  width={cadre.width}
+                  height={cadre.height}
+                  rx={14}
+                  fill="none"
+                  stroke="#cbd5e1"
+                  strokeWidth={1}
+                  strokeDasharray="2 6"
+                  pointerEvents="none"
+                />
+
+              </g>
+            ))}
+
+            {/*
+              Rails VLAN : quand une couche est un domaine de diffusion, on la matérialise par
+              un trait de sa couleur. C'est le dessin classique du segment — tout le monde sur
+              la ligne se parle sans routeur.
+            */}
+            {rails.map((rail) => (
+              <g key={`rail-${rail.rank}`} data-couche="rail">
+                <line
+                  x1={direction === 'TB' ? bounds.minX - 12 : rail.main}
+                  y1={direction === 'TB' ? rail.main : bounds.minY - 12}
+                  x2={direction === 'TB' ? bounds.maxX + 12 : rail.main}
+                  y2={direction === 'TB' ? rail.main : bounds.maxY + 12}
+                  stroke={rail.couleur}
+                  strokeWidth={3.5}
+                  strokeLinecap="round"
+                  opacity={0.85}
+                />
+                {rail.attaches.map((point, index) => (
+                  <line
+                    key={index}
+                    x1={point.x}
+                    y1={point.y}
+                    x2={direction === 'TB' ? point.x : rail.main}
+                    y2={direction === 'TB' ? rail.main : point.y}
+                    stroke={rail.couleur}
+                    strokeWidth={1.4}
+                    opacity={0.85}
+                  />
+                ))}
+              </g>
+            ))}
+
+            {bands.map((band) =>
+              direction === 'TB' ? (
+                <text
+                  key={band.rank}
+                  data-couche="bande"
+                  data-renommer={`layer:${band.rank}`}
+                  x={bounds.minX - 28}
+                  y={band.main + 4}
+                  textAnchor="end"
+                  fontSize={11}
+                  fontWeight={700}
+                  fill={diagram.layerColors?.[String(band.rank)] ?? '#94a3b8'}
+                  pointerEvents="all"
+                  style={{ cursor: 'text' }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation()
+                    ouvrirEditionStable('layer', String(band.rank), band.label, {
+                      x: bounds.minX - 150,
+                      y: band.main - 8,
+                    })
+                  }}
+                >
+                  <title>Double-clic pour renommer cette couche</title>
+                  {band.label}
+                </text>
+              ) : (
+                <text
+                  key={band.rank}
+                  data-couche="bande"
+                  data-renommer={`layer:${band.rank}`}
+                  x={band.main}
+                  y={bounds.minY - 30}
+                  textAnchor="middle"
+                  fontSize={11}
+                  fontWeight={700}
+                  fill={diagram.layerColors?.[String(band.rank)] ?? '#94a3b8'}
+                  pointerEvents="all"
+                  style={{ cursor: 'text' }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation()
+                    ouvrirEditionStable('layer', String(band.rank), band.label, {
+                      x: band.main - 60,
+                      y: bounds.minY - 44,
+                    })
+                  }}
+                >
+                  <title>Double-clic pour renommer cette couche</title>
+                  {band.label}
+                </text>
+              ),
+            )}
+
+            {/*
+              Cadres d'annotation : en fond, comme les cadres de groupe — ils délimitent un
+              périmètre de travaux ou de projet, pas un équipement.
+            */}
+            {(diagram.annotations ?? [])
+              .filter((annotation) => annotation.kind === 'zone')
+              .map((annotation) => (
+                <AnnotationShape
+                  key={annotation.id}
+                  annotation={annotation}
+                  selected={selectedAnnotations.includes(annotation.id)}
+                  editable={!locked}
+                  onPointerDown={onAnnotationPointerDownStable}
+                  onHandleDown={onAnnotationHandleDownStable}
+                  onDoubleClick={ouvrirEditionAnnotationStable}
+                />
+              ))}
+
+            {display.links.map((link) => {
+              const geometry = geometries.get(link.id)
+              if (!geometry) return null
+              return (
+                <LinkShape
+                  key={link.id}
+                  link={link}
+                  geometry={geometry}
+                  selected={selectedLinks.includes(link.id)}
+                  labels={labels.get(link.id) ?? []}
+                  hops={crossings.get(link.id) ?? []}
+                  color={linkColorFor(link, osi, diagram.vlans) ?? LINKS[link.kind].color}
+                  interco={showInterco ? marqueInterconnexion(link, usagesAffiches) : undefined}
+                  dimmed={display.dimmed.has(link.id) || eteints?.links.has(link.id) === true}
+                  editable={!locked && isRealLinkStable(link.id)}
+                  labelsEditable={!locked && !labelsLocked}
+                  style={style}
+                  onPointerDown={onLinkPointerDownStable}
+                  onHover={onLinkHoverStable}
+                  onLabelDown={beginLabelDragStable}
+                  onLabelReset={(target, label) => {
+                    const store = useDiagram.getState()
+                    store.pushHistory()
+                    store.setLabelOffset(target.id, label.which, null)
+                  }}
+                />
+              )
+            })}
+
+            {source && cursor && (
+              <path
+                data-export="false"
+                d={`M ${source.x} ${source.y} L ${cursor.x} ${cursor.y}`}
+                stroke="#059669"
+                strokeWidth={2}
+                strokeDasharray="6 5"
+                fill="none"
+                pointerEvents="none"
+              />
+            )}
+
+            {display.nodes.map((node) => {
+              const own = realIds.get(node.id) ?? [node.id]
+              return (
+                <NodeShape
+                  key={node.id}
+                  node={node}
+                  selected={own.every((id) => selectedNodes.includes(id))}
+                  isConnectSource={connectFrom === node.id}
+                  showIp={showIp}
+                  showVlans={showVlans}
+                  flagged={own.some((id) => flagged.has(id))}
+                  dimmed={display.dimmed.has(node.id) || eteints?.nodes.has(node.id) === true}
+                  style={style}
+                  onPointerDown={onNodePointerDownStable}
+                  onDoubleClick={() => node.group && useDiagram.getState().toggleCollapse(node.group.key)}
+                  onHover={onNodeHoverStable}
+                />
+              )
+            })}
+
+            {/*
+              Légende et cartouche : posés sous le schéma, dans le même repère. Le cadrage de
+              l'export les englobe donc naturellement, sans mise en page particulière.
+            */}
+            {showLegend && (
+              <LegendShape diagram={diagram} x={bounds.minX} y={bounds.maxY + 46} />
+            )}
+            {diagram.titleBlock?.show && (
+              <TitleBlockShape
+                diagram={diagram}
+                x={Math.max(
+                  bounds.maxX - titleBlockSize(diagram).width,
+                  showLegend ? bounds.minX + legendSize(diagram).width + 24 : bounds.minX,
+                )}
+                y={bounds.maxY + 46}
+              />
+            )}
+
+            {lasso && (lasso.width > 2 || lasso.height > 2) && (
+              <rect
+                data-export="false"
+                x={lasso.x}
+                y={lasso.y}
+                width={lasso.width}
+                height={lasso.height}
+                fill="#2563eb"
+                fillOpacity={0.08}
+                stroke="#2563eb"
+                strokeWidth={1.4}
+                strokeDasharray="6 4"
+                pointerEvents="none"
+              />
+            )}
+
+            {/* Notes et flèches : au-dessus des équipements, ce sont elles qu'on vient lire. */}
+            {(diagram.annotations ?? [])
+              .filter((annotation) => annotation.kind !== 'zone')
+              .map((annotation) => (
+                <AnnotationShape
+                  key={annotation.id}
+                  annotation={annotation}
+                  selected={selectedAnnotations.includes(annotation.id)}
+                  editable={!locked}
+                  onPointerDown={onAnnotationPointerDownStable}
+                  onHandleDown={onAnnotationHandleDownStable}
+                  onDoubleClick={ouvrirEditionAnnotationStable}
+                />
+              ))}
+
+            {/* Poignées de tracé : au-dessus des équipements pour rester attrapables. */}
+            {display.links.map((link) => {
+              if (locked || !selectedLinks.includes(link.id) || !isRealLinkStable(link.id)) return null
+              const from = nodeById.get(link.from)
+              const to = nodeById.get(link.to)
+              if (!from || !to) return null
+              return (
+                <LinkHandles
+                  key={`handles-${link.id}`}
+                  link={link}
+                  from={from}
+                  to={to}
+                  style={linkStyle}
+                  offset={linkOffsets.get(link.id) ?? 0}
+                  onWaypointDown={(event, target, index) => beginWaypointDragStable(event, target, index, false)}
+                  onWaypointRemove={removeWaypointStable}
+                  onInsertDown={(event, target, index, point) =>
+                    beginWaypointDragStable(event, target, index, true, point)
+                  }
+                  onEndpointDown={beginEndpointDragStable}
+                  onEndpointReset={(target) => useDiagram.getState().clearLinkAttach(target.id)}
+                />
+              )
+            })}
+
+            {/*
+              Poignées des cadres de couche. Elles vivent dans la couche des poignées : posées
+              plus bas, le tracé de saisie d'une liaison les recouvrirait.
+            */}
+            {cadresCouches.map((cadre) => (
+              <g key={`poignees-couche-${cadre.rang}`} data-export="false">
+                {/* Poignée de déplacement, posée en marge du cadre : elle ne recouvre rien. */}
+                <g
+                  data-export="false"
+                  data-poignee={`couche-${cadre.rang}`}
+                  transform={`translate(${direction === 'TB' ? cadre.x - 9 : cadre.centreX - 14}, ${
+                    direction === 'TB' ? cadre.centreY - 14 : cadre.y - 9
+                  })`}
+                  style={{ cursor: locked ? 'default' : 'move' }}
+                  onPointerDown={(event) => beginLayerDragStable(event, cadre.rang, 'deplacer', cadre)}
+                >
+                  <title>Glisser pour déplacer toute la couche</title>
+                  <rect
+                    width={direction === 'TB' ? 18 : 28}
+                    height={direction === 'TB' ? 28 : 18}
+                    rx={6}
+                    fill="#ffffff"
+                    stroke="#cbd5e1"
+                    strokeWidth={1.2}
+                  />
+                  {[0, 1, 2].map((rangee) => (
+                    <g key={rangee} fill="#94a3b8">
+                      <circle cx={direction === 'TB' ? 7 : 9 + rangee * 5} cy={direction === 'TB' ? 9 + rangee * 5 : 7} r={1.3} />
+                      <circle cx={direction === 'TB' ? 11 : 9 + rangee * 5} cy={direction === 'TB' ? 9 + rangee * 5 : 11} r={1.3} />
+                    </g>
+                  ))}
+                </g>
+
+                {/* Bords longs : étaler ou resserrer. */}
+                {(direction === 'TB'
+                  ? [
+                      { bord: 'debut' as const, x: cadre.x, y: cadre.y, w: 10, h: cadre.height, curseur: 'ew-resize' },
+                      { bord: 'fin' as const, x: cadre.x + cadre.width - 10, y: cadre.y, w: 10, h: cadre.height, curseur: 'ew-resize' },
+                      { bord: 'marge' as const, x: cadre.x, y: cadre.y, w: cadre.width, h: 8, curseur: 'ns-resize' },
+                      { bord: 'marge' as const, x: cadre.x, y: cadre.y + cadre.height - 8, w: cadre.width, h: 8, curseur: 'ns-resize' },
+                    ]
+                  : [
+                      { bord: 'debut' as const, x: cadre.x, y: cadre.y, w: cadre.width, h: 10, curseur: 'ns-resize' },
+                      { bord: 'fin' as const, x: cadre.x, y: cadre.y + cadre.height - 10, w: cadre.width, h: 10, curseur: 'ns-resize' },
+                      { bord: 'marge' as const, x: cadre.x, y: cadre.y, w: 8, h: cadre.height, curseur: 'ew-resize' },
+                      { bord: 'marge' as const, x: cadre.x + cadre.width - 8, y: cadre.y, w: 8, h: cadre.height, curseur: 'ew-resize' },
+                    ]
+                ).map((poignee, index) => (
+                  <rect
+                    key={`poignee-${cadre.rang}-${poignee.bord}-${index}`}
+                    data-export="false"
+                    x={poignee.x}
+                    y={poignee.y}
+                    width={poignee.w}
+                    height={poignee.h}
+                    fill="transparent"
+                    style={{ cursor: locked ? 'default' : poignee.curseur }}
+                    onPointerDown={(event) => beginLayerDragStable(event, cadre.rang, poignee.bord, cadre)}
+                  >
+                    <title>
+                      {poignee.bord === 'marge'
+                        ? 'Glisser pour agrandir ou resserrer le cadre'
+                        : 'Glisser pour étaler ou resserrer les équipements de la couche'}
+                    </title>
+                  </rect>
+                ))}
+              </g>
+            ))}
+
+            {/*
+              Agrégats de liens : l'ovale qui encercle les brins d'un port-channel. Dessiné en
+              dernier, pour rester attrapable : les poignées de tracé et les bords de cadre de
+              couche sont des zones invisibles qui, sinon, passent devant l'anneau.
+            */}
+            {showLags &&
+              detail !== 'summary' &&
+              ovales.map(({ agregat, ovale }) => (
+                <AggregateShape
+                  key={agregat.id}
+                  agregat={agregat}
+                  ovale={ovale}
+                  surbrillance={agregat.membres.some((membre) => selectedLinks.includes(membre.id))}
+                  details={showSpeeds}
+                  editable={!locked}
+                  onSelect={
+                    locked
+                      ? undefined
+                      : () =>
+                          useDiagram
+                            .getState()
+                            .select({ links: agregat.membres.map((membre) => membre.id) })
+                  }
+                  onRingDown={(event) => beginLagDragStable(event, agregat, ovale, 'anneau')}
+                  onLabelDown={(event) => beginLagDragStable(event, agregat, ovale, 'etiquette')}
+                  onReset={() => {
+                    const store = useDiagram.getState()
+                    store.pushHistory()
+                    store.setLagPlacement(
+                      agregat.membres.map((membre) => membre.id),
+                      { shift: null, offset: null },
+                    )
+                    store.notify('Ovale replacé automatiquement.')
+                  }}
+                  onRename={() =>
+                    ouvrirEditionStable('agregat', agregat.membres.map((membre) => membre.id).join(','), agregat.nom, {
+                      x: ovale.labelX - 60,
+                      y: ovale.labelY - 10,
+                    })
+                  }
+                />
+              ))}
+
+            {/*
+              Analyse d'impact : un halo dit l'état de chaque équipement, sans toucher au dessin
+              du schéma lui-même — on doit pouvoir lire les deux en même temps.
+            */}
+            {impact && (
+              <g data-export="false" pointerEvents="none">
+                {display.nodes.map((node) => {
+                  if (node.group) return null
+                  const etat = impact.etats.get(node.id)
+                  if (!etat || etat === 'intact') return null
+                  return (
+                    <rect
+                      key={`impact-${node.id}`}
+                      x={node.x - NODE_W / 2 - 4}
+                      y={node.y - NODE_H / 2 - 4}
+                      width={NODE_W + 8}
+                      height={NODE_H + 8}
+                      rx={12}
+                      fill={COULEURS_IMPACT[etat]}
+                      fillOpacity={etat === 'panne' ? 0.2 : 0.11}
+                      stroke={COULEURS_IMPACT[etat]}
+                      strokeWidth={etat === 'panne' ? 2.4 : 1.8}
+                      strokeDasharray={etat === 'fragile' ? '6 4' : undefined}
+                    />
+                  )
+                })}
+                {/* Liaisons hors service : marquées d'une croix à mi-parcours. */}
+                {display.links.map((link) => {
+                  if (!impact.liensCoupes.has(link.id)) return null
+                  const geometry = geometries.get(link.id)
+                  if (!geometry) return null
+                  const milieu = pointAlong(geometry.points, pathLength(geometry.points) / 2, false, 0.5)
+                  return (
+                    <g
+                      key={`coupe-${link.id}`}
+                      stroke={COULEURS_IMPACT.panne}
+                      strokeWidth={2.4}
+                      strokeLinecap="round"
+                      transform={`translate(${milieu.x}, ${milieu.y})`}
+                    >
+                      <circle r={8} fill="#ffffff" stroke={COULEURS_IMPACT.panne} strokeWidth={1.6} />
+                      <path d="M -4 -4 l 8 8" />
+                      <path d="M 4 -4 l -8 8" />
+                    </g>
+                  )
+                })}
+
+                {/* Croix sur ce qui est déclaré en panne : l'état le plus fort se voit de loin. */}
+                {display.nodes.map((node) => {
+                  if (node.group || impact.etats.get(node.id) !== 'panne') return null
+                  return (
+                    <g key={`croix-${node.id}`} stroke={COULEURS_IMPACT.panne} strokeWidth={3} strokeLinecap="round">
+                      <path d={`M ${node.x - 14} ${node.y - 14} l 28 28`} />
+                      <path d={`M ${node.x + 14} ${node.y - 14} l -28 28`} />
+                    </g>
+                  )
+                })}
+              </g>
+            )}
+
+      </>
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [bands, bounds, cadresCouches, clusterVips, clusters, connectFrom, crossings, detail, diagram, direction, display, eteints, flagged, geometries, impact, labels, labelsLocked, linkOffsets, linkStyle, locked, nodeById, osi, ovales, rails, realIds, selectedAnnotations, selectedLinks, selectedNodes, showInterco, showIp, showLags, showLegend, showSpeeds, showVlans, sites, source, style, usagesAffiches, zones, beginEndpointDragStable, beginLabelDragStable, beginLagDragStable, beginLayerDragStable, beginWaypointDragStable, onAnnotationHandleDownStable, onAnnotationPointerDownStable, onLinkHoverStable, onLinkPointerDownStable, onNodeHoverStable, onNodePointerDownStable, ouvrirEditionStable, ouvrirEditionAnnotationStable, removeWaypointStable, isRealLinkStable],
+  )
+
+
   return (
     <div
       ref={containerRef}
@@ -1501,561 +2134,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
         {showGrid && <rect data-export="false" width="100%" height="100%" fill="url(#netschema-grid)" />}
 
         <g data-export-root transform={`translate(${view.tx}, ${view.ty}) scale(${view.zoom})`}>
-          {sites.map((site) => (
-            <g key={`site-${site.key}`} data-couche="groupe">
-              <rect
-                x={site.x}
-                y={site.y}
-                width={site.width}
-                height={site.height}
-                rx={22}
-                fill="#0f172a"
-                fillOpacity={0.03 * style.groupStrength}
-                stroke={style.groupStrength > 1 ? '#94a3b8' : '#cbd5e1'}
-                strokeWidth={1.6 * style.groupStrength}
-              />
-              {site.label && (
-                <text
-                  data-couche="groupe"
-                  data-renommer={`site:${site.label}`}
-                  x={site.x + 18}
-                  y={site.y + 22}
-                  fontSize={12.5}
-                  fontWeight={700}
-                  fill="#64748b"
-                  pointerEvents="all"
-                  style={{ cursor: 'text' }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation()
-                    ouvrirEdition('site', site.label, site.label, { x: site.x + 18, y: site.y + 10 })
-                  }}
-                >
-                  <title>Double-clic pour renommer ce site</title>
-                  {`SITE — ${site.label.toUpperCase()}`}
-                </text>
-              )}
-            </g>
-          ))}
-
-          {zones.map((zone) => (
-            <g key={`zone-${zone.key}`} data-couche="groupe">
-              <rect
-                x={zone.x}
-                y={zone.y}
-                width={zone.width}
-                height={zone.height}
-                rx={16}
-                fill="#0f172a"
-                fillOpacity={0.025 * style.groupStrength}
-                stroke="#94a3b8"
-                strokeWidth={1.2 * style.groupStrength}
-                strokeDasharray="7 6"
-              />
-              {zone.label && (
-                <text
-                  data-couche="groupe"
-                  data-renommer={`zone:${zone.label}`}
-                  x={zone.x + 14}
-                  y={zone.y + 17}
-                  fontSize={11}
-                  fontWeight={700}
-                  fill="#64748b"
-                  pointerEvents="all"
-                  style={{ cursor: 'text' }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation()
-                    ouvrirEdition('zone', zone.label, zone.label, { x: zone.x + 14, y: zone.y + 6 })
-                  }}
-                >
-                  <title>Double-clic pour renommer cette zone</title>
-                  {zone.label.toUpperCase()}
-                </text>
-              )}
-            </g>
-          ))}
-
-          {clusters.map((cluster) => (
-            <g key={`cluster-${cluster.key}`} data-couche="groupe">
-              <rect
-                x={cluster.x}
-                y={cluster.y}
-                width={cluster.width}
-                height={cluster.height}
-                rx={12}
-                fill="#db2777"
-                fillOpacity={0.04 * style.groupStrength}
-                stroke="#db2777"
-                strokeWidth={1.2 * style.groupStrength}
-                strokeDasharray="4 4"
-              />
-              {cluster.label && (
-                <text
-                  data-couche="groupe"
-                  data-renommer={`cluster:${cluster.label}`}
-                  x={cluster.x + 12}
-                  y={cluster.y + 16}
-                  fontSize={9.5}
-                  fontWeight={700}
-                  fill="#db2777"
-                  pointerEvents="all"
-                  style={{ cursor: 'text' }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation()
-                    ouvrirEdition('cluster', cluster.label, cluster.label, { x: cluster.x + 12, y: cluster.y + 6 })
-                  }}
-                >
-                  <title>Double-clic pour renommer cette grappe</title>
-                  {/* L'adresse virtuelle est une donnée d'exploitation : elle n'a rien à faire
-                      sur une vue de présentation. */}
-                  {`GRAPPE ${cluster.label}${
-                    style.annotations && clusterVips.get(cluster.label)
-                      ? ` · VIP ${clusterVips.get(cluster.label)}`
-                      : ''
-                  }`}
-                </text>
-              )}
-            </g>
-          ))}
-
-          {/*
-            Cadres de couche : saisissables. Le corps déplace la couche entière, les bords longs
-            l'étalent ou la resserrent, les bords en travers règlent la marge du cadre.
-          */}
-          {cadresCouches.map((cadre) => (
-            <g key={`couche-${cadre.rang}`} data-couche="bande">
-              {/* Le cadre ne prend pas les clics : à l'intérieur, on doit pouvoir saisir un
-                  équipement ou une liaison comme d'habitude. */}
-              <rect
-                data-cadre={`couche-${cadre.rang}`}
-                x={cadre.x}
-                y={cadre.y}
-                width={cadre.width}
-                height={cadre.height}
-                rx={14}
-                fill="none"
-                stroke="#cbd5e1"
-                strokeWidth={1}
-                strokeDasharray="2 6"
-                pointerEvents="none"
-              />
-
-            </g>
-          ))}
-
-          {/*
-            Rails VLAN : quand une couche est un domaine de diffusion, on la matérialise par
-            un trait de sa couleur. C'est le dessin classique du segment — tout le monde sur
-            la ligne se parle sans routeur.
-          */}
-          {rails.map((rail) => (
-            <g key={`rail-${rail.rank}`} data-couche="rail">
-              <line
-                x1={direction === 'TB' ? bounds.minX - 12 : rail.main}
-                y1={direction === 'TB' ? rail.main : bounds.minY - 12}
-                x2={direction === 'TB' ? bounds.maxX + 12 : rail.main}
-                y2={direction === 'TB' ? rail.main : bounds.maxY + 12}
-                stroke={rail.couleur}
-                strokeWidth={3.5}
-                strokeLinecap="round"
-                opacity={0.85}
-              />
-              {rail.attaches.map((point, index) => (
-                <line
-                  key={index}
-                  x1={point.x}
-                  y1={point.y}
-                  x2={direction === 'TB' ? point.x : rail.main}
-                  y2={direction === 'TB' ? rail.main : point.y}
-                  stroke={rail.couleur}
-                  strokeWidth={1.4}
-                  opacity={0.85}
-                />
-              ))}
-            </g>
-          ))}
-
-          {bands.map((band) =>
-            direction === 'TB' ? (
-              <text
-                key={band.rank}
-                data-couche="bande"
-                data-renommer={`layer:${band.rank}`}
-                x={bounds.minX - 28}
-                y={band.main + 4}
-                textAnchor="end"
-                fontSize={11}
-                fontWeight={700}
-                fill={diagram.layerColors?.[String(band.rank)] ?? '#94a3b8'}
-                pointerEvents="all"
-                style={{ cursor: 'text' }}
-                onPointerDown={(event) => event.stopPropagation()}
-                onDoubleClick={(event) => {
-                  event.stopPropagation()
-                  ouvrirEdition('layer', String(band.rank), band.label, {
-                    x: bounds.minX - 150,
-                    y: band.main - 8,
-                  })
-                }}
-              >
-                <title>Double-clic pour renommer cette couche</title>
-                {band.label}
-              </text>
-            ) : (
-              <text
-                key={band.rank}
-                data-couche="bande"
-                data-renommer={`layer:${band.rank}`}
-                x={band.main}
-                y={bounds.minY - 30}
-                textAnchor="middle"
-                fontSize={11}
-                fontWeight={700}
-                fill={diagram.layerColors?.[String(band.rank)] ?? '#94a3b8'}
-                pointerEvents="all"
-                style={{ cursor: 'text' }}
-                onPointerDown={(event) => event.stopPropagation()}
-                onDoubleClick={(event) => {
-                  event.stopPropagation()
-                  ouvrirEdition('layer', String(band.rank), band.label, {
-                    x: band.main - 60,
-                    y: bounds.minY - 44,
-                  })
-                }}
-              >
-                <title>Double-clic pour renommer cette couche</title>
-                {band.label}
-              </text>
-            ),
-          )}
-
-          {/*
-            Cadres d'annotation : en fond, comme les cadres de groupe — ils délimitent un
-            périmètre de travaux ou de projet, pas un équipement.
-          */}
-          {(diagram.annotations ?? [])
-            .filter((annotation) => annotation.kind === 'zone')
-            .map((annotation) => (
-              <AnnotationShape
-                key={annotation.id}
-                annotation={annotation}
-                selected={selectedAnnotations.includes(annotation.id)}
-                editable={!locked}
-                onPointerDown={onAnnotationPointerDown}
-                onHandleDown={onAnnotationHandleDown}
-                onDoubleClick={ouvrirEditionAnnotation}
-              />
-            ))}
-
-          {display.links.map((link) => {
-            const geometry = geometries.get(link.id)
-            if (!geometry) return null
-            return (
-              <LinkShape
-                key={link.id}
-                link={link}
-                geometry={geometry}
-                selected={selectedLinks.includes(link.id)}
-                labels={labels.get(link.id) ?? []}
-                hops={crossings.get(link.id) ?? []}
-                color={linkColorFor(link, osi, diagram.vlans) ?? LINKS[link.kind].color}
-                interco={showInterco ? marqueInterconnexion(link, usagesAffiches) : undefined}
-                dimmed={display.dimmed.has(link.id) || eteints?.links.has(link.id) === true}
-                editable={!locked && isRealLink(link.id)}
-                labelsEditable={!locked && !labelsLocked}
-                style={style}
-                onPointerDown={onLinkPointerDown}
-                onHover={onLinkHover}
-                onLabelDown={beginLabelDrag}
-                onLabelReset={(target, label) => {
-                  const store = useDiagram.getState()
-                  store.pushHistory()
-                  store.setLabelOffset(target.id, label.which, null)
-                }}
-              />
-            )
-          })}
-
-          {source && cursor && (
-            <path
-              data-export="false"
-              d={`M ${source.x} ${source.y} L ${cursor.x} ${cursor.y}`}
-              stroke="#059669"
-              strokeWidth={2}
-              strokeDasharray="6 5"
-              fill="none"
-              pointerEvents="none"
-            />
-          )}
-
-          {display.nodes.map((node) => {
-            const own = realIds.get(node.id) ?? [node.id]
-            return (
-              <NodeShape
-                key={node.id}
-                node={node}
-                selected={own.every((id) => selectedNodes.includes(id))}
-                isConnectSource={connectFrom === node.id}
-                showIp={showIp}
-                showVlans={showVlans}
-                flagged={own.some((id) => flagged.has(id))}
-                dimmed={display.dimmed.has(node.id) || eteints?.nodes.has(node.id) === true}
-                style={style}
-                onPointerDown={onNodePointerDown}
-                onDoubleClick={() => node.group && useDiagram.getState().toggleCollapse(node.group.key)}
-                onHover={onNodeHover}
-              />
-            )
-          })}
-
-          {/*
-            Légende et cartouche : posés sous le schéma, dans le même repère. Le cadrage de
-            l'export les englobe donc naturellement, sans mise en page particulière.
-          */}
-          {showLegend && (
-            <LegendShape diagram={diagram} x={bounds.minX} y={bounds.maxY + 46} />
-          )}
-          {diagram.titleBlock?.show && (
-            <TitleBlockShape
-              diagram={diagram}
-              x={Math.max(
-                bounds.maxX - titleBlockSize(diagram).width,
-                showLegend ? bounds.minX + legendSize(diagram).width + 24 : bounds.minX,
-              )}
-              y={bounds.maxY + 46}
-            />
-          )}
-
-          {lasso && (lasso.width > 2 || lasso.height > 2) && (
-            <rect
-              data-export="false"
-              x={lasso.x}
-              y={lasso.y}
-              width={lasso.width}
-              height={lasso.height}
-              fill="#2563eb"
-              fillOpacity={0.08}
-              stroke="#2563eb"
-              strokeWidth={1.4}
-              strokeDasharray="6 4"
-              pointerEvents="none"
-            />
-          )}
-
-          {/* Notes et flèches : au-dessus des équipements, ce sont elles qu'on vient lire. */}
-          {(diagram.annotations ?? [])
-            .filter((annotation) => annotation.kind !== 'zone')
-            .map((annotation) => (
-              <AnnotationShape
-                key={annotation.id}
-                annotation={annotation}
-                selected={selectedAnnotations.includes(annotation.id)}
-                editable={!locked}
-                onPointerDown={onAnnotationPointerDown}
-                onHandleDown={onAnnotationHandleDown}
-                onDoubleClick={ouvrirEditionAnnotation}
-              />
-            ))}
-
-          {/* Poignées de tracé : au-dessus des équipements pour rester attrapables. */}
-          {display.links.map((link) => {
-            if (locked || !selectedLinks.includes(link.id) || !isRealLink(link.id)) return null
-            const from = nodeById.get(link.from)
-            const to = nodeById.get(link.to)
-            if (!from || !to) return null
-            return (
-              <LinkHandles
-                key={`handles-${link.id}`}
-                link={link}
-                from={from}
-                to={to}
-                style={linkStyle}
-                offset={linkOffsets.get(link.id) ?? 0}
-                onWaypointDown={(event, target, index) => beginWaypointDrag(event, target, index, false)}
-                onWaypointRemove={removeWaypoint}
-                onInsertDown={(event, target, index, point) =>
-                  beginWaypointDrag(event, target, index, true, point)
-                }
-                onEndpointDown={beginEndpointDrag}
-                onEndpointReset={(target) => useDiagram.getState().clearLinkAttach(target.id)}
-              />
-            )
-          })}
-
-          {/*
-            Poignées des cadres de couche. Elles vivent dans la couche des poignées : posées
-            plus bas, le tracé de saisie d'une liaison les recouvrirait.
-          */}
-          {cadresCouches.map((cadre) => (
-            <g key={`poignees-couche-${cadre.rang}`} data-export="false">
-              {/* Poignée de déplacement, posée en marge du cadre : elle ne recouvre rien. */}
-              <g
-                data-export="false"
-                data-poignee={`couche-${cadre.rang}`}
-                transform={`translate(${direction === 'TB' ? cadre.x - 9 : cadre.centreX - 14}, ${
-                  direction === 'TB' ? cadre.centreY - 14 : cadre.y - 9
-                })`}
-                style={{ cursor: locked ? 'default' : 'move' }}
-                onPointerDown={(event) => beginLayerDrag(event, cadre.rang, 'deplacer', cadre)}
-              >
-                <title>Glisser pour déplacer toute la couche</title>
-                <rect
-                  width={direction === 'TB' ? 18 : 28}
-                  height={direction === 'TB' ? 28 : 18}
-                  rx={6}
-                  fill="#ffffff"
-                  stroke="#cbd5e1"
-                  strokeWidth={1.2}
-                />
-                {[0, 1, 2].map((rangee) => (
-                  <g key={rangee} fill="#94a3b8">
-                    <circle cx={direction === 'TB' ? 7 : 9 + rangee * 5} cy={direction === 'TB' ? 9 + rangee * 5 : 7} r={1.3} />
-                    <circle cx={direction === 'TB' ? 11 : 9 + rangee * 5} cy={direction === 'TB' ? 9 + rangee * 5 : 11} r={1.3} />
-                  </g>
-                ))}
-              </g>
-
-              {/* Bords longs : étaler ou resserrer. */}
-              {(direction === 'TB'
-                ? [
-                    { bord: 'debut' as const, x: cadre.x, y: cadre.y, w: 10, h: cadre.height, curseur: 'ew-resize' },
-                    { bord: 'fin' as const, x: cadre.x + cadre.width - 10, y: cadre.y, w: 10, h: cadre.height, curseur: 'ew-resize' },
-                    { bord: 'marge' as const, x: cadre.x, y: cadre.y, w: cadre.width, h: 8, curseur: 'ns-resize' },
-                    { bord: 'marge' as const, x: cadre.x, y: cadre.y + cadre.height - 8, w: cadre.width, h: 8, curseur: 'ns-resize' },
-                  ]
-                : [
-                    { bord: 'debut' as const, x: cadre.x, y: cadre.y, w: cadre.width, h: 10, curseur: 'ns-resize' },
-                    { bord: 'fin' as const, x: cadre.x, y: cadre.y + cadre.height - 10, w: cadre.width, h: 10, curseur: 'ns-resize' },
-                    { bord: 'marge' as const, x: cadre.x, y: cadre.y, w: 8, h: cadre.height, curseur: 'ew-resize' },
-                    { bord: 'marge' as const, x: cadre.x + cadre.width - 8, y: cadre.y, w: 8, h: cadre.height, curseur: 'ew-resize' },
-                  ]
-              ).map((poignee, index) => (
-                <rect
-                  key={`poignee-${cadre.rang}-${poignee.bord}-${index}`}
-                  data-export="false"
-                  x={poignee.x}
-                  y={poignee.y}
-                  width={poignee.w}
-                  height={poignee.h}
-                  fill="transparent"
-                  style={{ cursor: locked ? 'default' : poignee.curseur }}
-                  onPointerDown={(event) => beginLayerDrag(event, cadre.rang, poignee.bord, cadre)}
-                >
-                  <title>
-                    {poignee.bord === 'marge'
-                      ? 'Glisser pour agrandir ou resserrer le cadre'
-                      : 'Glisser pour étaler ou resserrer les équipements de la couche'}
-                  </title>
-                </rect>
-              ))}
-            </g>
-          ))}
-
-          {/*
-            Agrégats de liens : l'ovale qui encercle les brins d'un port-channel. Dessiné en
-            dernier, pour rester attrapable : les poignées de tracé et les bords de cadre de
-            couche sont des zones invisibles qui, sinon, passent devant l'anneau.
-          */}
-          {showLags &&
-            detail !== 'summary' &&
-            ovales.map(({ agregat, ovale }) => (
-              <AggregateShape
-                key={agregat.id}
-                agregat={agregat}
-                ovale={ovale}
-                surbrillance={agregat.membres.some((membre) => selectedLinks.includes(membre.id))}
-                details={showSpeeds}
-                editable={!locked}
-                onSelect={
-                  locked
-                    ? undefined
-                    : () =>
-                        useDiagram
-                          .getState()
-                          .select({ links: agregat.membres.map((membre) => membre.id) })
-                }
-                onRingDown={(event) => beginLagDrag(event, agregat, ovale, 'anneau')}
-                onLabelDown={(event) => beginLagDrag(event, agregat, ovale, 'etiquette')}
-                onReset={() => {
-                  const store = useDiagram.getState()
-                  store.pushHistory()
-                  store.setLagPlacement(
-                    agregat.membres.map((membre) => membre.id),
-                    { shift: null, offset: null },
-                  )
-                  store.notify('Ovale replacé automatiquement.')
-                }}
-                onRename={() =>
-                  ouvrirEdition('agregat', agregat.membres.map((membre) => membre.id).join(','), agregat.nom, {
-                    x: ovale.labelX - 60,
-                    y: ovale.labelY - 10,
-                  })
-                }
-              />
-            ))}
-
-          {/*
-            Analyse d'impact : un halo dit l'état de chaque équipement, sans toucher au dessin
-            du schéma lui-même — on doit pouvoir lire les deux en même temps.
-          */}
-          {impact && (
-            <g data-export="false" pointerEvents="none">
-              {display.nodes.map((node) => {
-                if (node.group) return null
-                const etat = impact.etats.get(node.id)
-                if (!etat || etat === 'intact') return null
-                return (
-                  <rect
-                    key={`impact-${node.id}`}
-                    x={node.x - NODE_W / 2 - 4}
-                    y={node.y - NODE_H / 2 - 4}
-                    width={NODE_W + 8}
-                    height={NODE_H + 8}
-                    rx={12}
-                    fill={COULEURS_IMPACT[etat]}
-                    fillOpacity={etat === 'panne' ? 0.2 : 0.11}
-                    stroke={COULEURS_IMPACT[etat]}
-                    strokeWidth={etat === 'panne' ? 2.4 : 1.8}
-                    strokeDasharray={etat === 'fragile' ? '6 4' : undefined}
-                  />
-                )
-              })}
-              {/* Liaisons hors service : marquées d'une croix à mi-parcours. */}
-              {display.links.map((link) => {
-                if (!impact.liensCoupes.has(link.id)) return null
-                const geometry = geometries.get(link.id)
-                if (!geometry) return null
-                const milieu = pointAlong(geometry.points, pathLength(geometry.points) / 2, false, 0.5)
-                return (
-                  <g
-                    key={`coupe-${link.id}`}
-                    stroke={COULEURS_IMPACT.panne}
-                    strokeWidth={2.4}
-                    strokeLinecap="round"
-                    transform={`translate(${milieu.x}, ${milieu.y})`}
-                  >
-                    <circle r={8} fill="#ffffff" stroke={COULEURS_IMPACT.panne} strokeWidth={1.6} />
-                    <path d="M -4 -4 l 8 8" />
-                    <path d="M 4 -4 l -8 8" />
-                  </g>
-                )
-              })}
-
-              {/* Croix sur ce qui est déclaré en panne : l'état le plus fort se voit de loin. */}
-              {display.nodes.map((node) => {
-                if (node.group || impact.etats.get(node.id) !== 'panne') return null
-                return (
-                  <g key={`croix-${node.id}`} stroke={COULEURS_IMPACT.panne} strokeWidth={3} strokeLinecap="round">
-                    <path d={`M ${node.x - 14} ${node.y - 14} l 28 28`} />
-                    <path d={`M ${node.x + 14} ${node.y - 14} l -28 28`} />
-                  </g>
-                )
-              })}
-            </g>
-          )}
-
+          {scene}
           {/*
             Repères d'accroche : ils n'apparaissent qu'au moment utile — quand on tire une
             extrémité ou qu'on relie — et disent, avant le clic, où la liaison se branchera.
@@ -2231,6 +2310,23 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
             </div>
           )}
         </div>
+      )}
+
+      {/*
+        Minicarte : elle ne s'affiche que quand elle sert, c'est-à-dire quand le schéma
+        dépasse le champ visible. Sur un plan de dix boîtes, elle ne ferait que prendre la
+        place d'un coin du dessin.
+      */}
+      {minimapOpen && deborde && (
+        <Minimap
+          nodes={display.nodes}
+          links={display.links}
+          selection={selectedNodes}
+          view={view}
+          canvasSize={canvasSize}
+          setView={useDiagram.getState().setView}
+          onClose={() => useDiagram.getState().setPanelOpen('minicarte', false)}
+        />
       )}
 
       {(display.hiddenNodes > 0 ||
