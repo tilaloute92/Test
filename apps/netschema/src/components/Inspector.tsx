@@ -14,6 +14,7 @@ import {
   agregats,
   formaterDebit,
   MODES_LACP,
+  paireProbable,
   type Agregat,
   type ModeLacp,
 } from '../lib/aggregates'
@@ -1344,6 +1345,22 @@ function AgregatResume({ link }: { link: NetLink }) {
   if (concernes.length === 0) {
     const nom = (link.lag ?? link.lagA ?? link.lagB ?? '').trim()
     if (!nom) return null
+    /*
+      Avant de conseiller un renommage, on regarde si le brin n'est pas la moitié d'une paire.
+      Un vPC 23 s'écrit « Po23 » sur chacun des deux châssis : la saisie est juste, c'est la
+      grappe qui manque pour que les deux moitiés se rejoignent. Conseiller là un renommage
+      ferait corriger ce qui était correct.
+    */
+    const paire = paireProbable(diagram, link)
+    if (paire) {
+      return (
+        <p className="rounded-md bg-amber-50 p-2 text-[11px] leading-snug text-amber-900">
+          « {paire.nom} » porte le même nom sur {paire.chassis.join(' et ')}. Si ces châssis
+          forment une paire (vPC, MLAG, VSX, VLT…), déclarez-les dans la <b>même grappe</b> —
+          le faisceau sera alors reconnu comme un seul agrégat réparti.
+        </p>
+      )
+    }
     return (
       <p className="rounded-md bg-amber-50 p-2 text-[11px] leading-snug text-amber-900">
         « {nom} » ne compte qu’un seul brin : un agrégat d’un membre n’apporte ni débit ni

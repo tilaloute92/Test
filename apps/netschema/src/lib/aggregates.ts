@@ -120,10 +120,55 @@ export function agregats(diagram: { nodes: NetNode[]; links: NetLink[] }): Agreg
     }
   }
 
+  /*
+    Port-channel nommé côté châssis, dans une paire vPC / MLAG / VSX.
+
+    C'est ainsi qu'on le configure vraiment : le vPC 23 se traduit par un « Po23 » sur chacun
+    des deux Nexus, et l'équipement d'en face n'a qu'un seul bond. Pris isolément, chaque
+    châssis n'a donc qu'un brin dans son Po23 — et le faisceau, qui existe bel et bien,
+    passait inaperçu. On les réunit quand trois conditions tiennent ensemble : même nom de
+    bundle, même équipement en face, et des châssis déclarés dans une même grappe. La grappe
+    est ce qui distingue une paire d'un hasard de numérotation.
+  */
+  const orphelins = [...groupes.entries()].filter(([, groupe]) => groupe.membres.length === 1)
+  const paires = new Map<string, { nom: string; cles: string[]; membres: NetLink[]; chassis: string[]; face: string }>()
+  for (const [cle, groupe] of orphelins) {
+    const lien = groupe.membres[0]
+    const face = lien.from === groupe.noeud ? lien.to : lien.from
+    if (!parId.has(face)) continue
+    const grappe = parId.get(groupe.noeud)?.cluster?.trim()
+    if (!grappe) continue
+    const index = `${face}~${groupe.nom.toLowerCase()}~${grappe.toLowerCase()}`
+    const existante = paires.get(index)
+    if (existante) {
+      existante.cles.push(cle)
+      existante.membres.push(lien)
+      existante.chassis.push(groupe.noeud)
+    } else {
+      paires.set(index, { nom: groupe.nom, cles: [cle], membres: [lien], chassis: [groupe.noeud], face })
+    }
+  }
+  /** Groupes absorbés par un faisceau multi-châssis : ils ne doivent plus compter pour un. */
+  const absorbes = new Set<string>()
+  for (const paire of paires.values()) {
+    if (paire.cles.length < 2) continue
+    for (const cle of paire.cles) absorbes.add(cle)
+    /*
+      L'équipement d'en face devient le propriétaire : c'est de son côté que le faisceau n'en
+      fait qu'un, exactement comme lorsque le nom est saisi de ce côté-là. S'il porte déjà le
+      même nom et un faisceau complet — le bundle est alors documenté des deux côtés —, on lui
+      laisse la main plutôt que d'écraser ce qu'il décrit.
+    */
+    const cleFace = `${paire.face}~${paire.nom.toLowerCase()}`
+    if ((groupes.get(cleFace)?.membres.length ?? 0) >= 2) continue
+    groupes.set(cleFace, { noeud: paire.face, nom: paire.nom, membres: paire.membres })
+  }
+
   const sortie: Agregat[] = []
   const vus = new Set<string>()
 
   for (const [cle, groupe] of groupes) {
+    if (absorbes.has(cle)) continue
     if (groupe.membres.length < 2) continue
     const pairs = [
       ...new Set(groupe.membres.map((link) => (link.from === groupe.noeud ? link.to : link.from))),
@@ -446,4 +491,38 @@ export function ovaleAgregat(
     labelX,
     labelY,
   }
+}
+
+/**
+ * Le bundle isolé est-il en fait la moitié d'une paire ?
+ *
+ * Même nom de port-channel, même équipement en face, deux châssis différents : la
+ * configuration d'un vPC, d'un MLAG ou d'un VSX, à ceci près que les châssis ne sont pas
+ * déclarés dans une même grappe — et sans cette déclaration, rien ne permet de distinguer une
+ * paire de deux numérotations qui se ressemblent. Sert à dire à l'exploitant ce qui manque
+ * vraiment, plutôt que de lui conseiller un renommage qui serait faux.
+ */
+export function paireProbable(
+  diagram: { nodes: NetNode[]; links: NetLink[] },
+  link: NetLink,
+): { nom: string; chassis: string[] } | null {
+  const parId = new Map(diagram.nodes.map((node) => [node.id, node]))
+  for (const noeud of [link.from, link.to]) {
+    const nom = nomAgregat(link, noeud)
+    if (!nom) continue
+    const face = link.from === noeud ? link.to : link.from
+    const jumeaux = diagram.links.filter((autre) => {
+      if (autre.id === link.id) return false
+      if (autre.from !== face && autre.to !== face) return false
+      const voisin = autre.from === face ? autre.to : autre.from
+      if (voisin === noeud) return false
+      return nomAgregat(autre, voisin)?.toLowerCase() === nom.toLowerCase()
+    })
+    if (jumeaux.length === 0) continue
+    const chassis = [noeud, ...jumeaux.map((autre) => (autre.from === face ? autre.to : autre.from))]
+      .map((id) => parId.get(id)?.name)
+      .filter((valeur): valeur is string => !!valeur)
+    return { nom, chassis }
+  }
+  return null
 }
