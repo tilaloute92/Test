@@ -319,7 +319,7 @@ export const MECANISMES_HA: MecanismeHa[] = [
     noteDonnees:
       "Les deux Nexus commutent le trafic de l'agrégat en parallèle. La perte d'un membre reporte tout sur l'autre, et le peer-link doit alors écouler le trafic des ports orphelins : dimensionnez-le pour cela, pas pour la seule synchronisation.",
     vendors: ['cisco'],
-    kinds: ['core-switch', 'leaf', 'spine', 'switch'],
+    kinds: ['core-switch', 'leaf', 'spine', 'switch', 'access-switch'],
     membres: { min: 2, max: 2 },
     lien: { kind: ['stack', 'trunk'], nom: 'peer-link + peer-keepalive' },
     gammes: ['nexus', 'n[59]k'],
@@ -346,7 +346,7 @@ export const MECANISMES_HA: MecanismeHa[] = [
     noteDonnees:
       "Les deux commutateurs acheminent en permanence ; l'ISL reprend le trafic des ports non doublés quand un membre tombe.",
     vendors: ['aruba', 'hpe'],
-    kinds: ['core-switch', 'leaf', 'switch'],
+    kinds: ['core-switch', 'leaf', 'switch', 'access-switch'],
     membres: { min: 2, max: 2 },
     lien: { kind: ['stack', 'trunk'], nom: 'ISL + keepalive' },
     gammes: ['cx (8|9|10)', '8[0-9]00', '9300', '10000'],
@@ -373,7 +373,7 @@ export const MECANISMES_HA: MecanismeHa[] = [
     noteDonnees:
       "Les deux châssis acheminent en parallèle. Le peer-link n'est pas un lien de secours : il porte le trafic des équipements raccordés à un seul côté.",
     vendors: [],
-    kinds: ['core-switch', 'leaf', 'switch'],
+    kinds: ['core-switch', 'leaf', 'switch', 'access-switch'],
     membres: { min: 2, max: 2 },
     lien: { kind: ['stack', 'trunk'], nom: 'peer-link + peer-keepalive' },
     roles: ['active-active'],
@@ -388,7 +388,7 @@ export const MECANISMES_HA: MecanismeHa[] = [
     noteDonnees:
       "Les deux châssis acheminent en parallèle ; le VLTi écoule en plus le trafic orphelin à la perte d'un uplink.",
     vendors: ['dell'],
-    kinds: ['core-switch', 'leaf', 'switch'],
+    kinds: ['core-switch', 'leaf', 'switch', 'access-switch'],
     membres: { min: 2, max: 2 },
     lien: { kind: ['stack', 'trunk'], nom: 'VLTi' },
     roles: ['active-active'],
@@ -403,7 +403,7 @@ export const MECANISMES_HA: MecanismeHa[] = [
     noteDonnees:
       "Les deux équipements acheminent en parallèle ; ICCP ne porte que l'état.",
     vendors: ['juniper', 'nokia'],
-    kinds: ['core-switch', 'leaf', 'switch'],
+    kinds: ['core-switch', 'leaf', 'switch', 'access-switch'],
     membres: { min: 2, max: 2 },
     lien: { kind: ['stack', 'trunk'], nom: 'ICL + ICCP' },
     roles: ['active-active'],
@@ -418,7 +418,7 @@ export const MECANISMES_HA: MecanismeHa[] = [
     noteDonnees:
       "Les deux commutateurs acheminent en parallèle ; le peer-link porte l'état et le trafic orphelin.",
     vendors: ['huawei'],
-    kinds: ['core-switch', 'leaf', 'switch'],
+    kinds: ['core-switch', 'leaf', 'switch', 'access-switch'],
     membres: { min: 2, max: 2 },
     lien: { kind: ['stack', 'trunk'], nom: 'peer-link + liaison de détection' },
     roles: ['active-active'],
