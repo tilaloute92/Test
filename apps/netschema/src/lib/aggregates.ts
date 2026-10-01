@@ -1,5 +1,17 @@
 import { debitEnMbps } from './paths'
+import { constructeurDe, mecanismesPour } from './haTech'
 import { NODE_H, NODE_W, type NetLink, type NetNode } from '../types'
+
+/** Équipements dont le vocabulaire de paire est celui des commutateurs (vPC, VSX, MLAG…). */
+const COMMUTATEURS = new Set([
+  'core-switch',
+  'switch',
+  'access-switch',
+  'spine',
+  'leaf',
+  'industrial-switch',
+  'san-switch',
+])
 
 /**
  * Agrégats de liens — port-channels, bundles, LAG.
@@ -221,9 +233,23 @@ function mesurer(
       .filter((node): node is NetNode => !!node)
     const mecanismes = [...new Set(peers.map((node) => node.haTech?.trim()).filter(Boolean))]
     const grappes = [...new Set(peers.map((node) => node.cluster?.trim()).filter(Boolean))]
-    if (mecanismes.length === 0) {
+    /*
+      On ne reproche que ce qui peut être corrigé. Le champ « Mécanisme de bascule » ne
+      s'affiche que si le catalogue en connaît au moins un pour le type d'équipement : le
+      réclamer à une paire qui n'en a aucun à choisir laisse l'exploitant devant un
+      avertissement qu'aucune saisie ne fait taire.
+    */
+    const choixPossible = peers.some((node) => {
+      const { propres, normalises, autres } = mecanismesPour(node.kind, constructeurDe(node.vendor, node.model))
+      return propres.length + normalises.length + autres.length > 0
+    })
+    if (mecanismes.length === 0 && choixPossible) {
+      // Le vocabulaire suit les équipements : deux pare-feu ne font pas un vPC.
+      const commutateurs = peers.every((node) => COMMUTATEURS.has(node.kind))
       reserves.push(
-        'Agrégat réparti sur deux châssis sans mécanisme déclaré côté réseau : il faut un vPC, un VSX, un MLAG, un VLT ou une pile pour que les deux se présentent comme un seul.',
+        commutateurs
+          ? 'Agrégat réparti sur deux châssis sans mécanisme déclaré côté réseau : il faut un vPC, un VSX, un MLAG, un VLT ou une pile pour que les deux se présentent comme un seul.'
+          : 'Agrégat réparti sur deux équipements sans mécanisme de bascule déclaré : sans lui, rien ne dit que les deux se présentent comme un seul en face de l’agrégat. Renseignez-le dans l’inspecteur, bloc Haute disponibilité.',
       )
     } else if (grappes.length > 1) {
       reserves.push('Les châssis d’en face n’appartiennent pas à la même grappe.')

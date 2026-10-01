@@ -178,7 +178,14 @@ export function cleConstructeur(valeur: string): string {
 }
 
 const PARE_FEU = ['firewall', 'ngfw']
-const CALCUL = ['hypervisor', 'hci', 'server', 'baremetal']
+/*
+  Boîtiers qui se déploient en paire actif/passif comme un pare-feu : un lien de
+  synchronisation dédié, une adresse virtuelle, un seul membre qui traite. Sans eux dans cette
+  liste, le champ « Mécanisme de bascule » ne s'affiche pas pour ces équipements — et les
+  contrôles qui en réclament un deviennent impossibles à satisfaire.
+*/
+const BOITIERS_AP = [...PARE_FEU, 'vpn-concentrator', 'ips', 'sbc', 'ot-gateway']
+const CALCUL = ['hypervisor', 'hci', 'server', 'baremetal', 'gpu-server']
 const STOCKAGE = ['storage', 'nvme-storage', 'object-storage']
 
 export const MECANISMES_HA: MecanismeHa[] = [
@@ -373,7 +380,7 @@ export const MECANISMES_HA: MecanismeHa[] = [
     noteDonnees:
       "Les deux châssis acheminent en parallèle. Le peer-link n'est pas un lien de secours : il porte le trafic des équipements raccordés à un seul côté.",
     vendors: [],
-    kinds: ['core-switch', 'leaf', 'switch', 'access-switch'],
+    kinds: ['core-switch', 'leaf', 'switch', 'access-switch', 'spine'],
     membres: { min: 2, max: 2 },
     lien: { kind: ['stack', 'trunk'], nom: 'peer-link + peer-keepalive' },
     roles: ['active-active'],
@@ -792,7 +799,7 @@ export const MECANISMES_HA: MecanismeHa[] = [
     noteDonnees:
       "Le passif ne traite aucun paquet avant la bascule : dimensionnez-le comme l'actif.",
     vendors: [],
-    kinds: PARE_FEU,
+    kinds: BOITIERS_AP,
     membres: { min: 2, max: 2 },
     lien: { kind: ['heartbeat'], nom: 'lien de synchronisation dédié' },
     vip: true,

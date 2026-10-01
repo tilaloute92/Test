@@ -14,7 +14,7 @@
 import { agregats } from './aggregates'
 import { deviceMeta, LINKS, rankOf } from './catalog'
 import { auditDiagram } from './ha'
-import { mecanismeHa, planDeDonneesEffectif } from './haTech'
+import { constructeurDe, mecanismeHa, mecanismesPour, planDeDonneesEffectif } from './haTech'
 import { LIENS_DE_GRAPPE, usagesVlans } from './vlanUsage'
 import { porteeVlans } from './vlanReach'
 import { controlerMatrice } from './flows'
@@ -524,8 +524,21 @@ function analyserPage(
     if (liste) liste.push(node)
     else grappes.set(cluster, [node])
   }
+  /*
+    On ne reproche que ce qui peut être corrigé : le champ « Mécanisme de bascule » ne
+    s'affiche que pour les types dont le catalogue connaît au moins un mécanisme. Réclamer
+    l'information à une grappe de switches industriels ou de switches SAN, qui n'ont rien à
+    choisir, laisse un reproche qu'aucune saisie ne fait taire.
+  */
+  const peutChoisir = (node: NetNode) => {
+    const { propres, normalises, autres } = mecanismesPour(node.kind, constructeurDe(node.vendor, node.model))
+    return propres.length + normalises.length + autres.length > 0
+  }
   const sansMecanisme = [...grappes.entries()].filter(
-    ([, membres]) => membres.length > 1 && !membres.some((membre) => rempli(membre.haTech)),
+    ([, membres]) =>
+      membres.length > 1 &&
+      !membres.some((membre) => rempli(membre.haTech)) &&
+      membres.some(peutChoisir),
   )
   if (sansMecanisme.length > 0) {
     constats.push({
@@ -585,7 +598,8 @@ function analyserPage(
         .map(([nom]) => nom)
         .slice(0, 5)
         .join(', ')} : ces mécanismes s’exploitent dans les deux modes, et le choix change le dimensionnement autant que le câblage. Tant qu’il n’est pas écrit, le dossier ne dit pas combien de trafic chaque membre doit pouvoir absorber.`,
-      action: 'Déclarez le rôle des membres : « Actif / passif » ou « Actif / actif ».',
+      action:
+        'Déclarez le rôle de chaque membre dans l’inspecteur : « Actif (maître) » et « Passif (secours) » pour une paire actif/passif, « Actif / actif » des deux côtés sinon.',
       cibles: modeIndecis.flatMap(([, membres]) => membres.map((membre) => membre.id)),
       page: suffixe,
     })
