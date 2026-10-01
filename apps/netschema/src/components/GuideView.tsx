@@ -1351,6 +1351,50 @@ deux onduleurs`}</pre>
             ]}
           />
 
+          <p className="pt-1 text-[12.5px] font-semibold text-slate-700">
+            Contrôles de cohérence L2 / L3
+          </p>
+          <P>
+            Le bas du panneau <b>L2/L3</b> liste ce qui ne tient pas debout, du plus grave au
+            plus anodin, et un clic sélectionne les équipements concernés. Deux familles s'y
+            mêlent : la forme du plan d'adressage — VLAN non déclaré, sous-réseau illisible,
+            adresse hors de sa plage —, et ce que la configuration produirait réellement sur le
+            terrain.
+          </P>
+          <List
+            items={[
+              <>
+                <b>VLAN natif discordant</b> sur un trunk : les trames non étiquetées changent
+                de VLAN en traversant le lien. Deux domaines se rejoignent sans passer par
+                aucun filtrage — le défaut le plus dangereux d'un trunk.
+              </>,
+              <>
+                <b>VLAN autorisés asymétriques</b> : un VLAN permis d'un seul côté est accepté
+                puis jeté, sans message d'erreur. C'est la panne « ça marche sauf pour ce
+                service-là ».
+              </>,
+              <>
+                <b>VLAN coupé en plusieurs domaines</b> : même numéro, même sous-réseau, mais
+                deux réseaux qu'aucun trunk ne relie.
+              </>,
+              <>
+                <b>MTU hétérogènes</b> sur le chemin d'un VLAN : le plus petit s'impose à tout
+                le domaine, et les grandes trames disparaissent par intermittence.
+              </>,
+              <>
+                <b>Niveau 3</b> : passerelle posée sur une adresse de réseau ou de diffusion,
+                même passerelle sur deux VLAN, sous-réseau trop petit pour les équipements qui
+                y sont documentés, VLAN adressé qu'aucun routeur n'atteint, plan de liaison qui
+                recouvre celui d'un VLAN.
+              </>,
+              <>
+                Chaque règle ne se déclenche que sur des données réellement saisies : un champ
+                vide ne vaut pas un reproche. Les plus graves remontent dans le{' '}
+                <b>dossier technique</b>.
+              </>,
+            ]}
+          />
+
           <p className="pt-1 text-[12.5px] font-semibold text-slate-700">Projecteur VLAN</p>
           <P>
             Indépendant des trois lectures, et disponible dans <b>toutes</b> les vues : le
@@ -1770,7 +1814,7 @@ deux onduleurs`}</pre>
     {
       id: 'imports',
       title: 'Imports et exports',
-      keywords: 'import export drawio draw.io diagrams csv json png svg image texte visio sauvegarde fichier',
+      keywords: 'import export drawio draw.io diagrams csv json png svg image texte visio vsdx microsoft sauvegarde fichier',
       body: (
         <>
           <List
@@ -1803,6 +1847,15 @@ deux onduleurs`}</pre>
                 <b>PNG et SVG</b> : l'export reprend exactement ce qui est affiché — niveau de
                 détail, groupes repliés, vue OSI comprise. Le SVG reste modifiable dans un
                 éditeur vectoriel.
+              </>,
+              <>
+                <b>Visio (.vsdx)</b> : module Dossier → « Exporter en Visio ». Formes et
+                connecteurs natifs, un onglet par page : chaque équipement reste déplaçable,
+                recolorable et relié dans Visio, contrairement à une image collée. Les boîtes
+                sont des rectangles aux couleurs du catalogue, non les pictogrammes des gabarits
+                réseau de Microsoft, que l'on n'a pas le droit de redistribuer. Les étiquettes
+                de liaison se posent au milieu du câble : sur un plan dense, un « Réorganiser la
+                page » dans Visio les remet d'aplomb.
               </>,
             ]}
           />

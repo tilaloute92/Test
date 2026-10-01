@@ -19,6 +19,7 @@ import { LIENS_DE_GRAPPE, usagesVlans } from './vlanUsage'
 import { porteeVlans } from './vlanReach'
 import { controlerMatrice } from './flows'
 import { checkOsi, parseSubnet, usedVlans } from './osi'
+import { controlesCoherence } from './coherence'
 import { heightOf, isRackable } from './racks'
 import type { Diagram, HaRole, NetLink, NetNode } from '../types'
 
@@ -672,7 +673,20 @@ export function controlerDossier(pages: Diagram[], titre: string): RapportQualit
     })
   }
 
-  for (const constat of checkOsi(principale, usagesVlans(principale)).filter((item) => item.severity === 'critique').slice(0, 6)) {
+  /*
+    Contrôles L2/L3. Les critiques du plan d'adressage comme ceux de la cohérence de
+    configuration : un VLAN natif discordant ou un mode de port incompatible décrivent un
+    réseau qui ne fonctionne pas comme le document l'affirme, ce qui est exactement ce qu'une
+    revue de dossier doit relever. Les avertissements de cohérence remontent aussi, d'un cran
+    plus bas : ils ne cassent rien tout de suite, mais ils expliquent les pannes à venir.
+  */
+  const usagesPrincipale = usagesVlans(principale)
+  const coherence = controlesCoherence(principale, { usages: usagesPrincipale })
+  const l2l3 = [
+    ...checkOsi(principale, usagesPrincipale).filter((item) => item.severity === 'critique'),
+    ...coherence.filter((item) => item.severity === 'critique'),
+  ]
+  for (const constat of l2l3.slice(0, 6)) {
     constats.push({
       id: `osi:${constat.id}`,
       categorie: 'Adressage',
@@ -680,6 +694,17 @@ export function controlerDossier(pages: Diagram[], titre: string): RapportQualit
       titre: constat.title,
       detail: constat.detail,
       action: 'Onglet L2/L3 : corrigez la configuration documentée.',
+      cibles: constat.nodeIds,
+    })
+  }
+  for (const constat of coherence.filter((item) => item.severity === 'avertissement').slice(0, 6)) {
+    constats.push({
+      id: `coherence:${constat.id}`,
+      categorie: 'Adressage',
+      gravite: 'mineur',
+      titre: constat.title,
+      detail: constat.detail,
+      action: 'Onglet L2/L3 : vérifiez ce que cette configuration produit réellement.',
       cibles: constat.nodeIds,
     })
   }

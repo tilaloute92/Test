@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Btn, Checkbox, Field, TextInput } from './ui'
 import type { Severity } from '../lib/ha'
 import { checkOsi, LAYER_LABELS_OSI, vlanColor } from '../lib/osi'
+import { controlesCoherence } from '../lib/coherence'
 import { porteeVlans, resumePortee } from '../lib/vlanReach'
 import { USAGES_VLAN, usagesVlans, usageVlan } from '../lib/vlanUsage'
 import { EXEMPLE_VLANS, vlansVersCsv } from '../lib/vlanImport'
@@ -66,7 +67,17 @@ export function VlanPanel() {
   const setPropagation = useDiagram((s) => s.setVlanPropagation)
   const portees = useMemo(() => porteeVlans(diagram, propagation), [diagram, propagation])
   const usages = useMemo(() => usagesVlans(diagram, propagation), [diagram, propagation])
-  const findings = useMemo(() => checkOsi(diagram, usages), [diagram, usages])
+  /*
+    Deux familles de contrôles, une seule liste : « checkOsi » dit si le plan d'adressage est
+    bien formé, « controlesCoherence » dit ce que la configuration produirait sur le terrain.
+    L'exploitant ne fait pas la différence — il veut la liste de ce qui cloche, la plus grave
+    en premier.
+  */
+  const findings = useMemo(() => {
+    const tous = [...checkOsi(diagram, usages), ...controlesCoherence(diagram, { usages, propagation })]
+    const ordre = { critique: 0, avertissement: 1, info: 2 } as const
+    return tous.sort((a, b) => ordre[a.severity] - ordre[b.severity] || a.title.localeCompare(b.title))
+  }, [diagram, usages, propagation])
 
   const add = () => {
     const id = draft.id.trim()

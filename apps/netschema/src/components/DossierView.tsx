@@ -5,6 +5,7 @@ import { dossierTechnique } from '../lib/dossier'
 import { comparerDocuments, type RapportDiff } from '../lib/diff'
 import { downloadBlob, slugify } from '../lib/exportImage'
 import { versDrawio } from '../lib/drawioExport'
+import { versVisio } from '../lib/visio'
 import { inventoryToCsv } from '../lib/inventory'
 import { fluxVersCsv } from '../lib/flows'
 import { controlerDossier, type GraviteQualite } from '../lib/quality'
@@ -85,6 +86,11 @@ export function DossierView() {
     notify('Schéma exporté au format draw.io (une page par onglet).')
   }
 
+  const exporterVisio = () => {
+    downloadBlob(versVisio(pages, diagram.title), `${slugify(diagram.title)}.vsdx`)
+    notify('Schéma exporté au format Visio (.vsdx) : formes et connecteurs natifs, une page par onglet.')
+  }
+
   const comparer = async (file: File | undefined) => {
     if (!file) return
     try {
@@ -110,6 +116,9 @@ export function DossierView() {
             {enCours ? 'Génération…' : 'Dossier technique (imprimable)'}
           </Btn>
           <Btn onClick={exporterDrawio}>Exporter en draw.io</Btn>
+          <Btn onClick={exporterVisio} title="Fichier Visio .vsdx : formes et connecteurs modifiables">
+            Exporter en Visio
+          </Btn>
           <Btn
             onClick={() =>
               downloadBlob(
