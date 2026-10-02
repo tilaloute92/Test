@@ -121,7 +121,7 @@ const NETWORK: CatalogPack = {
     { id: 'wifi7', label: 'Borne Wi-Fi 7', rank: 5, icon: 'wifi', family: ACCESS, infrastructure: true, aliases: ['wifi 7', 'wi-fi 7', '802.11be', 'ap', 'borne'] },
     { id: 'wlan-controller', label: 'Contrôleur Wi-Fi (WLC)', rank: 5, icon: 'wlan-controller', family: ACCESS, infrastructure: true, critical: true, aliases: ['wlc', 'contrôleur wifi', 'controleur wi-fi', 'c9800', 'mobility conductor', 'smartzone', 'wlan'] },
     { id: 'wifi-bridge', label: 'Pont Wi-Fi / faisceau hertzien', rank: 1, icon: 'dish-link', family: EDGE, infrastructure: true, critical: true, aliases: ['pont', 'bridge', 'hertzien', 'ptp', 'faisceau', 'airfiber', 'interbâtiment'] },
-    { id: 'modem', label: 'Modem / ONT opérateur', rank: 0, icon: 'modem', family: EXT, infrastructure: true, critical: true, aliases: ['modem', 'ont', 'ntu', 'box', 'terminaison', 'démarcation', 'sdsl'] },
+    { id: 'modem', label: 'Modem / box opérateur', rank: 0, icon: 'modem', family: EXT, infrastructure: true, critical: true, aliases: ['modem', 'box', 'ntu', 'terminaison opérateur', 'sdsl', 'adsl', 'câble', 'routeur opérateur'] },
     { id: 'san-switch', label: 'Switch SAN (Fibre Channel)', rank: 4, icon: 'san-switch', family: SW, infrastructure: true, critical: true, aliases: ['san', 'fc', 'fibre channel', 'brocade', 'mds', 'zoning', 'hba'] },
     { id: 'vpn-concentrator', label: 'Concentrateur VPN', rank: 2, icon: 'tunnel', family: SEC, infrastructure: true, critical: true, aliases: ['vpn', 'ipsec', 'site à site', 'nomade', 'concentrateur', 'tunnel'] },
     { id: 'net-controller', label: 'Contrôleur réseau / SDN', rank: 6, icon: 'net-controller', family: OPS, palette: 3, infrastructure: true, aliases: ['sdn', 'contrôleur', 'catalyst center', 'dna center', 'apic', 'mist', 'meraki', 'omada', 'prism central', 'nsx'] },
@@ -216,6 +216,33 @@ const CABLAGE: CatalogPack = {
   ],
 }
 
+/**
+ * Accès optique : GPON et dérivés, plant passif, démarcation opérateur.
+ *
+ * Deux usages très différents partagent ces équipements, et c'est voulu : la desserte FTTH
+ * d'un opérateur qui arrive sur le site, et le GPON de campus (FTTO) où l'OLT remplace les
+ * switches de distribution — hôpitaux, hôtels, universités, campus étendus. Les mêmes boîtes
+ * décrivent les deux ; c'est la couche à laquelle on les pose qui dit de quoi il s'agit.
+ *
+ * Le constructeur n'est pas un type : ADVA, Nokia, Huawei, Calix ou Adtran se renseignent dans
+ * le champ « Matériel », comme Cisco ou Fortinet. Un « ADVA » dans la palette décrirait une
+ * marque, pas une fonction, et deux boîtiers de la même marque ne font pas le même métier.
+ */
+const OPTIQUE: CatalogPack = {
+  id: 'acces-optique',
+  title: 'Accès optique & FTTH',
+  version: '2026.2',
+  description:
+    'GPON et XGS-PON : OLT, ONT, coupleurs, tiroirs optiques et démarcation opérateur, pour la desserte FTTH comme pour le GPON de campus.',
+  devices: [
+    { id: 'olt', label: 'OLT (tête de réseau optique)', rank: 3, icon: 'olt', family: ACCESS, infrastructure: true, critical: true, aliases: ['olt', 'gpon', 'xgs-pon', 'xgspon', 'epon', 'ftth', 'ftto', 'gpon lan', 'tête de réseau', 'optical line terminal', '7360', 'ma5800', 'e7', 'sdx', 'isam'] },
+    { id: 'ont', label: 'ONT / ONU (terminaison client)', rank: 5, icon: 'ont', family: ACCESS, infrastructure: true, aliases: ['ont', 'onu', 'terminaison optique', 'gpon', 'ftth', 'prise optique', 'optical network terminal', 'cpe optique'] },
+    { id: 'optical-splitter', label: 'Coupleur optique (splitter PON)', rank: 5, icon: 'splitter', family: CABLE, aliases: ['coupleur', 'splitter', 'séparateur', 'pon', '1:8', '1:16', '1:32', '1:64', 'répartition optique', 'passif'] },
+    { id: 'odf', label: 'Tiroir optique / ODF', rank: 5, icon: 'odf', family: CABLE, aliases: ['odf', 'tiroir optique', 'répartiteur optique', 'point de mutualisation', 'pm', 'pbo', 'cassette', 'épissure', 'soudure', 'lovage'] },
+    { id: 'nid', label: 'Démarcation opérateur (NID)', rank: 0, icon: 'nid', family: EXT, infrastructure: true, critical: true, aliases: ['nid', 'démarcation', 'demarcation', 'ntu', 'network interface device', 'fsp 150', 'ethernet opérateur', 'y.1731', 'oam', 'carrier ethernet', 'point de livraison'] },
+  ],
+}
+
 /** Voix et collaboration : téléphonie sur IP, trunks opérateur, salles de réunion. */
 const VOIX_PACK: CatalogPack = {
   id: 'voix-collaboration',
@@ -238,6 +265,7 @@ export const BUILTIN_PACKS: CatalogPack[] = [
   CLOUD_PACK,
   DATACENTER,
   CABLAGE,
+  OPTIQUE,
   VOIX_PACK,
 ]
 

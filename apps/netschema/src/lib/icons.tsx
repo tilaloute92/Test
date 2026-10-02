@@ -507,6 +507,57 @@ const ICONS: Record<string, (color: string) => ReactNode> = {
       <path d="m6.5 9.5 3 2.5-3 2.5M12 15h5" />
     </>
   ),
+
+  // ─── Accès optique : GPON, FTTH, plant passif ───────────────────────────────
+  /** Châssis OLT : des cartes en façade, et les fibres PON qui en partent. */
+  olt: (color) => (
+    <>
+      <rect x="2.5" y="5" width="13" height="14" rx="1.8" />
+      <path d="M5 8h8M5 11h8M5 14h8" />
+      <circle cx="4" cy="17" r="0.9" fill={color} stroke="none" />
+      <path d="M15.5 9.5h3l3-3M15.5 12h6M15.5 14.5h3l3 3" />
+    </>
+  ),
+  /** ONT : la fibre entre d'un côté, l'Ethernet ressort de l'autre. */
+  ont: (color) => (
+    <>
+      <path d="M2 9h3.5" />
+      <rect x="5.5" y="6.5" width="13" height="11" rx="1.8" />
+      <circle cx="8.5" cy="9.5" r="1.1" fill={color} stroke="none" />
+      <path d="M11.5 9.5h4M8 14h8" />
+      <path d="M18.5 15h3.5" />
+    </>
+  ),
+  /** Coupleur optique : une fibre entre, plusieurs ressortent. */
+  splitter: () => (
+    <>
+      <path d="M2 12h5" />
+      <rect x="7" y="8" width="5" height="8" rx="1.2" />
+      <path d="M12 12h3l5-5M12 12h3l5 5M12 12h8" />
+    </>
+  ),
+  /** Tiroir optique : un bandeau de baie et ses traversées. */
+  odf: (color) => (
+    <>
+      <rect x="2.5" y="7" width="19" height="10" rx="1.8" />
+      <path d="M2.5 12h19" />
+      <circle cx="6.5" cy="9.5" r="1" fill={color} stroke="none" />
+      <circle cx="10.5" cy="9.5" r="1" fill={color} stroke="none" />
+      <circle cx="14.5" cy="9.5" r="1" fill={color} stroke="none" />
+      <circle cx="18.5" cy="9.5" r="1" fill={color} stroke="none" />
+      <path d="M5 14.5h4M11 14.5h4M17 14.5h2.5" />
+    </>
+  ),
+  /** Démarcation opérateur : la limite de responsabilité, de part et d'autre du boîtier. */
+  nid: (color) => (
+    <>
+      <path d="M2 12h4.5M17.5 12H22" />
+      <rect x="6.5" y="7.5" width="11" height="9" rx="1.6" />
+      <path d="M12 4v3M12 17v3" strokeDasharray="2 2" />
+      <circle cx="9.5" cy="12" r="1" fill={color} stroke="none" />
+      <path d="M12.5 12h3" />
+    </>
+  ),
   modem: (color) => (
     <>
       <rect x="2.5" y="12" width="19" height="7.5" rx="2" />

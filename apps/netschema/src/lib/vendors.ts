@@ -400,6 +400,31 @@ const BUILTIN: HardwareModel[] = [
   m('Vertiv', 'Liebert EXM2 60 kVA', 'ups', 12, undefined, 'Onduleur triphasé'),
   m('Schneider Electric', 'Galaxy VS 60 kVA', 'ups', 10, undefined, 'Onduleur triphasé modulaire'),
   m('Vertiv', 'Liebert PDX 60 kW', 'cooling', 42, undefined, 'Climatisation de salle'),
+
+  // ── Accès optique : GPON, XGS-PON, démarcation ───────────────────────────
+  m('Nokia', '7360 ISAM FX-8', 'olt', 6, 800, 'Châssis GPON/XGS-PON · 8 slots'),
+  m('Nokia', '7360 ISAM FX-4', 'olt', 4, 500, 'Châssis GPON/XGS-PON · 4 slots'),
+  m('Nokia', 'Lightspan MF-2', 'olt', 1, 150, 'OLT compact XGS-PON'),
+  m('Huawei', 'MA5800-X7', 'olt', 7, 900, 'Châssis GPON/10G PON · 7 slots'),
+  m('Huawei', 'MA5800-X2', 'olt', 2, 300, 'OLT compact GPON/10G PON'),
+  m('Calix', 'E7-2', 'olt', 2, 300, 'OLT GPON/XGS-PON modulaire'),
+  m('Calix', 'E9-2', 'olt', 4, 600, 'Châssis d’agrégation et PON'),
+  m('Adtran', 'SDX 6330', 'olt', 1, 150, 'OLT XGS-PON 1U'),
+  m('DZS', 'MX-480', 'olt', 4, 450, 'OLT multiservice PON'),
+  m('Zyxel', 'OLT1408A', 'olt', 1, 120, 'OLT GPON 8 ports'),
+
+  m('Nokia', 'G-240W-C', 'ont', undefined, 12, 'ONT GPON · Wi-Fi · 4× 1G'),
+  m('Huawei', 'EG8145V5', 'ont', undefined, 12, 'ONT GPON · Wi-Fi · 4× 1G'),
+  m('Calix', 'GigaSpire u4', 'ont', undefined, 15, 'ONT XGS-PON · Wi-Fi 6'),
+  m('Adtran', '621i', 'ont', undefined, 8, 'ONT XGS-PON intérieur'),
+  m('Nokia', 'G-010S-P', 'ont', undefined, 3, 'ONT SFP (stick) GPON'),
+
+  m('ADVA', 'FSP 150-XG118Pro', 'nid', 1, 60, 'Démarcation Carrier Ethernet 10G · Y.1731'),
+  m('ADVA', 'FSP 150-GE114Pro', 'nid', 1, 40, 'Démarcation Carrier Ethernet 1G'),
+  m('Adtran', 'NetVanta 3448', 'nid', 1, 35, 'Démarcation et accès Ethernet'),
+  m('Ekinops', 'OneAccess LabOS', 'nid', 1, 40, 'Démarcation opérateur multiservice'),
+  m('ADVA', 'FSP 3000 C-Band', 'dwdm', 9, 1200, 'Transport optique DWDM ouvert'),
+  m('Ekinops', 'Ekinops 360', 'dwdm', 2, 400, 'Transport optique WDM modulaire'),
 ]
 
 const registry: HardwareModel[] = [...BUILTIN]

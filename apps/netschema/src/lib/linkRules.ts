@@ -6,7 +6,7 @@ const POWER = new Set(['ups', 'pdu', 'generator', 'cooling'])
 const STORAGE = new Set(['storage', 'nvme-storage', 'object-storage', 'backup', 'tape-backup', 'managed-db'])
 const MANAGEMENT = new Set(['bastion', 'nms', 'siem', 'pam', 'vuln-scanner', 'console-server'])
 /** Ce qui ne se raccorde qu'en optique : SAN Fibre Channel, transport DWDM, conversion. */
-const OPTIQUE = new Set(['san-switch', 'dwdm', 'media-converter'])
+const OPTIQUE = new Set(['san-switch', 'dwdm', 'media-converter', 'olt', 'ont', 'optical-splitter', 'odf', 'nid'])
 const OVERLAY = new Set(['sdwan', 'sase-pop', 'cloud-interconnect', 'vpc', 'cloud-region'])
 
 /**

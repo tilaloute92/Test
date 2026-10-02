@@ -1333,6 +1333,47 @@ export const MECANISMES_HA: MecanismeHa[] = [
     bascule: '10 à 60 s (établissement du tunnel)',
     note: "Secours indépendant du génie civil, donc utile contre la pelleteuse. Testez-le périodiquement : un abonnement suspendu ou une antenne débranchée ne se voit qu'au moment où l'on en a besoin.",
   },
+  {
+    id: 'pon-type-b',
+    label: 'Protection PON de type B',
+    famille: 'wan',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Un seul port PON sert les abonnés à la fois ; le second attend. Le dimensionnement se fait donc sur un port, pas sur deux — la protection n'ajoute pas de capacité.",
+    vendors: [],
+    kinds: ['olt'],
+    membres: { min: 2, max: 2 },
+    roles: ['active', 'passive'],
+    bascule: '50 ms à quelques secondes selon l’équipement',
+    prerequis: [
+      'Deux fibres de transport distinctes jusqu’au coupleur, idéalement par deux chemins de génie civil',
+      'Coupleur à deux entrées (2:N)',
+    ],
+    limites: [
+      'Le coupleur et les fibres de distribution restent uniques : une coupure après le coupleur n’est pas protégée',
+      'Les ONT ne sont pas doublés : une coupure du raccordement d’abonné coupe cet abonné',
+    ],
+    note: "Norme UIT-T G.984.1. On double la fibre de transport et le port PON de la tête de réseau, pas le reste de l'arbre optique : c'est la protection la plus répandue parce qu'elle couvre le tronçon le plus long et le plus exposé pour un coût raisonnable. Sur le schéma, tracez bien les deux fibres jusqu'au coupleur — c'est là que se voit, ou non, l'indépendance des chemins.",
+  },
+  {
+    id: 'pon-type-c',
+    label: 'Protection PON de type C (bout en bout)',
+    famille: 'wan',
+    planDeDonnees: 'un-seul',
+    noteDonnees:
+      "Chaque abonné dispose de deux chemins complets, mais un seul achemine à la fois.",
+    vendors: [],
+    kinds: ['olt', 'ont'],
+    membres: { min: 2, max: 2 },
+    roles: ['active', 'passive'],
+    bascule: 'Environ 50 ms',
+    prerequis: [
+      'Arbre optique entièrement doublé : transport, coupleur et distribution',
+      'ONT à deux interfaces PON',
+    ],
+    limites: ['Coût du génie civil et du matériel : réservé aux sites qui le justifient'],
+    note: "Toute la chaîne est doublée, du port de la tête de réseau jusqu'à la terminaison client. C'est la seule protection qui couvre le raccordement d'abonné, et c'est aussi la plus chère : on la rencontre sur des liens d'entreprise ou des sites critiques, rarement en desserte résidentielle.",
+  },
 
   // ── Énergie ───────────────────────────────────────────────────────────────
   {

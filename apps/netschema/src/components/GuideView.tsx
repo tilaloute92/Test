@@ -1957,13 +1957,23 @@ deux onduleurs`}</pre>
     {
       id: 'catalogue',
       title: 'Tenir le catalogue à jour',
-      keywords: 'catalogue mise a jour paquets packs icones types nouvelles technologies extension constructeurs',
+      keywords: 'catalogue mise a jour paquets packs icones types nouvelles technologies extension constructeurs gpon olt ont onu ftth ftto optique splitter coupleur odf nid adva nokia huawei calix adtran pon',
       body: (
         <>
           <P>
             Les types d'équipements ne sont pas figés dans le code : ils viennent de paquets que
             l'on ajoute sans recompiler l'application.
           </P>
+          <Note>
+            <b>Accès optique (GPON / FTTH)</b> — le lot livré apporte l'<b>OLT</b> (tête de
+            réseau), l'<b>ONT / ONU</b> (terminaison client), le <b>coupleur optique</b>, le{' '}
+            <b>tiroir optique / ODF</b> et la <b>démarcation opérateur (NID)</b>. Les mêmes
+            boîtes décrivent la desserte FTTH d'un opérateur et le GPON de campus (FTTO) : c'est
+            la couche où on les pose qui dit de quoi il s'agit. Le constructeur, lui, se
+            renseigne dans le champ <i>Matériel</i> — ADVA, Nokia, Huawei, Calix, Adtran et DZS y
+            sont reconnus, avec leurs gammes. Deux protections PON (types B et C) complètent la
+            base de haute disponibilité pour les OLT redondés.
+          </Note>
           <List
             items={[
               <>
