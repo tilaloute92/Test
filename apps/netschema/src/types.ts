@@ -387,6 +387,11 @@ export interface Diagram {
    */
   layerColors?: Record<string, string>
   /**
+   * Couleur posée à la main sur une grappe, par nom de grappe. Absente, la grappe prend le
+   * rose par défaut — c'est le cas de la plupart des schémas.
+   */
+  clusterColors?: Record<string, string>
+  /**
    * Marge supplémentaire du cadre d'une couche, en pixels. Le cadre se dessine autour des
    * équipements de la couche ; cette marge permet de l'agrandir ou de le resserrer à la main.
    */

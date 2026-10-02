@@ -565,7 +565,7 @@ deux onduleurs`}</pre>
     {
       id: 'zones',
       title: 'Info-bulles, bandeaux, zones et couches',
-      keywords: 'info bulle infobulle survol fiche equipement bandeau palette inspecteur masquer cacher plein ecran zone site grappe couche renommer libelle bande perimetre distribution coeur de reseau famille familles type couleur cadre serveurs switchs',
+      keywords: 'info bulle infobulle survol fiche equipement bandeau palette inspecteur masquer cacher plein ecran zone site grappe couche renommer libelle bande perimetre distribution coeur de reseau famille familles type couleur cadre serveurs switchs teinte grappe ha couleur grappe',
       body: (
         <>
           <P>
@@ -596,6 +596,14 @@ deux onduleurs`}</pre>
                 sur deux rangs, et la couche des serveurs se sépare en calcul, stockage et
                 supervision. Cocher cette case éteint les cadres de site et de zone : trois
                 niveaux de cadres sur les mêmes boîtes ne se lisent plus.
+              </>,
+              <>
+                <b>Couleur d'une grappe HA</b> : sélectionnez un de ses membres, puis choisissez
+                la teinte dans le bloc <i>Haute disponibilité</i> de l'inspecteur. Toutes les
+                grappes sont roses par défaut, ce qui va très bien tant qu'il y en a une ou
+                deux ; passé quatre ou cinq, on ne distingue plus laquelle encadre quoi. Le
+                choix appartient au document : il part avec le fichier et se retrouve à
+                l'export. Reprendre le rose efface le choix plutôt que de l'inscrire.
               </>,
               <>
                 <b>Renommer une zone, un site, une grappe ou une couche</b> : double-clic sur

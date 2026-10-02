@@ -25,6 +25,7 @@ import { marqueInterconnexion, usagesVlans } from '../lib/vlanUsage'
 import { AggregateShape } from './AggregateShape'
 import { diagramBounds, groupBoxes, layerBands } from '../lib/layout'
 import { couleurFamille, familleDe } from '../lib/familles'
+import { couleurGrappe } from '../lib/couleurs'
 import {
   insertIndexAt,
   linkGeometry,
@@ -1667,7 +1668,14 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
               </g>
             ))}
 
-            {clusters.map((cluster) => (
+            {clusters.map((cluster) => {
+              // Les rangées de continuation n'ont pas de libellé : la clé « grappe#rangée »
+              // le garde, et c'est lui qui désigne la couleur choisie.
+              const teinte = couleurGrappe(
+                cluster.label || cluster.key.split('#')[0],
+                diagram.clusterColors,
+              )
+              return (
               <g key={`cluster-${cluster.key}`} data-couche="groupe">
                 <rect
                   x={cluster.x}
@@ -1675,9 +1683,9 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                   width={cluster.width}
                   height={cluster.height}
                   rx={12}
-                  fill="#db2777"
+                  fill={teinte}
                   fillOpacity={0.04 * style.groupStrength}
-                  stroke="#db2777"
+                  stroke={teinte}
                   strokeWidth={1.2 * style.groupStrength}
                   strokeDasharray="4 4"
                 />
@@ -1689,7 +1697,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                     y={cluster.y + 16}
                     fontSize={9.5}
                     fontWeight={700}
-                    fill="#db2777"
+                    fill={teinte}
                     pointerEvents="all"
                     style={{ cursor: 'text' }}
                     onPointerDown={(event) => event.stopPropagation()}
@@ -1709,7 +1717,8 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                   </text>
                 )}
               </g>
-            ))}
+              )
+            })}
 
             {/*
               Cadres de couche : saisissables. Le corps déplace la couche entière, les bords longs

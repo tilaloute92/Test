@@ -10,6 +10,7 @@ import { aujourdhui } from '../lib/storage'
 import { constructeurDe, mecanismeHa, mecanismesPour, PLANS_DE_DONNEES } from '../lib/haTech'
 import { linkLayers } from '../lib/osi'
 import { VUES_LOGIQUES, type VueLogique } from '../lib/vlanViews'
+import { COULEUR_GRAPPE_DEFAUT, COULEURS_GRAPPE, couleurGrappe } from '../lib/couleurs'
 import {
   agregats,
   formaterDebit,
@@ -421,6 +422,13 @@ function NodeForm({ node }: { node: NetNode }) {
           <Field label="Grappe (cluster)">
             <TextInput value={node.cluster ?? ''} onChange={(cluster) => set({ cluster })} placeholder="FW-HA" />
           </Field>
+          {/*
+            Teinte de la grappe. Le choix vaut pour la grappe entière, pas pour l'équipement
+            sélectionné : c'est le cadre qu'on colore, et il en entoure plusieurs. Sur un schéma
+            qui compte six grappes toutes roses, c'est ce qui permet de savoir au premier coup
+            d'œil laquelle encadre quoi.
+          */}
+          {node.cluster?.trim() && <CouleurGrappeField cluster={node.cluster.trim()} />}
           <Field label="Rôle dans la grappe">
             <Select
               value={node.role ?? 'standalone'}
@@ -501,6 +509,42 @@ function ZOrderRow({ ids }: { ids: string[] }) {
  * documenter une architecture : elle rappelle ce que le mécanisme protège, ce qu'il ne
  * protège pas, et en combien de temps il bascule.
  */
+/**
+ * Choix de la couleur d'une grappe.
+ *
+ * Les pastilles reprennent la forme du choix de couleur d'une annotation : on voit la teinte,
+ * on clique dessus. La première est le rose historique, qui reste le défaut — la reprendre
+ * efface le choix plutôt que d'inscrire le rose dans le document, pour qu'un schéma où l'on
+ * n'a rien décidé reste identique à ce qu'il était.
+ */
+function CouleurGrappeField({ cluster }: { cluster: string }) {
+  const couleurs = useDiagram((s) => s.diagram.clusterColors)
+  const setClusterColor = useDiagram((s) => s.setClusterColor)
+  const actuelle = couleurGrappe(cluster, couleurs)
+  return (
+    <Field label={`Couleur de la grappe « ${cluster} »`}>
+      <div className="flex flex-wrap gap-1.5">
+        {COULEURS_GRAPPE.map((couleur) => (
+          <button
+            key={couleur.id}
+            type="button"
+            title={couleur.label}
+            onClick={() =>
+              setClusterColor(cluster, couleur.id === COULEUR_GRAPPE_DEFAUT ? undefined : couleur.id)
+            }
+            className={`h-6 w-6 rounded-md border-2 transition ${
+              actuelle.toLowerCase() === couleur.id.toLowerCase()
+                ? 'border-slate-900'
+                : 'border-transparent hover:border-slate-300'
+            }`}
+            style={{ backgroundColor: couleur.id }}
+          />
+        ))}
+      </div>
+    </Field>
+  )
+}
+
 function MecanismeHaField({ node, onChange }: { node: NetNode; onChange: (id: string) => void }) {
   const constructeur = constructeurDe(node.vendor, node.model)
   const { propres, normalises, autres } = useMemo(

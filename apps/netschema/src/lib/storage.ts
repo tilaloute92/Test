@@ -346,7 +346,26 @@ export function parseDiagram(raw: unknown): Diagram {
     labelsLocked: source.labelsLocked === true,
     layerNames: layerNames(source.layerNames),
     layerPads: layerPads(source.layerPads),
+    clusterColors: clusterColors(source.clusterColors),
   }
+}
+
+/**
+ * Couleurs de grappe : un nom de grappe vers une teinte.
+ *
+ * On n'accepte que la notation à six chiffres hexadécimaux. Un fichier venu d'ailleurs ne doit
+ * pas pouvoir glisser une valeur arbitraire dans un attribut du dessin — et une couleur
+ * illisible vaut moins que le rose par défaut.
+ */
+function clusterColors(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) return undefined
+  const couleurs: Record<string, string> = {}
+  for (const [grappe, couleur] of Object.entries(value)) {
+    const nom = str(grappe)
+    const teinte = str(couleur)
+    if (nom && teinte && /^#[0-9a-f]{6}$/i.test(teinte)) couleurs[nom.slice(0, 60)] = teinte.toLowerCase()
+  }
+  return Object.keys(couleurs).length > 0 ? couleurs : undefined
 }
 
 /** Marges de cadre par couche, bornées : un cadre ne se dessine pas à l'autre bout du plan. */

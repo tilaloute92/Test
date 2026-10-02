@@ -294,6 +294,8 @@ interface DiagramStore {
   setLayerPad: (rank: number, pad: number) => void
   /** Renomme un site, une zone ou une grappe : tous ses équipements suivent. */
   renameGroup: (type: 'site' | 'zone' | 'cluster', from: string, to: string) => void
+  /** Teinte d'une grappe ; `undefined` la rend au rose par défaut. */
+  setClusterColor: (cluster: string, couleur: string | undefined) => void
   setLocked: (locked: boolean) => void
   /**
    * Positions calculées des étiquettes, publiées par le plan de travail.
@@ -824,6 +826,22 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     })
   },
 
+  setClusterColor: (cluster, couleur) => {
+    if (lockedStore()) return
+    const nom = cluster.trim()
+    if (!nom) return
+    get().pushHistory()
+    set((state) => {
+      const couleurs = { ...(state.diagram.clusterColors ?? {}) }
+      if (couleur) couleurs[nom] = couleur
+      else delete couleurs[nom]
+      // Une table vide ne part pas dans le fichier : un document sans couleur choisie reste
+      // identique à ce qu'il était avant que ce réglage existe.
+      const reste = Object.keys(couleurs).length > 0 ? couleurs : undefined
+      return { diagram: { ...state.diagram, clusterColors: reste } }
+    })
+  },
+
   renameGroup: (type, from, to) => {
     if (lockedStore()) return
     const propre = to.trim()
@@ -835,6 +853,18 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         nodes: state.diagram.nodes.map((node) => (node[type] === from ? { ...node, [type]: propre } : node)),
       },
     }))
+    // La couleur est rangée sous le nom de la grappe : la renommer doit l'emmener avec elle,
+    // sinon le choix de l'auteur disparaît au premier renommage.
+    if (type === 'cluster') {
+      set((state) => {
+        const couleurs = state.diagram.clusterColors
+        if (!couleurs?.[from]) return {}
+        const suivant = { ...couleurs, [propre]: couleurs[from] }
+        delete suivant[from]
+        return { diagram: { ...state.diagram, clusterColors: suivant } }
+      })
+    }
+
     const collapsedKey = groupKey(type === 'cluster' ? 'cluster' : type, from)
     // Un groupe replié garde son repli sous son nouveau nom.
     set((state) => ({
