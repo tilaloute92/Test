@@ -521,9 +521,11 @@ function CouleurGrappeField({ cluster }: { cluster: string }) {
   const couleurs = useDiagram((s) => s.diagram.clusterColors)
   const setClusterColor = useDiagram((s) => s.setClusterColor)
   const actuelle = couleurGrappe(cluster, couleurs)
+  /** Teinte posée au champ libre : elle ne figure dans aucune pastille. */
+  const libre = !COULEURS_GRAPPE.some((couleur) => couleur.id.toLowerCase() === actuelle.toLowerCase())
   return (
     <Field label={`Couleur de la grappe « ${cluster} »`}>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         {COULEURS_GRAPPE.map((couleur) => (
           <button
             key={couleur.id}
@@ -540,6 +542,26 @@ function CouleurGrappeField({ cluster }: { cluster: string }) {
             style={{ backgroundColor: couleur.id }}
           />
         ))}
+        {/*
+          Champ libre, pour les conventions maison qui imposent une teinte précise — « le bleu
+          de la charte pour la production ». Il se distingue des pastilles par sa bordure en
+          pointillé : ce n'est pas une seizième couleur proposée, c'est une porte de sortie.
+        */}
+        <label
+          title="Autre couleur…"
+          className={`flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border-2 border-dashed transition ${
+            libre ? 'border-slate-900' : 'border-slate-300 hover:border-slate-400'
+          }`}
+          style={libre ? { backgroundColor: actuelle } : undefined}
+        >
+          <input
+            type="color"
+            value={actuelle}
+            onChange={(event) => setClusterColor(cluster, event.target.value.toLowerCase())}
+            className="h-0 w-0 opacity-0"
+          />
+          {!libre && <span className="text-[13px] leading-none text-slate-400">+</span>}
+        </label>
       </div>
     </Field>
   )

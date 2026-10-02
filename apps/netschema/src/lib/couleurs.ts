@@ -21,18 +21,36 @@ export interface CouleurGroupe {
 export const COULEUR_GRAPPE_DEFAUT = '#db2777'
 
 /**
- * Huit teintes bien séparées, assez soutenues pour tenir en liseré pointillé de 1,2 px et
- * assez claires en fond à 4 % d'opacité pour ne pas assombrir les boîtes qu'elles encadrent.
+ * Seize teintes, posées dans les intervalles libres les uns des autres.
+ *
+ * Elles sont choisies pour l'écart de teinte, pas pour la variété : doubler une couleur en
+ * version claire et foncée aurait donné seize cases dont la moitié se confondent deux à deux,
+ * surtout sur un liseré de 1,2 px en pointillé. L'écart minimal est ici de dix-neuf degrés
+ * entre couleurs saturées — à une exception près, l'ardoise, volontairement désaturée : elle
+ * se lit comme un gris et non comme un bleu, et sert aux grappes qu'on veut faire discrètes.
+ *
+ * Au-delà d'une dizaine, la couleur cesse de toute façon d'être une clé qu'on retient : c'est
+ * le libellé du cadre qui nomme la grappe, la couleur qui la regroupe. Seize suffit largement
+ * à distinguer toutes les grappes d'un même schéma ; le champ libre est là pour les
+ * conventions maison qui imposent une teinte précise.
  */
 export const COULEURS_GRAPPE: CouleurGroupe[] = [
   { id: COULEUR_GRAPPE_DEFAUT, label: 'Rose (défaut)' },
   { id: '#dc2626', label: 'Rouge' },
   { id: '#ea580c', label: 'Orange' },
   { id: '#ca8a04', label: 'Or' },
+  { id: '#939711', label: 'Moutarde' },
+  { id: '#498811', label: 'Olive' },
+  { id: '#218321', label: 'Jade' },
   { id: '#16a34a', label: 'Vert' },
+  { id: '#0c9780', label: 'Turquoise' },
   { id: '#0891b2', label: 'Cyan' },
   { id: '#2563eb', label: 'Bleu' },
+  { id: '#2f2fc6', label: 'Indigo' },
   { id: '#7c3aed', label: 'Violet' },
+  { id: '#8e25b1', label: 'Pourpre' },
+  { id: '#b62098', label: 'Magenta' },
+  { id: '#50627c', label: 'Ardoise' },
 ]
 
 /** Couleur retenue pour une grappe : celle que le document porte, ou le rose par défaut. */
