@@ -1,0 +1,6 @@
+Display Name;Host Name;Network Address;Device Type;Brand;Device Group;Best State;Notes
+ESXi-01;esxi01.exemple.lan;10.20.0.31;Virtual Host;VMware;Datacenter/Virtualisation;Up;Hote ESXi lame 1
+ESXi-02;esxi02.exemple.lan;10.20.0.32;Virtual Host;VMware;Datacenter/Virtualisation;Up;Hote ESXi lame 2
+SAN-SIEGE;san01.exemple.lan;10.20.0.50;Storage Array;NetApp;Datacenter/Stockage;Up;
+FW-01;fw01.exemple.lan;10.20.0.254;Firewall;Fortinet;Securite/Perimetre;Up;
+IMP-COMPTA;;10.30.4.17;Printer;HP;Bureaux/Etage 2;Down;Hors tension le soir

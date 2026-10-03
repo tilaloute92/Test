@@ -78,7 +78,8 @@ export function DiscoveryView() {
         <header>
           <h1 className="text-[15px] font-semibold text-slate-800">Découverte réseau</h1>
           <p className="max-w-3xl pt-1 text-[12px] leading-relaxed text-slate-500">
-            Collez un relevé d’équipement ou déposez les fichiers produits par le collecteur.
+            Collez un relevé d’équipement, déposez les fichiers produits par le collecteur, ou
+            l’export d’un outil de supervision — Cisco Prime, WhatsUp Gold.
             L’application reconnaît le format, en déduit les équipements et, quand la source le
             permet, les liaisons — puis fusionne le tout dans le schéma sans écraser ce que vous
             avez saisi à la main.
@@ -96,7 +97,7 @@ export function DiscoveryView() {
             <input
               type="file"
               multiple
-              accept=".txt,.xml,.log,.gnmap,.json,text/plain,application/xml"
+              accept=".txt,.xml,.log,.gnmap,.json,.csv,.tsv,text/plain,application/xml,text/csv"
               className="hidden"
               onChange={(event) => {
                 void readFiles(event.target.files)
@@ -229,6 +230,18 @@ nmap -sV -F 10.10.0.0/24 -oG scan.gnmap`}
 arp -a`}
         </pre>
         <p>Associe adresses IP, adresses MAC et VLAN.</p>
+
+        <h3 className="pt-3 text-[11px] font-semibold text-slate-500">Outils de supervision</h3>
+        <p>
+          Déposez l’export d’inventaire de <strong>Cisco Prime Infrastructure</strong> ou de{' '}
+          <strong>WhatsUp Gold</strong> — en CSV, ou la réponse JSON de leur API. Les colonnes sont
+          reconnues par leurs intitulés usuels, en anglais comme en français ; celles qui ne le sont
+          pas sont listées dans les réserves plutôt qu’écartées en silence.
+        </p>
+        <p className="pt-1.5">
+          Un rapport de <strong>voisinages CDP/LLDP</strong> donne en plus les liaisons : il suffit
+          qu’une colonne nomme l’équipement local et une autre son voisin.
+        </p>
 
         <h3 className="pt-3 text-[11px] font-semibold text-slate-500">Collecteur fourni</h3>
         <pre className="my-1 overflow-x-auto rounded bg-slate-50 p-2 font-mono text-[11px]">

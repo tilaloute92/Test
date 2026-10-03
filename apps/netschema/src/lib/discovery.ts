@@ -1,5 +1,6 @@
 import { hasDevice } from './catalog'
 import { uid } from './ids'
+import { analyserNms, estReleveNms, LIBELLES_SOURCE } from './nms'
 import type { LinkKind, NetLink, NetNode } from '../types'
 
 /**
@@ -12,7 +13,7 @@ import type { LinkKind, NetLink, NetNode } from '../types'
  * balayages nmap, tables ARP — pour en tirer équipements et liaisons.
  */
 
-export type DiscoveryFormat = 'lldp' | 'nmap-xml' | 'nmap-grep' | 'arp' | 'unknown'
+export type DiscoveryFormat = 'lldp' | 'nmap-xml' | 'nmap-grep' | 'arp' | 'nms' | 'unknown'
 
 export interface DiscoveryResult {
   format: DiscoveryFormat
@@ -28,6 +29,7 @@ export const FORMAT_LABELS: Record<DiscoveryFormat, string> = {
   'nmap-xml': 'Balayage nmap (XML)',
   'nmap-grep': 'Balayage nmap (format grepable)',
   arp: 'Table ARP',
+  nms: 'Relevé de supervision (Cisco Prime, WhatsUp Gold…)',
   unknown: 'Format non reconnu',
 }
 
@@ -37,6 +39,7 @@ export function detectFormat(text: string): DiscoveryFormat {
   if (/<nmaprun\b/i.test(head)) return 'nmap-xml'
   if (/^Host:\s+\S+\s+\(.*?\)\s+(Status|Ports):/im.test(head)) return 'nmap-grep'
   if (/(Device ID:|Chassis id:|Local Intf:|System Name:|Port id:)/i.test(head)) return 'lldp'
+  if (estReleveNms(text)) return 'nms'
   if (/(Protocol\s+Address\s+Age|\bat\s+([0-9a-f]{2}[:-]){5}[0-9a-f]{2}\b|([0-9a-f]{2}-){5}[0-9a-f]{2})/i.test(head)) {
     return 'arp'
   }
@@ -328,6 +331,30 @@ export function parseArp(text: string): DiscoveryResult {
   return { format: 'arp', label: FORMAT_LABELS.arp, nodes: builder.nodes, links: [], warnings }
 }
 
+/**
+ * Relevé d'un outil de supervision.
+ *
+ * Le gros du travail est dans `nms.ts` ; ici on ne fait qu'habiller son résultat au format
+ * commun de la découverte, en remontant les colonnes non reconnues comme avertissement. Ce
+ * détail compte : c'est par là qu'on apprend qu'un export porte une colonne utile dont
+ * personne n'avait connaissance.
+ */
+export function parseNms(text: string): DiscoveryResult {
+  const releve = analyserNms(text)
+  const warnings = [...releve.warnings]
+  if (releve.colonnesIgnorees.length > 0) {
+    warnings.push(`Colonne(s) non reprise(s) : ${releve.colonnesIgnorees.join(', ')}.`)
+  }
+  const origine = LIBELLES_SOURCE[releve.source]
+  return {
+    format: 'nms',
+    label: releve.links.length > 0 ? `Voisinages — ${origine}` : `Inventaire — ${origine}`,
+    nodes: releve.nodes,
+    links: releve.links,
+    warnings,
+  }
+}
+
 /** Analyse un relevé en détectant son format. */
 export function parseDiscovery(text: string, options: { localName?: string } = {}): DiscoveryResult {
   const format = detectFormat(text)
@@ -340,6 +367,8 @@ export function parseDiscovery(text: string, options: { localName?: string } = {
       return parseNmapGrepable(text)
     case 'arp':
       return parseArp(text)
+    case 'nms':
+      return parseNms(text)
     default:
       return {
         format,
@@ -347,7 +376,8 @@ export function parseDiscovery(text: string, options: { localName?: string } = {
         nodes: [],
         links: [],
         warnings: [
-          'Format non reconnu. Formats acceptés : voisinages LLDP/CDP (sortie « detail »), nmap XML ou grepable, table ARP.',
+          'Format non reconnu. Formats acceptés : voisinages LLDP/CDP (sortie « detail »), nmap XML ou grepable, table ARP, '
+            + 'export d’inventaire ou de voisinage d’un outil de supervision (CSV ou JSON).',
         ],
       }
   }

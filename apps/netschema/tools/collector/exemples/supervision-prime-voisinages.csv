@@ -1,0 +1,5 @@
+Device Name,Local Interface,Neighbor Device Name,Neighbor Interface,Neighbor IP Address,Platform
+SW-CORE-01,TenGigabitEthernet1/0/1,SW-DIST-BATA,TenGigabitEthernet1/1/1,10.10.0.21,cisco WS-C3850
+SW-CORE-01,TenGigabitEthernet1/0/2,SW-DIST-BATB,TenGigabitEthernet1/1/1,10.10.0.22,cisco WS-C3850
+SW-DIST-BATA,TenGigabitEthernet1/1/1,SW-CORE-01,TenGigabitEthernet1/0/1,10.10.0.11,cisco C9500-24Y4C
+SW-CORE-01,GigabitEthernet1/0/24,RTR-EDGE-01,GigabitEthernet0/0/1,10.10.0.1,cisco ISR4331

@@ -1,0 +1,7 @@
+Device Name,IP Address,Device Type,Product Family,Software Version,Serial Number,Location,Reachability,Collection Status,Last Inventory Collection
+SW-CORE-01,10.10.0.11,Cisco Catalyst 9500 Switch,Catalyst 9500 Series Switches,16.12.05b,FDO2401A001,Siege/Salle serveurs,Reachable,Completed,2026-09-30 02:14:11
+SW-CORE-02,10.10.0.12,Cisco Catalyst 9500 Switch,Catalyst 9500 Series Switches,16.12.05b,FDO2401A002,Siege/Salle serveurs,Reachable,Completed,2026-09-30 02:14:40
+RTR-EDGE-01,10.10.0.1,Cisco ISR 4331 Router,Integrated Services Routers,16.09.04,FDO2401R001,Siege/Local operateur,Reachable,Completed,2026-09-30 02:15:02
+SW-ACC-A1,10.10.1.21,Cisco Catalyst 9200 Switch,Catalyst 9200 Series Switches,17.03.04,FDO2402B011,Batiment A/Etage 1,Reachable,Completed,2026-09-30 02:16:33
+WLC-01,10.10.0.40,Cisco 9800 Wireless Controller,Catalyst 9800 Series,17.06.03,FDO2403W001,Siege/Salle serveurs,Unreachable,Partial,2026-09-28 02:11:09
+,10.10.9.99,Unknown Device,,,,,Reachable,Completed,2026-09-30 02:17:00
