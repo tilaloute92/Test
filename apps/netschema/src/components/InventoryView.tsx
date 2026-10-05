@@ -34,7 +34,10 @@ export function InventoryView() {
   const selectedNodes = useDiagram((s) => s.selectedNodes)
   const select = useDiagram((s) => s.select)
   const notify = useDiagram((s) => s.notify)
+  const updateNodes = useDiagram((s) => s.updateNodes)
   const fileRef = useRef<HTMLInputElement>(null)
+  /** Dernière ligne cliquée, pour que Maj sélectionne la plage comme dans un tableur. */
+  const ancre = useRef<string | null>(null)
 
   const [query, setQuery] = useState('')
   const [site, setSite] = useState('')
@@ -53,6 +56,11 @@ export function InventoryView() {
     [diagram.nodes],
   )
 
+  /**
+   * Sélection de lignes aux habitudes du tableur : clic simple, Ctrl ou Cmd pour ajouter une
+   * ligne, Maj pour prendre toute la plage depuis la dernière cliquée. C'est ce geste qui
+   * rend le remplissage en lot utilisable — sans lui, il faudrait cocher trente cases.
+   */
   const rows = useMemo(() => {
     const q = normalize(query.trim())
     return diagram.nodes
@@ -79,6 +87,30 @@ export function InventoryView() {
       })
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [diagram.nodes, query, site, status, rack, vendor])
+
+  const choisirLigne = (event: React.MouseEvent, id: string) => {
+    if (event.shiftKey && ancre.current) {
+      const debut = rows.findIndex((n) => n.id === ancre.current)
+      const fin = rows.findIndex((n) => n.id === id)
+      if (debut !== -1 && fin !== -1) {
+        const plage = rows.slice(Math.min(debut, fin), Math.max(debut, fin) + 1).map((n) => n.id)
+        select({ nodes: plage })
+        return
+      }
+    }
+    if (event.ctrlKey || event.metaKey) {
+      const deja = selectedNodes.includes(id)
+      select({ nodes: deja ? selectedNodes.filter((n) => n !== id) : [...selectedNodes, id] })
+      ancre.current = id
+      return
+    }
+    select({ nodes: [id] })
+    ancre.current = id
+  }
+
+  /** Lignes sélectionnées parmi celles qu'affichent les filtres. */
+  const selectionVisible = rows.filter((n) => selectedNodes.includes(n.id))
+
 
   const totalPower = rows.reduce((acc, node) => acc + (node.powerW ?? 0), 0)
 
@@ -160,6 +192,16 @@ export function InventoryView() {
         </div>
       </header>
 
+      <BarreRemplissage
+        selection={selectionVisible}
+        lignes={rows}
+        surTout={() => select({ nodes: rows.map((n) => n.id) })}
+        surAppliquer={(patch) => {
+          updateNodes(selectionVisible.map((n) => n.id), patch)
+          notify(`${selectionVisible.length} équipement(s) mis à jour.`)
+        }}
+      />
+
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-max border-separate border-spacing-0 text-[12px]">
           <thead className="sticky top-0 z-10">
@@ -181,7 +223,7 @@ export function InventoryView() {
                 key={node.id}
                 node={node}
                 selected={selectedNodes.includes(node.id)}
-                onSelect={() => select({ nodes: [node.id] })}
+                onSelect={(event) => choisirLigne(event, node.id)}
                 onChange={(patch) => updateNode(node.id, patch)}
               />
             ))}
@@ -197,6 +239,85 @@ export function InventoryView() {
   )
 }
 
+/**
+ * Remplissage en lot.
+ *
+ * Trois quarts des valeurs d'un schéma sont la ressaisie d'une valeur déjà présente ailleurs :
+ * « Siège » vingt-trois fois, « production » vingt-trois fois. Choisir une colonne, taper la
+ * valeur une fois et l'appliquer à la sélection supprime cette répétition d'un geste.
+ *
+ * Seules les colonnes modifiables sont proposées — ni le type, ni la baie, qui se règlent
+ * ailleurs et dont le remplissage en masse n'aurait pas de sens.
+ */
+function BarreRemplissage({
+  selection,
+  lignes,
+  surTout,
+  surAppliquer,
+}: {
+  selection: NetNode[]
+  lignes: NetNode[]
+  surTout: () => void
+  surAppliquer: (patch: Partial<NetNode>) => void
+}) {
+  const modifiables = INVENTORY_COLUMNS.filter((c) => c.set && c.key !== 'name')
+  const [colonne, setColonne] = useState(modifiables[0]?.key ?? '')
+  const [valeur, setValeur] = useState('')
+  const choisie = modifiables.find((c) => c.key === colonne)
+
+  if (lignes.length === 0) return null
+  if (selection.length < 2) {
+    return (
+      <p className="border-b border-slate-100 px-4 py-1.5 text-[11.5px] text-slate-400">
+        Clic pour sélectionner une ligne, Ctrl+clic pour en ajouter, Maj+clic pour une plage —
+        puis remplissez une colonne pour toute la sélection d’un coup.{' '}
+        <button type="button" onClick={surTout} className="font-medium text-blue-700 hover:underline">
+          Tout sélectionner ({lignes.length})
+        </button>
+      </p>
+    )
+  }
+
+  const appliquer = () => {
+    if (!choisie?.set) return
+    surAppliquer(choisie.set(valeur.trim()))
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-blue-50/60 px-4 py-2">
+      <span className="text-[12px] font-medium text-slate-700">
+        {selection.length} lignes sélectionnées — remplir
+      </span>
+      <select
+        value={colonne}
+        onChange={(event) => setColonne(event.target.value)}
+        className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-700"
+      >
+        {modifiables.map((c) => (
+          <option key={c.key} value={c.key}>
+            {c.label}
+          </option>
+        ))}
+      </select>
+      <input
+        value={valeur}
+        onChange={(event) => setValeur(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') appliquer()
+        }}
+        placeholder="Valeur à appliquer"
+        className="w-52 rounded-md border border-slate-300 px-2 py-1 text-[12px]"
+      />
+      <Btn variant="primary" onClick={appliquer}>
+        Appliquer à la sélection
+      </Btn>
+      <button type="button" onClick={surTout} className="text-[11.5px] text-blue-700 hover:underline">
+        Tout sélectionner ({lignes.length})
+      </button>
+    </div>
+  )
+}
+
 function Row({
   node,
   selected,
@@ -205,7 +326,7 @@ function Row({
 }: {
   node: NetNode
   selected: boolean
-  onSelect: () => void
+  onSelect: (event: React.MouseEvent) => void
   onChange: (patch: Partial<NetNode>) => void
 }) {
   const diagram = useDiagram((s) => s.diagram)

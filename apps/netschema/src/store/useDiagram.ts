@@ -5,6 +5,7 @@ import { bestMatch } from '../lib/speech'
 import { searchModels } from '../lib/vendors'
 import { STATUS_LABELS } from '../lib/inventory'
 import { uid } from '../lib/ids'
+import { heritageLiaison, heritageNoeud, resumerHeritage } from '../lib/heritage'
 import { HA_PATTERNS, instantiatePattern, type HaPattern } from '../lib/patterns'
 import { suggestLinkKind } from '../lib/linkRules'
 import { parseQuickImport } from '../lib/quickImport'
@@ -598,18 +599,24 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     get().pushHistory()
     const id = uid('n')
     const count = get().diagram.nodes.filter((n) => n.kind === kind).length + 1
+    // Ce que le document dit déjà passe avant les valeurs vides, mais jamais avant un seed :
+    // un import ou une duplication sait mieux que l'héritage ce qu'il veut poser.
+    const herite = heritageNoeud(get().diagram, kind)
     const node: NetNode = {
       id,
       kind,
       name: `${deviceMeta(kind).label} ${count}`,
       x: Math.round(x),
       y: Math.round(y),
+      ...herite,
       ...seed,
     }
+    const repris = seed ? null : resumerHeritage(herite)
     set((state) => ({
       diagram: { ...state.diagram, nodes: [...state.diagram.nodes, node] },
       selectedNodes: [id],
       selectedLinks: [],
+      toast: repris,
     }))
     return id
   },
@@ -671,18 +678,25 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     const toNode = nodes.find((n) => n.id === to)
     get().pushHistory()
     // Le type est proposé d'après les deux équipements reliés (cf. lib/linkRules.ts).
+    const nature = fromNode && toNode ? suggestLinkKind(fromNode, toNode) : 'ethernet'
+    // Les liaisons de même nature se ressemblent : débit, mode, VLAN et MTU se répètent d'un
+    // câble à l'autre bien plus souvent qu'ils ne diffèrent.
+    const heriteL = heritageLiaison(get().diagram, nature)
     const link: NetLink = {
       id: uid('l'),
       from,
       to,
-      kind: fromNode && toNode ? suggestLinkKind(fromNode, toNode) : 'ethernet',
+      kind: nature,
+      ...heriteL,
       ...seed,
     }
     set((state) => ({
       diagram: { ...state.diagram, links: [...state.diagram.links, link] },
       selectedLinks: [link.id],
       selectedNodes: [],
-      toast: exists ? 'Liaison supplémentaire ajoutée entre ces deux équipements.' : null,
+      toast: exists
+        ? 'Liaison supplémentaire ajoutée entre ces deux équipements.'
+        : (seed ? null : resumerHeritage(heriteL)),
     }))
   },
 

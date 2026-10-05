@@ -27,6 +27,7 @@ import { useAudit } from '../store/useAudit'
 import type {
   AnchorSide,
   Annotation,
+  AssetStatus,
   DetailLevel,
   HaRole,
   LinkShape,
@@ -699,6 +700,37 @@ function MultiNodeForm({ nodes }: { nodes: NetNode[] }) {
       </Field>
       <Field label="Grappe commune">
         <TextInput value={sharedCluster} onChange={(cluster) => updateNodes(ids, { cluster })} placeholder="FW-HA" />
+      </Field>
+      {/* Constructeur, responsable et état sont les trois valeurs les plus ressaisies d'un
+          parc : sur le schéma d'exemple, « Cisco » neuf fois, « Infrastructure » dix fois et
+          « production » vingt-trois fois. Les poser sur toute une sélection vaut mieux que de
+          basculer vers l'inventaire ligne par ligne. */}
+      <Field label="Constructeur commun">
+        <TextInput
+          value={shared((n) => n.vendor)}
+          onChange={(vendor) => updateNodes(ids, { vendor })}
+          placeholder="Cisco"
+        />
+      </Field>
+      <Field label="Responsable commun">
+        <TextInput
+          value={shared((n) => n.owner)}
+          onChange={(owner) => updateNodes(ids, { owner })}
+          placeholder="Infrastructure"
+        />
+      </Field>
+      <Field label="État commun">
+        <Select
+          value={shared((n) => n.status)}
+          onChange={(status) => updateNodes(ids, { status: (status || undefined) as AssetStatus | undefined })}
+          options={[
+            { value: '', label: '— inchangé —' },
+            { value: 'production', label: 'En production' },
+            { value: 'stock', label: 'En stock' },
+            { value: 'maintenance', label: 'En maintenance' },
+            { value: 'retire', label: 'Retiré' },
+          ]}
+        />
       </Field>
       <Checkbox
         checked={nodes.every((n) => n.dualPower)}
