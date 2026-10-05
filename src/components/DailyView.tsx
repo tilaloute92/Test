@@ -34,6 +34,9 @@ type LoggingTarget = { memberId: string; period: Period; taskId: string; hour?: 
 /** Les créneaux saisis heure par heure. Seul l'après-midi pour l'instant : le matin garde
  *  la saisie à la demi-journée, faute d'avoir été demandé. */
 const HOURLY_PERIODS: Period[] = ['apres_midi'];
+/** Entrée de menu qui ouvre la saisie complète. Un identifiant de tâche ne peut pas la
+ *  heurter : les identifiants sont préfixés par une lettre (voir src/lib/ids.ts). */
+const AUTRE = '__autre__';
 const hourLabel = (n: number) => `${String(n).padStart(2, '0')}:00`;
 
 export function DailyView() {
@@ -474,14 +477,23 @@ function SlotEditor({
 }
 
 /**
- * Grille horaire d'un créneau : une ligne par tranche d'une heure, et sur chacune les
- * tâches de la personne en pastilles. Un clic sur une pastille vaut choix ET validation —
- * c'est tout l'objet de cet écran : enregistrer une heure sans ouvrir de fenêtre.
+ * Grille horaire d'un créneau : une ligne par tranche d'une heure, chacune avec un menu
+ * déroulant et un bouton Valider.
  *
- * Une tranche déjà occupée affiche l'activité en vert plutôt que les pastilles : on ne
- * propose pas de remplir ce qui l'est. La croix défait la saisie, et dit sa durée réelle —
- * retirer une tranche d'une saisie de trois heures les retire toutes les trois, et
- * l'annoncer évite de le découvrir après coup.
+ * Les tâches étaient d'abord affichées en pastilles, une par tâche et par heure : un seul
+ * clic suffisait, mais quatre tranches multipliées par les tâches de la personne prenaient
+ * trop de hauteur et repoussaient le reste de la fiche hors de l'écran. Un menu déroulant
+ * tient sur une ligne quel que soit le nombre de tâches, et c'est ce que coûte le second
+ * clic.
+ *
+ * Le menu propose la tâche prévue EN PREMIER et la présélectionne : le cas courant — une
+ * heure de plus sur ce qui était prévu — redevient alors un clic unique sur Valider, sans
+ * rien déplier.
+ *
+ * Une tranche déjà occupée affiche l'activité en vert plutôt que le menu : on ne propose
+ * pas de remplir ce qui l'est. La croix défait la saisie, et dit sa durée réelle — retirer
+ * une tranche d'une saisie de trois heures les retire toutes les trois, et l'annoncer évite
+ * de le découvrir après coup.
  */
 function HourGrid({
   period,
@@ -510,10 +522,14 @@ function HourGrid({
   const heures = Array.from({ length: end - start }, (_, i) => start + i);
   // La tâche prévue d'abord : c'est celle qu'on valide le plus souvent, et la chercher au
   // milieu des autres à chaque heure serait une friction inutile.
-  const pastilles = plannedTask
-    ? [plannedTask, ...memberTasks.filter((t) => t.id !== plannedTask.id)]
-    : memberTasks;
+  const choix = plannedTask ? [plannedTask, ...memberTasks.filter((t) => t.id !== plannedTask.id)] : memberTasks;
   const valides = heures.filter((h) => occupants.has(h)).length;
+
+  // Ce que chaque menu affiche tant que l'heure n'est pas validée. Non renseigné, le menu
+  // retombe sur la tâche prévue : valider une heure de plus sur ce qui était prévu ne
+  // demande alors qu'un clic.
+  const [selection, setSelection] = useState<Record<number, string>>({});
+  const valeur = (h: number) => selection[h] ?? plannedTask?.id ?? '';
 
   return (
     <div className="mt-2 border-t border-slate-100 pt-2 dark:border-slate-800">
@@ -561,23 +577,32 @@ function HourGrid({
                   </button>
                 </div>
               ) : (
-                <div className="flex min-w-0 flex-1 flex-wrap gap-1.5 print:hidden">
-                  {pastilles.map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => onValidate(t.id, h)}
-                      title={`Valider ${hourLabel(h)} – ${hourLabel(h + 1)} sur « ${t.title} »`}
-                      className="max-w-full truncate rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700 dark:border-slate-700 dark:text-slate-300 dark:hover:border-violet-500/40 dark:hover:bg-violet-500/10 dark:hover:text-violet-300"
-                    >
-                      {t.title}
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => onOther(h)}
-                    title="Autre tâche, durée différente d'une heure, ou ajouter une note"
-                    className="rounded-full border border-dashed border-slate-200 px-2.5 py-1 text-xs text-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                <div className="flex min-w-0 flex-1 items-center gap-1.5 print:hidden">
+                  <select
+                    value={valeur(h)}
+                    onChange={(e) => {
+                      // L'entrée « autre » n'est pas une tâche : elle ouvre la saisie
+                      // complète plutôt que de se retrouver sélectionnée dans le menu.
+                      if (e.target.value === AUTRE) return onOther(h);
+                      setSelection((s) => ({ ...s, [h]: e.target.value }));
+                    }}
+                    className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
-                    …
+                    <option value="">— Non planifié —</option>
+                    {choix.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.title}
+                      </option>
+                    ))}
+                    <option value={AUTRE}>… Autre tâche, autre durée, note</option>
+                  </select>
+                  <button
+                    disabled={!valeur(h)}
+                    onClick={() => onValidate(valeur(h), h)}
+                    title={`Valider ${hourLabel(h)} – ${hourLabel(h + 1)}`}
+                    className="shrink-0 rounded-md bg-violet-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-30"
+                  >
+                    Valider
                   </button>
                 </div>
               )}
@@ -586,10 +611,10 @@ function HourGrid({
         })}
       </div>
 
-      {pastilles.length === 0 && (
+      {choix.length === 0 && (
         <p className="mt-1.5 text-[11px] text-slate-400">
-          Aucune tâche de type Projet ouverte pour {memberName} : utilisez «&nbsp;…&nbsp;» pour saisir malgré tout, ou assignez-lui une
-          tâche depuis l'onglet Tâches.
+          Aucune tâche de type Projet ouverte pour {memberName} : choisissez «&nbsp;Autre tâche&nbsp;» dans le menu pour saisir malgré
+          tout, ou assignez-lui une tâche depuis l'onglet Tâches.
         </p>
       )}
     </div>
@@ -679,8 +704,8 @@ function StatusHint() {
   return (
     <p className="text-xs text-slate-400 dark:text-slate-500">
       Le matin est réservé au MCO et aux incidents, l'après-midi aux projets. Choisissez la tâche en cours pour chaque créneau et
-      saisissez le temps passé au fil de l'eau. L'après-midi se valide <strong>heure par heure</strong> : un clic sur une pastille
-      enregistre l'heure sur cette activité, «&nbsp;…&nbsp;» ouvre la saisie complète (autre tâche, autre durée, note).
+      saisissez le temps passé au fil de l'eau. L'après-midi se valide <strong>heure par heure</strong> : choisissez l'activité et
+      cliquez sur Valider. La tâche prévue étant déjà proposée, une heure de plus sur ce qui était prévu ne demande qu'un clic.
     </p>
   );
 }
