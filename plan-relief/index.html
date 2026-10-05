@@ -1206,7 +1206,7 @@ async function importFile(file) {
     if (ext === 'dxf') {
       const buf = await file.arrayBuffer();
       let text = new TextDecoder('utf-8').decode(buf);
-      if (text.includes('�')) text = new TextDecoder('windows-1252').decode(buf);
+      if (text.includes('\uFFFD')) text = new TextDecoder('windows-1252').decode(buf);
       const Parser = window.DxfParser?.default || window.DxfParser;
       if (!Parser) throw new Error('le module de lecture DXF n\'a pas pu être chargé (connexion internet requise)');
       const dxf = new Parser().parseSync(text);
