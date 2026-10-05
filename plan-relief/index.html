@@ -1,0 +1,1428 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plan Relief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Mise en page : outil plein écran, panneau de réglages à gauche (calque → rôle → dimensions → export), scène 3D à droite. */
+:root {
+  --bg: #e9ecef;
+  --panel: #f7f8f9;
+  --raised: #ffffff;
+  --fg: #1a1e23;
+  --muted: #5b6570;
+  --line: #d3d9df;
+  --accent: #2b45c4;
+  --accent-ink: #ffffff;
+  --accent-soft: #e3e8fb;
+  --stage: #dde2e7;
+  --warn-bg: #fff4dc;
+  --warn-fg: #7a4b00;
+  --err-bg: #fde6e4;
+  --err-fg: #8f1f16;
+  --role-mur: #3a4048;
+  --role-fenetre: #2f7fc1;
+  --role-porte: #a3622a;
+  --role-plan: #8b949d;
+  --font-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111417; --panel: #171b1f; --raised: #1e2328; --fg: #e5e8eb; --muted: #97a1ab; --line: #2a3138;
+    --accent: #8095ff; --accent-ink: #0d1020; --accent-soft: #232b4d; --stage: #1b2025;
+    --warn-bg: #3a2c0f; --warn-fg: #f3cf85; --err-bg: #3d1916; --err-fg: #f5aaa2;
+    --role-mur: #c9ced4; --role-fenetre: #6fb2ea; --role-porte: #d39256; --role-plan: #7c8690;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111417; --panel: #171b1f; --raised: #1e2328; --fg: #e5e8eb; --muted: #97a1ab; --line: #2a3138;
+  --accent: #8095ff; --accent-ink: #0d1020; --accent-soft: #232b4d; --stage: #1b2025;
+  --warn-bg: #3a2c0f; --warn-fg: #f3cf85; --err-bg: #3d1916; --err-fg: #f5aaa2;
+  --role-mur: #c9ced4; --role-fenetre: #6fb2ea; --role-porte: #d39256; --role-plan: #7c8690;
+  color-scheme: dark;
+}
+
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.45 var(--font-body);
+  padding-inline: 16px;
+  box-sizing: border-box;
+}
+*, *::before, *::after { box-sizing: inherit; }
+[hidden] { display: none !important; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app { height: 100%; display: grid; grid-template-rows: auto 1fr; gap: 12px; padding-block: 12px; }
+
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand svg { width: 30px; height: 30px; flex: none; }
+.brand .name { font: 700 20px/1 var(--font-display); letter-spacing: -0.01em; }
+.brand .tag { font: 500 11px/1 var(--font-mono); color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; padding-left: 10px; border-left: 1px solid var(--line); }
+.file-chip { font: 500 12px/1.2 var(--font-mono); color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-chip b { color: var(--fg); font-weight: 500; }
+
+.main { min-height: 0; display: grid; grid-template-columns: minmax(300px, 360px) 1fr; gap: 12px; }
+
+.panel {
+  min-height: 0; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  display: flex; flex-direction: column;
+}
+.sec { padding: 16px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--line); }
+.sec:last-child { border-bottom: 0; }
+.sec h2 { margin: 0; font: 700 12px/1 var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; display: flex; align-items: baseline; gap: 8px; }
+.sec h2 .count { font: 400 12px/1 var(--font-mono); letter-spacing: 0; text-transform: none; color: var(--muted); }
+.hint { margin: 0; color: var(--muted); font-size: 12.5px; }
+.hint strong { color: var(--fg); font-weight: 500; }
+
+.drop {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; cursor: pointer;
+  padding: 18px 12px; border: 1.5px dashed var(--line); border-radius: var(--radius); background: var(--raised);
+  transition: border-color .15s, background-color .15s;
+}
+.drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.drop .big { font: 600 14px/1.3 var(--font-body); }
+.drop .small { font: 400 12px/1.3 var(--font-mono); color: var(--muted); }
+.drop input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 12.5px; text-decoration: underline; text-underline-offset: 2px; }
+
+.notice { border-radius: var(--radius); padding: 10px 12px; font-size: 12.5px; background: var(--accent-soft); color: var(--fg); }
+.notice.warn { background: var(--warn-bg); color: var(--warn-fg); }
+.notice.error { background: var(--err-bg); color: var(--err-fg); }
+.notice p { margin: 0 0 6px; } .notice p:last-child { margin: 0; }
+.notice code { font-family: var(--font-mono); font-size: 12px; }
+
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field.wide { grid-column: 1 / -1; }
+.field label, .field .lbl { font-size: 12px; color: var(--muted); }
+.inputwrap { display: flex; align-items: center; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); }
+.inputwrap:focus-within { border-color: var(--accent); }
+.inputwrap input, .inputwrap select { flex: 1; min-width: 0; border: 0; background: transparent; padding: 7px 9px; font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.inputwrap input:focus, .inputwrap select:focus { outline: none; }
+.inputwrap .unit { padding-right: 9px; color: var(--muted); font: 400 12px var(--font-mono); }
+.inputwrap .pre { padding-left: 9px; color: var(--muted); font: 400 13px var(--font-mono); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; }
+
+.layers { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised); overflow: hidden; }
+.layer { display: grid; grid-template-columns: 12px 1fr auto; align-items: center; gap: 10px; padding: 7px 8px 7px 10px; border-bottom: 1px solid var(--line); }
+.layer:last-child { border-bottom: 0; }
+.layer .sw { width: 12px; height: 12px; border-radius: 2px; border: 1px solid rgba(127,127,127,.35); }
+.layer .meta { min-width: 0; display: flex; flex-direction: column; }
+.layer .lname { font: 500 13px/1.25 var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer .lcount { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.layer select {
+  border: 1px solid var(--line); border-radius: 999px; background: var(--panel); padding: 4px 8px 4px 22px; font-size: 12.5px; cursor: pointer;
+  background-image: radial-gradient(circle, var(--dot, var(--role-plan)) 4px, transparent 4.5px); background-repeat: no-repeat; background-position: 4px 50%; background-size: 14px 14px;
+}
+.layer[data-role="mur"] select { --dot: var(--role-mur); }
+.layer[data-role="fenetre"] select { --dot: var(--role-fenetre); }
+.layer[data-role="porte"] select { --dot: var(--role-porte); }
+.layer[data-role="plan"] select { --dot: var(--role-plan); }
+.layer[data-role="ignore"] select { --dot: transparent; }
+.layer[data-role="ignore"] .meta, .layer[data-role="ignore"] .sw { opacity: .45; }
+.layers-empty { padding: 14px; color: var(--muted); font-size: 12.5px; }
+
+.exports { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.btn {
+  border: 1px solid var(--line); background: var(--raised); border-radius: var(--radius); padding: 8px 10px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+}
+.btn:hover { border-color: var(--accent); }
+.btn .fmt { font: 700 14px/1 var(--font-display); letter-spacing: 0.02em; }
+.btn .use { font-size: 11px; color: var(--muted); }
+.btn:disabled { opacity: .5; cursor: progress; }
+
+.view { min-height: 0; position: relative; border-radius: var(--radius); overflow: hidden; background: var(--stage); border: 1px solid var(--line); }
+.viewport { position: absolute; inset: 0; }
+.viewport canvas { display: block; touch-action: none; }
+.toolbar { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.seg { display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; pointer-events: auto; }
+.seg button { border: 0; background: transparent; border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; color: var(--muted); }
+.seg button:hover { color: var(--fg); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg .check { padding: 0 10px; font-size: 12.5px; color: var(--muted); }
+.stats {
+  position: absolute; left: 10px; bottom: 10px; right: 10px; display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; pointer-events: none;
+  font: 400 12px/1.3 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.stats .pill { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px; }
+.stats .pill b { color: var(--fg); font-weight: 500; }
+.stats .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.busy { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--stage) 70%, transparent); font: 500 13px var(--font-mono); color: var(--fg); }
+
+@media (max-width: 820px) {
+  html, body { height: auto; }
+  .app { height: auto; }
+  .main { grid-template-columns: 1fr; }
+  .view { order: -1; height: 58svh; min-height: 320px; }
+  .panel { overflow: visible; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M4 22 L16 28 L28 22 L28 10 L16 16 L4 10 Z" fill="var(--accent)" opacity=".18"/>
+        <path d="M4 10 L16 4 L28 10 L16 16 Z" fill="none" stroke="var(--fg)" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M4 10 V22 L16 28 V16 M28 10 V22 L16 28" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round"/>
+      </svg>
+      <span class="name">Plan Relief</span>
+      <span class="tag">DXF · PDF → 3D</span>
+    </div>
+    <div class="file-chip" id="fileChip">Exemple : <b>appartement T3</b></div>
+  </header>
+
+  <main class="main">
+    <aside class="panel" aria-label="Réglages">
+      <section class="sec">
+        <label class="drop" id="drop">
+          <input type="file" id="fileInput" accept=".dxf,.pdf,.dwg">
+          <span class="big">Importer un plan</span>
+          <span class="small">DXF ou PDF vectoriel · glisser-déposer</span>
+        </label>
+        <div class="row-actions">
+          <span class="hint">Un exemple est chargé pour démarrer.</span>
+          <button type="button" class="linkbtn" id="demoBtn">Recharger l'exemple</button>
+        </div>
+        <div class="notice" id="notice" role="status" hidden></div>
+      </section>
+
+      <section class="sec">
+        <h2>Échelle</h2>
+        <div class="fields">
+          <div class="field wide" id="unitField">
+            <label for="unit">Unité du dessin</label>
+            <div class="inputwrap">
+              <select id="unit">
+                <option value="mm">Millimètres</option>
+                <option value="cm">Centimètres</option>
+                <option value="m">Mètres</option>
+                <option value="in">Pouces</option>
+                <option value="ft">Pieds</option>
+              </select>
+            </div>
+          </div>
+          <div class="field" id="scaleField" hidden>
+            <label for="pdfScale">Échelle du plan</label>
+            <div class="inputwrap"><span class="pre">1 :</span><input id="pdfScale" type="number" min="1" step="1" value="100"></div>
+          </div>
+          <div class="field" id="pageField" hidden>
+            <label for="pdfPage">Page du PDF</label>
+            <div class="inputwrap"><select id="pdfPage"></select></div>
+          </div>
+        </div>
+        <p class="hint" id="unitHint"></p>
+      </section>
+
+      <section class="sec">
+        <h2>Calques <span class="count" id="layerCount"></span></h2>
+        <p class="hint" id="layerHint">Indiquez ce que représente chaque calque : les murs sont montés en hauteur, les fenêtres reçoivent allège, vitrage et linteau, le reste est dessiné au sol.</p>
+        <div class="layers" id="layers"></div>
+      </section>
+
+      <section class="sec">
+        <h2>Dimensions</h2>
+        <div class="fields">
+          <div class="field">
+            <label for="hWall">Hauteur des murs</label>
+            <div class="inputwrap"><input id="hWall" type="number" min="0.5" step="0.05" value="2.50"><span class="unit">m</span></div>
+          </div>
+          <div class="field">
+            <label for="tWall">Murs en trait simple</label>
+            <div class="inputwrap"><input id="tWall" type="number" min="0.02" step="0.01" value="0.20"><span class="unit">m</span></div>
+          </div>
+          <div class="field">
+            <label for="sill">Allège des fenêtres</label>
+            <div class="inputwrap"><input id="sill" type="number" min="0" step="0.05" value="0.90"><span class="unit">m</span></div>
+          </div>
+          <div class="field">
+            <label for="hWin">Hauteur des fenêtres</label>
+            <div class="inputwrap"><input id="hWin" type="number" min="0.1" step="0.05" value="1.25"><span class="unit">m</span></div>
+          </div>
+          <div class="field wide">
+            <label for="tMax">Épaisseur max. d'un mur en double trait</label>
+            <div class="inputwrap"><input id="tMax" type="number" min="0.05" step="0.05" value="0.60"><span class="unit">m</span></div>
+          </div>
+          <label class="check field wide" for="slab"><input type="checkbox" id="slab" checked> Ajouter une dalle de sol</label>
+        </div>
+        <p class="hint">Les murs dessinés en double trait sont remplis automatiquement entre leurs deux faces. Un trait seul devient un mur de l'épaisseur indiquée.</p>
+      </section>
+
+      <section class="sec">
+        <h2>Exporter</h2>
+        <div class="exports">
+          <button type="button" class="btn" data-fmt="glb"><span class="fmt">GLB</span><span class="use">Blender, web</span></button>
+          <button type="button" class="btn" data-fmt="obj"><span class="fmt">OBJ</span><span class="use">SketchUp, 3ds Max</span></button>
+          <button type="button" class="btn" data-fmt="stl"><span class="fmt">STL</span><span class="use">Impression 3D</span></button>
+        </div>
+        <p class="hint" id="exportHint">Coordonnées en mètres. Le STL est orienté Z vers le haut pour les logiciels d'impression.</p>
+      </section>
+    </aside>
+
+    <section class="view" aria-label="Vue 3D">
+      <div class="viewport" id="viewport"></div>
+      <div class="toolbar">
+        <div class="seg" role="group" aria-label="Point de vue">
+          <button type="button" id="view3d" aria-pressed="true">3D</button>
+          <button type="button" id="viewTop" aria-pressed="false">Dessus</button>
+          <button type="button" id="viewFit">Recentrer</button>
+        </div>
+        <div class="seg">
+          <label class="check" for="show2d"><input type="checkbox" id="show2d" checked> Plan au sol</label>
+        </div>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div class="busy" id="busy" hidden>Chargement…</div>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/dxf-parser@1.1.2/dist/dxf-parser.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+const PDFJS_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+const PDFJS_WORKER_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+const JSZIP_URL = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+
+const UNITS = { mm: 0.001, cm: 0.01, m: 1, in: 0.0254, ft: 0.3048 };
+const UNIT_NAMES = { mm: 'millimètres', cm: 'centimètres', m: 'mètres', in: 'pouces', ft: 'pieds' };
+const INSUNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };
+const PT_TO_M = 0.0254 / 72;
+const ROLES = [
+  ['mur', 'Murs'],
+  ['fenetre', 'Fenêtres'],
+  ['porte', 'Portes'],
+  ['plan', 'Plan au sol'],
+  ['ignore', 'Ignorer'],
+];
+
+const $ = (id) => document.getElementById(id);
+const fmt = (n, d = 2) => n.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+/* ---------- État ---------- */
+const state = {
+  kind: 'dxf',      // 'dxf' | 'pdf'
+  name: '',
+  groups: [],       // { id, name, color, kind: 'line'|'fill', segs: number[], fills: {outer, holes}[], role }
+  unit: 'm',
+  pdfDoc: null,
+};
+
+/* ---------- Utilitaires 2D ---------- */
+// Matrice affine [a,b,c,d,e,f] : x' = a x + c y + e ; y' = b x + d y + f
+const I = [1, 0, 0, 1, 0, 0];
+function mul(m, n) {
+  return [
+    m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1],
+    m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3],
+    m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5],
+  ];
+}
+const apply = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+
+function arcPoints(cx, cy, r, a0, sweep) {
+  const n = Math.max(2, Math.ceil(Math.abs(sweep) / (Math.PI / 18)));
+  const pts = [];
+  for (let k = 0; k <= n; k++) {
+    const a = a0 + sweep * k / n;
+    pts.push(cx + r * Math.cos(a), cy + r * Math.sin(a));
+  }
+  return pts;
+}
+
+function bulgePoints(x1, y1, x2, y2, b) {
+  const dx = x2 - x1, dy = y2 - y1, c = Math.hypot(dx, dy);
+  if (Math.abs(b) < 1e-9 || c < 1e-12) return [x1, y1, x2, y2];
+  const theta = 4 * Math.atan(b);
+  const r = c / (2 * Math.sin(theta / 2));
+  const h = r * Math.cos(theta / 2);
+  const cx = (x1 + x2) / 2 - h * dy / c, cy = (y1 + y2) / 2 + h * dx / c;
+  return arcPoints(cx, cy, Math.abs(r), Math.atan2(y1 - cy, x1 - cx), theta);
+}
+
+function polygonArea(p) {
+  let a = 0;
+  for (let i = 0, n = p.length; i < n; i += 2) {
+    const j = (i + 2) % n;
+    a += p[i] * p[j + 1] - p[j] * p[i + 1];
+  }
+  return a / 2;
+}
+function pointInPolygon(x, y, p) {
+  let inside = false;
+  for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
+    const xi = p[i], yi = p[i + 1], xj = p[j], yj = p[j + 1];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/* ---------- Lecture DXF ---------- */
+function makeGroupStore(defaultColor) {
+  const map = new Map();
+  return {
+    map,
+    get(id, name, color, kind = 'line') {
+      let g = map.get(id);
+      if (!g) { g = { id, name, color: color ?? defaultColor, kind, segs: [], fills: [], role: null }; map.set(id, g); }
+      return g;
+    },
+  };
+}
+function pushPolyline(g, m, pts, closed) {
+  const n = pts.length;
+  if (n < 4) return;
+  let [px, py] = apply(m, pts[0], pts[1]);
+  const fx = px, fy = py;
+  for (let i = 2; i < n; i += 2) {
+    const [x, y] = apply(m, pts[i], pts[i + 1]);
+    g.segs.push(px, py, x, y);
+    px = x; py = y;
+  }
+  if (closed && (px !== fx || py !== fy)) g.segs.push(px, py, fx, fy);
+}
+
+const OCS_TYPES = new Set(['ARC', 'CIRCLE', 'LWPOLYLINE', 'POLYLINE', 'INSERT', 'SOLID']);
+
+function dxfToGroups(dxf) {
+  const layers = dxf.tables?.layer?.layers || {};
+  const store = makeGroupStore(0x808080);
+  const blocks = dxf.blocks || {};
+  const groupFor = (name) => store.get(name, name, layers[name]?.color);
+
+  const walk = (entities, m0, inherit, depth) => {
+    if (depth > 10) return;
+    for (const e of entities || []) {
+      let layer = e.layer || '0';
+      if (layer === '0' && inherit) layer = inherit;
+      const m = OCS_TYPES.has(e.type) && e.extrusionDirection && e.extrusionDirection.z < 0 ? mul(m0, [-1, 0, 0, 1, 0, 0]) : m0;
+      switch (e.type) {
+        case 'LINE': {
+          const [a, b] = e.vertices || [];
+          if (a && b) pushPolyline(groupFor(layer), m, [a.x, a.y, b.x, b.y], false);
+          break;
+        }
+        case 'LWPOLYLINE':
+        case 'POLYLINE': {
+          const v = (e.vertices || []).filter((p) => Number.isFinite(p.x));
+          if (v.length < 2) break;
+          const pts = [];
+          const n = e.shape ? v.length : v.length - 1;
+          for (let i = 0; i < n; i++) {
+            const p = v[i], q = v[(i + 1) % v.length];
+            const seg = bulgePoints(p.x, p.y, q.x, q.y, p.bulge || 0);
+            if (i > 0) seg.splice(0, 2);
+            pts.push(...seg);
+          }
+          pushPolyline(groupFor(layer), m, pts, false);
+          break;
+        }
+        case 'ARC': {
+          let sweep = e.endAngle - e.startAngle;
+          while (sweep <= 0) sweep += Math.PI * 2;
+          pushPolyline(groupFor(layer), m, arcPoints(e.center.x, e.center.y, e.radius, e.startAngle, sweep), false);
+          break;
+        }
+        case 'CIRCLE':
+          pushPolyline(groupFor(layer), m, arcPoints(e.center.x, e.center.y, e.radius, 0, Math.PI * 2), false);
+          break;
+        case 'ELLIPSE': {
+          const c = e.center, M = e.majorAxisEndPoint, r = e.axisRatio ?? 1;
+          let t0 = e.startAngle ?? 0, t1 = e.endAngle ?? Math.PI * 2;
+          while (t1 <= t0) t1 += Math.PI * 2;
+          const n = Math.max(8, Math.ceil((t1 - t0) / (Math.PI / 18)));
+          const pts = [];
+          for (let k = 0; k <= n; k++) {
+            const t = t0 + (t1 - t0) * k / n, ct = Math.cos(t), st = Math.sin(t) * r;
+            pts.push(c.x + ct * M.x - st * M.y, c.y + ct * M.y + st * M.x);
+          }
+          pushPolyline(groupFor(layer), m, pts, false);
+          break;
+        }
+        case 'SPLINE': {
+          const src = e.fitPoints?.length ? e.fitPoints : e.controlPoints || [];
+          pushPolyline(groupFor(layer), m, src.flatMap((p) => [p.x, p.y]), !!e.closed);
+          break;
+        }
+        case 'SOLID': {
+          const p = e.points || [];
+          if (p.length < 3) break;
+          const order = p.length === 4 ? [p[0], p[1], p[3], p[2]] : p;
+          const outer = order.flatMap((q) => apply(m, q.x, q.y));
+          const g = groupFor(layer);
+          g.fills.push({ outer, holes: [] });
+          pushPolyline(g, I, outer, true);
+          break;
+        }
+        case 'INSERT': {
+          const blk = blocks[e.name];
+          if (!blk) break;
+          const base = blk.position || { x: 0, y: 0 };
+          const pos = e.position || { x: 0, y: 0 };
+          const rot = (e.rotation || 0) * Math.PI / 180;
+          const sx = e.xScale ?? 1, sy = e.yScale ?? 1;
+          const c = Math.cos(rot), s = Math.sin(rot);
+          let mi = [c * sx, s * sx, -s * sy, c * sy, pos.x, pos.y];
+          mi = mul(mi, [1, 0, 0, 1, -base.x, -base.y]);
+          walk(blk.entities, mul(m, mi), layer, depth + 1);
+          break;
+        }
+        default: break; // TEXT, MTEXT, DIMENSION, HATCH… ignorés
+      }
+    }
+  };
+  walk(dxf.entities, I, null, 0);
+
+  const groups = [...store.map.values()].filter((g) => g.segs.length > 0);
+  for (const g of groups) {
+    const info = layers[g.name];
+    g.role = info && (info.frozen || info.visible === false) ? 'ignore' : guessLayerRole(g.name);
+  }
+  groups.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  return groups;
+}
+
+function guessLayerRole(name) {
+  const n = name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  if (/fen|win|vitr|glaz|baie|chassis/.test(n)) return 'fenetre';
+  if (/porte|door/.test(n)) return 'porte';
+  if (/cot|dim|text|txt|hach|hatch|axe|grid|annot|cartouche|title|viewport|defpoint|legend|nomencl/.test(n)) return 'ignore';
+  if (/mur|wall|cloison|macon|beton|voile|poteau|column|partition/.test(n)) return 'mur';
+  return 'plan';
+}
+
+function detectUnit(dxf, groups) {
+  const code = dxf.header?.$INSUNITS;
+  if (INSUNITS[code]) return { unit: INSUNITS[code], source: 'file' };
+  const b = bounds(groups.filter((g) => g.role !== 'ignore'));
+  const size = b ? Math.max(b.maxX - b.minX, b.maxY - b.minY) : 0;
+  return { unit: size > 2000 ? 'mm' : size > 200 ? 'cm' : 'm', source: 'guess' };
+}
+
+function bounds(groups) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const g of groups) {
+    const s = g.segs;
+    for (let i = 0; i < s.length; i += 2) {
+      const x = s[i], y = s[i + 1];
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+  }
+  return minX === Infinity ? null : { minX, minY, maxX, maxY };
+}
+
+/* ---------- Lecture PDF (tracés vectoriels) ---------- */
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error(`Impossible de charger ${src}`));
+    document.head.appendChild(s);
+  });
+}
+async function ensurePdfjs() {
+  if (window.pdfjsLib) return window.pdfjsLib;
+  // Le worker est chargé dans la page : pdf.js l'exécute alors sur le thread principal.
+  await loadScript(PDFJS_WORKER_URL);
+  await loadScript(PDFJS_URL);
+  return window.pdfjsLib;
+}
+
+const hexColor = (c) => ((c[0] & 255) << 16) | ((c[1] & 255) << 8) | (c[2] & 255);
+
+async function pdfPageToGroups(pdfjsLib, doc, pageNum) {
+  const page = await doc.getPage(pageNum);
+  const ol = await page.getOperatorList();
+  const OPS = pdfjsLib.OPS;
+  const store = makeGroupStore(0);
+  const stack = [];
+  let ctm = I, lw = 1, stroke = [0, 0, 0], fill = [0, 0, 0];
+  let subpaths = [], cur = null;
+
+  let lastStart = null;
+  const startSub = (x, y) => { cur = { pts: [x, y], closed: false }; subpaths.push(cur); };
+  // Après une fermeture (h), un nouveau trait repart du début du sous-chemin précédent.
+  const lineTo = (x, y) => { if (!cur) { if (!lastStart) { startSub(x, y); return; } startSub(...lastStart); } cur.pts.push(x, y); };
+  const bezier = (x1, y1, x2, y2, x3, y3) => {
+    if (!cur && lastStart) startSub(...lastStart);
+    if (!cur) return;
+    const n = cur.pts.length, x0 = cur.pts[n - 2], y0 = cur.pts[n - 1];
+    for (let k = 1; k <= 8; k++) {
+      const t = k / 8, u = 1 - t;
+      const a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t;
+      cur.pts.push(a * x0 + b * x1 + c * x2 + d * x3, a * y0 + b * y1 + c * y2 + d * y3);
+    }
+  };
+
+  const strokeWidth = () => lw * Math.sqrt(Math.abs(ctm[0] * ctm[3] - ctm[1] * ctm[2]));
+
+  const emitStroke = (closeLast) => {
+    if (closeLast && cur) cur.closed = true;
+    const w = Math.round(strokeWidth() * 100) / 100;
+    const color = hexColor(stroke);
+    const g = store.get(`s:${w}:${color}`, `Trait ${fmt(w)} pt`, color, 'line');
+    g.width = w;
+    for (const sp of subpaths) pushPolyline(g, I, sp.pts, sp.closed);
+  };
+  const emitFill = () => {
+    const color = hexColor(fill);
+    const g = store.get(`f:${color}`, 'Aplat', color, 'fill');
+    const polys = subpaths.filter((sp) => sp.pts.length >= 6).map((sp) => ({ pts: sp.pts, area: Math.abs(polygonArea(sp.pts)) }))
+      .filter((p) => p.area > 1e-6).sort((a, b) => b.area - a.area);
+    // Imbrication : un contour contenu dans un autre devient un trou (profondeur impaire).
+    for (let i = 0; i < polys.length; i++) {
+      const p = polys[i];
+      p.depth = 0; p.parent = null;
+      for (let j = i - 1; j >= 0; j--) {
+        if (pointInPolygon(p.pts[0], p.pts[1], polys[j].pts)) { p.parent = polys[j]; p.depth = polys[j].depth + 1; break; }
+      }
+      if (p.depth % 2 === 0) { p.shape = { outer: p.pts, holes: [] }; g.fills.push(p.shape); }
+      else if (p.parent.shape) p.parent.shape.holes.push(p.pts);
+      pushPolyline(g, I, p.pts, true);
+    }
+  };
+  const endPath = () => { subpaths = []; cur = null; lastStart = null; };
+
+  for (let i = 0; i < ol.fnArray.length; i++) {
+    const fn = ol.fnArray[i], args = ol.argsArray[i];
+    switch (fn) {
+      case OPS.save: stack.push({ ctm, lw, stroke, fill }); break;
+      case OPS.restore: if (stack.length) ({ ctm, lw, stroke, fill } = stack.pop()); break;
+      case OPS.transform: ctm = mul(ctm, args); break;
+      case OPS.paintFormXObjectBegin:
+        stack.push({ ctm, lw, stroke, fill });
+        if (args[0]) ctm = mul(ctm, args[0]);
+        break;
+      case OPS.paintFormXObjectEnd: if (stack.length) ({ ctm, lw, stroke, fill } = stack.pop()); break;
+      case OPS.setLineWidth: lw = args[0]; break;
+      case OPS.setStrokeRGBColor: stroke = typeof args === 'string' ? parseHex(args) : [args[0], args[1], args[2]]; break;
+      case OPS.setFillRGBColor: fill = typeof args === 'string' ? parseHex(args) : [args[0], args[1], args[2]]; break;
+      case OPS.constructPath: {
+        const [ops, coords] = args;
+        let k = 0;
+        const P = (x, y) => apply(ctm, x, y);
+        for (const op of ops) {
+          if (op === OPS.moveTo) { const [x, y] = P(coords[k], coords[k + 1]); k += 2; startSub(x, y); }
+          else if (op === OPS.lineTo) { const [x, y] = P(coords[k], coords[k + 1]); k += 2; lineTo(x, y); }
+          else if (op === OPS.curveTo) {
+            const [a, b] = P(coords[k], coords[k + 1]), [c, d] = P(coords[k + 2], coords[k + 3]), [e, f] = P(coords[k + 4], coords[k + 5]);
+            k += 6; bezier(a, b, c, d, e, f);
+          } else if (op === OPS.curveTo2) {
+            const n = cur ? cur.pts.length : 0;
+            const [c, d] = P(coords[k], coords[k + 1]), [e, f] = P(coords[k + 2], coords[k + 3]);
+            k += 4; if (cur) bezier(cur.pts[n - 2], cur.pts[n - 1], c, d, e, f);
+          } else if (op === OPS.curveTo3) {
+            const [a, b] = P(coords[k], coords[k + 1]), [e, f] = P(coords[k + 2], coords[k + 3]);
+            k += 4; bezier(a, b, e, f, e, f);
+          } else if (op === OPS.closePath) {
+            if (cur) { cur.closed = true; lastStart = [cur.pts[0], cur.pts[1]]; cur = null; }
+          } else if (op === OPS.rectangle) {
+            const x = coords[k], y = coords[k + 1], w = coords[k + 2], h = coords[k + 3]; k += 4;
+            const pts = [P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)].flat();
+            subpaths.push({ pts, closed: true });
+            cur = null;
+          }
+        }
+        break;
+      }
+      case OPS.stroke: emitStroke(false); endPath(); break;
+      case OPS.closeStroke: emitStroke(true); endPath(); break;
+      case OPS.fill: case OPS.eoFill: emitFill(); endPath(); break;
+      case OPS.fillStroke: case OPS.eoFillStroke: emitFill(); emitStroke(false); endPath(); break;
+      case OPS.closeFillStroke: case OPS.closeEOFillStroke: emitFill(); emitStroke(true); endPath(); break;
+      case OPS.endPath: endPath(); break;
+      default: break;
+    }
+  }
+  const groups = [...store.map.values()].filter((g) => g.segs.length > 0);
+  guessPdfRoles(groups);
+  groups.sort((a, b) => (a.kind === b.kind ? (b.width ?? 0) - (a.width ?? 0) || b.segs.length - a.segs.length : a.kind === 'fill' ? -1 : 1));
+  return groups;
+}
+function parseHex(s) { const v = parseInt(s.replace('#', ''), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; }
+
+function luminance(c) { return (0.299 * ((c >> 16) & 255) + 0.587 * ((c >> 8) & 255) + 0.114 * (c & 255)) / 255; }
+
+function guessPdfRoles(groups) {
+  for (const g of groups) g.role = 'plan';
+  const darkFills = groups.filter((g) => g.kind === 'fill' && luminance(g.color) < 0.4 && g.fills.length >= 1);
+  for (const g of groups) if (g.kind === 'fill' && luminance(g.color) > 0.92) g.role = 'ignore';
+  if (darkFills.length) { for (const g of darkFills) g.role = 'mur'; return; }
+  const strokes = groups.filter((g) => g.kind === 'line' && g.segs.length >= 16);
+  if (strokes.length > 1) {
+    const maxW = Math.max(...strokes.map((g) => g.width));
+    for (const g of strokes) if (g.width === maxW && maxW > 0) g.role = 'mur';
+  }
+}
+
+/* ---------- Construction 3D ---------- */
+function prepareSegments(segs, f, cx, cy) {
+  const out = new Float64Array(segs.length);
+  for (let i = 0; i < segs.length; i += 2) {
+    out[i] = (segs[i] - cx) * f;
+    out[i + 1] = (segs[i + 1] - cy) * f;
+  }
+  return out;
+}
+
+// Associe les faces parallèles d'un mur en double trait et renvoie les blocs pleins entre elles.
+function pairWalls(s, minT, maxT) {
+  const n = s.length / 4;
+  const X = new Float64Array(n), Y = new Float64Array(n), UX = new Float64Array(n), UY = new Float64Array(n), L = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const x1 = s[i * 4], y1 = s[i * 4 + 1], dx = s[i * 4 + 2] - x1, dy = s[i * 4 + 3] - y1, l = Math.hypot(dx, dy);
+    X[i] = x1; Y[i] = y1; L[i] = l; UX[i] = l ? dx / l : 1; UY[i] = l ? dy / l : 0;
+  }
+  // Grille spatiale pour ne comparer que des segments voisins.
+  const cell = Math.max(maxT * 2, 0.5);
+  const grid = new Map();
+  for (let i = 0; i < n; i++) {
+    if (L[i] < 0.02) continue;
+    const x2 = X[i] + UX[i] * L[i], y2 = Y[i] + UY[i] * L[i];
+    const gx0 = Math.floor((Math.min(X[i], x2) - maxT) / cell), gx1 = Math.floor((Math.max(X[i], x2) + maxT) / cell);
+    const gy0 = Math.floor((Math.min(Y[i], y2) - maxT) / cell), gy1 = Math.floor((Math.max(Y[i], y2) + maxT) / cell);
+    if ((gx1 - gx0 + 1) * (gy1 - gy0 + 1) > 4000) continue;
+    for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
+      const key = gx * 73856093 ^ gy * 19349663;
+      let list = grid.get(key);
+      if (!list) grid.set(key, (list = []));
+      list.push(i);
+    }
+  }
+  const seen = new Set();
+  const cands = [];
+  for (const list of grid.values()) {
+    for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length; b++) {
+      let i = list[a], j = list[b];
+      if (i > j) [i, j] = [j, i];
+      const key = i * n + j;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (Math.abs(UX[i] * UY[j] - UY[i] * UX[j]) > 0.035) continue; // ~2°
+      const mx = X[j] + UX[j] * L[j] / 2, my = Y[j] + UY[j] * L[j] / 2;
+      const d = (mx - X[i]) * -UY[i] + (my - Y[i]) * UX[i];
+      const ad = Math.abs(d);
+      if (ad < minT || ad > maxT) continue;
+      const t1 = (X[j] - X[i]) * UX[i] + (Y[j] - Y[i]) * UY[i];
+      const t2 = t1 + L[j] * (UX[j] * UX[i] + UY[j] * UY[i]);
+      const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(L[i], Math.max(t1, t2));
+      if (hi - lo < 0.02) continue;
+      cands.push({ i, j, d, lo, hi });
+    }
+  }
+  cands.sort((a, b) => Math.abs(a.d) - Math.abs(b.d));
+
+  const covered = Array.from({ length: n }, () => []);
+  const coveredFrac = (k, lo, hi) => {
+    let c = 0;
+    for (const [a, b] of covered[k]) c += Math.max(0, Math.min(b, hi) - Math.max(a, lo));
+    return c / (hi - lo);
+  };
+  const boxes = [];
+  for (const { i, j, d, lo, hi } of cands) {
+    const ax = X[i] + UX[i] * lo, ay = Y[i] + UY[i] * lo, bx = X[i] + UX[i] * hi, by = Y[i] + UY[i] * hi;
+    const pa = (ax - X[j]) * UX[j] + (ay - Y[j]) * UY[j], pb = (bx - X[j]) * UX[j] + (by - Y[j]) * UY[j];
+    const jlo = Math.max(0, Math.min(pa, pb)), jhi = Math.min(L[j], Math.max(pa, pb));
+    if (jhi - jlo < 0.02) continue;
+    if (coveredFrac(i, lo, hi) > 0.5 || coveredFrac(j, jlo, jhi) > 0.5) continue;
+    covered[i].push([lo, hi]);
+    covered[j].push([jlo, jhi]);
+    const mid = (lo + hi) / 2;
+    boxes.push({ x: X[i] + UX[i] * mid - UY[i] * d / 2, y: Y[i] + UY[i] * mid + UX[i] * d / 2, ux: UX[i], uy: UY[i], len: hi - lo, thick: Math.abs(d) });
+  }
+  // Morceaux de traits restés seuls.
+  const leftovers = [];
+  for (let k = 0; k < n; k++) {
+    if (L[k] < 0.02) continue;
+    const iv = covered[k].sort((a, b) => a[0] - b[0]);
+    let t = 0;
+    const gaps = [];
+    for (const [a, b] of iv) { if (a > t) gaps.push([t, a]); t = Math.max(t, b); }
+    if (t < L[k]) gaps.push([t, L[k]]);
+    for (const [a, b] of gaps) leftovers.push({ k, a, b, len: b - a, x: X[k] + UX[k] * (a + b) / 2, y: Y[k] + UY[k] * (a + b) / 2, ux: UX[k], uy: UY[k] });
+  }
+  return { boxes, leftovers };
+}
+
+function boxGeometry(cx, cy, ux, uy, len, thick, y0, y1) {
+  const g = new THREE.BoxGeometry(len, y1 - y0, thick);
+  g.rotateY(Math.atan2(uy, ux));
+  g.translate(cx, (y0 + y1) / 2, -cy);
+  return g.toNonIndexed();
+}
+
+function extrudeFill(fill, f, cx, cy, h) {
+  const toV = (p) => { const v = []; for (let i = 0; i < p.length; i += 2) v.push(new THREE.Vector2((p[i] - cx) * f, (p[i + 1] - cy) * f)); return v; };
+  const shape = new THREE.Shape(toV(fill.outer));
+  for (const hole of fill.holes) shape.holes.push(new THREE.Path(toV(hole)));
+  const g = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, curveSegments: 1 });
+  g.rotateX(-Math.PI / 2);
+  return g.index ? g.toNonIndexed() : g;
+}
+
+// Regroupe les traits qui se touchent (symboles de fenêtre).
+function clusterSegments(s, tol) {
+  const n = s.length / 4;
+  const parent = Int32Array.from({ length: n }, (_, i) => i);
+  const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const bb = [];
+  for (let i = 0; i < n; i++) {
+    const x1 = s[i * 4], y1 = s[i * 4 + 1], x2 = s[i * 4 + 2], y2 = s[i * 4 + 3];
+    bb.push({ i, minX: Math.min(x1, x2), maxX: Math.max(x1, x2), minY: Math.min(y1, y2), maxY: Math.max(y1, y2) });
+  }
+  bb.sort((a, b) => a.minX - b.minX);
+  for (let a = 0; a < n; a++) {
+    const A = bb[a];
+    for (let b = a + 1; b < n && bb[b].minX <= A.maxX + tol; b++) {
+      const B = bb[b];
+      if (B.minY <= A.maxY + tol && B.maxY >= A.minY - tol) parent[find(A.i)] = find(B.i);
+    }
+  }
+  const groups = new Map();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    if (!groups.has(r)) groups.set(r, []);
+    groups.get(r).push(s[i * 4], s[i * 4 + 1], s[i * 4 + 2], s[i * 4 + 3]);
+  }
+  return [...groups.values()];
+}
+
+function minAreaRect(pts) {
+  const P = [];
+  for (let i = 0; i < pts.length; i += 2) P.push([pts[i], pts[i + 1]]);
+  P.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [], upper = [];
+  for (const p of P) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
+  for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
+  const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
+  if (hull.length < 2) return null;
+  let best = null;
+  for (let k = 0; k < hull.length; k++) {
+    const a = hull[k], b = hull[(k + 1) % hull.length];
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (l < 1e-9) continue;
+    const ux = (b[0] - a[0]) / l, uy = (b[1] - a[1]) / l;
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    for (const p of hull) {
+      const u = p[0] * ux + p[1] * uy, v = -p[0] * uy + p[1] * ux;
+      u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+    }
+    const area = (u1 - u0) * (v1 - v0);
+    if (!best || area < best.area - 1e-12) {
+      const um = (u0 + u1) / 2, vm = (v0 + v1) / 2;
+      best = { area, cx: um * ux - vm * uy, cy: um * uy + vm * ux, ux, uy, L: u1 - u0, W: v1 - v0 };
+    }
+  }
+  if (best && best.W > best.L) best = { ...best, ux: -best.uy, uy: best.ux, L: best.W, W: best.L };
+  return best;
+}
+
+function readParams() {
+  const num = (id, d) => { const v = parseFloat($(id).value); return Number.isFinite(v) && v >= 0 ? v : d; };
+  return {
+    hWall: Math.max(0.1, num('hWall', 2.5)),
+    tWall: Math.max(0.01, num('tWall', 0.2)),
+    tMax: Math.max(0.05, num('tMax', 0.6)),
+    sill: num('sill', 0.9),
+    hWin: Math.max(0.05, num('hWin', 1.25)),
+    slab: $('slab').checked,
+    show2d: $('show2d').checked,
+  };
+}
+
+function drawingFactor() {
+  if (state.kind === 'pdf') {
+    const s = parseFloat($('pdfScale').value);
+    return PT_TO_M * (Number.isFinite(s) && s > 0 ? s : 100);
+  }
+  return UNITS[state.unit] || 1;
+}
+
+function displayColor(c) {
+  // Un trait blanc ou presque (fréquent en DXF) resterait invisible au sol.
+  return luminance(c) > 0.82 ? 0x6b7480 : c;
+}
+
+function buildModel(P) {
+  const f = drawingFactor();
+  const active = state.groups.filter((g) => g.role !== 'ignore');
+  const b = bounds(active) || { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+
+  const wallGeoms = [], glassGeoms = [];
+  const lineObjects = [];
+  const stats = { walls: 0, windows: 0, wallSegs: 0 };
+
+  // Murs
+  const wallLines = [];
+  for (const g of state.groups) {
+    if (g.role !== 'mur') continue;
+    if (g.kind === 'fill') {
+      for (const fill of g.fills) { wallGeoms.push(extrudeFill(fill, f, cx, cy, P.hWall)); stats.walls++; }
+    } else wallLines.push(...g.segs);
+  }
+  if (wallLines.length) {
+    const s = prepareSegments(wallLines, f, cx, cy);
+    stats.wallSegs = s.length / 4;
+    const { boxes, leftovers } = pairWalls(s, 0.03, P.tMax);
+    for (const bx of boxes) wallGeoms.push(boxGeometry(bx.x, bx.y, bx.ux, bx.uy, bx.len, bx.thick, 0, P.hWall));
+    // Dans un plan en double trait, les petits restes (retours, angles) sont déjà couverts par les murs voisins.
+    const minLeft = boxes.length ? P.tMax : 0.02;
+    let kept = 0;
+    for (const lf of leftovers) {
+      if (lf.len <= minLeft) continue;
+      wallGeoms.push(boxGeometry(lf.x, lf.y, lf.ux, lf.uy, lf.len + (boxes.length ? 0 : P.tWall), P.tWall, 0, P.hWall));
+      kept++;
+    }
+    stats.walls += boxes.length + kept;
+  }
+
+  // Fenêtres
+  for (const g of state.groups) {
+    if (g.role !== 'fenetre') continue;
+    const s = prepareSegments(g.segs, f, cx, cy);
+    for (const cl of clusterSegments(s, 0.08)) {
+      const r = minAreaRect(cl);
+      if (!r || r.L < 0.25) continue;
+      const W = r.W < 0.04 ? P.tWall : r.W;
+      const top = Math.min(P.sill + P.hWin, P.hWall);
+      if (P.sill > 0) wallGeoms.push(boxGeometry(r.cx, r.cy, r.ux, r.uy, r.L, W, 0, Math.min(P.sill, P.hWall)));
+      if (P.hWall > top) wallGeoms.push(boxGeometry(r.cx, r.cy, r.ux, r.uy, r.L, W, top, P.hWall));
+      if (top > P.sill) glassGeoms.push(boxGeometry(r.cx, r.cy, r.ux, r.uy, r.L, Math.min(0.03, W), P.sill, top));
+      stats.windows++;
+    }
+  }
+
+  // Traits au sol (plan, portes)
+  for (const g of state.groups) {
+    if (g.role !== 'plan' && g.role !== 'porte') continue;
+    if (g.role === 'plan' && !P.show2d) continue;
+    const s = prepareSegments(g.segs, f, cx, cy);
+    const pos = new Float32Array((s.length / 2) * 3);
+    const y = g.role === 'porte' ? 0.008 : 0.004;
+    for (let i = 0, k = 0; i < s.length; i += 2, k += 3) { pos[k] = s[i]; pos[k + 1] = y; pos[k + 2] = -s[i + 1]; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const color = g.role === 'porte' ? cssColor('--role-porte') : displayColor(g.color);
+    const line = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color }));
+    line.name = g.name;
+    lineObjects.push(line);
+  }
+
+  return { wallGeoms, glassGeoms, lineObjects, stats, extent: { w: (b.maxX - b.minX) * f, h: (b.maxY - b.minY) * f } };
+}
+
+/* ---------- Scène ---------- */
+const viewport = $('viewport');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+viewport.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 5000);
+camera.position.set(10, 10, 10);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.495;
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f96, 1.6);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0005;
+scene.add(sun, sun.target);
+
+const materials = {
+  wall: new THREE.MeshStandardMaterial({ color: 0xeceae6, roughness: 0.92, metalness: 0 }),
+  glass: new THREE.MeshStandardMaterial({ color: 0x8ec3ea, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.45 }),
+  slab: new THREE.MeshStandardMaterial({ color: 0xd6d0c4, roughness: 1, metalness: 0 }),
+  edges: new THREE.LineBasicMaterial({ color: 0x2c3138, transparent: true, opacity: 0.55 }),
+};
+
+let model = new THREE.Group();
+scene.add(model);
+let grid = null;
+
+function cssColor(name) {
+  return new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888').getHex();
+}
+function applyTheme() {
+  scene.background = new THREE.Color(cssColor('--stage'));
+  if (grid) { grid.material.color.setHex(cssColor('--line')); }
+  rebuild();
+}
+
+function disposeGroup(g) {
+  g.traverse((o) => { o.geometry?.dispose(); if (o.material && !Object.values(materials).includes(o.material)) o.material.dispose(); });
+}
+
+let lastBox = null;
+function rebuild({ fit = false } = {}) {
+  const P = readParams();
+  const built = buildModel(P);
+  scene.remove(model);
+  disposeGroup(model);
+  model = new THREE.Group();
+
+  if (built.wallGeoms.length) {
+    const g = mergeGeometries(built.wallGeoms, false);
+    built.wallGeoms.forEach((x) => x.dispose());
+    const mesh = new THREE.Mesh(g, materials.wall);
+    mesh.name = 'Murs';
+    mesh.castShadow = mesh.receiveShadow = true;
+    model.add(mesh);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), materials.edges);
+    edges.userData.noExport = true;
+    model.add(edges);
+  }
+  if (built.glassGeoms.length) {
+    const g = mergeGeometries(built.glassGeoms, false);
+    built.glassGeoms.forEach((x) => x.dispose());
+    const mesh = new THREE.Mesh(g, materials.glass);
+    mesh.name = 'Vitrages';
+    model.add(mesh);
+  }
+  for (const l of built.lineObjects) model.add(l);
+
+  const box = new THREE.Box3().setFromObject(model);
+  if (box.isEmpty()) box.set(new THREE.Vector3(-5, 0, -5), new THREE.Vector3(5, 2.5, 5));
+  if (P.slab) {
+    const sx = box.max.x - box.min.x + 0.4, sz = box.max.z - box.min.z + 0.4;
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.12, sz), materials.slab);
+    slab.name = 'Dalle';
+    slab.position.set((box.min.x + box.max.x) / 2, -0.06, (box.min.z + box.max.z) / 2);
+    slab.receiveShadow = true;
+    model.add(slab);
+  }
+  scene.add(model);
+
+  // Grille et ombres dimensionnées sur le modèle
+  const size = Math.max(box.max.x - box.min.x, box.max.z - box.min.z, 4);
+  if (grid) { scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); }
+  const gsize = Math.ceil(size * 1.6);
+  grid = new THREE.GridHelper(gsize, gsize, cssColor('--line'), cssColor('--line'));
+  grid.position.set((box.min.x + box.max.x) / 2, P.slab ? -0.121 : -0.001, (box.min.z + box.max.z) / 2);
+  grid.material.transparent = true; grid.material.opacity = 0.7;
+  scene.add(grid);
+
+  const c = box.getCenter(new THREE.Vector3());
+  sun.position.set(c.x + size * 0.6, size * 1.2 + 5, c.z + size * 0.9);
+  sun.target.position.copy(c);
+  const sc = sun.shadow.camera;
+  sc.left = sc.bottom = -size; sc.right = sc.top = size; sc.near = 0.1; sc.far = size * 4 + 20;
+  sc.updateProjectionMatrix();
+
+  lastBox = box;
+  if (fit) fitView(viewMode);
+  renderStats(built, P);
+}
+
+let viewMode = '3d';
+function fitView(mode = viewMode) {
+  if (!lastBox) return;
+  const c = lastBox.getCenter(new THREE.Vector3());
+  const r = Math.max(lastBox.getSize(new THREE.Vector3()).length() / 2, 2);
+  const dist = r / Math.sin((camera.fov * Math.PI / 180) / 2) * 1.05;
+  const dir = mode === 'top' ? new THREE.Vector3(0, 1, 0.0001) : new THREE.Vector3(0.75, 0.85, 1.1);
+  dir.normalize();
+  camera.position.copy(c).addScaledVector(dir, dist);
+  camera.near = Math.max(0.01, dist / 500); camera.far = dist * 20;
+  camera.updateProjectionMatrix();
+  controls.target.copy(c);
+  controls.update();
+}
+function setView(mode) {
+  viewMode = mode;
+  $('view3d').setAttribute('aria-pressed', String(mode === '3d'));
+  $('viewTop').setAttribute('aria-pressed', String(mode === 'top'));
+  fitView(mode);
+}
+
+function resize() {
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  renderer.domElement.style.width = w + 'px';
+  renderer.domElement.style.height = h + 'px';
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(viewport);
+resize();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+
+/* ---------- Interface ---------- */
+function renderStats(built, P) {
+  const el = $('stats');
+  const parts = [];
+  const pill = (dot, html) => `<span class="pill">${dot ? `<span class="dot" style="background:var(${dot})"></span>` : ''}${html}</span>`;
+  parts.push(pill('--role-mur', `<b>${built.stats.walls}</b> murs`));
+  parts.push(pill('--role-fenetre', `<b>${built.stats.windows}</b> fenêtres`));
+  if (built.extent.w > 0) parts.push(pill(null, `Emprise <b>${fmt(built.extent.w)} × ${fmt(built.extent.h)} m</b>`));
+  parts.push(pill(null, `Hauteur <b>${fmt(P.hWall)} m</b>`));
+  el.innerHTML = parts.join('');
+  const noWall = !state.groups.some((g) => g.role === 'mur');
+  $('layerHint').innerHTML = noWall && state.groups.length
+    ? '<strong>Aucun calque n\'est affecté aux murs.</strong> Choisissez « Murs » sur le calque qui contient les murs pour obtenir un volume.'
+    : 'Indiquez ce que représente chaque calque : les murs sont montés en hauteur, les fenêtres reçoivent allège, vitrage et linteau, le reste est dessiné au sol.';
+}
+
+function renderLayers() {
+  const box = $('layers');
+  box.textContent = '';
+  $('layerCount').textContent = state.groups.length ? String(state.groups.length) : '';
+  if (!state.groups.length) {
+    const p = document.createElement('div');
+    p.className = 'layers-empty';
+    p.textContent = 'Aucun trait exploitable dans ce fichier.';
+    box.appendChild(p);
+    return;
+  }
+  state.groups.forEach((g, idx) => {
+    const row = document.createElement('div');
+    row.className = 'layer';
+    row.dataset.role = g.role;
+    const sw = document.createElement('span');
+    sw.className = 'sw';
+    sw.style.background = '#' + g.color.toString(16).padStart(6, '0');
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const name = document.createElement('span');
+    name.className = 'lname';
+    name.textContent = g.name;
+    name.title = g.name;
+    const count = document.createElement('span');
+    count.className = 'lcount';
+    const nSeg = g.segs.length / 4;
+    count.textContent = g.kind === 'fill'
+      ? `${g.fills.length.toLocaleString('fr-FR')} surface${g.fills.length > 1 ? 's' : ''} pleine${g.fills.length > 1 ? 's' : ''}`
+      : `${nSeg.toLocaleString('fr-FR')} trait${nSeg > 1 ? 's' : ''}`;
+    meta.append(name, count);
+    const sel = document.createElement('select');
+    sel.id = `role-${idx}`;
+    sel.setAttribute('aria-label', `Rôle du calque ${g.name}`);
+    for (const [v, label] of ROLES) {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = label;
+      sel.appendChild(o);
+    }
+    sel.value = g.role;
+    sel.addEventListener('change', () => { g.role = sel.value; row.dataset.role = g.role; scheduleRebuild(); });
+    row.append(sw, meta, sel);
+    box.appendChild(row);
+  });
+}
+
+function showNotice(html, kind = 'info') {
+  const n = $('notice');
+  if (!html) { n.hidden = true; return; }
+  n.className = `notice ${kind === 'info' ? '' : kind}`;
+  n.innerHTML = html;
+  n.hidden = false;
+}
+function setBusy(on, text = 'Chargement…') { $('busy').hidden = !on; $('busy').textContent = text; }
+
+function setSourceUI() {
+  const pdf = state.kind === 'pdf';
+  $('unitField').hidden = pdf;
+  $('scaleField').hidden = !pdf;
+  $('pageField').hidden = !pdf || !state.pdfDoc || state.pdfDoc.numPages < 2;
+}
+
+let rebuildTimer = 0;
+function scheduleRebuild(opts) {
+  clearTimeout(rebuildTimer);
+  rebuildTimer = setTimeout(() => {
+    try { rebuild(opts); } catch (err) { console.error(err); showNotice(`La génération 3D a échoué : ${escapeHtml(err.message)}`, 'error'); }
+  }, 120);
+}
+const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function loadGroups(groups, { kind, name, unitInfo }) {
+  state.kind = kind;
+  state.name = name;
+  state.groups = groups;
+  if (kind === 'dxf' && unitInfo) {
+    state.unit = unitInfo.unit;
+    $('unit').value = unitInfo.unit;
+    $('unitHint').innerHTML = unitInfo.source === 'file'
+      ? `Unité lue dans le fichier : <strong>${UNIT_NAMES[unitInfo.unit]}</strong>.`
+      : unitInfo.source === 'demo'
+        ? 'Exemple dessiné en mètres.'
+        : `Le fichier n'indique pas son unité. Déduite de la taille du dessin : <strong>${UNIT_NAMES[unitInfo.unit]}</strong>. Corrigez si l'emprise affichée est fausse.`;
+  } else if (kind === 'pdf') {
+    $('unitHint').innerHTML = 'Indiquez l\'échelle imprimée sur le plan (cartouche). À 1:100, 1 cm sur la feuille vaut 1 m.';
+  }
+  $('fileChip').innerHTML = name.startsWith('Exemple') ? `Exemple : <b>appartement T3</b>` : `<b>${escapeHtml(name)}</b>`;
+  setSourceUI();
+  renderLayers();
+  rebuild({ fit: true });
+}
+
+async function importFile(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  showNotice('');
+  if (ext === 'dwg') {
+    showNotice(`<p><strong>Le format DWG est fermé et ne peut pas être lu directement.</strong> Convertissez-le d'abord en DXF :</p>
+      <p>• dans AutoCAD : <code>Enregistrer sous → DXF</code> ;<br>• sans AutoCAD : <strong>ODA File Converter</strong> (gratuit) ou LibreDWG.</p>
+      <p>Importez ensuite le fichier .dxf obtenu.</p>`, 'warn');
+    return;
+  }
+  setBusy(true, `Lecture de ${file.name}…`);
+  try {
+    if (ext === 'dxf') {
+      const buf = await file.arrayBuffer();
+      let text = new TextDecoder('utf-8').decode(buf);
+      if (text.includes('�')) text = new TextDecoder('windows-1252').decode(buf);
+      const Parser = window.DxfParser?.default || window.DxfParser;
+      if (!Parser) throw new Error('le module de lecture DXF n\'a pas pu être chargé (connexion internet requise)');
+      const dxf = new Parser().parseSync(text);
+      if (!dxf) throw new Error('fichier DXF illisible');
+      const groups = dxfToGroups(dxf);
+      state.pdfDoc = null;
+      loadGroups(groups, { kind: 'dxf', name: file.name, unitInfo: detectUnit(dxf, groups) });
+      if (!groups.length) showNotice('Ce DXF ne contient aucun trait 2D exploitable (lignes, polylignes, arcs). Un fichier 3D ou uniquement du texte ne peut pas être converti.', 'warn');
+    } else if (ext === 'pdf') {
+      const pdfjsLib = await ensurePdfjs();
+      const data = new Uint8Array(await file.arrayBuffer());
+      state.pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+      const sel = $('pdfPage');
+      sel.textContent = '';
+      for (let p = 1; p <= state.pdfDoc.numPages; p++) {
+        const o = document.createElement('option');
+        o.value = String(p); o.textContent = `Page ${p} / ${state.pdfDoc.numPages}`;
+        sel.appendChild(o);
+      }
+      await loadPdfPage(1, file.name);
+    } else {
+      showNotice('Format non pris en charge. Importez un fichier <code>.dxf</code> ou <code>.pdf</code>.', 'warn');
+    }
+  } catch (err) {
+    console.error(err);
+    showNotice(`Impossible de lire ce fichier : ${escapeHtml(err.message || err)}.`, 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function loadPdfPage(num, name = state.name) {
+  const pdfjsLib = await ensurePdfjs();
+  const groups = await pdfPageToGroups(pdfjsLib, state.pdfDoc, num);
+  loadGroups(groups, { kind: 'pdf', name });
+  if (!groups.length) {
+    showNotice('Aucun tracé vectoriel trouvé sur cette page. S\'il s\'agit d\'un plan scanné (une image), il ne contient pas de traits exploitables : il faut repartir du fichier DWG/DXF d\'origine.', 'warn');
+  } else {
+    showNotice('Un PDF ne contient pas de calques : les traits sont regroupés par épaisseur et couleur. Vérifiez quel groupe correspond aux murs.', 'info');
+  }
+}
+
+/* ---------- Exemple intégré ---------- */
+function demoDxf() {
+  const ent = [];
+  const line = (layer, x1, y1, x2, y2) => ent.push({ type: 'LINE', layer, vertices: [{ x: x1, y: y1 }, { x: x2, y: y2 }] });
+  const arc = (layer, cx, cy, r, a0, a1) => ent.push({ type: 'ARC', layer, center: { x: cx, y: cy }, radius: r, startAngle: a0, endAngle: a1 });
+  // Murs : axe, épaisseur, ouvertures [position depuis le départ, largeur, type]
+  const walls = [
+    { a: [0, 0], b: [10, 0], t: 0.25, ext: true, open: [[1.4, 1.2, 'f'], [5.7, 1.6, 'f']] },
+    { a: [10, 0], b: [10, 7], t: 0.25, ext: true, open: [[1.5, 1.0, 'f'], [5.0, 1.0, 'f']] },
+    { a: [10, 7], b: [0, 7], t: 0.25, ext: true, open: [[1.2, 0.9, 'p'], [5.0, 1.4, 'f']] },
+    { a: [0, 7], b: [0, 0], t: 0.25, ext: true, open: [[2.0, 1.0, 'f']] },
+    { a: [4, 0.125], b: [4, 6.875], t: 0.1, open: [[4.3, 0.8, 'p']] },
+    { a: [4.05, 4], b: [9.875, 4], t: 0.1, open: [[0.5, 0.8, 'p'], [3.9, 0.8, 'p']] },
+    { a: [7, 0.125], b: [7, 3.95], t: 0.1, open: [[2.6, 0.8, 'p']] },
+  ];
+  for (const w of walls) {
+    let [ax, ay] = w.a, [bx, by] = w.b;
+    const L0 = Math.hypot(bx - ax, by - ay), ux = (bx - ax) / L0, uy = (by - ay) / L0, nx = -uy, ny = ux;
+    const e = w.ext ? w.t / 2 : 0;
+    ax -= ux * e; ay -= uy * e;
+    const L = L0 + 2 * e, h = w.t / 2;
+    const P = (s, o) => [ax + ux * s + nx * o, ay + uy * s + ny * o];
+    const opens = w.open.map(([s, wd, k]) => [s + e, wd, k]).sort((p, q) => p[0] - q[0]);
+    let s0 = 0;
+    const solid = (s1, s2, capStart, capEnd) => {
+      line('MURS', ...P(s1, -h), ...P(s2, -h));
+      line('MURS', ...P(s1, h), ...P(s2, h));
+      if (capStart) line('MURS', ...P(s1, -h), ...P(s1, h));
+      if (capEnd) line('MURS', ...P(s2, -h), ...P(s2, h));
+    };
+    for (const [s, wd, k] of opens) {
+      solid(s0, s, s0 > 0, true);
+      if (k === 'f') {
+        for (const o of [-h, 0, h]) line('FENETRES', ...P(s, o), ...P(s + wd, o));
+        line('FENETRES', ...P(s, -h), ...P(s, h));
+        line('FENETRES', ...P(s + wd, -h), ...P(s + wd, h));
+      } else {
+        const [hx, hy] = P(s, h);
+        line('PORTES', hx, hy, hx + nx * wd, hy + ny * wd);
+        const a0 = Math.atan2(uy, ux), a1 = Math.atan2(ny, nx);
+        let sweep = a1 - a0; while (sweep <= 0) sweep += Math.PI * 2;
+        if (sweep > Math.PI) arc('PORTES', hx, hy, wd, a1, a0); else arc('PORTES', hx, hy, wd, a0, a1);
+      }
+      s0 = s + wd;
+    }
+    solid(s0, L, opens.length > 0, false);
+  }
+  // Mobilier
+  const rect = (layer, x, y, w, h) => { line(layer, x, y, x + w, y); line(layer, x + w, y, x + w, y + h); line(layer, x + w, y + h, x, y + h); line(layer, x, y + h, x, y); };
+  rect('MOBILIER', 1.0, 3.6, 1.8, 0.9);      // table
+  rect('MOBILIER', 0.3, 0.3, 2.2, 0.9);      // canapé
+  rect('MOBILIER', 7.6, 1.2, 1.6, 2.0);      // lit
+  rect('MOBILIER', 4.6, 0.4, 1.4, 1.9);      // lit
+  rect('MOBILIER', 4.3, 6.2, 2.4, 0.6);      // plan de travail
+  rect('MOBILIER', 8.2, 4.5, 1.5, 0.75);     // baignoire
+  ent.push({ type: 'CIRCLE', layer: 'MOBILIER', center: { x: 9.2, y: 6.2 }, radius: 0.25 });
+  // Cotation
+  line('COTATION', -0.125, -1, 10.125, -1);
+  line('COTATION', -0.125, -1.2, -0.125, -0.8);
+  line('COTATION', 10.125, -1.2, 10.125, -0.8);
+  return {
+    header: { $INSUNITS: 6 },
+    tables: { layer: { layers: {
+      MURS: { name: 'MURS', color: 0x1f2328 }, FENETRES: { name: 'FENETRES', color: 0x2f7fc1 },
+      PORTES: { name: 'PORTES', color: 0xa3622a }, MOBILIER: { name: 'MOBILIER', color: 0x7d8792 },
+      COTATION: { name: 'COTATION', color: 0xd9534f },
+    } } },
+    blocks: {},
+    entities: ent,
+  };
+}
+function loadDemo() {
+  state.pdfDoc = null;
+  showNotice('');
+  loadGroups(dxfToGroups(demoDxf()), { kind: 'dxf', name: 'Exemple', unitInfo: { unit: 'm', source: 'demo' } });
+}
+
+/* ---------- Export ---------- */
+let downloadsCap;
+async function getDownloads() {
+  if (downloadsCap !== undefined) return downloadsCap;
+  downloadsCap = window.claude?.use ? await window.claude.use('downloads').catch(() => null) : null;
+  return downloadsCap;
+}
+
+function exportRoot(zUp) {
+  const root = new THREE.Group();
+  model.updateMatrixWorld(true);
+  model.traverse((o) => {
+    if (o.userData.noExport || o === model) return;
+    let c = null;
+    if (o.isMesh) c = new THREE.Mesh(o.geometry, o.material);
+    else if (o.isLineSegments && !zUp) c = new THREE.LineSegments(o.geometry, o.material);
+    if (!c) return;
+    c.name = o.name;
+    c.applyMatrix4(o.matrixWorld);
+    root.add(c);
+  });
+  if (zUp) root.rotation.x = Math.PI / 2;
+  root.updateMatrixWorld(true);
+  return root;
+}
+
+async function doExport(format, btn) {
+  const base = (state.name && !state.name.startsWith('Exemple') ? state.name.replace(/\.[^.]+$/, '') : 'plan-relief-exemple') + '-3d';
+  btn.disabled = true;
+  try {
+    let data, filename = `${base}.${format}`, mime = 'application/octet-stream';
+    if (format === 'glb') {
+      data = await new GLTFExporter().parseAsync(exportRoot(false), { binary: true });
+      mime = 'model/gltf-binary';
+    } else if (format === 'obj') {
+      data = new OBJExporter().parse(exportRoot(false));
+      mime = 'text/plain';
+    } else {
+      const dv = new STLExporter().parse(exportRoot(true), { binary: true });
+      data = dv.buffer;
+      mime = 'model/stl';
+    }
+    const dl = await getDownloads();
+    if (dl) {
+      // Dans Claude, les fichiers 3D sont remis dans une archive .zip.
+      if (!window.JSZip) await loadScript(JSZIP_URL);
+      const zip = new window.JSZip();
+      zip.file(filename, data);
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      try {
+        await dl.save({ filename: `${base}-${format}.zip`, data: blob });
+        showNotice(`Modèle enregistré : <code>${escapeHtml(base)}-${format}.zip</code> (contient ${escapeHtml(filename)}).`);
+      } catch (err) {
+        if (err?.code !== 'declined') showNotice(`L'enregistrement n'a pas abouti (${escapeHtml(err?.message || err?.code || err)}).`, 'error');
+      }
+    } else {
+      const url = URL.createObjectURL(new Blob([data], { type: mime }));
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }
+  } catch (err) {
+    console.error(err);
+    showNotice(`L'export ${format.toUpperCase()} a échoué : ${escapeHtml(err.message || err)}`, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---------- Événements ---------- */
+$('fileInput').addEventListener('change', (e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ''; });
+const drop = $('drop');
+for (const t of ['dragenter', 'dragover']) drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('over'); });
+for (const t of ['dragleave', 'drop']) drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('over'); });
+drop.addEventListener('drop', (e) => { const f = e.dataTransfer?.files?.[0]; if (f) importFile(f); });
+$('demoBtn').addEventListener('click', loadDemo);
+
+for (const id of ['hWall', 'tWall', 'tMax', 'sill', 'hWin', 'slab', 'show2d']) $(id).addEventListener('input', () => scheduleRebuild());
+$('unit').addEventListener('change', () => { state.unit = $('unit').value; scheduleRebuild({ fit: true }); });
+$('pdfScale').addEventListener('input', () => scheduleRebuild({ fit: true }));
+$('pdfPage').addEventListener('change', async () => {
+  setBusy(true, 'Lecture de la page…');
+  try { await loadPdfPage(parseInt($('pdfPage').value, 10)); } catch (err) { showNotice(`Lecture de la page impossible : ${escapeHtml(err.message)}`, 'error'); }
+  finally { setBusy(false); }
+});
+$('view3d').addEventListener('click', () => setView('3d'));
+$('viewTop').addEventListener('click', () => setView('top'));
+$('viewFit').addEventListener('click', () => fitView());
+document.querySelectorAll('.exports .btn').forEach((b) => b.addEventListener('click', () => doExport(b.dataset.fmt, b)));
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// Exposé pour les tests automatisés.
+window.planRelief = { state, rebuild, importFile, model: () => model };
+
+scene.background = new THREE.Color(cssColor('--stage'));
+loadDemo();
+</script>
