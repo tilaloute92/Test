@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { DICTEE_LOCALE_WINDOWS, diagnostiquerMicro, type DiagnosticMicro } from '../lib/micro'
 import { Btn } from './ui'
 import {
   createRecognizer,
@@ -46,6 +47,25 @@ export function VoicePanel() {
   const segmentsRef = useRef<string[][]>([])
   const flushTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const supported = isSpeechSupported()
+  const champRef = useRef<HTMLInputElement>(null)
+  const [diagnostic, setDiagnostic] = useState<DiagnosticMicro | null>(null)
+
+  /*
+    Le diagnostic est établi à l'ouverture, pas au premier échec : savoir avant de parler
+    qu'il faudra du HTTPS vaut mieux que de le découvrir après trois tentatives muettes.
+    Et le champ de commande prend le curseur, pour que la dictée de Windows ait où écrire.
+  */
+  useEffect(() => {
+    if (!open) return
+    let vivant = true
+    void diagnostiquerMicro().then((resultat) => {
+      if (vivant) setDiagnostic(resultat)
+    })
+    champRef.current?.focus()
+    return () => {
+      vivant = false
+    }
+  }, [open])
 
   const record = (transcript: string, result: { ok: boolean; message: string }) => {
     setHistory((current) =>
@@ -215,15 +235,22 @@ export function VoicePanel() {
         </div>
 
         {error && <p className="rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">{error}</p>}
-        {!supported && (
+        {diagnostic && diagnostic.etat !== 'pret' && (
+          <div className="rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] leading-snug text-amber-900">
+            <p className="font-medium">{diagnostic.constat}</p>
+            {diagnostic.remede && <p className="pt-1 text-amber-800">{diagnostic.remede}</p>}
+            <p className="pt-1 text-amber-700">{DICTEE_LOCALE_WINDOWS}</p>
+          </div>
+        )}
+        {diagnostic?.etat === 'pret' && diagnostic.moteur && (
           <p className="rounded-lg bg-slate-50 px-2 py-1.5 text-[11px] leading-snug text-slate-500">
-            La dictée s’appuie sur la reconnaissance vocale du navigateur (Chrome ou Edge, avec une
-            connexion réseau). Les commandes tapées fonctionnent partout.
+            {diagnostic.moteur} {DICTEE_LOCALE_WINDOWS}
           </p>
         )}
 
         <div className="flex gap-2">
           <input
+            ref={champRef}
             value={typed}
             onChange={(event) => setTyped(event.target.value)}
             onKeyDown={(event) => {

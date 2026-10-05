@@ -362,14 +362,26 @@ Redémarrer le service ne déconnecte donc personne.
 
 ### Scénario A — le service porte le certificat
 
+> **Le HTTPS décide aussi du micro.** Les navigateurs refusent l'accès au microphone sur une
+> page servie en clair. Sans HTTPS, la commande vocale ne fonctionne que sur le serveur
+> lui-même — `http://localhost` fait exception —, ce qui donne un symptôme déroutant : « ça
+> marche sur le serveur et sur aucun poste ». Voir le § 10.
+
 **Le plus simple : `2-Activer-HTTPS.cmd`**, clic droit → *Exécuter en tant qu'administrateur*.
-Il demande le fichier `.pfx` et son mot de passe, installe le certificat, bascule la
-configuration, redémarre et vérifie.
+Il propose trois certificats : en fabriquer un pour cette machine, un fichier `.pfx` que vous
+possédez, ou un certificat déjà présent dans le magasin de l'ordinateur. Puis il installe,
+bascule la configuration, redémarre et vérifie.
 
 En ligne de commande, dans une console administrateur :
 
 ```powershell
 cd C:\Temp\NetSchema-1.0.0-windows
+
+# certificat fabriqué sur place : le plus rapide, et il suffit pour débloquer le micro
+.\Configurer-HTTPS.ps1 -AutoSigne
+
+# en précisant les noms que les postes taperont dans la barre d'adresse
+.\Configurer-HTTPS.ps1 -AutoSigne -Noms winas, winas.societe.lan
 
 # depuis un fichier .pfx
 .\Configurer-HTTPS.ps1 -Pfx C:\Certificats\winas.pfx
@@ -582,7 +594,57 @@ La désinstallation retire le service, la règle de pare-feu et le dossier d'ins
 
 ---
 
-## 10. Problèmes courants
+## 10. La commande vocale sous Windows 11
+
+L'application comprend 68 commandes dictées. Deux moteurs peuvent les entendre, et ils ne se
+valent pas.
+
+### Le micro du navigateur
+
+Edge et Chrome savent transcrire la parole, et c'est ce que NetSchema utilise par défaut.
+Deux conditions :
+
+1. **La page doit être servie en HTTPS.** C'est la cause numéro un des micros muets. Le
+   panneau vocal le diagnostique lui-même : il nomme l'hôte en cause et renvoie vers
+   `2-Activer-HTTPS.cmd`.
+2. **Le micro doit être autorisé** pour le site, à la première demande du navigateur.
+
+**Ce qu'il faut savoir avant de dicter** : ces moteurs n'analysent pas la parole sur le poste.
+Edge l'envoie aux serveurs de Microsoft, Chrome à ceux de Google. Pour un outil qui décrit des
+topologies internes, cela mérite d'être pesé — on y dicte des noms d'équipements et
+d'emplacements. Le panneau vocal l'affiche, pour qu'on le sache avant et non après.
+
+### La dictée locale de Windows 11
+
+Si l'audio ne doit pas quitter le poste, Windows 11 sait reconnaître la parole **sur
+l'appareil** :
+
+1. *Paramètres ▸ Accessibilité ▸ Accès vocal*, puis activer et laisser télécharger le modèle
+   de langue.
+2. Dans NetSchema, ouvrir le panneau vocal : le champ de commande prend le curseur tout seul.
+3. Dicter la commande, puis dire « appuyer sur Entrée ».
+
+Les mêmes 68 commandes sont comprises : l'interprétation ne dépend pas du moteur, seulement
+du texte. Et cette voie n'exige ni HTTPS ni autorisation micro du navigateur, puisque c'est
+Windows qui écoute, pas la page.
+
+Vérifiez la disponibilité du français pour l'accès vocal sur votre version de Windows : la
+couverture des langues a évolué d'une mise à jour à l'autre.
+
+### Certificat auto-signé : la réserve
+
+`-AutoSigne` fabrique un certificat couvrant le nom court de la machine, son nom de domaine
+complet et ses adresses IPv4, et l'installe comme autorité de confiance **sur le serveur**.
+Les autres postes, eux, afficheront un avertissement tant que le certificat public ne leur a
+pas été distribué — le script l'exporte dans `…\data\tls\netschema-autorite.cer`, à déployer
+par stratégie de groupe dans les autorités de certification racines de confiance.
+
+Tant que cet avertissement subsiste, ne comptez pas sur le micro du navigateur : les
+navigateurs restreignent les fonctions sensibles sur une page dont le certificat n'est pas
+validé. Un certificat délivré par votre autorité interne reste la voie propre ; l'auto-signé
+est là pour essayer, ou pour un poste unique.
+
+## 11. Problèmes courants
 
 | Symptôme | Cause habituelle | Correction |
 | --- | --- | --- |
@@ -601,7 +663,7 @@ La désinstallation retire le service, la règle de pare-feu et le dossier d'ins
 
 ---
 
-## 11. Ce qui reste à votre charge
+## 12. Ce qui reste à votre charge
 
 - **Certificat** : renouvellement et remplacement des fichiers PEM (ou du binding IIS). Notez
   la date d'expiration dès aujourd'hui.
@@ -615,7 +677,7 @@ La désinstallation retire le service, la règle de pare-feu et le dossier d'ins
 
 ---
 
-## 12. Annexe — installation derrière IIS, pas à pas
+## 13. Annexe — installation derrière IIS, pas à pas
 
 À suivre **après** les étapes 1 à 4 : le service est installé et fonctionne. IIS ne remplace
 pas le service, il se place devant lui.

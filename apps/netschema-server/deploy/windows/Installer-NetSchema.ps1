@@ -737,8 +737,12 @@ if ($succes -and -not $Diagnostic -and -not $Desinstaller) {
     Write-Host "    Journal          $journalInstallation"
     Write-Host ''
     Write-Host '    Depuis un poste du réseau, ouvrez cette adresse : la page de connexion'
-    Write-Host '    doit apparaître. La liaison est en clair (HTTP) : pour la chiffrer,'
-    Write-Host '    lancez Configurer-HTTPS.ps1 quand vous aurez un certificat.'
+    Write-Host '    doit apparaître. La liaison est en clair (HTTP).'
+    Write-Host ''
+    Write-Host '    Pour la chiffrer — et pour que la commande vocale fonctionne depuis les' -ForegroundColor Yellow
+    Write-Host '    postes : les navigateurs refusent le micro sur une page servie en clair,' -ForegroundColor Yellow
+    Write-Host '    donc la dictée ne marcherait que sur ce serveur. Lancez 2-Activer-HTTPS.cmd,' -ForegroundColor Yellow
+    Write-Host '    qui sait fabriquer un certificat si vous n''en avez pas encore.' -ForegroundColor Yellow
     if ($script:Avertissements.Count) {
         Write-Host ''
         Write-Host '    Points à regarder :' -ForegroundColor Yellow

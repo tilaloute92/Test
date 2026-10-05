@@ -16,6 +16,15 @@
     l'application répond bien en HTTPS.
 
 .EXAMPLE
+    .\Configurer-HTTPS.ps1 -AutoSigne
+    # Fabrique un certificat pour cette machine. Le but n'est pas de prouver une identité
+    # mais d'obtenir le HTTPS, sans lequel les navigateurs refusent le micro : la commande
+    # vocale ne marche alors que sur le serveur, où localhost fait exception.
+
+.EXAMPLE
+    .\Configurer-HTTPS.ps1 -AutoSigne -Noms winas, winas.societe.lan
+
+.EXAMPLE
     .\Configurer-HTTPS.ps1 -Pfx C:\Certificats\winas.pfx
 
 .EXAMPLE
@@ -29,6 +38,8 @@
 param(
     [string]$Pfx,
     [string]$Empreinte,
+    [switch]$AutoSigne,
+    [string[]]$Noms,
     [int]$Port = 8443,
     [string]$InstallDir = 'C:\Apps\NetSchema',
     [string]$DataDir = 'C:\ProgramData\NetSchema\data',
@@ -117,7 +128,55 @@ $dossierTls = Join-Path $DataDir 'tls'
 New-Item -ItemType Directory -Force -Path $dossierTls | Out-Null
 $destination = Join-Path $dossierTls 'netschema.pfx'
 
-if ($Empreinte) {
+if ($AutoSigne) {
+    # Certificat auto-signé.
+    #
+    # Il n'est pas là pour prouver une identité mais pour obtenir un « contexte sécurisé » :
+    # sans HTTPS, les navigateurs refusent le micro, et la commande vocale reste muette
+    # partout sauf sur le serveur lui-même, où localhost fait exception.
+    #
+    # Les noms comptent : le certificat doit couvrir exactement ce que les postes tapent dans
+    # la barre d'adresse. On y met le nom court, le nom complet du domaine et les adresses
+    # IPv4 de la machine, faute de quoi le navigateur refusera même après installation.
+    $sujets = @()
+    if ($Noms) { $sujets += $Noms }
+    $sujets += $env:COMPUTERNAME
+    try {
+        $domaine = (Get-CimInstance Win32_ComputerSystem).Domain
+        if ($domaine -and $domaine -ne 'WORKGROUP') { $sujets += "$env:COMPUTERNAME.$domaine" }
+    } catch { }
+    try {
+        $sujets += (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+            Where-Object { $_.IPAddress -ne '127.0.0.1' } | Select-Object -ExpandProperty IPAddress)
+    } catch { }
+    $sujets += 'localhost'
+    $sujets = $sujets | Where-Object { $_ } | Select-Object -Unique
+
+    Etape "Génération d'un certificat auto-signé pour : $($sujets -join ', ')"
+    $certificat = New-SelfSignedCertificate -DnsName $sujets -CertStoreLocation Cert:\LocalMachine\My `
+        -FriendlyName 'NetSchema (auto-signé)' -NotAfter (Get-Date).AddYears(3) `
+        -KeyExportPolicy Exportable -KeyLength 2048 -KeyAlgorithm RSA -HashAlgorithm SHA256
+
+    $octets = New-Object byte[] 24
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($octets)
+    $motDePasse = [Convert]::ToBase64String($octets)
+    $secret = ConvertTo-SecureString -String $motDePasse -AsPlainText -Force
+    Export-PfxCertificate -Cert $certificat -FilePath $destination -Password $secret -Force | Out-Null
+
+    # Installé comme autorité de confiance sur CE poste : le serveur lui-même ne verra plus
+    # d'avertissement. Les autres postes, eux, en verront un tant que le certificat ne leur
+    # a pas été distribué — voir le message de fin.
+    $racine = New-Object Security.Cryptography.X509Certificates.X509Store('Root', 'LocalMachine')
+    $racine.Open('ReadWrite')
+    $racine.Add($certificat)
+    $racine.Close()
+
+    $exportPublic = Join-Path $dossierTls 'netschema-autorite.cer'
+    Export-Certificate -Cert $certificat -FilePath $exportPublic -Force | Out-Null
+    Ok "Certificat créé, valable jusqu'au $($certificat.NotAfter.ToString('dd/MM/yyyy'))"
+    Info "Empreinte : $($certificat.Thumbprint)"
+    Info "À distribuer aux postes clients : $exportPublic"
+} elseif ($Empreinte) {
     Etape "Export du certificat $Empreinte depuis le magasin de l'ordinateur"
     $certificat = Get-ChildItem Cert:\LocalMachine\My |
         Where-Object { $_.Thumbprint -eq ($Empreinte -replace '\s', '').ToUpper() }
