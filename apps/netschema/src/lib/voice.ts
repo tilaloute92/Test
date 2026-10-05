@@ -1,4 +1,5 @@
 import { findDevice, findDeviceScored, type DeviceMeta } from './catalog'
+import { COULEURS_GRAPPE } from './couleurs'
 import { prepareSpeech } from './speech'
 import type {
   AppView,
@@ -114,6 +115,22 @@ export type VoiceIntent =
   | { type: 'linkStyle'; style: LinkStyle }
   | { type: 'route'; shape: LinkShape }
   | { type: 'toggle'; key: ToggleKey; value: boolean }
+  // Déductions : l'application sait lire le schéma pour en tirer ce qu'on y a mis sans le
+  // dire. Deux commandes, un travail d'une demi-heure à la main.
+  | { type: 'deduireHa' }
+  | { type: 'deduireVlans' }
+  // Mise en page d'une sélection
+  | { type: 'align'; mode: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom' }
+  | { type: 'distribute'; axis: 'x' | 'y' }
+  // Grappes, agrégats, baies, plan d'adressage
+  | { type: 'clusterColor'; cluster: string; couleur: string; libelle: string }
+  | { type: 'vlanRemove'; id: string }
+  | { type: 'rackAdd'; name: string; units?: number }
+  | { type: 'rackRemove'; name: string }
+  | { type: 'lagRename'; nom: string }
+  | { type: 'lagHidden'; hidden: boolean }
+  | { type: 'strictOsi'; strict: boolean }
+  | { type: 'titleBlock'; champ: 'reference' | 'indice' | 'auteur' | 'organisation' | 'diffusion'; valeur: string }
   | { type: 'annotate'; kind: 'note' | 'zone' | 'arrow'; text?: string }
   // Projet
   | { type: 'export'; format: 'svg' | 'png' }
@@ -163,6 +180,27 @@ export type QueryKind = 'count' | 'countKind' | 'ha' | 'spof' | 'power' | 'freeU
  * « 10 0 0 9 ». Chaque remplacement garde la longueur du texte, ce qui permet de retrouver
  * la casse d'origine par simple index.
  */
+/**
+ * Une couleur de grappe désignée par son nom courant.
+ *
+ * On accepte le libellé de la palette (« rose (défaut) » se dit « rose ») et quelques
+ * synonymes d'usage — personne ne dit « ardoise » à voix haute pour désigner un gris.
+ */
+function couleurParNom(nom: string): { id: string; label: string } | undefined {
+  const SYNONYMES: Record<string, string> = {
+    gris: 'Ardoise', grise: 'Ardoise', ardoise: 'Ardoise',
+    jaune: 'Or', dore: 'Or', or: 'Or',
+    marron: 'Moutarde', brun: 'Moutarde',
+    mauve: 'Violet', parme: 'Violet', pourpre: 'Pourpre',
+    fuchsia: 'Magenta', emeraude: 'Jade', vert: 'Vert', bleu: 'Bleu',
+  }
+  const cherche = normalizeSpeech(SYNONYMES[normalizeSpeech(nom)] ?? nom)
+  return COULEURS_GRAPPE.find((couleur) => {
+    const label = normalizeSpeech(couleur.label.replace(/\s*\(defaut\)/i, '').replace(/\s*\(défaut\)/i, ''))
+    return label === cherche
+  })
+}
+
 export function normalizeSpeech(value: string): string {
   return value
     .normalize('NFD')
@@ -570,6 +608,10 @@ const RULES: Rule[] = [
 
   // ── Fiches d'équipement ────────────────────────────────────────────────────
   (t, raw) => {
+    const match = t.match(/^(?:renomme|renommer|appelle)\s+(?:l'|le\s+)?agregat\s+(?:en\s+)?(.+)$/)
+    return match ? { type: 'lagRename', nom: rawValue(raw, /agr[ée]gat\s+(?:en\s+)?(.+)$/i, 1, match[1].trim()) } : null
+  },
+  (t, raw) => {
     const match = t.match(/^(?:renomme|renommer|rebaptise)\s+(.+?)\s+(?:en|par)\s+(.+)$/)
     if (!match) return null
     return {
@@ -703,6 +745,97 @@ const RULES: Rule[] = [
       ? { type: 'linkAttach', reset: true }
       : null,
 
+
+  // ── Déductions, mise en page, grappes ─────────────────────────────────────
+  /*
+    Ces commandes-là valent le plus cher à la main : déduire les mécanismes de haute
+    disponibilité d'un parc, c'est ouvrir chaque grappe et choisir dans une liste de
+    soixante-sept mécanismes. Une phrase suffit.
+  */
+  (t) =>
+    /^(?:deduis|deduire|devine|retrouve)\s+(?:les\s+)?mecanismes?(?:\s+(?:de\s+)?(?:haute\s+disponibilite|ha))?$/.test(t)
+      ? { type: 'deduireHa' }
+      : null,
+  (t) =>
+    /^(?:deduis|deduire|devine|retrouve)\s+(?:les\s+)?(?:vlans?|plan\s+d'adressage)(?:\s+du\s+schema)?$/.test(t)
+      ? { type: 'deduireVlans' }
+      : null,
+
+  (t) => {
+    const match = t.match(/^(?:aligne|aligner|alignement)\s+(?:la\s+selection\s+)?(?:a\s+|au\s+|en\s+)?(gauche|droite|haut|bas|centre|milieu|horizontalement|verticalement)$/)
+    if (!match) return null
+    const modes: Record<string, 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom'> = {
+      gauche: 'left', droite: 'right', haut: 'top', bas: 'bottom',
+      centre: 'vcenter', milieu: 'vcenter', horizontalement: 'vcenter', verticalement: 'hcenter',
+    }
+    return { type: 'align', mode: modes[match[1]] }
+  },
+  (t) => {
+    const match = t.match(/^(?:repartis|repartir|distribue|distribuer|espace)\s+(?:la\s+selection\s+)?(horizontalement|verticalement)$/)
+    return match ? { type: 'distribute', axis: match[1] === 'horizontalement' ? 'x' : 'y' } : null
+  },
+
+  (t, raw) => {
+    const match = t.match(/^(?:mets|met|mettre|colore|colorer|passe)\s+la\s+grappe\s+(.+?)\s+(?:en|au)\s+(.+)$/)
+    if (!match) return null
+    const couleur = couleurParNom(match[2].trim())
+    if (!couleur) return null
+    return {
+      type: 'clusterColor',
+      cluster: rawValue(raw, /grappe\s+(.+?)\s+(?:en|au)\s+/i, 1, match[1].trim()),
+      couleur: couleur.id,
+      libelle: couleur.label,
+    }
+  },
+
+  (t) => {
+    const match = t.match(/^(?:supprime|supprimer|retire|enleve)\s+le\s+vlan\s+(\d+)$/)
+    return match ? { type: 'vlanRemove', id: match[1] } : null
+  },
+  (t, raw) => {
+    const match = t.match(/^(?:cree|creer|ajoute|ajouter)\s+(?:la\s+)?baie\s+(.+?)(?:\s+(?:de|a)\s+(\d+)\s*u)?$/)
+    if (!match) return null
+    return {
+      type: 'rackAdd',
+      name: rawValue(raw, /baie\s+(.+?)(?:\s+(?:de|à|a)\s+\d+\s*u)?$/i, 1, match[1].trim()),
+      units: match[2] ? Number(match[2]) : undefined,
+    }
+  },
+  (t, raw) => {
+    const match = t.match(/^(?:supprime|supprimer|retire)\s+(?:la\s+)?baie\s+(.+)$/)
+    return match ? { type: 'rackRemove', name: rawValue(raw, /baie\s+(.+)$/i, 1, match[1].trim()) } : null
+  },
+  (t) => {
+    const match = t.match(/^(masque|masquer|cache|affiche|afficher|montre)\s+(?:les\s+)?(?:anneaux\s+d')?agregats?$/)
+    return match ? { type: 'lagHidden', hidden: /^(masque|masquer|cache)$/.test(match[1]) } : null
+  },
+  (t) => {
+    const match = t.match(/^(?:(active|activer|passe\s+en|mode)|(desactive|desactiver|quitte))\s+(?:le\s+)?(?:mode\s+)?l3\s+strict$/)
+    return match ? { type: 'strictOsi', strict: Boolean(match[1]) } : null
+  },
+  (t, raw) => {
+    // « établi par Dupont » tourne autrement que « auteur Dupont », et c'est la tournure
+    // qu'on emploie en dictant un cartouche.
+    const auteur = t.match(/^(?:etabli|redige|dresse)\s+par\s+(.+)$/)
+    if (auteur) {
+      return {
+        type: 'titleBlock',
+        champ: 'auteur',
+        valeur: rawValue(raw, /(?:établi|etabli|rédigé|redige|dressé|dresse)\s+par\s+(.+)$/i, 1, auteur[1].trim()),
+      }
+    }
+    const match = t.match(/^(?:(?:mets|met|mettre|renseigne)\s+)?(?:l'|le\s+|la\s+)?(reference|indice|auteur|redacteur|organisation|societe|diffusion)\s*(?::|a|en|=)?\s+(.+)$/)
+    if (!match) return null
+    const champs: Record<string, 'reference' | 'indice' | 'auteur' | 'organisation' | 'diffusion'> = {
+      reference: 'reference', indice: 'indice', auteur: 'auteur', redacteur: 'auteur',
+      organisation: 'organisation', societe: 'organisation', diffusion: 'diffusion',
+    }
+    return {
+      type: 'titleBlock',
+      champ: champs[match[1]],
+      valeur: rawValue(raw, new RegExp(`${match[1]}\\s*(?::|à|a|en|=)?\\s+(.+)$`, 'i'), 1, match[2].trim()),
+    }
+  },
 
   // ── Baies et plan d'adressage ──────────────────────────────────────────────
   (t) => {
@@ -1115,6 +1248,18 @@ const EDITING_INTENTS = new Set<VoiceIntent['type']>([
   'redo',
   'groupRename',
   'annotate',
+  // Les nouvelles commandes qui modifient le document passent par le même verrou.
+  // « masque les agrégats » et « L3 strict » n'y sont pas : ils ne changent que l'affichage.
+  'deduireHa',
+  'deduireVlans',
+  'align',
+  'distribute',
+  'clusterColor',
+  'vlanRemove',
+  'rackAdd',
+  'rackRemove',
+  'lagRename',
+  'titleBlock',
   // Les commandes de page ne sont pas gardées ici : un verrou porte sur une page, il ne doit
   // pas empêcher d'en créer une autre ni d'aller la voir. Le magasin refuse de lui seul de
   // renommer ou de supprimer une page verrouillée.
@@ -1217,12 +1362,41 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
   {
     title: 'Parc et baies',
     examples: [
+      'crée la baie A3 de 42 U',
+      'supprime la baie PRA',
       "Ouvre l'inventaire",
       'Montre les baies',
       'Implante SW-DIST-BATA dans la baie A1',
       'Retire PDU B de la baie',
       'Mets le modèle PowerEdge R760 sur ESXi-01',
       'Mets la hauteur 2 sur ESXi-01',
+    ],
+  },
+  {
+    title: 'Laisser l’application déduire',
+    examples: [
+      'déduis les mécanismes de haute disponibilité',
+      'déduis les VLAN du schéma',
+    ],
+  },
+  {
+    title: 'Ranger la sélection',
+    examples: [
+      'aligne à gauche',
+      'aligne au centre',
+      'répartis horizontalement',
+    ],
+  },
+  {
+    title: 'Grappes, agrégats, cartouche',
+    examples: [
+      'mets la grappe FW-HA en bleu',
+      'renomme l’agrégat en Po23',
+      'masque les agrégats',
+      'supprime le VLAN 40',
+      'indice B',
+      'établi par Dupont',
+      'active le mode L3 strict',
     ],
   },
   {

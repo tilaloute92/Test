@@ -2365,6 +2365,93 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         get().upsertVlan({ id: intent.id, name: intent.name, subnet: intent.subnet })
         return { ok: true, message: `VLAN ${intent.id} ajouté au plan d’adressage.` }
 
+      case 'vlanRemove': {
+        const vlan = (get().diagram.vlans ?? []).find((v) => v.id === intent.id)
+        if (!vlan) return { ok: false, message: `Le VLAN ${intent.id} n’est pas au plan d’adressage.` }
+        get().removeVlan(intent.id)
+        return { ok: true, message: `VLAN ${intent.id} retiré du plan d’adressage.` }
+      }
+
+      // ── Déductions ────────────────────────────────────────────────────────
+      case 'deduireHa': {
+        const bilan = get().deduireMecanismesHa()
+        if (bilan.grappes === 0) {
+          return { ok: false, message: 'Aucun mécanisme n’a pu être déduit : les grappes ne portent pas assez d’indices.' }
+        }
+        return {
+          ok: true,
+          message: `${bilan.grappes} grappe(s) renseignée(s), ${bilan.equipements} équipement(s) mis à jour.`,
+        }
+      }
+      case 'deduireVlans': {
+        const combien = get().deduceVlansFromDiagram()
+        return combien === 0
+          ? { ok: false, message: 'Aucun VLAN à déduire : le schéma n’en mentionne pas.' }
+          : { ok: true, message: `${combien} VLAN ajouté(s) au plan d’adressage.` }
+      }
+
+      // ── Mise en page d'une sélection ──────────────────────────────────────
+      case 'align': {
+        const ids = get().selectedNodes
+        if (ids.length < 2) return { ok: false, message: 'Sélectionnez au moins deux équipements à aligner.' }
+        get().alignNodes(ids, intent.mode)
+        return { ok: true, message: `${ids.length} équipements alignés.` }
+      }
+      case 'distribute': {
+        const ids = get().selectedNodes
+        if (ids.length < 3) return { ok: false, message: 'Sélectionnez au moins trois équipements à répartir.' }
+        get().distributeNodes(ids, intent.axis)
+        return { ok: true, message: `${ids.length} équipements répartis.` }
+      }
+
+      // ── Grappes, agrégats, baies ──────────────────────────────────────────
+      case 'clusterColor': {
+        const grappes = new Set(get().diagram.nodes.map((n) => n.cluster).filter(Boolean) as string[])
+        const trouvee = [...grappes].find((g) => g.toLowerCase() === intent.cluster.toLowerCase())
+        if (!trouvee) return { ok: false, message: `Aucune grappe « ${intent.cluster} » sur le schéma.` }
+        get().setClusterColor(trouvee, intent.couleur)
+        return { ok: true, message: `Grappe ${trouvee} en ${intent.libelle.toLowerCase()}.` }
+      }
+      case 'lagRename': {
+        const ids = get().selectedLinks
+        if (ids.length === 0) return { ok: false, message: 'Sélectionnez d’abord une liaison de l’agrégat.' }
+        get().renameLag(ids, intent.nom)
+        return { ok: true, message: `Agrégat renommé « ${intent.nom} ».` }
+      }
+      case 'lagHidden': {
+        const ids = get().diagram.links.map((l) => l.id)
+        get().setLagHidden(ids, intent.hidden)
+        return { ok: true, message: intent.hidden ? 'Anneaux d’agrégat masqués.' : 'Anneaux d’agrégat affichés.' }
+      }
+      case 'rackAdd': {
+        const existe = (get().diagram.racks ?? []).some((r) => r.name.toLowerCase() === intent.name.toLowerCase())
+        if (existe) return { ok: false, message: `La baie « ${intent.name} » existe déjà.` }
+        get().addRack({ name: intent.name, units: intent.units ?? 42 })
+        return { ok: true, message: `Baie ${intent.name} créée (${intent.units ?? 42} U).` }
+      }
+      case 'rackRemove': {
+        const rack = (get().diagram.racks ?? []).find((r) => r.name.toLowerCase() === intent.name.toLowerCase())
+        if (!rack) return { ok: false, message: `Aucune baie « ${intent.name} ».` }
+        get().removeRack(rack.id)
+        return { ok: true, message: `Baie ${rack.name} supprimée ; les équipements qu’elle portait restent au schéma.` }
+      }
+
+      // ── Affichage et cartouche ────────────────────────────────────────────
+      case 'strictOsi':
+        get().setStrictOsi(intent.strict)
+        return { ok: true, message: intent.strict ? 'Lecture L3 stricte activée.' : 'Lecture L3 stricte désactivée.' }
+      case 'titleBlock': {
+        const champs: Record<typeof intent.champ, keyof TitleBlock> = {
+          reference: 'reference',
+          indice: 'version',
+          auteur: 'author',
+          organisation: 'organisation',
+          diffusion: 'confidentiality',
+        }
+        get().setTitleBlock({ [champs[intent.champ]]: intent.valeur } as Partial<TitleBlock>)
+        return { ok: true, message: `Cartouche : ${intent.champ} « ${intent.valeur} ».` }
+      }
+
       case 'query': {
         const diagram = get().diagram
         switch (intent.question) {
