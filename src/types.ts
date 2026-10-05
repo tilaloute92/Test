@@ -55,6 +55,17 @@ export interface TimeEntry {
   period: Period;
   hours: number;
   note?: string;
+  /**
+   * Heure de début réellement occupée (14 pour 14:00–15:00), quand la saisie a été validée
+   * sur une tranche précise — voir la grille horaire d'Activité du jour.
+   *
+   * Facultatif, et il doit le rester : les saisies antérieures n'en ont pas, et celles
+   * faites par le formulaire « Saisir le temps passé » portent une durée sans dire à quel
+   * moment. Les unes et les autres continuent de se ranger bout à bout depuis le début du
+   * créneau (voir src/lib/dayAllocation.ts). Renseigné, il fait foi : valider 16:00 avant
+   * 14:00 doit afficher l'activité à 16:00, pas à la première heure libre.
+   */
+  hour?: number;
 }
 
 export interface PlanningSlot {

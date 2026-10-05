@@ -8,6 +8,8 @@ import { useConfirm } from './ConfirmProvider';
 import { DailyMailModal } from './DailyMailModal';
 import type { Absence, Period, PlanningSlot, ProjectTask, TaskStatus, TeamMember, TimeEntry } from '../types';
 import { useModalDismiss } from './Modal';
+import { placeEntries } from '../lib/dayAllocation';
+import { PERIOD_RANGES } from '../lib/hours';
 
 const PERIOD_LABEL: Record<Period, string> = { matin: 'Matin — MCO & incidents', apres_midi: 'Après-midi — Projets' };
 const PERIOD_SHORT: Record<Period, string> = { matin: 'Matin', apres_midi: 'Après-midi' };
@@ -25,7 +27,14 @@ const DAILY_VIEW_MODES = ['personne', 'creneau', 'tableau'] as const;
 type DailyViewMode = (typeof DAILY_VIEW_MODES)[number];
 
 type ConfirmFn = ReturnType<typeof useConfirm>;
-type LoggingTarget = { memberId: string; period: Period; taskId: string };
+/** `taskId` vide = la tâche reste à choisir dans la fenêtre (bouton « … » de la grille).
+ *  `hour` renseignée = la saisie sera ancrée sur cette tranche. */
+type LoggingTarget = { memberId: string; period: Period; taskId: string; hour?: number };
+
+/** Les créneaux saisis heure par heure. Seul l'après-midi pour l'instant : le matin garde
+ *  la saisie à la demi-journée, faute d'avoir été demandé. */
+const HOURLY_PERIODS: Period[] = ['apres_midi'];
+const hourLabel = (n: number) => `${String(n).padStart(2, '0')}:00`;
 
 export function DailyView() {
   const { members, tasks, planningSlots, timeEntries, absences, setPlanningSlot, updateTask, addTimeEntry, removeTimeEntry } = useStore();
@@ -35,6 +44,8 @@ export function DailyView() {
   const [logging, setLogging] = useState<LoggingTarget | null>(null);
   const [hours, setHours] = useState('3.5');
   const [note, setNote] = useState('');
+  /** Tâche choisie dans la fenêtre quand elle a été ouverte sans en viser une (bouton « … »). */
+  const [loggingTaskId, setLoggingTaskId] = useState('');
   const dismiss = useModalDismiss(() => setLogging(null), 'cette saisie de temps');
   const [showMail, setShowMail] = useState(false);
 
@@ -53,8 +64,18 @@ export function DailyView() {
 
   const openLogging = (target: LoggingTarget) => {
     setLogging(target);
+    // Une heure précise appelle une durée d'une heure ; sans heure, on reprend la valeur la
+    // plus courante d'une saisie faite après coup.
     setHours('1');
     setNote('');
+    setLoggingTaskId('');
+  };
+
+  /** Validation directe d'une tranche : une heure sur la tâche choisie, ancrée sur cette
+   *  tranche. Pas de confirmation — c'est une création, annulable d'un clic sur la croix,
+   *  et demander confirmation à chaque pastille retirerait tout l'intérêt du clic unique. */
+  const validateHour = (memberId: string, period: Period, taskId: string, hour: number) => {
+    addTimeEntry({ taskId, memberId, date: iso, period, hours: 1, hour });
   };
 
   /** Tout ce dont un créneau a besoin pour être affiché *et* modifié, quel que soit le mode. */
@@ -67,6 +88,7 @@ export function DailyView() {
     setPlanningSlot,
     updateTask,
     onLogTime: openLogging,
+    onValidateHour: validateHour,
     recentEntriesFor,
     onRemoveEntry: removeTimeEntry,
   };
@@ -221,7 +243,34 @@ export function DailyView() {
       {logging && (
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" {...dismiss.backdrop}>
           <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" {...dismiss.content}>
-            <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Saisir le temps passé</h3>
+            <h3 className="mb-1 text-sm font-semibold text-slate-900 dark:text-white">Saisir le temps passé</h3>
+            {logging.hour !== undefined && (
+              <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                À partir de {hourLabel(logging.hour)} — la saisie occupera cette tranche, et les suivantes si elle dure plus d'une heure.
+              </p>
+            )}
+            {/* Ouverte par « … », la fenêtre ne sait pas encore sur quelle tâche : c'est
+                justement ce que ce bouton sert à choisir, les pastilles couvrant déjà les
+                tâches assignées. */}
+            {logging.taskId === '' && (
+              <>
+                <label className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Tâche</label>
+                <select
+                  value={loggingTaskId}
+                  onChange={(e) => setLoggingTaskId(e.target.value)}
+                  className="mb-3 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                >
+                  <option value="">— Choisir une tâche —</option>
+                  {tasks
+                    .filter((t) => t.status !== 'termine')
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.title}
+                      </option>
+                    ))}
+                </select>
+              </>
+            )}
             <label className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Heures</label>
             <input
               type="number"
@@ -245,18 +294,20 @@ export function DailyView() {
                 Annuler
               </button>
               <button
+                disabled={!(logging.taskId || loggingTaskId)}
                 onClick={() => {
                   addTimeEntry({
-                    taskId: logging.taskId,
+                    taskId: logging.taskId || loggingTaskId,
                     memberId: logging.memberId,
                     date: iso,
                     period: logging.period,
                     hours: parseFloat(hours) || 0,
                     note: note || undefined,
+                    hour: logging.hour,
                   });
                   setLogging(null);
                 }}
-                className="rounded-md bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700"
+                className="rounded-md bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
               >
                 Enregistrer
               </button>
@@ -285,6 +336,7 @@ function SlotEditor({
   setPlanningSlot,
   updateTask,
   onLogTime,
+  onValidateHour,
   recentEntriesFor,
   onRemoveEntry,
   compact = false,
@@ -300,6 +352,7 @@ function SlotEditor({
   setPlanningSlot: (memberId: string, date: string, period: Period, taskId: string | null) => void;
   updateTask: (id: string, patch: Partial<ProjectTask>) => void;
   onLogTime: (target: LoggingTarget) => void;
+  onValidateHour: (memberId: string, period: Period, taskId: string, hour: number) => void;
   recentEntriesFor: (memberId: string, period: Period) => TimeEntry[];
   onRemoveEntry: (id: string) => void;
   compact?: boolean;
@@ -312,8 +365,25 @@ function SlotEditor({
   );
   const entries = recentEntriesFor(member.id, period);
 
+  // Saisie heure par heure : seulement là où elle est prévue, et seulement en affichage
+  // large. Le mode Tableau est une grille dense d'une ligne par personne ; y empiler
+  // quatre rangées de pastilles le rendrait illisible, il garde donc la saisie globale.
+  const parHeure = HOURLY_PERIODS.includes(period) && !compact;
+  const occupants = parHeure ? placeEntries(period, entries) : null;
+  // Les saisies qu'aucune tranche ne montre — créneau déjà plein, ou saisie antérieure à
+  // la grille. Elles restent listées : rien de ce qui a été saisi ne doit disparaître de
+  // l'écran sous prétexte que la grille ne sait pas où le mettre.
+  const horsGrille = occupants ? entries.filter((e) => ![...occupants.values()].includes(e)) : entries;
+
   const history = (
-    <SlotEntries entries={entries} tasks={tasks} memberName={member.name} confirm={confirm} onRemove={onRemoveEntry} />
+    <SlotEntries
+      entries={horsGrille}
+      tasks={tasks}
+      memberName={member.name}
+      confirm={confirm}
+      onRemove={onRemoveEntry}
+      titre={parHeure ? 'Autres saisies' : 'Dernières saisies'}
+    />
   );
 
   // Une absence déclarée après coup n'efface pas le temps déjà saisi : on continue de le montrer.
@@ -371,18 +441,158 @@ function SlotEditor({
               <option value="en_attente">En attente</option>
               <option value="termine">Terminé</option>
             </select>
-            <button
-              className="ml-auto rounded-md bg-violet-600 px-2 py-1 text-xs font-medium text-white hover:bg-violet-700 print:hidden"
-              onClick={() => onLogTime({ memberId: member.id, period, taskId: task.id })}
-            >
-              + Saisir temps
-            </button>
+            {!parHeure && (
+              <button
+                className="ml-auto rounded-md bg-violet-600 px-2 py-1 text-xs font-medium text-white hover:bg-violet-700 print:hidden"
+                onClick={() => onLogTime({ memberId: member.id, period, taskId: task.id })}
+              >
+                + Saisir temps
+              </button>
+            )}
           </div>
         </div>
       )}
 
+      {parHeure && (
+        <HourGrid
+          period={period}
+          memberTasks={memberTasks}
+          plannedTask={task}
+          occupants={occupants!}
+          tasks={tasks}
+          memberName={member.name}
+          confirm={confirm}
+          onValidate={(taskId, hour) => onValidateHour(member.id, period, taskId, hour)}
+          onOther={(hour) => onLogTime({ memberId: member.id, period, taskId: '', hour })}
+          onRemoveEntry={onRemoveEntry}
+        />
+      )}
+
       {history}
     </>
+  );
+}
+
+/**
+ * Grille horaire d'un créneau : une ligne par tranche d'une heure, et sur chacune les
+ * tâches de la personne en pastilles. Un clic sur une pastille vaut choix ET validation —
+ * c'est tout l'objet de cet écran : enregistrer une heure sans ouvrir de fenêtre.
+ *
+ * Une tranche déjà occupée affiche l'activité en vert plutôt que les pastilles : on ne
+ * propose pas de remplir ce qui l'est. La croix défait la saisie, et dit sa durée réelle —
+ * retirer une tranche d'une saisie de trois heures les retire toutes les trois, et
+ * l'annoncer évite de le découvrir après coup.
+ */
+function HourGrid({
+  period,
+  memberTasks,
+  plannedTask,
+  occupants,
+  tasks,
+  memberName,
+  confirm,
+  onValidate,
+  onOther,
+  onRemoveEntry,
+}: {
+  period: Period;
+  memberTasks: ProjectTask[];
+  plannedTask: ProjectTask | undefined;
+  occupants: Map<number, TimeEntry>;
+  tasks: ProjectTask[];
+  memberName: string;
+  confirm: ConfirmFn;
+  onValidate: (taskId: string, hour: number) => void;
+  onOther: (hour: number) => void;
+  onRemoveEntry: (id: string) => void;
+}) {
+  const { start, end } = PERIOD_RANGES[period];
+  const heures = Array.from({ length: end - start }, (_, i) => start + i);
+  // La tâche prévue d'abord : c'est celle qu'on valide le plus souvent, et la chercher au
+  // milieu des autres à chaque heure serait une friction inutile.
+  const pastilles = plannedTask
+    ? [plannedTask, ...memberTasks.filter((t) => t.id !== plannedTask.id)]
+    : memberTasks;
+  const valides = heures.filter((h) => occupants.has(h)).length;
+
+  return (
+    <div className="mt-2 border-t border-slate-100 pt-2 dark:border-slate-800">
+      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Heure par heure</span>
+        <span className="text-[10px] tabular-nums text-slate-400">
+          {valides}h validée(s) sur {heures.length}
+        </span>
+      </div>
+
+      <div className="space-y-1.5">
+        {heures.map((h) => {
+          const occupant = occupants.get(h);
+          const tache = occupant ? getTaskById(tasks, occupant.taskId) : undefined;
+          return (
+            <div key={h} className="flex items-start gap-2">
+              <span className="w-[5.5rem] shrink-0 pt-1 text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400">
+                {hourLabel(h)} – {hourLabel(h + 1)}
+              </span>
+
+              {occupant ? (
+                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+                  <span className="shrink-0 text-emerald-600 dark:text-emerald-400">✓</span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-slate-700 dark:text-slate-200">
+                    {tache?.title ?? 'Tâche supprimée'}
+                    {occupant.note && <span className="text-slate-400 dark:text-slate-500"> — « {occupant.note} »</span>}
+                  </span>
+                  <span className="shrink-0 text-[10px] font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                    {occupant.hours}h
+                  </span>
+                  <button
+                    onClick={async () => {
+                      const message =
+                        occupant.hours > 1
+                          ? `Cette saisie couvre ${occupant.hours}h : l'annuler retirera toutes ses heures, pas seulement ${hourLabel(h)}. Continuer ?`
+                          : `Annuler l'heure de ${hourLabel(h)} sur "${tache?.title ?? 'cette tâche'}" pour ${memberName} ?`;
+                      if (await confirm({ title: 'Annuler cette saisie', message, confirmLabel: 'Annuler la saisie', danger: true })) {
+                        onRemoveEntry(occupant.id);
+                      }
+                    }}
+                    title={occupant.hours > 1 ? `Annuler cette saisie de ${occupant.hours}h` : 'Annuler cette heure'}
+                    className="shrink-0 rounded px-1 text-slate-300 hover:bg-red-50 hover:text-red-600 dark:text-slate-600 dark:hover:bg-red-500/10 print:hidden"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <div className="flex min-w-0 flex-1 flex-wrap gap-1.5 print:hidden">
+                  {pastilles.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => onValidate(t.id, h)}
+                      title={`Valider ${hourLabel(h)} – ${hourLabel(h + 1)} sur « ${t.title} »`}
+                      className="max-w-full truncate rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700 dark:border-slate-700 dark:text-slate-300 dark:hover:border-violet-500/40 dark:hover:bg-violet-500/10 dark:hover:text-violet-300"
+                    >
+                      {t.title}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => onOther(h)}
+                    title="Autre tâche, durée différente d'une heure, ou ajouter une note"
+                    className="rounded-full border border-dashed border-slate-200 px-2.5 py-1 text-xs text-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                  >
+                    …
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {pastilles.length === 0 && (
+        <p className="mt-1.5 text-[11px] text-slate-400">
+          Aucune tâche de type Projet ouverte pour {memberName} : utilisez «&nbsp;…&nbsp;» pour saisir malgré tout, ou assignez-lui une
+          tâche depuis l'onglet Tâches.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -398,12 +608,16 @@ function SlotEntries({
   memberName,
   confirm,
   onRemove,
+  titre = 'Dernières saisies',
 }: {
   entries: TimeEntry[];
   tasks: ProjectTask[];
   memberName: string;
   confirm: ConfirmFn;
   onRemove: (id: string) => void;
+  /** « Autres saisies » quand une grille horaire montre déjà le reste, pour ne pas laisser
+   *  croire que cette liste est tout ce qui a été saisi. */
+  titre?: string;
 }) {
   if (entries.length === 0) return null;
   const total = entries.reduce((sum, e) => sum + e.hours, 0);
@@ -411,7 +625,7 @@ function SlotEntries({
   return (
     <div className="mt-2 border-t border-slate-100 pt-2 dark:border-slate-800">
       <div className="mb-1 flex items-baseline justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Dernières saisies</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{titre}</span>
         <span className="text-[10px] tabular-nums text-slate-400">
           {entries.length} · {total}h
         </span>
@@ -465,7 +679,8 @@ function StatusHint() {
   return (
     <p className="text-xs text-slate-400 dark:text-slate-500">
       Le matin est réservé au MCO et aux incidents, l'après-midi aux projets. Choisissez la tâche en cours pour chaque créneau et
-      saisissez le temps passé au fil de l'eau.
+      saisissez le temps passé au fil de l'eau. L'après-midi se valide <strong>heure par heure</strong> : un clic sur une pastille
+      enregistre l'heure sur cette activité, «&nbsp;…&nbsp;» ouvre la saisie complète (autre tâche, autre durée, note).
     </p>
   );
 }
