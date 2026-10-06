@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Installe "Plan Relief" sur Windows Server 2022 (IIS).
 
@@ -313,7 +313,7 @@ if (-not (Test-Path $envPath)) {
     $secretBytes = New-Object byte[] 48
     [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($secretBytes)
     $jwtSecret = [Convert]::ToBase64String($secretBytes)
-    @(
+    $content = @(
         "# Généré automatiquement par Install-PlanRelief.ps1 le $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
         "# Voir .env.example pour la description de chaque valeur.",
         "PORT=$ServicePort",
@@ -330,18 +330,22 @@ if (-not (Test-Path $envPath)) {
         "",
         "# LDAP / Active Directory et comptes locaux : se configurent depuis l'application",
         "# (onglet Paramètres), enregistrés dans data\config.json et data\users.json."
-    ) | Set-Content -Path $envPath -Encoding UTF8
+    )
+    # UTF-8 sans BOM : Set-Content -Encoding UTF8 de PowerShell 5.1 en ajouterait un, que le
+    # service lirait comme faisant partie du nom de la première variable.
+    [IO.File]::WriteAllLines($envPath, [string[]] $content, (New-Object Text.UTF8Encoding $false))
     Write-Ok '.env généré (secret de session aléatoire)'
 } else {
     Write-Ok '.env existant conservé (secret et configuration SSO inchangés)'
     # Seule l'adresse autorisée suit le port choisi : elle se déduit de -HostName et -Port.
-    $lines = @(Get-Content -Path $envPath -Encoding UTF8)
+    # TrimStart : retire un éventuel BOM laissé par une installation précédente.
+    $lines = @(Get-Content -Path $envPath -Encoding UTF8 | ForEach-Object { $_.TrimStart([char]0xFEFF) })
     if ($lines -match '^CORS_ORIGIN=') {
         $lines = $lines | ForEach-Object { if ($_ -match '^CORS_ORIGIN=') { "CORS_ORIGIN=$BaseUrl" } else { $_ } }
     } else {
         $lines += "CORS_ORIGIN=$BaseUrl"
     }
-    $lines | Set-Content -Path $envPath -Encoding UTF8
+    [IO.File]::WriteAllLines($envPath, [string[]] $lines, (New-Object Text.UTF8Encoding $false))
     Write-Ok "Adresse autorisée dans .env : $BaseUrl"
 }
 

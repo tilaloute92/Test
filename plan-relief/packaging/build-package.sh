@@ -46,6 +46,16 @@ if find server/node_modules -name '*.node' | grep -q .; then
   exit 1
 fi
 
+echo "==> Vérification de l'encodage des scripts PowerShell"
+# Windows PowerShell 5.1 (celui de Windows Server 2022) lit un script sans BOM en
+# Windows-1252 : les accents deviennent d'autres caractères et le script ne s'analyse plus.
+for f in packaging/scripts/*.ps1; do
+  if [ "$(head -c3 "$f" | od -An -tx1 | tr -d ' ')" != "efbbbf" ]; then
+    echo "ERREUR : $f doit être enregistré en UTF-8 avec BOM." >&2
+    exit 1
+  fi
+done
+
 echo "==> Assemblage du paquet"
 # 1. Le site statique — publié par IIS.
 mkdir -p "$STAGE/site"

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Désinstalle "Plan Relief" d'un serveur Windows Server 2022.
 

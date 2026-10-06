@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Crée (ou met à jour) la tâche planifiée quotidienne de sauvegarde des données.
 

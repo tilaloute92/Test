@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Vérifie qu'une installation de "Plan Relief" est saine.
 
