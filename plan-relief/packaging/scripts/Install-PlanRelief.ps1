@@ -443,7 +443,7 @@ if ($UseNssm) {
     $supervisor = Join-Path $ServicePath 'Start-PlanReliefService.ps1'
     Copy-Item -Path (Join-Path $PackageRoot 'Start-PlanReliefService.ps1') -Destination $supervisor -Force
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -WorkingDirectory $ServicePath `
-        -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$supervisor`" -NodePath `"$nodeExe`""
+        -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$supervisor`" -NodePath `"$nodeExe`" -ServicePath `"$ServicePath`""
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
     # Pas de limite de durée (le service tourne en continu) ; si le superviseur lui-même
@@ -470,6 +470,7 @@ if ($healthy) {
     Write-Ok "Le service répond sur http://127.0.0.1:$ServicePort/api/health"
 } else {
     Write-Warn "Le service ne répond pas encore. Consultez $ServicePath\service.err.log (un plan.json illisible, par exemple, l'empêche volontairement de démarrer)."
+    if (-not $UseNssm) { Write-Warn "Mode tâche planifiée : voir aussi $env:ProgramData\PlanRelief\superviseur.log." }
 }
 
 # ---------------------------------------------------------------------------------------

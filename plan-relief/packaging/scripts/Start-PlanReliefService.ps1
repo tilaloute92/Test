@@ -19,10 +19,38 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string] $NodePath,
-    [string] $ServicePath = $PSScriptRoot
+    [string] $ServicePath
 )
 
 $ErrorActionPreference = 'Continue'
+
+# Journal de secours, utilisable même si le dossier du service est introuvable : sans lui,
+# un échec au démarrage du superviseur passerait totalement inaperçu.
+$fallbackDir = Join-Path $env:ProgramData 'PlanRelief'
+New-Item -ItemType Directory -Path $fallbackDir -Force | Out-Null
+$fallback = Join-Path $fallbackDir 'superviseur.log'
+function Write-Fallback([string] $message) {
+    $line = '{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $message
+    try { [IO.File]::AppendAllText($fallback, $line + [Environment]::NewLine, (New-Object Text.UTF8Encoding $false)) } catch { }
+}
+trap {
+    Write-Fallback ("ERREUR : {0} (ligne {1})" -f $_.Exception.Message, $_.InvocationInfo.ScriptLineNumber)
+    continue
+}
+
+# Dossier du service : passé par la tâche planifiée ; à défaut, celui de ce script.
+# ($PSScriptRoot n'est pas fiable comme valeur par défaut d'un paramètre sous PowerShell 5.1.)
+if (-not $ServicePath) { $ServicePath = Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (-not (Test-Path -LiteralPath (Join-Path $ServicePath 'src\index.js'))) {
+    Write-Fallback "ERREUR : src\index.js introuvable dans '$ServicePath'. Relancez Install-PlanRelief.ps1."
+    exit 1
+}
+if (-not (Test-Path -LiteralPath $NodePath)) {
+    Write-Fallback "ERREUR : node.exe introuvable ('$NodePath'). Relancez Install-PlanRelief.ps1."
+    exit 1
+}
+Write-Fallback "superviseur demarre : service '$ServicePath', node '$NodePath'"
+
 $log = Join-Path $ServicePath 'service.log'
 $err = Join-Path $ServicePath 'service.err.log'
 $entry = Join-Path $ServicePath 'src\index.js'
