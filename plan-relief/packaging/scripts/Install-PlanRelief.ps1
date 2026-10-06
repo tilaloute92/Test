@@ -89,6 +89,12 @@ Set-StrictMode -Version Latest
 $PackageRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ServiceName = 'PlanReliefSvc'
 $TaskName    = 'Plan Relief - Service'
+# Administrateurs et SYSTEM désignés par leur SID : leurs noms dépendent de la langue de
+# Windows (« BUILTIN\Administrateurs » sur un serveur en français), pas leurs SID.
+$AdminAndSystem = @(
+    (New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544'),  # Administrateurs
+    (New-Object Security.Principal.SecurityIdentifier 'S-1-5-18')       # SYSTEM
+)
 $RuleName    = 'Plan Relief - API'
 # Adresse de l'application : le port n'apparaît que s'il n'est pas le port HTTPS standard.
 $BaseUrl     = if ($Port -eq 443) { "https://$HostName" } else { "https://${HostName}:$Port" }
@@ -392,7 +398,7 @@ if (-not (Test-Path $envPath)) {
 # aux administrateurs et au compte du service (SYSTEM).
 $acl = Get-Acl (Join-Path $ServicePath 'data')
 $acl.SetAccessRuleProtection($true, $false)
-foreach ($principal in @('BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM')) {
+foreach ($principal in $AdminAndSystem) {
     $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
         $principal, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
 }
@@ -401,7 +407,7 @@ Write-Ok 'Droits restreints sur data\ (Administrateurs + SYSTEM)'
 # Même restriction sur .env (secret de session).
 $envAcl = Get-Acl $envPath
 $envAcl.SetAccessRuleProtection($true, $false)
-foreach ($principal in @('BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM')) {
+foreach ($principal in $AdminAndSystem) {
     $envAcl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($principal, 'FullControl', 'Allow')))
 }
 Set-Acl -Path $envPath -AclObject $envAcl

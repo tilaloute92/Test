@@ -97,15 +97,12 @@ if ($Destination -notlike '\\*') {
     try {
         $acl = Get-Acl -LiteralPath $Destination
         $acl.SetAccessRuleProtection($true, $false)
-        foreach ($who in @('BUILTIN\Administrateurs', 'BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM')) {
-            try {
-                $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                    $who, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
-                $acl.AddAccessRule($rule)
-            } catch {
-                # Le nom du groupe Administrateurs dépend de la langue de Windows : on essaie
-                # les deux, il suffit qu'un des deux existe.
-            }
+        # SID plutôt que noms : « Administrateurs » / « Administrators » selon la langue de Windows.
+        foreach ($sid in @('S-1-5-32-544', 'S-1-5-18')) {
+            $who = New-Object System.Security.Principal.SecurityIdentifier $sid
+            $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $who, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+            $acl.AddAccessRule($rule)
         }
         Set-Acl -LiteralPath $Destination -AclObject $acl
         Write-Host "Droits restreints aux administrateurs et à SYSTEM : $Destination" -ForegroundColor Green
