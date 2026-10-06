@@ -1,6 +1,9 @@
-import { clusterSegments, minAreaRect, pairWalls } from './geometry';
+import { clusterSegments, dropSmallMarks, filterWallFills, minAreaRect, pairWalls } from './geometry';
 import { roleOf } from './drawing';
 import type { Fill, Group, PlanSettings } from './types';
+
+/** Au-dessous de cette taille, un dessin isolé n'est un mur que s'il est en double trait (poteau). */
+const SMALL_MARK_M = 2;
 
 /** Pavé orienté, en mètres : centre, direction, longueur, épaisseur, hauteurs bas et haut. */
 export interface Box2 { cx: number; cy: number; ux: number; uy: number; len: number; thick: number; y0: number; y1: number }
@@ -39,11 +42,19 @@ export function floorFootprint(groups: Group[], P: PlanSettings, f: number, cent
   const wallLines: number[] = [];
   for (const g of groups) {
     if (roleOf(g, P) !== 'mur') continue;
-    if (g.kind === 'fill') for (const fill of g.fills) { fills.push(fillToMeters(fill, f, cx, cy)); wallCount++; }
+    if (g.kind === 'fill') {
+      // Écritures et symboles en aplat écartés : seuls les murs pochés et les poteaux restent.
+      const kept = filterWallFills(g.fills.map((fill) => fillToMeters(fill, f, cx, cy)), SMALL_MARK_M, 0.05);
+      fills.push(...kept);
+      wallCount += kept.length;
+    }
     else for (const v of g.segs) wallLines.push(v);
   }
   if (wallLines.length) {
-    const { boxes, leftovers } = pairWalls(toMeters(wallLines, f, cx, cy), 0.03, P.tMax);
+    // Écritures et petits symboles dessinés avec les murs (même calque, ou même trait dans un
+    // PDF) : sans ce tri, chaque trait de lettre serait extrudé en mur.
+    const lines = dropSmallMarks(toMeters(wallLines, f, cx, cy), 0.02, SMALL_MARK_M, 0.03, P.tMax);
+    const { boxes, leftovers } = pairWalls(lines, 0.03, P.tMax);
     for (const b of boxes) walls.push({ cx: b.x, cy: b.y, ux: b.ux, uy: b.uy, len: b.len, thick: b.thick, y0: 0, y1: P.hWall });
     // Dans un plan en double trait, les petits restes (retours, angles) sont déjà couverts par les murs voisins.
     const minLeft = boxes.length ? P.tMax : 0.02;

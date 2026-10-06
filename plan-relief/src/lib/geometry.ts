@@ -164,6 +164,148 @@ export function pairWalls(s: Float64Array, minT: number, maxT: number): { boxes:
   return { boxes, leftovers };
 }
 
+export interface BBox { minX: number; minY: number; maxX: number; maxY: number }
+
+/**
+ * Repère les écritures parmi de petits dessins : les caractères d'un mot ou d'un repère
+ * (« 3/100/101 ») ont des tailles voisines et sont séparés de moins de la moitié de leur
+ * taille ; à partir de 3 caractères ainsi enchaînés, c'est une écriture. Des poteaux ou des
+ * trumeaux entre deux portes sont bien plus espacés au regard de leur taille.
+ */
+export function textRuns(boxes: BBox[]): Set<number> {
+  const n = boxes.length;
+  const parent = Int32Array.from({ length: n }, (_, i) => i);
+  const find = (i: number) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const size = boxes.map((b) => Math.max(b.maxX - b.minX, b.maxY - b.minY));
+  const maxSize = Math.max(0, ...size);
+  const order = boxes.map((_, i) => i).sort((a, b) => boxes[a].minX - boxes[b].minX);
+  for (let a = 0; a < n; a++) {
+    const i = order[a], A = boxes[i];
+    for (let c = a + 1; c < n; c++) {
+      const j = order[c], B = boxes[j];
+      if (B.minX - A.maxX > 0.5 * maxSize) break;
+      const big = Math.max(size[i], size[j]), little = Math.min(size[i], size[j]);
+      if (!big || little < 0.4 * big) continue;
+      const gap = Math.hypot(Math.max(0, B.minX - A.maxX, A.minX - B.maxX), Math.max(0, B.minY - A.maxY, A.minY - B.maxY));
+      if (gap <= 0.5 * big) parent[find(i)] = find(j);
+    }
+  }
+  const count = new Map<number, number>();
+  for (let i = 0; i < n; i++) count.set(find(i), (count.get(find(i)) ?? 0) + 1);
+  const out = new Set<number>();
+  for (let i = 0; i < n; i++) if ((count.get(find(i)) ?? 0) >= 3) out.add(i);
+  return out;
+}
+
+/**
+ * Retire les petits dessins isolés qui ne sont pas des murs : écritures tracées en traits
+ * (police SHX d'AutoCAD exportée en PDF, textes « éclatés »), tirets, petits symboles.
+ * Les traits sont regroupés par contact (extrémité à moins de tol d'un autre trait) ; un
+ * groupe plus petit que small n'est gardé que s'il forme lui-même un mur en double trait
+ * (poteau, petit trumeau) : ses traits sont alors appariés presque en totalité, ce qui
+ * n'arrive pas aux lettres et aux chiffres.
+ */
+export function dropSmallMarks(s: Float64Array, tol: number, small: number, minT: number, maxT: number): Float64Array {
+  const n = s.length / 4;
+  if (!n) return s;
+  const parent = Int32Array.from({ length: n }, (_, i) => i);
+  const find = (i: number) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const cell = Math.max(small / 2, tol * 4);
+  const grid = new Map<number, number[]>();
+  const key = (gx: number, gy: number) => (gx * 73856093) ^ (gy * 19349663);
+  for (let i = 0; i < n; i++) {
+    const x1 = s[i * 4], y1 = s[i * 4 + 1], x2 = s[i * 4 + 2], y2 = s[i * 4 + 3];
+    const gx0 = Math.floor((Math.min(x1, x2) - tol) / cell), gx1 = Math.floor((Math.max(x1, x2) + tol) / cell);
+    const gy0 = Math.floor((Math.min(y1, y2) - tol) / cell), gy1 = Math.floor((Math.max(y1, y2) + tol) / cell);
+    if ((gx1 - gx0 + 1) * (gy1 - gy0 + 1) > 4000) continue; // trait démesuré : forcément gardé
+    for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
+      const k = key(gx, gy);
+      let list = grid.get(k);
+      if (!list) grid.set(k, (list = []));
+      list.push(i);
+    }
+  }
+  const distToSeg = (px: number, py: number, j: number) => {
+    const ax = s[j * 4], ay = s[j * 4 + 1], dx = s[j * 4 + 2] - ax, dy = s[j * 4 + 3] - ay;
+    const l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+    return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+  };
+  for (let i = 0; i < n; i++) {
+    for (const e of [0, 2]) {
+      const px = s[i * 4 + e], py = s[i * 4 + e + 1];
+      const gx0 = Math.floor((px - tol) / cell), gx1 = Math.floor((px + tol) / cell);
+      const gy0 = Math.floor((py - tol) / cell), gy1 = Math.floor((py + tol) / cell);
+      for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
+        for (const j of grid.get(key(gx, gy)) || []) {
+          if (j !== i && find(i) !== find(j) && distToSeg(px, py, j) <= tol) parent[find(i)] = find(j);
+        }
+      }
+    }
+  }
+  const groups = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    let g = groups.get(r);
+    if (!g) groups.set(r, (g = []));
+    g.push(i);
+  }
+  const keep = new Uint8Array(n);
+  const smallOnes: { members: number[]; box: BBox; total: number }[] = [];
+  for (const members of groups.values()) {
+    const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    let total = 0;
+    for (const i of members) {
+      const x1 = s[i * 4], y1 = s[i * 4 + 1], x2 = s[i * 4 + 2], y2 = s[i * 4 + 3];
+      box.minX = Math.min(box.minX, x1, x2); box.maxX = Math.max(box.maxX, x1, x2);
+      box.minY = Math.min(box.minY, y1, y2); box.maxY = Math.max(box.maxY, y1, y2);
+      total += Math.hypot(x2 - x1, y2 - y1);
+    }
+    if (Math.max(box.maxX - box.minX, box.maxY - box.minY) >= small) { for (const i of members) keep[i] = 1; }
+    else smallOnes.push({ members, box, total });
+  }
+  const text = textRuns(smallOnes.map((c) => c.box));
+  smallOnes.forEach(({ members, box, total }, k) => {
+    if (text.has(k) || !total || Math.max(box.maxX - box.minX, box.maxY - box.minY) < 3 * minT) return;
+    const segs: number[] = [];
+    for (const i of members) segs.push(s[i * 4], s[i * 4 + 1], s[i * 4 + 2], s[i * 4 + 3]);
+    let paired = 0;
+    for (const b of pairWalls(Float64Array.from(segs), minT, maxT).boxes) paired += 2 * b.len;
+    if (paired >= 0.75 * total) for (const i of members) keep[i] = 1;
+  });
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(s[i * 4], s[i * 4 + 1], s[i * 4 + 2], s[i * 4 + 3]);
+  return Float64Array.from(out);
+}
+
+/**
+ * Aplats retenus comme murs (murs pochés, poteaux pleins). Les petits aplats qui forment
+ * une écriture (police pleine) sont écartés, ainsi que les petits symboles qui ne sont pas
+ * des rectangles pleins d'au moins minW d'épaisseur (flèches, puces, pictogrammes).
+ */
+export function filterWallFills<T extends { outer: number[]; holes: number[][] }>(fills: T[], small: number, minW: number): T[] {
+  const info = fills.map((f) => {
+    const r = minAreaRect(f.outer);
+    const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    for (let i = 0; i < f.outer.length; i += 2) {
+      box.minX = Math.min(box.minX, f.outer[i]); box.maxX = Math.max(box.maxX, f.outer[i]);
+      box.minY = Math.min(box.minY, f.outer[i + 1]); box.maxY = Math.max(box.maxY, f.outer[i + 1]);
+    }
+    return { r, box };
+  });
+  const smallIdx = info.map((_, i) => i).filter((i) => info[i].r && info[i].r!.L < small);
+  const text = textRuns(smallIdx.map((i) => info[i].box));
+  const textSet = new Set([...text].map((k) => smallIdx[k]));
+  return fills.filter((f, i) => {
+    const r = info[i].r;
+    if (!r) return false;
+    if (r.L >= small) return true;
+    if (textSet.has(i)) return false;
+    const area = Math.abs(polygonArea(f.outer)) - f.holes.reduce((a, h) => a + Math.abs(polygonArea(h)), 0);
+    return r.W >= minW && area >= 0.6 * r.L * r.W;
+  });
+}
+
 /**
  * Ressemblance d'un ensemble de traits à des murs en double trait : somme des carrés des
  * longueurs des pans appariés d'au moins minLen. De longs murs continus l'emportent sur une
@@ -172,7 +314,8 @@ export function pairWalls(s: Float64Array, minT: number, maxT: number): { boxes:
  */
 export function wallScore(segs: ArrayLike<number>, minT: number, maxT: number, minLen: number): number {
   let score = 0;
-  for (const b of pairWalls(Float64Array.from(segs), minT, maxT).boxes) if (b.len >= minLen) score += b.len * b.len;
+  const kept = dropSmallMarks(Float64Array.from(segs), minT / 4, minLen * 2, minT, maxT);
+  for (const b of pairWalls(kept, minT, maxT).boxes) if (b.len >= minLen) score += b.len * b.len;
   return score;
 }
 

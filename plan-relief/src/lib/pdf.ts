@@ -1,6 +1,6 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url';
-import { IDENTITY, apply, mul, pointInPolygon, wallScore, polygonArea, type Mat } from './geometry';
+import { IDENTITY, apply, filterWallFills, minAreaRect, mul, pointInPolygon, wallScore, polygonArea, type Mat } from './geometry';
 import { isUsefulLabel } from './dxf';
 import type { Drawing, Equipment, Group } from './types';
 
@@ -141,7 +141,10 @@ async function pageGroups(page: pdfjsLib.PDFPageProxy): Promise<Group[]> {
 
 function guessPdfRoles(groups: Group[]) {
   for (const g of groups) g.guess = g.kind === 'fill' && luminance(g.color) > 0.92 ? 'ignore' : 'plan';
-  const darkFills = groups.filter((g) => g.kind === 'fill' && luminance(g.color) < 0.4 && g.fills.length >= 1);
+  // Aplats sombres : murs pochés, à condition d'y trouver de vrais pans de mur (au moins 1 m
+  // au 1:100) une fois écartées les écritures en police pleine et les symboles.
+  const darkFills = groups.filter((g) => g.kind === 'fill' && luminance(g.color) < 0.4 &&
+    filterWallFills(g.fills, 57, 1.4).some((f) => (minAreaRect(f.outer)?.L ?? 0) >= 28));
   if (darkFills.length) { for (const g of darkFills) g.guess = 'mur'; return; }
   const strokes = groups.filter((g) => g.kind === 'line' && g.segs.length >= 16);
   if (strokes.length <= 1) return;
