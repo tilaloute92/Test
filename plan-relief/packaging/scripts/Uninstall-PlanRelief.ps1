@@ -79,8 +79,23 @@ if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
         Write-Ok "Service $ServiceName supprimé (via sc.exe — nssm.exe introuvable)"
     }
 } else {
-    Write-Warn 'Service absent'
+    Write-Warn 'Service Windows absent'
 }
+
+# Installation sans NSSM : tâche planifiée + superviseur + Node.
+$TaskName = 'Plan Relief - Service'
+if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
+    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    Write-Ok "Tâche planifiée « $TaskName » supprimée"
+}
+$entry = Join-Path $ServicePath 'src\index.js'
+Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like '*Start-PlanReliefService.ps1*' } |
+    ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null }
+Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like "*$entry*" } |
+    ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null }
 
 Write-Step 'Données du service'
 $dataPath = Join-Path $ServicePath 'data'
@@ -104,7 +119,7 @@ if (-not (Test-Path $ServicePath)) {
 } else {
     # On retire les fichiers programme mais on garde data\ et .env : une réinstallation
     # ultérieure repart alors des mêmes comptes et des mêmes données.
-    foreach ($item in @('src', 'scripts', 'node_modules', 'package.json')) {
+    foreach ($item in @('src', 'scripts', 'node_modules', 'package.json', 'Start-PlanReliefService.ps1')) {
         $p = Join-Path $ServicePath $item
         if (Test-Path $p) { Remove-Item $p -Recurse -Force }
     }

@@ -134,7 +134,7 @@ function Sso() {
         <div className="notice small">
           <p><strong>Configuration, sur le serveur uniquement :</strong></p>
           <p>1. Dans le portail Azure → Entra ID → Inscriptions d'applications, déclarez l'URI <code>{redirect}</code> de type « Application monopage (SPA) ».</p>
-          <p>2. Renseignez <code>ENTRA_TENANT_ID</code> et <code>ENTRA_CLIENT_ID</code> dans le fichier <code>.env</code> du service, puis redémarrez le service <code>PlanReliefSvc</code>.</p>
+          <p>2. Renseignez <code>ENTRA_TENANT_ID</code> et <code>ENTRA_CLIENT_ID</code> dans le fichier <code>.env</code> du service, puis redémarrez le service (<code>Restart-Service PlanReliefSvc</code>, ou en installation sans NSSM : arrêt puis démarrage de la tâche planifiée « Plan Relief - Service »).</p>
           <p>Le service vérifie la signature de chaque jeton Microsoft avant d'ouvrir une session.</p>
         </div>
       </div>

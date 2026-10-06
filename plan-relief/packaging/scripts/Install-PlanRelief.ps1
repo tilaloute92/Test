@@ -46,11 +46,21 @@
     cohabiter avec Suivi Infra & Réseau (4000) sur le même serveur.
 
 .PARAMETER NssmPath
-    Chemin vers nssm.exe (https://nssm.cc), utilisé pour faire tourner Node comme
-    service Windows. Requis si NSSM n'est pas déjà dans le PATH.
+    Facultatif. Chemin vers nssm.exe (https://nssm.cc) : Node tourne alors comme un vrai
+    service Windows « PlanReliefSvc », comme Suivi Infra & Réseau.
+    Sans NSSM (ni -NssmPath, ni nssm.exe dans le PATH), le service est lancé par une tâche
+    planifiée Windows « Plan Relief - Service » : démarrage automatique au démarrage du
+    serveur, sous SYSTEM, relance en cas d'arrêt. Aucun téléchargement n'est nécessaire.
+
+.PARAMETER ScheduledTask
+    Force le mode tâche planifiée même si nssm.exe est présent dans le PATH.
 
 .PARAMETER SkipFirewall
     N'ajoute pas la règle de pare-feu (si vos règles sont gérées par GPO).
+
+.EXAMPLE
+    .\Install-PlanRelief.ps1 -HostName plans.monentreprise.local
+    Installation sans NSSM : le service est lancé par une tâche planifiée Windows.
 
 .EXAMPLE
     .\Install-PlanRelief.ps1 -HostName plans.monentreprise.local -NssmPath C:\outils\nssm.exe
@@ -69,6 +79,7 @@ param(
     [string] $ServicePath = 'C:\services\plan-relief',
     [int]    $ServicePort = 4100,
     [string] $NssmPath,
+    [switch] $ScheduledTask,
     [switch] $SkipFirewall
 )
 
@@ -77,6 +88,7 @@ Set-StrictMode -Version Latest
 
 $PackageRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ServiceName = 'PlanReliefSvc'
+$TaskName    = 'Plan Relief - Service'
 $RuleName    = 'Plan Relief - API'
 # Adresse de l'application : le port n'apparaît que s'il n'est pas le port HTTPS standard.
 $BaseUrl     = if ($Port -eq 443) { "https://$HostName" } else { "https://${HostName}:$Port" }
@@ -84,6 +96,21 @@ $BaseUrl     = if ($Port -eq 443) { "https://$HostName" } else { "https://${Host
 function Write-Step { param([string] $Message) Write-Host "`n==> $Message" -ForegroundColor Cyan }
 function Write-Ok   { param([string] $Message) Write-Host "    [OK] $Message" -ForegroundColor Green }
 function Write-Warn { param([string] $Message) Write-Host "    [!]  $Message" -ForegroundColor Yellow }
+
+# Arrête le service lancé par tâche planifiée : le superviseur d'abord (sinon il relancerait
+# Node), puis Node lui-même, reconnu au chemin complet de son index.js.
+function Stop-PlanReliefTask {
+    if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
+        Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    }
+    $entry = Join-Path $ServicePath 'src\index.js'
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like '*Start-PlanReliefService.ps1*' } |
+        ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null }
+    Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*$entry*" } |
+        ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null }
+}
 
 # ---------------------------------------------------------------------------------------
 # 0. Contrôles préalables — on vérifie tout AVANT de modifier quoi que ce soit, pour ne
@@ -98,7 +125,7 @@ if (-not (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole(
 }
 Write-Ok 'Console administrateur'
 
-foreach ($required in @('site\index.html', 'site\web.config', 'service\src\index.js', 'service\node_modules')) {
+foreach ($required in @('site\index.html', 'site\web.config', 'service\src\index.js', 'service\node_modules', 'Start-PlanReliefService.ps1')) {
     if (-not (Test-Path (Join-Path $PackageRoot $required))) {
         throw "'$required' introuvable à côté du script. Décompressez le paquet en entier et relancez le script depuis le dossier décompressé."
     }
@@ -159,20 +186,26 @@ if ([int](($nodeVersion -replace '^v','') -split '\.')[0] -lt 18) {
 }
 Write-Ok "Node.js $nodeVersion — $($node.Source)"
 
-if (-not $NssmPath) {
+# Mode de lancement du service : NSSM (service Windows) si disponible, sinon tâche planifiée.
+if ($ScheduledTask) {
+    $NssmPath = $null
+} elseif ($NssmPath) {
+    if (-not (Test-Path $NssmPath -PathType Leaf)) {
+        throw "nssm.exe introuvable à l'emplacement indiqué ($NssmPath). Corrigez -NssmPath, ou relancez sans -NssmPath : le service sera alors lancé par une tâche planifiée Windows, sans rien à télécharger."
+    }
+} else {
     $nssmCmd = Get-Command nssm.exe -ErrorAction SilentlyContinue
     if ($nssmCmd) { $NssmPath = $nssmCmd.Source }
 }
-if (-not $NssmPath -or -not (Test-Path $NssmPath)) {
-    throw "nssm.exe introuvable. Téléchargez-le sur https://nssm.cc, puis relancez avec -NssmPath C:\chemin\nssm.exe."
-}
-Write-Ok "NSSM : $NssmPath"
+$UseNssm = [bool] $NssmPath
+if ($UseNssm) { Write-Ok "Lancement du service : service Windows via NSSM ($NssmPath)" }
+else { Write-Ok "Lancement du service : tâche planifiée Windows « $TaskName » (sans NSSM)" }
 
 # Simple avertissement : si le port est déjà pris par autre chose, le service ne démarrera
 # pas — autant le dire tout de suite. (Sur une réinstallation, c'est notre propre service,
 # arrêté un peu plus bas.)
 $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $ServicePort -ErrorAction SilentlyContinue)
-if ($listeners.Count -gt 0 -and -not (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) {
+if ($listeners.Count -gt 0 -and -not (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) -and -not (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)) {
     Write-Warn "Le port $ServicePort est déjà utilisé par un autre programme. Choisissez un autre port avec -ServicePort, sinon le service ne pourra pas démarrer."
 }
 
@@ -289,9 +322,15 @@ if (-not $SkipFirewall) {
 Write-Step "Installation du service « $ServiceName » vers $ServicePath"
 
 $serviceExists = [bool](Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)
+$taskExists = [bool](Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)
 if ($serviceExists) {
-    & $NssmPath stop $ServiceName confirm | Out-Null
-    Write-Ok 'Service existant arrêté le temps de la mise à jour'
+    if ($UseNssm) { & $NssmPath stop $ServiceName confirm | Out-Null }
+    else { Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue }
+    Write-Ok 'Service Windows existant arrêté le temps de la mise à jour'
+}
+if ($taskExists) {
+    Stop-PlanReliefTask
+    Write-Ok 'Tâche planifiée existante arrêtée le temps de la mise à jour'
 }
 
 New-Item -ItemType Directory -Path $ServicePath -Force | Out-Null
@@ -369,20 +408,48 @@ Set-Acl -Path $envPath -AclObject $envAcl
 Write-Ok 'Droits restreints sur .env'
 
 $nodeExe = (Get-Command node.exe).Source
-if (-not $serviceExists) {
-    & $NssmPath install $ServiceName $nodeExe (Join-Path $ServicePath 'src\index.js') | Out-Null
+if ($UseNssm) {
+    # Passage éventuel du mode tâche planifiée au mode NSSM : une seule instance à la fois.
+    if ($taskExists) {
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+        Write-Ok "Ancienne tâche planifiée « $TaskName » retirée (remplacée par le service Windows)"
+    }
+    if (-not $serviceExists) {
+        & $NssmPath install $ServiceName $nodeExe (Join-Path $ServicePath 'src\index.js') | Out-Null
+    } else {
+        & $NssmPath set $ServiceName Application $nodeExe | Out-Null
+        & $NssmPath set $ServiceName AppParameters (Join-Path $ServicePath 'src\index.js') | Out-Null
+    }
+    & $NssmPath set $ServiceName AppDirectory $ServicePath | Out-Null
+    & $NssmPath set $ServiceName Start SERVICE_AUTO_START | Out-Null
+    & $NssmPath set $ServiceName AppStdout (Join-Path $ServicePath 'service.log') | Out-Null
+    & $NssmPath set $ServiceName AppStderr (Join-Path $ServicePath 'service.err.log') | Out-Null
+    & $NssmPath set $ServiceName AppRotateFiles 1 | Out-Null
+    & $NssmPath set $ServiceName Description 'Plan Relief - plans, equipements et authentification' | Out-Null
+    & $NssmPath start $ServiceName | Out-Null
+    Write-Ok "Service Windows $ServiceName installé et démarré (journaux : $ServicePath\service.log)"
 } else {
-    & $NssmPath set $ServiceName Application $nodeExe | Out-Null
-    & $NssmPath set $ServiceName AppParameters (Join-Path $ServicePath 'src\index.js') | Out-Null
+    # Passage éventuel du mode NSSM au mode tâche planifiée : on retire l'ancien service.
+    if ($serviceExists) {
+        sc.exe delete $ServiceName | Out-Null
+        Write-Ok "Ancien service Windows $ServiceName retiré (remplacé par la tâche planifiée)"
+    }
+    $supervisor = Join-Path $ServicePath 'Start-PlanReliefService.ps1'
+    Copy-Item -Path (Join-Path $PackageRoot 'Start-PlanReliefService.ps1') -Destination $supervisor -Force
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -WorkingDirectory $ServicePath `
+        -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$supervisor`" -NodePath `"$nodeExe`""
+    $trigger = New-ScheduledTaskTrigger -AtStartup
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    # Pas de limite de durée (le service tourne en continu) ; si le superviseur lui-même
+    # s'arrêtait, le Planificateur le relance toutes les minutes.
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 `
+        -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal `
+        -Settings $settings -Description 'Plan Relief - plans, equipements et authentification (service Node.js)' -Force | Out-Null
+    Start-ScheduledTask -TaskName $TaskName
+    Write-Ok "Tâche planifiée « $TaskName » installée et démarrée (journaux : $ServicePath\service.log)"
 }
-& $NssmPath set $ServiceName AppDirectory $ServicePath | Out-Null
-& $NssmPath set $ServiceName Start SERVICE_AUTO_START | Out-Null
-& $NssmPath set $ServiceName AppStdout (Join-Path $ServicePath 'service.log') | Out-Null
-& $NssmPath set $ServiceName AppStderr (Join-Path $ServicePath 'service.err.log') | Out-Null
-& $NssmPath set $ServiceName AppRotateFiles 1 | Out-Null
-& $NssmPath set $ServiceName Description 'Plan Relief - plans, equipements et authentification' | Out-Null
-& $NssmPath start $ServiceName | Out-Null
-Write-Ok "Service $ServiceName installé et démarré (journaux : $ServicePath\service.log)"
 
 # Attente active courte : le service doit répondre avant qu'on annonce que tout va bien.
 $healthy = $false
@@ -426,7 +493,8 @@ Write-Ok "Règle « $RuleName » : /api/* → http://127.0.0.1:$ServicePort/api/
 Write-Step 'Installation terminée'
 Write-Host "    Application : $BaseUrl" -ForegroundColor White
 Write-Host "    Site        : $SitePath"
-Write-Host "    Service     : $ServiceName ($ServicePath), port local $ServicePort"
+if ($UseNssm) { Write-Host "    Service     : service Windows $ServiceName ($ServicePath), port local $ServicePort" }
+else { Write-Host "    Service     : tâche planifiée « $TaskName » ($ServicePath), port local $ServicePort" }
 Write-Host "    Données     : $ServicePath\data   ← à sauvegarder (Register-PlanReliefBackup.ps1)"
 Write-Host ""
 Write-Host "    Étape suivante — créer le premier compte administrateur :" -ForegroundColor Yellow

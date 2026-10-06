@@ -105,7 +105,7 @@ export default function App() {
           <div className="notice error">
             <p><strong>Serveur indisponible.</strong></p>
             <p>Le service Plan Relief ne répond pas. Les plans sont stockés sur le serveur : rien ne peut être consulté ni modifié tant qu'il n'est pas joignable.</p>
-            <p className="small">Administrateur : vérifiez le service Windows <code>PlanReliefSvc</code> et son journal <code>service.err.log</code>.</p>
+            <p className="small">Administrateur : vérifiez le service Windows <code>PlanReliefSvc</code> (ou la tâche planifiée « Plan Relief - Service » en installation sans NSSM) et le journal <code>service.err.log</code>.</p>
           </div>
           <button type="button" className="btn primary" onClick={check}>Réessayer</button>
         </div>

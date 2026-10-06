@@ -101,10 +101,12 @@ Test-Item "Règle de pare-feu $Port/TCP" {
 } "Absente — normal si vos règles sont gérées par GPO (-SkipFirewall)."
 
 Write-Host ''
-Test-Item 'Service Windows PlanReliefSvc en cours d''exécution' {
+Test-Item 'Service en cours d''exécution (service Windows ou tâche planifiée)' {
     $svc = Get-Service -Name 'PlanReliefSvc' -ErrorAction SilentlyContinue
-    $svc -and $svc.Status -eq 'Running'
-} "Service absent ou arrêté — consultez $ServicePath\service.err.log."
+    if ($svc) { return $svc.Status -eq 'Running' }
+    $task = Get-ScheduledTask -TaskName 'Plan Relief - Service' -ErrorAction SilentlyContinue
+    $task -and $task.State -eq 'Running'
+} "Ni service PlanReliefSvc démarré, ni tâche planifiée « Plan Relief - Service » en cours — consultez $ServicePath\service.err.log."
 
 Test-Item 'Service en écoute en local' {
     (Invoke-RestMethod "http://127.0.0.1:$ServicePort/api/health" -TimeoutSec 5).app -eq 'plan-relief'

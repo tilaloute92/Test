@@ -36,7 +36,8 @@ Ou, pour obtenir directement le paquet complet : `bash plan-relief/packaging/bui
 Install-WindowsFeature -Name Web-Server -IncludeManagementTools
 ```
 
-Puis installez Node.js LTS, NSSM, et les modules IIS **URL Rewrite** et **ARR**.
+Puis installez Node.js LTS, les modules IIS **URL Rewrite** et **ARR**, et éventuellement NSSM
+(facultatif, voir §5).
 
 ## 3. Publier le site
 
@@ -80,6 +81,8 @@ SSO : `ENTRA_TENANT_ID` et `ENTRA_CLIENT_ID`.
 
 Restreignez les droits : `data\` et `.env` accessibles aux seuls Administrateurs et SYSTEM.
 
+Lancement **avec NSSM** (service Windows) :
+
 ```powershell
 nssm install PlanReliefSvc "C:\Program Files\nodejs\node.exe" "C:\services\plan-relief\src\index.js"
 nssm set PlanReliefSvc AppDirectory "C:\services\plan-relief"
@@ -89,6 +92,13 @@ nssm start PlanReliefSvc
 node scripts\create-local-user.js admin "MotDePasseSolide123!" "Administrateur"
 Invoke-RestMethod http://127.0.0.1:4100/api/health    # ok = True, app = plan-relief
 ```
+
+Lancement **sans NSSM** (tâche planifiée) : copiez `Start-PlanReliefService.ps1` dans
+`C:\services\plan-relief`, puis créez une tâche planifiée « Plan Relief - Service » : déclencheur
+*Au démarrage*, compte *SYSTEM* avec privilèges les plus élevés, action
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\services\plan-relief\Start-PlanReliefService.ps1" -NodePath "C:\Program Files\nodejs\node.exe"`,
+sans limite de durée d'exécution, redémarrage toutes les minutes en cas d'échec. Le script
+superviseur relance Node s'il s'arrête et écrit les mêmes journaux.
 
 ## 6. Relais /api
 

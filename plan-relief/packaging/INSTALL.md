@@ -4,7 +4,7 @@ Procédure d'installation du paquet livré. Comptez **20 à 30 minutes**.
 
 Plan Relief reprend l'installation, la sécurisation et la connexion de **Suivi Infra &
 Réseau** en mode client/serveur : site publié par IIS en HTTPS, service Node.js en service
-Windows (NSSM) derrière un relais `/api`, connexion par comptes locaux, Active Directory
+Windows derrière un relais `/api`, connexion par comptes locaux, Active Directory
 (LDAP) ou Microsoft Entra ID, sauvegarde quotidienne vérifiée. Les deux applications
 peuvent tourner sur le même serveur : noms d'hôte, ports, services et dossiers sont
 distincts.
@@ -56,7 +56,8 @@ Sur le serveur (Windows Server 2022, à jour) :
    (`certlm.msc`), émis par l'AC interne (AD CS) ou une AC publique.
 3. Le rôle **IIS** (le script l'installe si absent).
 4. **Node.js LTS** : <https://nodejs.org> (l'installeur par défaut convient).
-5. **NSSM** : <https://nssm.cc>. Décompressez `nssm.exe`, par exemple dans `C:\outils\nssm.exe`.
+5. **NSSM** (facultatif) : <https://nssm.cc>. Sans NSSM, le service est lancé par une tâche
+   planifiée Windows (voir §4) : rien à télécharger.
 6. Les modules IIS **URL Rewrite** et **Application Request Routing (ARR)** :
    <https://www.iis.net/downloads>.
 
@@ -96,11 +97,24 @@ Si Windows a marqué les fichiers comme provenant d'Internet : `Get-ChildItem -R
 PowerShell **en tant qu'administrateur**, dans le dossier décompressé :
 
 ```powershell
-.\Install-PlanRelief.ps1 -HostName plans.monentreprise.local -Port 8082 -NssmPath C:\outils\nssm.exe
+.\Install-PlanRelief.ps1 -HostName plans.monentreprise.local -Port 8082
 ```
 
+**Lancement du service Node.js, deux possibilités :**
+
+| | Sans NSSM (par défaut si nssm.exe est absent) | Avec NSSM (`-NssmPath C:\outils\nssm.exe`) |
+| --- | --- | --- |
+| Mécanisme | Tâche planifiée « Plan Relief - Service », au démarrage du serveur, sous SYSTEM | Service Windows `PlanReliefSvc` (comme Suivi Infra) |
+| Relance si Node s'arrête | Oui : script superviseur `Start-PlanReliefService.ps1` (relance espacée de 30 s si l'échec est immédiat) | Oui : NSSM |
+| Journaux | `service.log`, `service.err.log` (rotation à 10 Mo) | idem |
+| Arrêter / démarrer | `Stop-ScheduledTask` / `Start-ScheduledTask -TaskName 'Plan Relief - Service'` | `Stop-Service` / `Start-Service PlanReliefSvc` |
+| Visible dans | Planificateur de tâches | Services (`services.msc`) |
+
+`-ScheduledTask` force le mode tâche planifiée même si nssm.exe est dans le PATH. Relancer le
+script dans l'autre mode bascule proprement de l'un à l'autre.
+
 > Si PowerShell refuse d'exécuter le script :
-> `powershell -ExecutionPolicy Bypass -File .\Install-PlanRelief.ps1 -HostName ... -Port 8082 -NssmPath ...`
+> `powershell -ExecutionPolicy Bypass -File .\Install-PlanRelief.ps1 -HostName ... -Port 8082`
 
 Le script vérifie **tous** les prérequis avant de modifier quoi que ce soit, puis :
 
@@ -193,7 +207,7 @@ côté sous `web.config.nouveau-<date>`).
 | `Modules IIS manquants` | Installez URL Rewrite et ARR, puis relancez. |
 | `Aucun certificat valide trouvé` | Certificat absent de *Ordinateur local → Personnel*, expiré, ou nom ≠ `-HostName`. |
 | `Plusieurs certificats correspondent` | Relancez avec `-CertificateThumbprint <empreinte>`. |
-| Écran « Serveur indisponible » | Service arrêté, ou relais `/api` inopérant. `Get-Service PlanReliefSvc`, puis `C:\services\plan-relief\service.err.log`. |
+| Écran « Serveur indisponible » | Service arrêté, ou relais `/api` inopérant. `Get-Service PlanReliefSvc` (avec NSSM) ou `Get-ScheduledTask 'Plan Relief - Service'` (sans NSSM), puis `C:\services\plan-relief\service.err.log`. |
 | Le service ne démarre pas : « plan.json est illisible » | Une fiche de plan est corrompue. Remettez le dossier `data\plans\<id>` depuis la sauvegarde (voir `RESTAURATION.txt`), puis redémarrez. Le refus de démarrer est voulu. |
 | Import refusé : « Fichier trop volumineux » | Plan > 100 Mo. Augmentez `MAX_UPLOAD_MB` dans `.env` **et** `maxAllowedContentLength` dans `web.config`. |
 | Import bloqué vers 30 Mo avec une erreur 404.13 | `web.config` personnalisé sans la section `requestLimits` : reprenez-la depuis `web.config.nouveau-<date>`. |

@@ -149,9 +149,12 @@ Contenu : $plans plan(s) avec leurs fichiers d'origine, comptes locaux, configur
 
 POUR RESTAURER TOUTE LA BIBLIOTHÈQUE
 1. Arrêter le service :        Stop-Service PlanReliefSvc
+   (installation sans NSSM :    Stop-ScheduledTask 'Plan Relief - Service', puis arrêter
+    le processus node.exe du service dans le Gestionnaire des tâches)
 2. Mettre de côté l'existant : Rename-Item "$dataDir" "data_avant_restauration"
 3. Copier CE dossier (sauf RESTAURATION.txt et env.sauvegarde) vers "$dataDir"
 4. Redémarrer le service :     Start-Service PlanReliefSvc
+   (installation sans NSSM :    Start-ScheduledTask 'Plan Relief - Service')
 5. Vérifier :                  .\Test-PlanRelief.ps1 -HostName <nom>
 
 POUR RÉCUPÉRER UN SEUL PLAN
