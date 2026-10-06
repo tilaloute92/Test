@@ -3,6 +3,32 @@ export type Unit = 'mm' | 'cm' | 'm' | 'in' | 'ft';
 export type Format = 'dxf' | 'pdf';
 export type EquipmentKind = 'bloc' | 'texte' | 'manuel';
 
+/**
+ * Catégories d'équipements, pour les ajouts sur les plans et les filtres de recherche.
+ * Même liste côté service (server/src/categories.js) : identifiants et mots-clés.
+ */
+export type Category = 'wifi' | 'telephonie' | 'camera' | 'reseau' | 'baie' | 'acces' | 'electrique' | 'autre';
+export interface CategoryInfo {
+  id: Category;
+  label: string;
+  /** Début des repères numérotés automatiquement (WIFI-01, TEL-01…). */
+  prefix: string;
+  color: number;
+  hint: string;
+}
+export const CATEGORIES: CategoryInfo[] = [
+  { id: 'wifi', label: 'Borne Wi-Fi', prefix: 'WIFI', color: 0x0e9f6e, hint: "Point d'accès sans fil" },
+  { id: 'telephonie', label: 'Téléphonie', prefix: 'TEL', color: 0x7c3aed, hint: 'Poste téléphonique, borne DECT, autocom' },
+  { id: 'camera', label: 'Caméra', prefix: 'CAM', color: 0xd61f69, hint: 'Vidéoprotection' },
+  { id: 'reseau', label: 'Prise réseau', prefix: 'PR', color: 0x0891b2, hint: 'Prise RJ45, point de connexion' },
+  { id: 'baie', label: 'Baie / armoire', prefix: 'BAIE', color: 0x475569, hint: 'Baie de brassage, armoire, coffret' },
+  { id: 'acces', label: "Contrôle d'accès", prefix: 'CA', color: 0xb45309, hint: 'Lecteur de badge, interphone, gâche' },
+  { id: 'electrique', label: 'Électricité', prefix: 'ELEC', color: 0xca8a04, hint: 'Tableau, onduleur, prise ondulée' },
+  { id: 'autre', label: 'Autre', prefix: 'EQ', color: 0xd9730d, hint: 'Tout autre équipement' },
+];
+export const categoryOf = (id: string | undefined): CategoryInfo | undefined => CATEGORIES.find((c) => c.id === id);
+export const cssColor = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
+
 export interface Fill {
   outer: number[];
   holes: number[][];
@@ -32,6 +58,8 @@ export interface Equipment {
   x: number;
   y: number;
   attributes?: Record<string, string>;
+  /** Catégorie choisie à l'ajout (ou après coup) : couleur du repère et filtre de recherche. */
+  category?: Category;
   notes?: string;
   /** Indications écrites près de cet équipement sur le plan (blocs uniquement). */
   indications?: string[];

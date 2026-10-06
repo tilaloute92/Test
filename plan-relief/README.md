@@ -35,13 +35,19 @@ client/serveur) : voir [`packaging/INSTALL.md`](packaging/INSTALL.md) et
 - **Relire les indications** d'un plan déjà en stock (bouton dans l'onglet Équipements), avec
   ou sans OCR : pour les plans importés avant une amélioration de la lecture, ou pour lancer
   l'OCR après coup. Les équipements ajoutés à la main sont conservés.
-- **Ajout à la main** : sur la vue 3D, cliquez à l'emplacement ; repère, type, notes. Pour les
-  plans sans textes exploitables (PDF scanné) ou les équipements absents du plan.
+- **Ajouts sur les plans** (bornes Wi-Fi, téléphonie…) : choisissez une catégorie (borne Wi-Fi,
+  téléphonie, caméra, prise réseau, baie, contrôle d'accès, électricité, autre), puis cliquez à
+  l'emplacement sur la vue 3D. Le repère est numéroté automatiquement (WIFI-01, WIFI-02…,
+  TEL-01…) et la pose s'enchaîne : Entrée enregistre et passe au suivant. Chaque catégorie a sa
+  couleur sur le plan et son filtre dans la liste. Utile aussi pour les plans sans textes
+  exploitables (PDF scanné) ou les équipements absents du plan.
 - **Recherche** dans tous les plans : insensible aux accents, à la casse, aux tirets et aux
   espaces parasites de l'OCR (`sw b 01` trouve `SW-B-01`, `wifi` trouve `Wi-Fi`, `CAM-07`
   trouve une lecture « CAM-0 7 »). Les mots peuvent viser l'équipement
-  ou la fiche du plan : `switch bât B` trouve les switchs des plans du bâtiment B. Filtres par
-  site et par origine. Chaque résultat ouvre le plan centré sur l'équipement.
+  ou la fiche du plan : `switch bât B` trouve les switchs des plans du bâtiment B. Un équipement
+  ajouté répond aussi à ses notes (modèle, adresse IP, n° de poste) et aux mots de sa catégorie
+  (`wifi`, `borne`, `dect`, `téléphone`…). Filtres par site, par catégorie (à lui seul, il liste
+  par exemple toutes les bornes Wi-Fi) et par origine. Chaque résultat ouvre le plan centré sur l'équipement.
 - **Tracés** (onglet Tracés, ou « Tracé depuis ici / jusqu'ici » sur un équipement) : chemin
   le plus court entre deux équipements d'un même bâtiment, pour estimer un passage de câble.
   - Sur un étage, le tracé contourne les murs et passe par les ouvertures (portes), sans sortir

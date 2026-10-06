@@ -142,6 +142,26 @@ test('modification avec contrôle de version (409 si le plan a changé entre-tem
   assert.equal((await api('/api/search?q=passage%20gt3')).body.total, 1);
 });
 
+test('équipements ajoutés par catégorie : nettoyés, trouvés par mot-clé et listés par catégorie', async () => {
+  const cur = (await api(`/api/plans/${planId}`)).body;
+  const eq = [...cur.equipment,
+    { kind: 'manuel', label: 'TEL-01', type: 'Téléphonie', category: 'telephonie', x: 30, y: 10, notes: 'Poste 4521' },
+    { kind: 'manuel', label: 'X-1', category: 'inconnue', x: 31, y: 10 }];
+  const r = await api(`/api/plans/${planId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: cur.version, equipment: eq }) });
+  assert.equal(r.status, 200);
+  const tel = r.body.equipment.find((e) => e.label === 'TEL-01');
+  assert.equal(tel.category, 'telephonie');
+  assert.equal(r.body.equipment.find((e) => e.label === 'X-1').category, undefined, 'catégorie inconnue écartée');
+  // Mot-clé de la catégorie, absent du repère et du type saisis.
+  assert.equal((await api('/api/search?q=dect')).body.total, 1);
+  assert.equal((await api('/api/search?q=4521')).body.total, 1);
+  // Catégorie seule, sans mot : toute la catégorie.
+  const all = await api('/api/search?category=telephonie');
+  assert.equal(all.body.total, 1);
+  assert.equal(all.body.results[0].equipment.label, 'TEL-01');
+  assert.equal((await api('/api/search?q=tel&category=wifi')).body.total, 0);
+});
+
 test('identifiant invalide : jamais de chemin construit à partir de la saisie', async () => {
   assert.equal((await api('/api/plans/..%2F..%2Fusers.json/file')).status, 404);
   assert.equal((await api('/api/plans/not-an-id')).status, 404);

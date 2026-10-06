@@ -1,4 +1,5 @@
 import { allPlans } from './plansStore.js';
+import { CATEGORIES } from './categories.js';
 
 /**
  * Recherche d'équipements dans toute la bibliothèque.
@@ -23,6 +24,8 @@ export const normalize = (s) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+// Le bâtiment répond aussi à « bât » et « bâtiment » : « switch bât B » trouve les switchs
+// d'un plan dont la fiche indique seulement « B » comme bâtiment.
 const cache = new Map(); // planId -> { version, planHay, items: [{ e, hay, label }] }
 
 function indexFor(plan) {
@@ -32,19 +35,21 @@ function indexFor(plan) {
     const attrs = e.attributes ? Object.entries(e.attributes).flat().join(' ') : '';
     // Les indications écrites à côté d'un équipement comptent comme les siennes.
     const ind = e.indications ? e.indications.join(' ') : '';
-    const hay = normalize([e.label, e.type, e.layer, attrs, e.notes, ind, e.passage ? `passage ${e.passage}` : ''].join(' '));
+    const cat = e.category ? `${CATEGORIES[e.category]?.label ?? ''} ${CATEGORIES[e.category]?.words ?? ''}` : '';
+    const hay = normalize([e.label, e.type, e.layer, attrs, e.notes, ind, e.passage ? `passage ${e.passage}` : '', cat].join(' '));
     // Version sans espaces ajoutée : l'OCR coupe parfois un repère (« CAM-0 7 ») et doit
     // quand même répondre à « CAM-07 ».
     return { e, label: normalize(e.label), hay: `${hay} ${hay.replace(/ /g, '')}` };
   });
-  const entry = { version: plan.version, planHay: normalize([plan.name, plan.site, plan.building, plan.floor].join(' ')), items };
+  const entry = { version: plan.version, planHay: normalize([plan.name, plan.site, plan.building ? `bat batiment ${plan.building}` : '', plan.floor].join(' ')), items };
   cache.set(plan.id, entry);
   return entry;
 }
 
-export function search({ q, site, kind, planId, limit = 200 }) {
+export function search({ q, site, kind, category, planId, limit = 200 }) {
   const terms = normalize(q).split(' ').filter(Boolean);
-  if (!terms.length) return { total: 0, results: [] };
+  // Sans mots, une catégorie suffit : « toutes les bornes Wi-Fi du site ».
+  if (!terms.length && !category) return { total: 0, results: [] };
   const siteN = normalize(site);
   const results = [];
   let total = 0;
@@ -54,6 +59,7 @@ export function search({ q, site, kind, planId, limit = 200 }) {
     const idx = indexFor(plan);
     for (const it of idx.items) {
       if (kind && it.e.kind !== kind) continue;
+      if (category && it.e.category !== category) continue;
       // Un mot peut se trouver soit dans l'équipement, soit dans la fiche du plan, mais au
       // moins un mot doit viser l'équipement : sinon tous les textes d'un plan sortiraient
       // dès qu'on tape son nom.
@@ -62,7 +68,7 @@ export function search({ q, site, kind, planId, limit = 200 }) {
         if (it.hay.includes(t)) inItem = true;
         else if (!idx.planHay.includes(t)) { ok = false; break; }
       }
-      if (!ok || !inItem) continue;
+      if (!ok || (terms.length && !inItem)) continue;
       total++;
       const q0 = terms.join(' ');
       const score = it.label === q0 ? 0 : it.label.startsWith(q0) ? 1 : it.label.includes(q0) ? 2 : 3;

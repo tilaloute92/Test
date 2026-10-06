@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { dataPath, readJsonStrict, writeFileAtomic, bumpDataVersion } from './dataStore.js';
+import { CATEGORIES } from './categories.js';
 
 /**
  * Bibliothèque de plans.
@@ -133,6 +134,7 @@ export function cleanEquipment(list) {
     if (notes) item.notes = notes;
     const passage = str(raw.passage, 60);
     if (passage) item.passage = passage;
+    if (Object.hasOwn(CATEGORIES, raw.category)) item.category = raw.category;
     if (Array.isArray(raw.indications)) {
       const ind = raw.indications.slice(0, 12).map((t) => str(String(t ?? ''), 300)).filter(Boolean);
       if (ind.length) item.indications = ind;

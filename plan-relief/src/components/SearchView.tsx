@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api';
 import { hrefOf } from '../App';
-import { KIND_LABELS, type EquipmentKind, type PlanSummary, type SearchHit } from '../lib/types';
+import { CATEGORIES, KIND_LABELS, categoryOf, cssColor, type Category, type EquipmentKind, type PlanSummary, type SearchHit } from '../lib/types';
 import { Highlight } from './ui';
 
 const EXAMPLES = ['switch', 'baie', 'borne wifi', 'caméra', 'RJ45'];
@@ -10,6 +10,7 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
   const [q, setQ] = useState(initialQuery ?? '');
   const [site, setSite] = useState('');
   const [kind, setKind] = useState<'' | EquipmentKind>('');
+  const [category, setCategory] = useState<'' | Category>('');
   const [plans, setPlans] = useState<PlanSummary[]>([]);
   const [res, setRes] = useState<{ total: number; results: SearchHit[] } | null>(null);
   const [error, setError] = useState('');
@@ -24,11 +25,11 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
     const query = q.trim();
     // La recherche reste dans l'adresse : Précédent depuis un plan ramène aux mêmes résultats.
     window.history.replaceState(null, '', hrefOf({ page: 'recherche', q: query || undefined }));
-    if (!query) { setRes(null); setError(''); return; }
+    if (!query && !category) { setRes(null); setError(''); return; }
     const t = window.setTimeout(async () => {
       setBusy(true);
       try {
-        setRes(await api.searchEquipment({ q: query, site, kind }));
+        setRes(await api.searchEquipment({ q: query, site, kind, category }));
         setError('');
       } catch (err) {
         setError((err as Error).message);
@@ -37,7 +38,7 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
       }
     }, 250);
     return () => window.clearTimeout(t);
-  }, [q, site, kind]);
+  }, [q, site, kind, category]);
 
   return (
     <div className="page">
@@ -66,6 +67,10 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
             {sites.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         )}
+        <select id="search-category" className="select" style={{ width: 'auto' }} value={category} onChange={(e) => setCategory(e.target.value as '' | Category)} aria-label="Catégorie">
+          <option value="">Toutes catégories</option>
+          {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
         <select id="search-kind" className="select" style={{ width: 'auto' }} value={kind} onChange={(e) => setKind(e.target.value as '' | EquipmentKind)} aria-label="Origine">
           <option value="">Toutes origines</option>
           {(Object.keys(KIND_LABELS) as EquipmentKind[]).map((k) => <option key={k} value={k}>{KIND_LABELS[k]}</option>)}
@@ -74,17 +79,19 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
 
       {error && <div className="notice error">{error}</div>}
 
-      {!q.trim() && (
+      {!q.trim() && !category && (
         <div className="card">
           <div className="empty">
             <h3>Tapez un repère, un type ou un modèle</h3>
             <p>Les mots peuvent viser l'équipement ou la fiche du plan : « switch bât B » trouve les switchs des plans du bâtiment B. Accents, majuscules et tirets sont ignorés.</p>
             <div className="filters">{EXAMPLES.map((ex) => <button key={ex} type="button" onClick={() => setQ(ex)}>{ex}</button>)}</div>
+            <p className="small" style={{ marginTop: 14 }}>Ou listez tous les équipements d'une catégorie ajoutés sur les plans :</p>
+            <div className="filters">{CATEGORIES.filter((c) => c.id !== 'autre').map((c) => <button key={c.id} type="button" onClick={() => setCategory(c.id)}><span className="dot" style={{ background: cssColor(c.color) }} />{c.label}</button>)}</div>
           </div>
         </div>
       )}
 
-      {res && q.trim() && (
+      {res && (q.trim() || category) && (
         <>
           <p className="muted small num" role="status">
             {busy ? 'Recherche…' : res.total === 0 ? 'Aucun équipement trouvé.' : `${res.total.toLocaleString('fr-FR')} résultat${res.total > 1 ? 's' : ''}${res.total > res.results.length ? ` (les ${res.results.length} plus pertinents affichés)` : ''}`}
@@ -103,7 +110,7 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
                       <tr key={`${r.planId}:${e.id}`} className="clickable" onClick={() => { window.location.hash = href; }}>
                         <td>
                           <div className="cell-title"><Highlight text={e.label || e.type} query={q} /></div>
-                          <div className="cell-sub"><span className={`dot kind-${e.kind}`} /> {KIND_LABELS[e.kind]}{e.type && e.type !== e.label ? <> · <Highlight text={e.type} query={q} /></> : null}</div>
+                          <div className="cell-sub">{categoryOf(e.category) ? <><span className="dot" style={{ background: cssColor(categoryOf(e.category)!.color) }} /> {categoryOf(e.category)!.label}</> : <><span className={`dot kind-${e.kind}`} /> {KIND_LABELS[e.kind]}</>}{e.type && e.type !== e.label && e.type !== categoryOf(e.category)?.label ? <> · <Highlight text={e.type} query={q} /></> : null}</div>
                         </td>
                         <td>
                           {e.attributes && (

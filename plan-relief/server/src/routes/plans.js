@@ -97,7 +97,7 @@ plansRouter.delete('/:id', (req, res) => {
 export const searchRouter = Router();
 searchRouter.use(requireAuth);
 searchRouter.get('/', (req, res) => {
-  const { q = '', site = '', kind = '', plan = '' } = req.query;
+  const { q = '', site = '', kind = '', category = '', plan = '' } = req.query;
   const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200));
-  res.json(search({ q: String(q).slice(0, 200), site: String(site), kind: String(kind), planId: String(plan), limit }));
+  res.json(search({ q: String(q).slice(0, 200), site: String(site), kind: String(kind), category: String(category), planId: String(plan), limit }));
 });

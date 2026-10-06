@@ -6,7 +6,7 @@ import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { floorFootprint, toMeters, type Box2 } from './footprints';
 import { roleOf } from './drawing';
-import type { Equipment, EquipmentKind, Fill, Group, PlanSettings } from './types';
+import { categoryOf, type Equipment, type EquipmentKind, type Fill, type Group, type PlanSettings } from './types';
 
 export interface SceneInput {
   groups: Group[];
@@ -316,7 +316,7 @@ export class PlanViewer {
     return new THREE.Vector3((e.x - this.center[0]) * this.factor, y, -(e.y - this.center[1]) * this.factor);
   }
 
-  /** Repères des équipements (un point par équipement, couleur selon l'origine). */
+  /** Repères des équipements (un point par équipement, couleur de sa catégorie, à défaut de son origine). */
   setMarkers(list: Equipment[], visible: boolean) {
     this.disposeChildren(this.markers);
     this.pointsMesh = null;
@@ -327,7 +327,7 @@ export class PlanViewer {
     list.forEach((e, i) => {
       const v = this.toScene(e, 0.06);
       pos.set([v.x, v.y, v.z], i * 3);
-      c.setHex(KIND_COLORS[e.kind]);
+      c.setHex(categoryOf(e.category)?.color ?? KIND_COLORS[e.kind]);
       col.set([c.r, c.g, c.b], i * 3);
     });
     const geo = new THREE.BufferGeometry();

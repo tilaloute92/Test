@@ -7,16 +7,31 @@ import { DEFAULT_FLOOR_HEIGHT, guessLevel, suggestPassage } from '../lib/buildin
 import { encodeEndpoint, readDraft } from '../lib/traceLink';
 import { ocrPdfPage, type OcrProgress } from '../lib/ocr';
 import { PlanViewer, type BuildStats } from '../lib/viewer';
-import { DEFAULT_SETTINGS, KIND_LABELS, ROLE_LABELS, UNIT_NAMES, type Drawing, type Equipment, type EquipmentKind, type PlanRecord, type PlanSettings, type Role, type Unit } from '../lib/types';
+import { CATEGORIES, DEFAULT_SETTINGS, KIND_LABELS, ROLE_LABELS, UNIT_NAMES, categoryOf, cssColor, type Category, type Drawing, type Equipment, type EquipmentKind, type PlanRecord, type PlanSettings, type Role, type Unit } from '../lib/types';
 import { Highlight, Modal, downloadBlob, fmtDate, fmtNum, useConfirm, useToast } from './ui';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[-_./\\#]+/g, '');
 const eqHay = (e: Equipment) => {
-  const h = norm([e.label, e.type, e.layer, e.notes, ...(e.indications ?? []), ...(e.attributes ? Object.entries(e.attributes).flat() : [])].join(' '));
+  const h = norm([e.label, e.type, e.layer, e.notes, categoryOf(e.category)?.label ?? '', ...(e.indications ?? []), ...(e.attributes ? Object.entries(e.attributes).flat() : [])].join(' '));
   // Même tolérance que le serveur aux espaces parasites de l'OCR (« CAM-0 7 »).
   return `${h} ${h.replace(/\s+/g, '')}`;
 };
 const MAX_ROWS = 400;
+
+/** Pastille de couleur : catégorie de l'équipement, à défaut son origine. */
+const EqDot = ({ e }: { e: Equipment }) => {
+  const c = categoryOf(e.category);
+  return c ? <span className="dot" style={{ background: cssColor(c.color) }} /> : <span className={`dot kind-${e.kind}`} />;
+};
+
+/** Repère suivant d'une catégorie sur ce plan : WIFI-01, WIFI-02… (après le plus grand numéro existant). */
+function nextLabel(list: Equipment[], cat: Category): string {
+  const prefix = categoryOf(cat)?.prefix ?? 'EQ';
+  const re = new RegExp(`^${prefix}[-_ ]?(\\d+)$`, 'i');
+  let max = 0;
+  for (const e of list) { const m = re.exec(e.label.trim()); if (m) max = Math.max(max, Number(m[1])); }
+  return `${prefix}-${String(max + 1).padStart(2, '0')}`;
+}
 
 /** Couleurs du thème lues dans les variables CSS, relues quand le thème change. */
 function useStageColors() {
@@ -50,6 +65,8 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
   const [showPlan, setShowPlan] = useState(true);
   const [showMarkers, setShowMarkers] = useState(true);
   const [placing, setPlacing] = useState(false);
+  const [placeCat, setPlaceCat] = useState<Category>('autre');
+  const [hiddenCats, setHiddenCats] = useState<string[]>([]);
   const [draft, setDraft] = useState<Equipment | null>(null);
   const [editMeta, setEditMeta] = useState(false);
   const [stats, setStats] = useState<BuildStats | null>(null);
@@ -127,8 +144,9 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
   const equipment = useMemo(() => plan?.equipment ?? [], [plan]);
   const filtered = useMemo(() => {
     const terms = norm(query).split(/\s+/).filter(Boolean);
-    return equipment.filter((e) => kinds[e.kind] && (!terms.length || terms.every((t) => eqHay(e).includes(t))));
-  }, [equipment, query, kinds]);
+    return equipment.filter((e) => kinds[e.kind] && !hiddenCats.includes(e.category ?? '') && (!terms.length || terms.every((t) => eqHay(e).includes(t))));
+  }, [equipment, query, kinds, hiddenCats]);
+  const presentCats = useMemo(() => CATEGORIES.filter((c) => equipment.some((e) => e.category === c.id)), [equipment]);
 
   useEffect(() => {
     viewerRef.current?.setMarkers(filtered, showMarkers);
@@ -149,9 +167,11 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
     v.setPlacing(placing);
     v.onPlace = placing ? (x, y) => {
       setPlacing(false);
-      setDraft({ id: newId(), kind: 'manuel', label: '', type: '', layer: '', x, y });
+      const cat = categoryOf(placeCat);
+      setDraft({ id: newId(), kind: 'manuel', label: nextLabel(equipment, placeCat), type: cat && cat.id !== 'autre' ? cat.label : '', category: placeCat, layer: '', x, y });
     } : null;
-  }, [placing]);
+  }, [placing, placeCat, equipment]);
+  const startPlacing = (cat: Category) => { setPlaceCat(cat); setPlacing(true); select(null); };
 
   const focusOn = (e: Equipment) => {
     select(e.id);
@@ -248,14 +268,16 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
     }
   };
 
-  const saveDraft = async (e: Equipment) => {
+  const saveDraft = async (e: Equipment, again = false) => {
     if (!plan) return;
     const exists = plan.equipment.some((x) => x.id === e.id);
     // Un équipement ajouté à la main récupère lui aussi les indications écrites à côté de lui.
     const list = withIndications(exists ? plan.equipment.map((x) => (x.id === e.id ? e : x)) : [...plan.equipment, e], plan.file.format, settings);
     if (await saveEquipment(list, exists ? 'Équipement modifié.' : `« ${e.label} » ajouté au plan.`)) {
       setDraft(null);
-      select(e.id);
+      // Pose en série : on enchaîne sur le suivant de la même catégorie.
+      if (again && !exists) startPlacing(e.category ?? 'autre');
+      else select(e.id);
     }
   };
 
@@ -343,9 +365,25 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                       </button>
                     ))}
                   </div>
-                  <button type="button" className="btn" onClick={() => { setPlacing(true); select(null); }} disabled={placing || saving}>
-                    {placing ? 'Cliquez sur la vue 3D…' : 'Ajouter un équipement sur le plan'}
-                  </button>
+                  {presentCats.length > 0 && (
+                    <div className="filters" role="group" aria-label="Catégories">
+                      {presentCats.map((c) => (
+                        <button key={c.id} type="button" aria-pressed={!hiddenCats.includes(c.id)} onClick={() => setHiddenCats((h) => (h.includes(c.id) ? h.filter((x) => x !== c.id) : [...h, c.id]))}>
+                          <span className="dot" style={{ background: cssColor(c.color) }} />{c.label} <span className="muted num">{equipment.filter((e) => e.category === c.id).length}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="addbox">
+                    <span className="muted small">Ajouter sur le plan :</span>
+                    <div className="addcats" role="group" aria-label="Ajouter un équipement">
+                      {CATEGORIES.map((c) => (
+                        <button key={c.id} type="button" className="btn sm" title={c.hint} disabled={placing || saving} aria-pressed={placing && placeCat === c.id} onClick={() => startPlacing(c.id)}>
+                          <span className="dot" style={{ background: cssColor(c.color) }} />{c.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <button type="button" className="btn ghost sm" onClick={() => setRereadOpen(true)} disabled={saving || !!loading}>Relire les indications du plan</button>
                 </div>
 
@@ -354,7 +392,8 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                     <div className="detail">
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                         <span className="chip"><span className={`dot kind-${selectedEq.kind}`} />{KIND_LABELS[selectedEq.kind]}</span>
-                        {selectedEq.type && <span className="chip mono">{selectedEq.type}</span>}
+                        {categoryOf(selectedEq.category) && <span className="chip"><EqDot e={selectedEq} />{categoryOf(selectedEq.category)!.label}</span>}
+                        {selectedEq.type && selectedEq.type !== categoryOf(selectedEq.category)?.label && <span className="chip mono">{selectedEq.type}</span>}
                         {selectedEq.passage && <span className="chip">Passage entre étages : <b>{selectedEq.passage}</b></span>}
                       </div>
                       <h4>{selectedEq.label || selectedEq.type}</h4>
@@ -379,10 +418,10 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                 <div className="eqlist" role="list">
                   {filtered.slice(0, MAX_ROWS).map((e) => (
                     <button key={e.id} type="button" role="listitem" className="eqrow" aria-current={e.id === selected} onClick={() => focusOn(e)}>
-                      <span className={`dot kind-${e.kind}`} />
+                      <EqDot e={e} />
                       <span className="l">
                         <span className="t"><Highlight text={e.label || e.type} query={query} /></span>
-                        <span className="s">{[e.type !== e.label ? e.type : '', e.layer].filter(Boolean).join(' · ') || KIND_LABELS[e.kind]}</span>
+                        <span className="s">{[e.type !== e.label ? e.type : '', e.layer].filter(Boolean).join(' · ') || categoryOf(e.category)?.label || KIND_LABELS[e.kind]}</span>
                       </span>
                       {e.passage
                         ? <span className="tag" title="Passage entre étages">⇅ {e.passage}</span>
@@ -395,7 +434,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                   {filtered.length === 0 && (
                     <div className="empty small">
                       {equipment.length === 0
-                        ? <>Aucun équipement détecté dans ce fichier. Placez-les à la main avec le bouton ci-dessus.</>
+                        ? <>Aucun équipement détecté dans ce fichier. Ajoutez-les sur le plan avec les boutons ci-dessus.</>
                         : <>Aucun équipement ne correspond.</>}
                     </div>
                   )}
@@ -439,8 +478,8 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
           </div>
           {placing && (
             <div className="placing" role="status">
-              Cliquez à l'emplacement de l'équipement
-              <button type="button" onClick={() => setPlacing(false)}>Annuler</button>
+              Cliquez à l'emplacement : {categoryOf(placeCat)?.label.toLowerCase()} {nextLabel(equipment, placeCat)}
+              <button type="button" onClick={() => setPlacing(false)}>{equipment.some((e) => e.category === placeCat) ? 'Terminer' : 'Annuler'}</button>
             </div>
           )}
           {selectedEq && labelPos && (
@@ -467,6 +506,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
           value={draft}
           types={types}
           isNew={!equipment.some((e) => e.id === draft.id)}
+          autoLabel={(cat) => nextLabel(equipment, cat)}
           saving={saving}
           onCancel={() => setDraft(null)}
           onSave={saveDraft}
@@ -592,22 +632,38 @@ function ModelSettings({ drawing, settings, onChange, onRole, onPage, onExport }
   );
 }
 
-function EquipmentDialog({ value, types, isNew, saving, onCancel, onSave }: { value: Equipment; types: string[]; isNew: boolean; saving: boolean; onCancel: () => void; onSave: (e: Equipment) => void }) {
+function EquipmentDialog({ value, types, isNew, autoLabel, saving, onCancel, onSave }: { value: Equipment; types: string[]; isNew: boolean; autoLabel: (c: Category) => string; saving: boolean; onCancel: () => void; onSave: (e: Equipment, again: boolean) => void }) {
   const [e, setE] = useState(value);
+  const [again, setAgain] = useState(isNew && !!value.category && value.category !== 'autre');
   const valid = e.label.trim() || e.type.trim();
+  // Changer de catégorie met à jour le repère et le type proposés, s'ils n'ont pas été retouchés.
+  const changeCategory = (cat: Category | undefined) => {
+    const prev = categoryOf(e.category), next = categoryOf(cat);
+    const label = isNew && prev && e.label === autoLabel(prev.id) && next ? autoLabel(next.id) : e.label;
+    const type = (!e.type || (prev && e.type === prev.label)) ? (next && next.id !== 'autre' ? next.label : '') : e.type;
+    setE({ ...e, category: cat, label, type });
+  };
+  const submit = () => onSave({ ...e, label: e.label.trim(), type: e.type.trim(), notes: e.notes?.trim() || undefined, passage: e.passage?.trim() || undefined }, again);
   return (
     <Modal
       title={isNew ? 'Nouvel équipement' : 'Modifier l’équipement'}
       onClose={onCancel}
       footer={<>
         <button type="button" className="btn" onClick={onCancel}>Annuler</button>
-        <button type="button" className="btn primary" disabled={!valid || saving} onClick={() => onSave({ ...e, label: e.label.trim(), type: e.type.trim(), notes: e.notes?.trim() || undefined, passage: e.passage?.trim() || undefined })}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+        <button type="button" className="btn primary" disabled={!valid || saving} onClick={submit}>{saving ? 'Enregistrement…' : again ? 'Enregistrer et placer le suivant' : 'Enregistrer'}</button>
       </>}
     >
-      <div className="grid2">
+      <form className="grid2" onSubmit={(ev) => { ev.preventDefault(); if (valid && !saving) submit(); }}>
+        <label className="field wide">
+          <span>Catégorie</span>
+          <select id="eq-category" className="select" value={e.category ?? ''} onChange={(ev) => changeCategory((ev.target.value || undefined) as Category | undefined)}>
+            <option value="">Sans catégorie</option>
+            {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label} — {c.hint}</option>)}
+          </select>
+        </label>
         <label className="field wide">
           <span>Repère / nom</span>
-          <input id="eq-label" className="input" value={e.label} maxLength={200} onChange={(ev) => setE({ ...e, label: ev.target.value })} placeholder="SW-B-01, Borne Wi-Fi 12…" />
+          <input id="eq-label" className="input" value={e.label} maxLength={200} onChange={(ev) => setE({ ...e, label: ev.target.value })} placeholder="WIFI-12, TEL-204, SW-B-01…" autoFocus={isNew} />
         </label>
         <label className="field wide">
           <span>Type</span>
@@ -626,9 +682,15 @@ function EquipmentDialog({ value, types, isNew, saving, onCancel, onSave }: { va
         </div>
         <label className="field wide">
           <span>Notes</span>
-          <textarea id="eq-notes" className="textarea" value={e.notes ?? ''} maxLength={2000} onChange={(ev) => setE({ ...e, notes: ev.target.value })} placeholder="Modèle, n° de série, port de brassage…" />
+          <textarea id="eq-notes" className="textarea" value={e.notes ?? ''} maxLength={2000} onChange={(ev) => setE({ ...e, notes: ev.target.value })} placeholder="Modèle, n° de série, adresse IP, n° de poste, port de brassage…" />
         </label>
-      </div>
+        {isNew && (
+          <label className="check wide" htmlFor="eq-again">
+            <input id="eq-again" type="checkbox" checked={again} onChange={(ev) => setAgain(ev.target.checked)} /> Placer ensuite un autre équipement de cette catégorie (numéro suivant)
+          </label>
+        )}
+        <button type="submit" hidden aria-hidden="true" tabIndex={-1} />
+      </form>
       {!isNew && value.kind !== 'manuel' && <p className="muted small">Équipement lu dans le fichier : vos modifications sont conservées tant que la page du plan ne change pas.</p>}
     </Modal>
   );

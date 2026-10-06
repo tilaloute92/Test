@@ -223,6 +223,10 @@ mark { background: color-mix(in srgb, var(--accent) 22%, transparent); color: in
 .filters { display: flex; gap: 6px; flex-wrap: wrap; }
 .filters button { border: 1px solid var(--line); background: var(--raised); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .filters button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.addbox { display: flex; flex-direction: column; gap: 6px; }
+.addcats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.addcats .btn { justify-content: flex-start; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.addcats .btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
 
 .layers { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised); overflow: hidden; }
 .layer { display: grid; grid-template-columns: 12px 1fr auto; align-items: center; gap: 10px; padding: 7px 8px 7px 10px; border-bottom: 1px solid var(--line); }
