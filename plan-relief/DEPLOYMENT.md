@@ -7,7 +7,7 @@ ce qu'il fait, ou à l'adapter.
 L'architecture est celle de Suivi Infra & Réseau en mode client/serveur :
 
 ```
-Navigateur ──HTTPS 443──▶ IIS ──┬── fichiers du site (C:\inetpub\plan-relief)
+Navigateur ──HTTPS 8082──▶ IIS ──┬── fichiers du site (C:\inetpub\plan-relief)
                                 └── /api/* ──HTTP 127.0.0.1:4100──▶ service Node.js (PlanReliefSvc)
                                                                      └── data\ : comptes, plans, équipements
 ```
@@ -57,11 +57,12 @@ Copiez le contenu de `dist/` dans `C:\inetpub\plan-relief\`.
 
 1. Importez le certificat dans *Ordinateur local → Personnel*.
 2. Gestionnaire IIS → *Ajouter un site* : nom `Plan Relief`, chemin `C:\inetpub\plan-relief`,
-   liaison **https** 443, nom d'hôte `plans.monentreprise.local`, cochez *Exiger
+   liaison **https** port **8082**, nom d'hôte `plans.monentreprise.local`, cochez *Exiger
    l'indication du nom de serveur* (SNI), certificat.
 3. Supprimez toute liaison **http** : l'application ne doit jamais être servie en clair
    (les mots de passe locaux et LDAP transitent par la page de connexion).
-4. Pare-feu : 443/TCP entrant uniquement. Le port 4100 n'est **pas** à ouvrir.
+4. Pare-feu : 8082/TCP entrant uniquement (Windows et, le cas échéant, pare-feu réseau). Le
+   port 4100 n'est **pas** à ouvrir.
 
 ## 5. Service Windows
 
@@ -74,7 +75,7 @@ notepad .env
 ```
 
 Dans `.env` : `JWT_SECRET` (valeur aléatoire longue, **différente** de celle de Suivi Infra),
-`COOKIE_SECURE=true`, `CORS_ORIGIN=https://plans.monentreprise.local`, `PORT=4100`. Pour le
+`COOKIE_SECURE=true`, `CORS_ORIGIN=https://plans.monentreprise.local:8082`, `PORT=4100`. Pour le
 SSO : `ENTRA_TENANT_ID` et `ENTRA_CLIENT_ID`.
 
 Restreignez les droits : `data\` et `.env` accessibles aux seuls Administrateurs et SYSTEM.
@@ -99,8 +100,8 @@ Invoke-RestMethod http://127.0.0.1:4100/api/health    # ok = True, app = plan-re
 
 ## 7. Vérifier
 
-- `https://plans.monentreprise.local/api/health` → `{"ok":true,"mode":"client-serveur","app":"plan-relief"}`
-- `https://plans.monentreprise.local/api/plans` → **401** sans session.
+- `https://plans.monentreprise.local:8082/api/health` → `{"ok":true,"mode":"client-serveur","app":"plan-relief"}`
+- `https://plans.monentreprise.local:8082/api/plans` → **401** sans session.
 - F12 → *Réseau* → en-têtes de la page : `Content-Security-Policy`, `Strict-Transport-Security`.
 - Connexion avec `admin`, import d'un plan, recherche d'un équipement.
 

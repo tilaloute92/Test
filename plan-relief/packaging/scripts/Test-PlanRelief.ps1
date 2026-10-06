@@ -10,6 +10,9 @@
 .PARAMETER HostName
     Nom DNS de l'application (ex. plans.monentreprise.local).
 
+.PARAMETER Port
+    Port HTTPS de l'application (8082 par défaut, comme Install-PlanRelief.ps1).
+
 .EXAMPLE
     .\Test-PlanRelief.ps1 -HostName plans.monentreprise.local
 #>
@@ -18,11 +21,13 @@
 param(
     [Parameter(Mandatory = $true)][string] $HostName,
     [string] $SiteName = 'Plan Relief',
+    [ValidateRange(1, 65535)][int] $Port = 8082,
     [string] $ServicePath = 'C:\services\plan-relief',
     [int]    $ServicePort = 4100
 )
 
 $ErrorActionPreference = 'Continue'
+$BaseUrl = if ($Port -eq 443) { "https://$HostName" } else { "https://${HostName}:$Port" }
 $script:Failures = 0
 
 function Test-Item {
@@ -54,7 +59,7 @@ function Get-StatusCode {
     }
 }
 
-Write-Host "`nVérification de l'installation — $HostName`n" -ForegroundColor Cyan
+Write-Host "`nVérification de l'installation — $BaseUrl`n" -ForegroundColor Cyan
 
 Import-Module WebAdministration -ErrorAction SilentlyContinue
 
@@ -63,8 +68,8 @@ Test-Item 'Site IIS présent et démarré' {
     $s -and $s.State -eq 'Started'
 } "Relancez Install-PlanRelief.ps1, ou démarrez le site depuis le Gestionnaire IIS."
 
-Test-Item 'Liaison HTTPS (443) configurée' {
-    (Get-WebBinding -Name $SiteName -Protocol https -ErrorAction SilentlyContinue) -ne $null
+Test-Item "Liaison HTTPS ($Port) configurée" {
+    (Get-WebBinding -Name $SiteName -Protocol https -Port $Port -ErrorAction SilentlyContinue) -ne $null
 } "Aucune liaison https : relancez l'installation avec le bon -CertificateThumbprint."
 
 Test-Item 'Liaison HTTP (80) absente' {
@@ -72,16 +77,16 @@ Test-Item 'Liaison HTTP (80) absente' {
 } "Le site répond aussi en clair sur le port 80 : retirez la liaison http."
 
 Test-Item 'Page d''accueil servie en HTTPS' {
-    (Invoke-WebRequest "https://$HostName" -UseBasicParsing -TimeoutSec 10).StatusCode -eq 200
+    (Invoke-WebRequest "$BaseUrl" -UseBasicParsing -TimeoutSec 10).StatusCode -eq 200
 } "Vérifiez le DNS (le nom doit pointer sur ce serveur), le certificat et le pare-feu."
 
 Test-Item 'En-têtes de sécurité présents (CSP, X-Frame-Options…)' {
-    $h = (Invoke-WebRequest "https://$HostName" -UseBasicParsing -TimeoutSec 10).Headers
+    $h = (Invoke-WebRequest "$BaseUrl" -UseBasicParsing -TimeoutSec 10).Headers
     $h['Content-Security-Policy'] -and $h['X-Frame-Options'] -and $h['X-Content-Type-Options'] -and $h['Strict-Transport-Security']
 } "web.config n'est pas pris en compte : vérifiez qu'il est bien dans le dossier du site."
 
 Test-Item 'Page de retour de la connexion Microsoft publiée' {
-    (Get-StatusCode "https://$HostName/auth-redirect.html") -eq 200
+    (Get-StatusCode "$BaseUrl/auth-redirect.html") -eq 200
 } "auth-redirect.html manquant dans le dossier du site : republiez le paquet."
 
 Test-Item 'Imports jusqu''à 100 Mo autorisés par IIS' {
@@ -90,8 +95,9 @@ Test-Item 'Imports jusqu''à 100 Mo autorisés par IIS' {
     [long] $limit.Value -ge 100MB
 } "La limite IIS par défaut (30 Mo) bloquerait les grands plans : vérifiez requestLimits dans web.config."
 
-Test-Item 'Règle de pare-feu 443/TCP' {
-    (Get-NetFirewallRule -DisplayName 'Plan Relief - HTTPS' -ErrorAction SilentlyContinue) -ne $null
+Test-Item "Règle de pare-feu $Port/TCP" {
+    $r = Get-NetFirewallRule -DisplayName 'Plan Relief - HTTPS' -ErrorAction SilentlyContinue
+    $r -and (($r | Get-NetFirewallPortFilter).LocalPort -contains "$Port")
 } "Absente — normal si vos règles sont gérées par GPO (-SkipFirewall)."
 
 Write-Host ''
@@ -105,17 +111,17 @@ Test-Item 'Service en écoute en local' {
 } "Le service ne répond pas, ou un autre programme occupe le port $ServicePort : vérifiez PORT dans .env."
 
 Test-Item 'Relais /api par IIS (URL Rewrite + ARR)' {
-    (Invoke-RestMethod "https://$HostName/api/health" -TimeoutSec 10).app -eq 'plan-relief'
+    (Invoke-RestMethod "$BaseUrl/api/health" -TimeoutSec 10).app -eq 'plan-relief'
 } "Modules URL Rewrite/ARR manquants, proxy ARR désactivé, ou règle « Plan Relief - API » absente — voir INSTALL.md."
 
 # Contrôles de sécurité, pas seulement de bon fonctionnement : une réponse 200 ici serait
 # une faille (plans et recherche lisibles sans être connecté).
 Test-Item 'Plans refusés sans session (401)' {
-    (Get-StatusCode "https://$HostName/api/plans") -eq 401
+    (Get-StatusCode "$BaseUrl/api/plans") -eq 401
 } "La bibliothèque de plans doit être refusée sans session authentifiée."
 
 Test-Item 'Recherche refusée sans session (401)' {
-    (Get-StatusCode "https://$HostName/api/search?q=test") -eq 401
+    (Get-StatusCode "$BaseUrl/api/search?q=test") -eq 401
 } "La recherche d'équipements doit être refusée sans session authentifiée."
 
 Test-Item 'Secret de session personnalisé dans .env' {

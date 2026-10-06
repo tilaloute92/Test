@@ -60,7 +60,7 @@ if (Test-Path $SitePath) {
 
 Write-Step 'Pare-feu'
 $rule = Get-NetFirewallRule -DisplayName 'Plan Relief - HTTPS' -ErrorAction SilentlyContinue
-if ($rule) { $rule | Remove-NetFirewallRule; Write-Ok 'Règle 443/TCP supprimée' }
+if ($rule) { $rule | Remove-NetFirewallRule; Write-Ok 'Règle de pare-feu « Plan Relief - HTTPS » supprimée' }
 else { Write-Warn 'Règle absente' }
 
 Write-Step 'Service Windows'

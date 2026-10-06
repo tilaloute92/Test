@@ -34,6 +34,10 @@
     Si omis et qu'un seul certificat correspond à -HostName, il est choisi
     automatiquement ; sinon le script s'arrête et liste les certificats trouvés.
 
+.PARAMETER Port
+    Port HTTPS sur lequel les utilisateurs ouvrent l'application. Défaut : 8082
+    (adresse https://<HostName>:8082). Passez 443 pour une adresse sans numéro de port.
+
 .PARAMETER ServicePath
     Dossier d'installation du service. Défaut : C:\services\plan-relief.
 
@@ -50,6 +54,9 @@
 
 .EXAMPLE
     .\Install-PlanRelief.ps1 -HostName plans.monentreprise.local -NssmPath C:\outils\nssm.exe
+
+.EXAMPLE
+    .\Install-PlanRelief.ps1 -HostName plans.monentreprise.local -Port 443 -NssmPath C:\outils\nssm.exe
 #>
 
 [CmdletBinding()]
@@ -58,6 +65,7 @@ param(
     [Parameter(Mandatory = $true)][string] $HostName,
     [string] $SitePath = 'C:\inetpub\plan-relief',
     [string] $CertificateThumbprint,
+    [ValidateRange(1, 65535)][int] $Port = 8082,
     [string] $ServicePath = 'C:\services\plan-relief',
     [int]    $ServicePort = 4100,
     [string] $NssmPath,
@@ -70,6 +78,8 @@ Set-StrictMode -Version Latest
 $PackageRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ServiceName = 'PlanReliefSvc'
 $RuleName    = 'Plan Relief - API'
+# Adresse de l'application : le port n'apparaît que s'il n'est pas le port HTTPS standard.
+$BaseUrl     = if ($Port -eq 443) { "https://$HostName" } else { "https://${HostName}:$Port" }
 
 function Write-Step { param([string] $Message) Write-Host "`n==> $Message" -ForegroundColor Cyan }
 function Write-Ok   { param([string] $Message) Write-Host "    [OK] $Message" -ForegroundColor Green }
@@ -166,6 +176,23 @@ if ($listeners.Count -gt 0 -and -not (Get-Service -Name $ServiceName -ErrorActio
     Write-Warn "Le port $ServicePort est déjà utilisé par un autre programme. Choisissez un autre port avec -ServicePort, sinon le service ne pourra pas démarrer."
 }
 
+# Port de l'application : il doit être libre, ou déjà tenu par IIS (http.sys, processus 4).
+# Un autre programme qui écoute dessus empêcherait le site de répondre.
+if ($Port -eq $ServicePort) { throw "Le port de l'application ($Port) et le port interne du service ($ServicePort) doivent être différents." }
+$owners = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique)
+$foreign = @($owners | Where-Object { $_ -ne 4 })
+if ($foreign.Count -gt 0) {
+    $names = ($foreign | ForEach-Object { (Get-Process -Id $_ -ErrorAction SilentlyContinue).ProcessName }) -join ', '
+    throw "Le port $Port est déjà utilisé par un autre programme ($names). Libérez-le ou choisissez un autre port avec -Port."
+}
+$otherSites = @(Get-WebBinding -Protocol https -Port $Port -ErrorAction SilentlyContinue | Where-Object {
+    $_.ItemXPath -notmatch [regex]::Escape("@name='$SiteName'") -and (($_.bindingInformation -split ':')[2] -in @('', $HostName))
+})
+if ($otherSites.Count -gt 0) {
+    throw "Un autre site IIS écoute déjà en HTTPS sur le port $Port pour ce nom (ou pour tous les noms). Choisissez un autre port avec -Port, ou retirez cette liaison."
+}
+Write-Ok "Port $Port disponible pour l'application ($BaseUrl)"
+
 # ---------------------------------------------------------------------------------------
 # 1. Publication du site (fichiers statiques)
 # ---------------------------------------------------------------------------------------
@@ -206,22 +233,31 @@ Write-Ok 'Fichiers du site publiés'
 Write-Step "Configuration du site IIS « $SiteName »"
 
 if (-not (Test-Path "IIS:\Sites\$SiteName")) {
-    New-Website -Name $SiteName -PhysicalPath $SitePath -Port 443 -HostHeader $HostName -Ssl | Out-Null
+    New-Website -Name $SiteName -PhysicalPath $SitePath -Port $Port -HostHeader $HostName -Ssl | Out-Null
     Write-Ok 'Site créé'
 } else {
     Set-ItemProperty "IIS:\Sites\$SiteName" -Name physicalPath -Value $SitePath
     Write-Ok 'Site existant réutilisé'
 }
 
-$binding = Get-WebBinding -Name $SiteName -Protocol https -ErrorAction SilentlyContinue
+# Une liaison HTTPS sur un autre port (installation précédente sur 443, par exemple) est
+# retirée : l'application ne doit répondre qu'à une seule adresse.
+foreach ($old in @(Get-WebBinding -Name $SiteName -Protocol https -ErrorAction SilentlyContinue)) {
+    $parts = $old.bindingInformation -split ':'
+    if ([int]$parts[1] -ne $Port -or $parts[2] -ne $HostName) {
+        Remove-WebBinding -Name $SiteName -Protocol https -Port ([int]$parts[1]) -HostHeader $parts[2] -ErrorAction SilentlyContinue
+        Write-Ok "Ancienne liaison HTTPS retirée ($($old.bindingInformation))"
+    }
+}
+$binding = Get-WebBinding -Name $SiteName -Protocol https -Port $Port -HostHeader $HostName -ErrorAction SilentlyContinue
 if (-not $binding) {
-    New-WebBinding -Name $SiteName -Protocol https -Port 443 -HostHeader $HostName -SslFlags 1
-    $binding = Get-WebBinding -Name $SiteName -Protocol https
+    New-WebBinding -Name $SiteName -Protocol https -Port $Port -HostHeader $HostName -SslFlags 1
+    $binding = Get-WebBinding -Name $SiteName -Protocol https -Port $Port -HostHeader $HostName
 }
 # SNI (SslFlags 1) : plusieurs sites HTTPS avec des noms d'hôte différents sur la même IP,
 # par exemple Plan Relief et Suivi Infra & Réseau sur le même serveur.
 $binding.AddSslCertificate($cert.Thumbprint, 'My')
-Write-Ok "Liaison HTTPS 443 sur $HostName"
+Write-Ok "Liaison HTTPS $Port sur $HostName"
 
 # HTTP en clair : on retire la liaison pour que l'application ne soit jamais servie sans
 # chiffrement (les mots de passe locaux et LDAP transitent par cette page).
@@ -235,12 +271,15 @@ Start-Website -Name $SiteName -ErrorAction SilentlyContinue
 Write-Ok 'Site démarré'
 
 if (-not $SkipFirewall) {
-    if (-not (Get-NetFirewallRule -DisplayName 'Plan Relief - HTTPS' -ErrorAction SilentlyContinue)) {
+    $fw = Get-NetFirewallRule -DisplayName 'Plan Relief - HTTPS' -ErrorAction SilentlyContinue
+    if (-not $fw) {
         New-NetFirewallRule -DisplayName 'Plan Relief - HTTPS' -Direction Inbound -Protocol TCP `
-            -LocalPort 443 -Action Allow -Profile Domain | Out-Null
-        Write-Ok 'Règle de pare-feu 443/TCP (profil Domaine) ajoutée'
+            -LocalPort $Port -Action Allow -Profile Domain | Out-Null
+        Write-Ok "Règle de pare-feu $Port/TCP (profil Domaine) ajoutée"
     } else {
-        Write-Ok 'Règle de pare-feu déjà présente'
+        # Règle existante : on la met au port choisi (changement de port lors d'une mise à jour).
+        $fw | Set-NetFirewallRule -LocalPort $Port
+        Write-Ok "Règle de pare-feu mise à jour : $Port/TCP"
     }
 }
 
@@ -280,10 +319,10 @@ if (-not (Test-Path $envPath)) {
         "PORT=$ServicePort",
         "JWT_SECRET=$jwtSecret",
         "COOKIE_SECURE=true",
-        "CORS_ORIGIN=https://$HostName",
+        "CORS_ORIGIN=$BaseUrl",
         "MAX_UPLOAD_MB=100",
         "",
-        "# SSO Microsoft (facultatif). Déclarez https://$HostName/auth-redirect.html comme URI de",
+        "# SSO Microsoft (facultatif). Déclarez $BaseUrl/auth-redirect.html comme URI de",
         "# redirection « Application monopage (SPA) » dans Entra ID, renseignez ces deux valeurs,",
         "# puis redémarrez le service. Le bouton Microsoft apparaît alors sur l'écran de connexion.",
         "# ENTRA_TENANT_ID=",
@@ -295,6 +334,15 @@ if (-not (Test-Path $envPath)) {
     Write-Ok '.env généré (secret de session aléatoire)'
 } else {
     Write-Ok '.env existant conservé (secret et configuration SSO inchangés)'
+    # Seule l'adresse autorisée suit le port choisi : elle se déduit de -HostName et -Port.
+    $lines = @(Get-Content -Path $envPath -Encoding UTF8)
+    if ($lines -match '^CORS_ORIGIN=') {
+        $lines = $lines | ForEach-Object { if ($_ -match '^CORS_ORIGIN=') { "CORS_ORIGIN=$BaseUrl" } else { $_ } }
+    } else {
+        $lines += "CORS_ORIGIN=$BaseUrl"
+    }
+    $lines | Set-Content -Path $envPath -Encoding UTF8
+    Write-Ok "Adresse autorisée dans .env : $BaseUrl"
 }
 
 # data\ contient des secrets (hachages de mots de passe) et tous les plans : accès restreint
@@ -372,7 +420,7 @@ Write-Ok "Règle « $RuleName » : /api/* → http://127.0.0.1:$ServicePort/api/
 # 5. Résumé
 # ---------------------------------------------------------------------------------------
 Write-Step 'Installation terminée'
-Write-Host "    Application : https://$HostName" -ForegroundColor White
+Write-Host "    Application : $BaseUrl" -ForegroundColor White
 Write-Host "    Site        : $SitePath"
 Write-Host "    Service     : $ServiceName ($ServicePath), port local $ServicePort"
 Write-Host "    Données     : $ServicePath\data   ← à sauvegarder (Register-PlanReliefBackup.ps1)"
@@ -382,5 +430,5 @@ Write-Host "      cd `"$ServicePath`""
 Write-Host "      node scripts\create-local-user.js admin `"MotDePasseSolide123!`" `"Administrateur`""
 Write-Host ""
 Write-Host "    Vérification :" -ForegroundColor Yellow
-Write-Host "      .\Test-PlanRelief.ps1 -HostName $HostName"
+Write-Host "      .\Test-PlanRelief.ps1 -HostName $HostName -Port $Port"
 Write-Host ""

@@ -34,6 +34,7 @@ distincts.
 | | Suivi Infra & Réseau | Plan Relief |
 | --- | --- | --- |
 | Scénarios | A (site seul) ou B (site + service) | **Toujours site + service** : les plans sont stockés sur le serveur |
+| Port de l'application (navigateur) | 443 | **8082** (`-Port`) |
 | Port local du service | 4000 | **4100** |
 | Service Windows | `SuiviInfraAuth` | **`PlanReliefSvc`** |
 | Dossiers | `C:\inetpub\suivi-infra`, `C:\services\suivi-infra` | **`C:\inetpub\plan-relief`**, **`C:\services\plan-relief`** |
@@ -95,22 +96,28 @@ Si Windows a marqué les fichiers comme provenant d'Internet : `Get-ChildItem -R
 PowerShell **en tant qu'administrateur**, dans le dossier décompressé :
 
 ```powershell
-.\Install-PlanRelief.ps1 -HostName plans.monentreprise.local -NssmPath C:\outils\nssm.exe
+.\Install-PlanRelief.ps1 -HostName plans.monentreprise.local -Port 8082 -NssmPath C:\outils\nssm.exe
 ```
 
 > Si PowerShell refuse d'exécuter le script :
-> `powershell -ExecutionPolicy Bypass -File .\Install-PlanRelief.ps1 -HostName ... -NssmPath ...`
+> `powershell -ExecutionPolicy Bypass -File .\Install-PlanRelief.ps1 -HostName ... -Port 8082 -NssmPath ...`
 
 Le script vérifie **tous** les prérequis avant de modifier quoi que ce soit, puis :
 
 - publie le site dans `C:\inetpub\plan-relief` ;
-- crée le site IIS, la liaison **HTTPS 443** (SNI) avec votre certificat, et **retire la
+- crée le site IIS, la liaison **HTTPS sur le port 8082** (SNI) avec votre certificat, et **retire la
   liaison HTTP** ;
-- ajoute une règle de pare-feu 443/TCP (profil Domaine) ;
+- ajoute une règle de pare-feu 8082/TCP (profil Domaine) ;
 - installe le service `PlanReliefSvc` dans `C:\services\plan-relief`, génère un `.env` avec
   un secret de session aléatoire, restreint les droits sur `data\` et `.env` aux
   administrateurs et à SYSTEM ;
 - configure le relais `/api` dans IIS (délai porté à 5 minutes pour les imports de grands plans).
+
+**Port** : l'application répond sur **`https://<nom>:8082`** (paramètre `-Port`, 8082 par
+défaut). `-Port 443` donne une adresse sans numéro de port. Le script vérifie que le port est
+libre (ou déjà tenu par IIS pour un autre nom d'hôte, grâce au SNI), règle la liaison IIS, le
+pare-feu et l'adresse autorisée du service. Pour changer de port plus tard, relancez simplement
+le script avec un autre `-Port` : l'ancienne liaison est retirée.
 
 Options : `-SitePath`, `-ServicePath`, `-ServicePort`, `-CertificateThumbprint` (si plusieurs
 certificats correspondent), `-SkipFirewall` (règles gérées par GPO).
@@ -145,21 +152,21 @@ complète ou d'un seul plan). Le `.env` n'est inclus qu'avec `-IncludeEnv`.
 ## 7. Vérifier
 
 ```powershell
-.\Test-PlanRelief.ps1 -HostName plans.monentreprise.local
+.\Test-PlanRelief.ps1 -HostName plans.monentreprise.local -Port 8082
 ```
 
 Tous les contrôles doivent être au vert. Le script vérifie notamment que **les plans et la
 recherche sont refusés sans session (401)**, que les en-têtes de sécurité sont présents, que
 IIS accepte les imports de 100 Mo et que la sauvegarde a tourné.
 
-Puis, depuis un poste du domaine, ouvrez `https://plans.monentreprise.local` et connectez-vous
+Puis, depuis un poste du domaine, ouvrez `https://plans.monentreprise.local:8082` et connectez-vous
 avec le compte `admin`.
 
 ## 8. Connexion Microsoft (facultatif)
 
 1. Portail Azure → *Microsoft Entra ID* → *Inscriptions d'applications* → nouvelle
    inscription (ou celle de Suivi Infra) → *Authentification* → ajoutez la plateforme
-   **Application monopage (SPA)** avec l'URI `https://plans.monentreprise.local/auth-redirect.html`.
+   **Application monopage (SPA)** avec l'URI `https://plans.monentreprise.local:8082/auth-redirect.html` (port compris).
 2. Dans `C:\services\plan-relief\.env`, renseignez `ENTRA_TENANT_ID` et `ENTRA_CLIENT_ID`.
 3. `Restart-Service PlanReliefSvc`. Le bouton « Se connecter avec Microsoft » apparaît sur
    l'écran de connexion.
@@ -192,6 +199,8 @@ côté sous `web.config.nouveau-<date>`).
 | Import bloqué vers 30 Mo avec une erreur 404.13 | `web.config` personnalisé sans la section `requestLimits` : reprenez-la depuis `web.config.nouveau-<date>`. |
 | « Ce plan a été modifié entre-temps par X » | Un collègue a enregistré le même plan pendant votre saisie. Le serveur refuse d'écraser son travail ; le plan est rechargé, refaites votre modification. |
 | Lecture OCR : « Lecture OCR impossible » | `web.config` personnalisé sans le type `.gz` ou sans `'wasm-unsafe-eval'` dans la CSP : reprenez-les depuis `web.config.nouveau-<date>`. Vérifiez que `https://<site>/ocr/fra.traineddata.gz` se télécharge. |
+| `Le port 8082 est déjà utilisé par un autre programme` | Libérez le port, ou installez sur un autre avec `-Port` (et passez le même `-Port` à `Test-PlanRelief.ps1`). |
+| Page inaccessible depuis les postes, mais OK sur le serveur | Pare-feu réseau entre les postes et le serveur : le port 8082/TCP doit y être ouvert, en plus du pare-feu Windows. |
 | Connexion Microsoft : fenêtre blanche ou erreur `redirect_uri` | L'URI `https://<site>/auth-redirect.html` n'est pas déclarée en « Application monopage (SPA) » dans Entra ID. |
 | Un plan supprimé par erreur | Il est dans `data\corbeille\<id>_<date>` : arrêtez le service, déplacez-le dans `data\plans\<id>`, redémarrez. |
 | La sauvegarde échoue tous les soirs | Droits d'écriture du compte d'exécution sur le partage (voir §6). Journal : `<destination>\sauvegarde.log`. |
