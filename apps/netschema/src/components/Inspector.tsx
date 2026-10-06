@@ -22,7 +22,7 @@ import {
 import { collapsibleGroups } from '../lib/derive'
 import { modeDefinition, VIEW_MODES } from '../lib/viewModes'
 import { allDevices, LAYER_LABELS, LINKS, ROLES, rankOf } from '../lib/catalog'
-import { useDiagram } from '../store/useDiagram'
+import { CLIGNOTEMENT_MAX, CLIGNOTEMENT_MIN, useDiagram } from '../store/useDiagram'
 import { useAudit } from '../store/useAudit'
 import type {
   AnchorSide,
@@ -1281,6 +1281,8 @@ function ReadabilityForm() {
 function LayoutForm() {
   const layout = useDiagram((s) => s.layout)
   const setLayout = useDiagram((s) => s.setLayout)
+  const dureeClignotement = useDiagram((s) => s.dureeClignotement)
+  const setDureeClignotement = useDiagram((s) => s.setDureeClignotement)
   const applyAutoLayout = useDiagram((s) => s.applyAutoLayout)
   const linkStyle = useDiagram((s) => s.linkStyle)
   const setDisplay = useDiagram((s) => s.setDisplay)
@@ -1365,6 +1367,21 @@ function LayoutForm() {
         </Field>
         <Field label={`Espacement entre couches — ${layout.layerGap} px`}>
           <Slider value={layout.layerGap} min={40} max={220} step={4} onChange={(layerGap) => setLayout({ layerGap })} />
+        </Field>
+        {/*
+          Durée du clignotement : le temps que le repère tient après « Montrer sur le
+          schéma », et pendant lequel les liaisons coupées d'une analyse d'impact battent.
+          Qui va ensuite chercher un câble en salle a besoin qu'il dure ; qui vérifie d'un
+          coup d'œil n'en veut pas davantage. Le réglage reste sur le poste.
+        */}
+        <Field label={`Durée du clignotement — ${dureeClignotement} s`}>
+          <Slider
+            value={dureeClignotement}
+            min={CLIGNOTEMENT_MIN}
+            max={CLIGNOTEMENT_MAX}
+            step={5}
+            onChange={setDureeClignotement}
+          />
         </Field>
         <Checkbox
           checked={layout.groupBySite}

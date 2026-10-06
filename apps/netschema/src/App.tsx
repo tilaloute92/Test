@@ -230,6 +230,7 @@ export default function App() {
         store.setDuplicateOpen(false)
         store.setMode('select')
         store.clearSelection()
+        store.montrerLiens([])
         return
       }
       if (event.key.toLowerCase() === 'l') {

@@ -97,6 +97,32 @@ function ecrirePanneau(nom: Panneau, ouvert: boolean) {
   }
 }
 
+/**
+ * Durée du clignotement, en secondes.
+ *
+ * Elle dépend de la façon de travailler : qui bascule vers le schéma puis va chercher un
+ * câble en salle a besoin que le repère tienne le temps du déplacement ; qui vérifie d'un
+ * coup d'œil n'en veut pas davantage. C'est donc un réglage, et il appartient au poste comme
+ * les bandeaux — il n'a rien à faire dans le document, qu'on partage.
+ */
+const CLE_CLIGNOTEMENT = 'netschema:clignotement'
+export const CLIGNOTEMENT_MIN = 30
+export const CLIGNOTEMENT_MAX = 60
+
+function borner(secondes: number): number {
+  if (!Number.isFinite(secondes)) return CLIGNOTEMENT_MIN
+  return Math.min(CLIGNOTEMENT_MAX, Math.max(CLIGNOTEMENT_MIN, Math.round(secondes)))
+}
+
+function lireDureeClignotement(): number {
+  try {
+    const brut = localStorage.getItem(CLE_CLIGNOTEMENT)
+    return brut ? borner(Number(brut)) : CLIGNOTEMENT_MIN
+  } catch {
+    return CLIGNOTEMENT_MIN
+  }
+}
+
 const DEFAULT_LAYOUT: LayoutOptions = {
   direction: 'TB',
   nodeGap: 52,
@@ -204,6 +230,9 @@ interface DiagramStore {
    */
   projecteurLiens: string[]
   montrerLiens: (ids: string[], duree?: number) => void
+  /** Durée du clignotement, en secondes, entre 30 et 60. */
+  dureeClignotement: number
+  setDureeClignotement: (secondes: number) => void
   /**
    * Suivre les VLAN le long des trunks. Un VLAN déclaré sur le cœur de réseau atteint tout
    * ce que les trunks desservent : c'est la réalité du domaine de diffusion, et c'est ce
@@ -543,6 +572,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   vueLogique: 'routage' as VueLogique,
   vlanFocus: null as string | null,
   projecteurLiens: [] as string[],
+  dureeClignotement: lireDureeClignotement(),
   vlanPropagation: true,
   viewMode: 'architecture',
   appView: 'diagram',
@@ -2927,7 +2957,18 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     )
   },
 
-  montrerLiens: (ids, duree = 4200) => {
+  setDureeClignotement: (secondes) => {
+    const valeur = borner(secondes)
+    try {
+      localStorage.setItem(CLE_CLIGNOTEMENT, String(valeur))
+    } catch {
+      // Stockage indisponible : le réglage vaut pour la session, sans plus.
+    }
+    set({ dureeClignotement: valeur })
+  },
+
+  montrerLiens: (ids, duree) => {
+    const millisecondes = duree ?? get().dureeClignotement * 1000
     set({ projecteurLiens: ids })
     if (minuterieProjecteur) clearTimeout(minuterieProjecteur)
     if (ids.length === 0) return
@@ -2935,7 +2976,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       // On ne retire que ce qu'on a posé : si une autre désignation est arrivée entre-temps,
       // c'est elle qui tient, et sa propre minuterie s'en chargera.
       if (useDiagram.getState().projecteurLiens === ids) set({ projecteurLiens: [] })
-    }, duree)
+    }, millisecondes)
   },
 
   setVlanFocus: (id) => {
