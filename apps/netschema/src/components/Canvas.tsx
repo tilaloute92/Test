@@ -2116,7 +2116,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                   return (
                     <path
                       key={`projecteur-${id}`}
-                      className="trait-battant"
+                      className="trait-clignotant"
                       d={geometry.d}
                       fill="none"
                       stroke="#f59e0b"
@@ -2153,7 +2153,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                 {/*
                   Les liaisons coupées battent.
 
-                  La croix dit « celle-ci est morte » quand on la cherche ; le battement le
+                  La croix dit « celle-ci est morte » quand on la cherche ; le clignotement le
                   dit quand on ne la cherche pas encore. Sur un schéma de deux cents
                   équipements, c'est la différence entre trouver et balayer.
                 */}
@@ -2163,8 +2163,8 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                   if (!geometry) return null
                   return (
                     <path
-                      key={`battement-coupe-${link.id}`}
-                      className="trait-battant"
+                      key={`clignotement-coupe-${link.id}`}
+                      className="trait-clignotant"
                       d={geometry.d}
                       fill="none"
                       stroke={COULEURS_IMPACT.panne}

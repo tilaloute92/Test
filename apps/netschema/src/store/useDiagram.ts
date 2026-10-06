@@ -196,7 +196,7 @@ interface DiagramStore {
   vlanFocus: string | null
   setVlanFocus: (id: string | null) => void
   /**
-   * Liaisons que l'application montre du doigt, le temps d'un battement.
+   * Liaisons que l'application montre du doigt, le temps de quelques clignotements.
    *
    * C'est un repère, pas un état du document : il s'efface tout seul. Sans cela, la
    * désignation resterait posée sur le schéma et deviendrait du bruit dès la manipulation

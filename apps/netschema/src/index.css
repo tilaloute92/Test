@@ -13,33 +13,44 @@ body,
 }
 
 /*
-  Battement d'un tracé que l'application veut montrer.
+  Clignotement d'un tracé que l'application veut montrer.
 
   Deux usages : le chemin qu'emprunte un flux, quand on demande à le voir sur le schéma, et
   les liaisons coupées par une analyse d'impact. Dans les deux cas le mouvement n'est là que
   pour attirer l'œil au bon endroit ; il porte sur l'opacité du halo, jamais sur le trait du
   schéma lui-même, qui doit rester lisible et identique à l'export.
 
-  Le battement s'efface pour qui a demandé moins d'animations dans son système : le halo
+  Un vrai clignotement, pas un fondu : « step-end » fait tenir chaque valeur jusqu'à l'image
+  clé suivante, ce qui donne un créneau franc — allumé, éteint — au lieu d'une respiration
+  qu'on finit par ne plus voir.
+
+  La cadence n'est pas choisie au hasard. Un clignotement entre 3 et 55 Hz présente un risque
+  pour les personnes photosensibles ; à 1,4 Hz on reste nettement en dessous, tout en restant
+  impossible à manquer. C'est la raison pour laquelle cette période ne doit pas être
+  raccourcie sans y regarder.
+
+  Le clignotement s'efface pour qui a demandé moins d'animations dans son système : le halo
   reste alors posé, simplement fixe. Un repère visuel ne doit pas se payer d'un inconfort.
 */
-@keyframes netschema-battement {
-  0%,
-  100% {
-    stroke-opacity: 0.12;
+@keyframes netschema-clignotement {
+  0% {
+    stroke-opacity: 0.95;
   }
   50% {
-    stroke-opacity: 0.8;
+    stroke-opacity: 0;
+  }
+  100% {
+    stroke-opacity: 0.95;
   }
 }
 
-.trait-battant {
-  animation: netschema-battement 1.15s ease-in-out infinite;
+.trait-clignotant {
+  animation: netschema-clignotement 0.72s step-end infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .trait-battant {
+  .trait-clignotant {
     animation: none;
-    stroke-opacity: 0.55;
+    stroke-opacity: 0.6;
   }
 }

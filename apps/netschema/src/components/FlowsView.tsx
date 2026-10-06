@@ -399,9 +399,9 @@ function TraceurDeChemin() {
                 .map((etape) => etape.link?.id)
                 .filter((id): id is string => !!id)
               select({ nodes: rapport.chemins[0].etapes.map((etape) => etape.node.id), links: liens })
-              // La sélection dit ce qui est retenu ; le battement dit où regarder. Sur un
+              // La sélection dit ce qui est retenu ; le clignotement dit où regarder. Sur un
               // grand schéma, basculer de vue et chercher un liseré bleu parmi deux cents
-              // traits ne vaut rien — alors le chemin bat quelques secondes.
+              // traits ne vaut rien — alors le chemin clignote quelques secondes.
               useDiagram.getState().montrerLiens(liens)
               setAppView('diagram')
             }}
