@@ -233,6 +233,14 @@ if ($otherSites.Count -gt 0) {
 Write-Ok "Port $Port disponible pour l'application ($BaseUrl)"
 
 # ---------------------------------------------------------------------------------------
+# Sauvegarde de la configuration IIS de TOUT le serveur (autres sites compris) avant la
+# moindre modification. Restauration : Restore-WebConfiguration -Name <nom affiché>.
+# ---------------------------------------------------------------------------------------
+$iisBackup = 'avant-plan-relief-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
+Backup-WebConfiguration -Name $iisBackup | Out-Null
+Write-Ok "Configuration IIS sauvegardée : $iisBackup (C:\Windows\System32\inetsrv\backup\$iisBackup)"
+
+# ---------------------------------------------------------------------------------------
 # 1. Publication du site (fichiers statiques)
 # ---------------------------------------------------------------------------------------
 Write-Step "Publication du site vers $SitePath"
@@ -242,16 +250,21 @@ New-Item -ItemType Directory -Path $SitePath -Force | Out-Null
 # celui du paquet est déposé à côté si un fichier différent existe déjà.
 $existingConfig = Join-Path $SitePath 'web.config'
 $packagedConfig = Join-Path $PackageRoot 'site\web.config'
+# Forme comparable d'un web.config : sans la règle /api (ajoutée par ce script lui-même,
+# étape 4), sans les commentaires, et avec HSTS neutralisé (voir plus bas). Une version
+# publiée par un paquet précédent n'est ainsi pas prise pour une personnalisation.
+function Get-ComparableConfig([string] $path) {
+    [xml] $doc = Get-Content $path -Raw -Encoding UTF8
+    $rewrite = $doc.SelectSingleNode('/configuration/system.webServer/rewrite')
+    if ($rewrite) { [void] $rewrite.ParentNode.RemoveChild($rewrite) }
+    foreach ($c in @($doc.SelectNodes('//comment()'))) { [void] $c.ParentNode.RemoveChild($c) }
+    $hsts = $doc.SelectSingleNode("//customHeaders/add[@name='Strict-Transport-Security']")
+    if ($hsts) { $hsts.SetAttribute('value', 'max-age=0') }
+    $doc.OuterXml
+}
 $configDiffers = $false
 if (Test-Path $existingConfig) {
-    # La règle /api est ajoutée par ce script lui-même (étape 4) : on compare donc la
-    # version publiée sans cette règle, pour ne pas prendre notre propre ajout pour une
-    # personnalisation de l'administrateur.
-    [xml] $mine = Get-Content $existingConfig -Raw
-    $rewrite = $mine.SelectSingleNode('/configuration/system.webServer/rewrite')
-    if ($rewrite) { [void] $rewrite.ParentNode.RemoveChild($rewrite) }
-    [xml] $packaged = Get-Content $packagedConfig -Raw
-    $configDiffers = $mine.OuterXml -ne $packaged.OuterXml
+    $configDiffers = (Get-ComparableConfig $existingConfig) -ne (Get-ComparableConfig $packagedConfig)
 }
 
 Get-ChildItem -Path $SitePath -Exclude 'web.config' | Remove-Item -Recurse -Force
@@ -261,6 +274,18 @@ if ($configDiffers) {
     $backup = Join-Path $SitePath ("web.config.nouveau-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     Copy-Item $packagedConfig $backup -Force
     Write-Warn "Un web.config personnalisé existe déjà : il a été conservé. La version du paquet est déposée à côté ($([IO.Path]::GetFileName($backup))) — comparez-les si cette version apporte des changements."
+    # HSTS est toutefois neutralisé même dans un web.config personnalisé : le navigateur
+    # l'applique au nom du serveur sur TOUS les ports, et casserait les autres sites servis
+    # en HTTP sur ce serveur (8080, 8081…).
+    $doc = New-Object Xml.XmlDocument
+    $doc.PreserveWhitespace = $true
+    $doc.Load($existingConfig)
+    $hsts = $doc.SelectSingleNode("//customHeaders/add[@name='Strict-Transport-Security']")
+    if ($hsts -and $hsts.GetAttribute('value') -ne 'max-age=0') {
+        $hsts.SetAttribute('value', 'max-age=0')
+        $doc.Save($existingConfig)
+        Write-Ok 'En-tête HSTS neutralisé (max-age=0) dans le web.config conservé'
+    }
 } else {
     Copy-Item $packagedConfig $existingConfig -Force
 }
@@ -481,7 +506,12 @@ Write-Step 'Relais des appels /api vers le service local'
 # Proxy ARR activé au niveau serveur (sinon la règle de réécriture est ignorée), avec un
 # délai porté à 5 minutes : l'import d'un grand plan peut dépasser le délai par défaut.
 Set-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' -Filter 'system.webServer/proxy' -Name 'enabled' -Value 'True'
-Set-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' -Filter 'system.webServer/proxy' -Name 'timeout' -Value '00:05:00'
+# Le délai n'est jamais réduit : un autre site du serveur peut avoir besoin d'une valeur plus grande.
+$proxyTimeout = Get-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' -Filter 'system.webServer/proxy' -Name 'timeout'
+if ($proxyTimeout -and $proxyTimeout -isnot [TimeSpan]) { $proxyTimeout = $proxyTimeout.Value }
+if (-not $proxyTimeout -or [TimeSpan] $proxyTimeout -lt [TimeSpan] '00:05:00') {
+    Set-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' -Filter 'system.webServer/proxy' -Name 'timeout' -Value '00:05:00'
+}
 
 $ruleFilter = "system.webServer/rewrite/rules/rule[@name='$RuleName']"
 Clear-WebConfiguration -PSPath "IIS:\Sites\$SiteName" -Filter $ruleFilter -ErrorAction SilentlyContinue

@@ -49,7 +49,7 @@ Copiez le contenu de `dist/` dans `C:\inetpub\plan-relief\`.
 | --- | --- |
 | `Content-Security-Policy` | Scripts, polices, worker PDF et moteur OCR servis par le site uniquement ; réseau limité au site et aux domaines Microsoft (SSO). Pas de `*` : l'application n'appelle aucune API tierce. `'wasm-unsafe-eval'` autorise seulement la compilation du moteur OCR (WebAssembly, dossier `ocr/` du site) ; `eval()` et le JavaScript en ligne restent interdits. |
 | `X-Frame-Options: DENY`, `frame-ancestors 'none'` | Anti-clickjacking. |
-| `Strict-Transport-Security` | HTTPS forcé pendant un an. |
+| `Strict-Transport-Security: max-age=0` | HSTS volontairement **désactivé** : le navigateur l'applique au nom du serveur sur tous les ports, il forcerait donc aussi en HTTPS les autres sites servis en clair sur le même serveur (8080, 8081…). Le site reste accessible en HTTPS uniquement (pas de liaison http). |
 | `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` | Mêmes en-têtes que Suivi Infra & Réseau. |
 | `requestLimits maxAllowedContentLength` | 110 Mo : import de plans jusqu'à 100 Mo (IIS bloque à 30 Mo par défaut). |
 | `mimeMap .mjs`, `.woff2`, `.gz` | Types de fichiers que IIS ne sert pas par défaut (`.gz` : modèle de langue de l'OCR). |
@@ -112,7 +112,7 @@ superviseur relance Node s'il s'arrête et écrit les mêmes journaux.
 
 - `https://plans.monentreprise.local:8082/api/health` → `{"ok":true,"mode":"client-serveur","app":"plan-relief"}`
 - `https://plans.monentreprise.local:8082/api/plans` → **401** sans session.
-- F12 → *Réseau* → en-têtes de la page : `Content-Security-Policy`, `Strict-Transport-Security`.
+- F12 → *Réseau* → en-têtes de la page : `Content-Security-Policy`, et `Strict-Transport-Security: max-age=0`.
 - Connexion avec `admin`, import d'un plan, recherche d'un équipement.
 
 ## Sécurité : ce qui est en place

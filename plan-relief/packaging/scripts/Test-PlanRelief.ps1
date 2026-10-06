@@ -82,8 +82,13 @@ Test-Item 'Page d''accueil servie en HTTPS' {
 
 Test-Item 'En-têtes de sécurité présents (CSP, X-Frame-Options…)' {
     $h = (Invoke-WebRequest "$BaseUrl" -UseBasicParsing -TimeoutSec 10).Headers
-    $h['Content-Security-Policy'] -and $h['X-Frame-Options'] -and $h['X-Content-Type-Options'] -and $h['Strict-Transport-Security']
+    $h['Content-Security-Policy'] -and $h['X-Frame-Options'] -and $h['X-Content-Type-Options']
 } "web.config n'est pas pris en compte : vérifiez qu'il est bien dans le dossier du site."
+
+Test-Item 'HSTS neutralisé (ne touche pas les autres sites HTTP du serveur)' {
+    $h = (Invoke-WebRequest "$BaseUrl" -UseBasicParsing -TimeoutSec 10).Headers
+    (-not $h['Strict-Transport-Security']) -or ($h['Strict-Transport-Security'] -match '^\s*max-age=0\b')
+} "web.config envoie Strict-Transport-Security : le navigateur forcerait alors HTTPS sur tous les ports de ce serveur (8080, 8081…). Mettez max-age=0."
 
 Test-Item 'Page de retour de la connexion Microsoft publiée' {
     (Get-StatusCode "$BaseUrl/auth-redirect.html") -eq 200
