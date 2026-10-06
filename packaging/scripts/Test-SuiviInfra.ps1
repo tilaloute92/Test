@@ -237,11 +237,49 @@ if ($WithService) {
             $task = Get-ScheduledTask -TaskName 'SuiviInfraAuth' -ErrorAction SilentlyContinue
             if ($svc)  { Write-Host "      Service Windows  : $($svc.Status)" }
             if ($task) { Write-Host "      Tâche planifiée  : $($task.State)" }
+
+            # QUI occupe le port, et pas seulement « ça ne répond pas ».
+            #
+            # Un port pris par une autre application est la panne la plus coûteuse à
+            # trouver, parce qu'elle ne ressemble pas à une panne : le service s'arrête
+            # aussitôt, la tâche planifiée repasse en « Ready » comme si elle avait fini,
+            # et rien ne distingue ce cas d'un service jamais démarré. Nommer le programme
+            # fautif remplace une demi-journée de recherche par une ligne.
+            $occupants = @()
+            try {
+                $occupants = @(Get-NetTCPConnection -State Listen -LocalPort $ServicePort -ErrorAction SilentlyContinue |
+                    ForEach-Object { Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue } |
+                    Sort-Object Id -Unique)
+            } catch { }
+
+            if ($occupants.Count -eq 0) {
+                Write-Host "      Rien n'écoute sur le port $ServicePort : le service n'est pas démarré." -ForegroundColor Yellow
+                Write-Host "      Journal : $ServicePath\logs\service.log (ses dernières lignes disent pourquoi Node s'arrête)." -ForegroundColor Yellow
+                Write-Host '      Relancer : Start-ScheduledTask -TaskName SuiviInfraAuth   (ou Restart-Service SuiviInfraAuth)' -ForegroundColor Yellow
+            } else {
+                $notre = $occupants | Where-Object {
+                    try { $_.Path -and $_.Path.StartsWith($ServicePath, 'OrdinalIgnoreCase') } catch { $false }
+                }
+                if ($notre) {
+                    Write-Host "      Le service écoute bien sur $ServicePort mais ne répond pas : consultez $ServicePath\logs\service.log." -ForegroundColor Yellow
+                } else {
+                    Write-Host ''
+                    Write-Host "      >>> LE PORT $ServicePort EST PRIS PAR UN AUTRE PROGRAMME <<<" -ForegroundColor Red
+                    foreach ($p in $occupants) {
+                        $chemin = try { $p.Path } catch { '(chemin non lisible)' }
+                        Write-Host ("          PID $($p.Id) · $($p.ProcessName) · $chemin") -ForegroundColor Red
+                    }
+                    Write-Host ''
+                    Write-Host '      Le service ne peut pas démarrer tant que ce port est occupé. Deux issues :' -ForegroundColor Yellow
+                    Write-Host '        - arrêter ou reconfigurer ce programme ;' -ForegroundColor Yellow
+                    Write-Host '        - déplacer ce service sur un autre port :' -ForegroundColor Yellow
+                    Write-Host '              .\Set-SuiviInfraPort.ps1 -NewPort 4010' -ForegroundColor Yellow
+                    Write-Host "          (change le service ET la règle de relais d'IIS : les deux doivent désigner le même port)" -ForegroundColor Yellow
+                }
+            }
+
             if (-not $svc -and -not $task) {
                 Write-Host '      Ni service ni tâche : relancez Install-SuiviInfra.ps1 -WithService.' -ForegroundColor Yellow
-            } else {
-                Write-Host "      Journal : $ServicePath\service.log (les dernières lignes disent pourquoi Node s'arrête)." -ForegroundColor Yellow
-                Write-Host '      Relancer : Start-ScheduledTask -TaskName SuiviInfraAuth   (ou Restart-Service SuiviInfraAuth)' -ForegroundColor Yellow
             }
         } else {
             Write-Host '  [OK] Le service répond sur 127.0.0.1 : le problème est DANS IIS.' -ForegroundColor Green
@@ -276,6 +314,14 @@ if ($WithService) {
                 } catch { }
                 if ($regle -and $regle.Value) {
                     Write-Host "  [OK] Règle « Suivi Infra - API » -> $($regle.Value)" -ForegroundColor Green
+                    # Le service répond, la règle existe : reste le cas où elle désigne un
+                    # AUTRE port que celui où le service écoute. IIS relaie alors vers le
+                    # vide, et tout paraît pourtant en place — c'est exactement ce que
+                    # produit un changement de port fait à moitié.
+                    if ($regle.Value -notmatch ":$ServicePort/") {
+                        Write-Host "  [X ] Cette règle ne désigne pas le port $ServicePort sur lequel le service écoute." -ForegroundColor Red
+                        Write-Host "      IIS relaie donc vers le vide. Corriger : .\Set-SuiviInfraPort.ps1 -NewPort $ServicePort" -ForegroundColor Yellow
+                    }
                 } else {
                     Write-Host '  [X ] Règle « Suivi Infra - API » absente du site.' -ForegroundColor Red
                     Write-Host '      Corriger : relancez Install-SuiviInfra.ps1 avec les mêmes options.' -ForegroundColor Yellow

@@ -404,6 +404,49 @@ identifiants de test personnels et réglages de poste, jamais restaurés sur le 
 Vérifiez le contenu dans l'application **avant** de supprimer le dossier
 `_avant_restauration_…` : c'est votre seul retour en arrière.
 
+### « Serveur indisponible » — le port est-il occupé ?
+
+Ce message signifie que le navigateur n'obtient pas de réponse de `/api`. Après
+l'installation d'une **autre application sur le même serveur**, la cause la plus fréquente
+est un conflit de port : le service écoute par défaut sur `127.0.0.1:4000`, un port très
+répandu. S'il est pris, le service s'arrête immédiatement et la tâche planifiée repasse en
+`Ready` comme si elle avait terminé son travail — rien ne distingue ce cas d'un service
+jamais démarré.
+
+Console **administrateur** :
+
+```powershell
+.\Test-SuiviInfra.ps1 -HostName winas -WithService
+```
+
+Il nomme désormais le coupable :
+
+```
+      >>> LE PORT 4000 EST PRIS PAR UN AUTRE PROGRAMME <<<
+          PID 7412 · grafana-server · C:\Program Files\GrafanaLabs\grafana\bin\grafana-server.exe
+```
+
+Le journal du service le dit aussi : `C:\services\suivi-infra\logs\service.log`.
+
+Deux issues. Arrêter ou reconfigurer l'autre programme, ou **déplacer ce service** :
+
+```powershell
+.\Set-SuiviInfraPort.ps1 -NewPort 4010
+```
+
+> Le port figure à **deux endroits** qui doivent toujours s'accorder : `PORT=` dans le
+> `.env` du service, et la règle de réécriture « Suivi Infra - API » du site IIS. Les
+> changer à la main revient presque toujours à n'en changer qu'un : le service démarre
+> parfaitement, la règle existe toujours, et pourtant plus rien ne fonctionne — IIS relaie
+> vers un port où personne n'écoute. Le script change les deux et vérifie la chaîne
+> complète avant de se déclarer satisfait.
+
+Ce port n'est **jamais exposé au réseau** : seul IIS le joint, sur `127.0.0.1`. En changer
+n'a aucun effet sur l'adresse de l'application (`http://winas:8081`).
+
+Passez ensuite `-ServicePort 4010` aux autres scripts, sinon ils contrôleront le 4000 et
+annonceront un échec qui n'en est pas un.
+
 ### « Identifiant ou mot de passe incorrect » avec les identifiants attendus
 
 Ce message vient du service, pas du navigateur : il prouve déjà que le service tourne et que

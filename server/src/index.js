@@ -36,8 +36,44 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Erreur serveur.' });
 });
 
-app.listen(config.port, '127.0.0.1', () => {
+const serveur = app.listen(config.port, '127.0.0.1', () => {
   console.log(`Serveur d'authentification démarré sur http://127.0.0.1:${config.port}`);
   startMailScheduler();
   startRetentionScheduler();
+});
+
+/**
+ * Le port occupé est la panne la plus coûteuse à diagnostiquer, parce qu'elle ne ressemble
+ * pas à une panne : le service s'arrête aussitôt, la tâche planifiée repasse en « Ready »
+ * comme si elle avait fini son travail, et l'application annonce « Serveur indisponible »
+ * sans rien dire de plus. Elle survient typiquement après l'installation d'une autre
+ * application sur le même serveur — 4000 est un port par défaut très répandu.
+ *
+ * Node n'écrit alors qu'une trace de pile « EADDRINUSE », illisible pour qui cherche
+ * pourquoi son planning a disparu. On la remplace par la cause et la sortie.
+ */
+serveur.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(
+      [
+        '',
+        `ARRÊT : le port ${config.port} est déjà occupé par un autre programme.`,
+        '',
+        "Ce service ne peut pas démarrer tant qu'il ne peut pas écouter sur ce port. C'est",
+        "souvent le fait d'une autre application installée depuis sur le même serveur.",
+        '',
+        'Pour voir qui occupe le port, depuis une console administrateur :',
+        `    Get-Process -Id (Get-NetTCPConnection -State Listen -LocalPort ${config.port}).OwningProcess`,
+        '',
+        'Deux issues : arrêter ce programme, ou déplacer ce service sur un autre port —',
+        '    .\\Set-SuiviInfraPort.ps1 -NewPort 4010',
+        "qui change à la fois le service et la règle de relais d'IIS, les deux devant",
+        'toujours désigner le même port.',
+        '',
+      ].join('\n')
+    );
+  } else {
+    console.error(`ARRÊT : impossible d'écouter sur le port ${config.port} — ${err.message}`);
+  }
+  process.exit(1);
 });
