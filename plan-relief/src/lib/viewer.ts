@@ -4,7 +4,7 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { clusterSegments, minAreaRect, pairWalls } from './geometry';
+import { floorFootprint, toMeters, type Box2 } from './footprints';
 import { roleOf } from './drawing';
 import type { Equipment, EquipmentKind, Fill, Group, PlanSettings } from './types';
 
@@ -20,15 +20,15 @@ export interface BuildStats { walls: number; windows: number; width: number; dep
 
 const KIND_COLORS: Record<EquipmentKind, number> = { bloc: 0x2b45c4, texte: 0x7b8794, manuel: 0xd9730d };
 
-function boxGeometry(cx: number, cy: number, ux: number, uy: number, len: number, thick: number, y0: number, y1: number) {
-  const g = new THREE.BoxGeometry(len, y1 - y0, thick);
-  g.rotateY(Math.atan2(uy, ux));
-  g.translate(cx, (y0 + y1) / 2, -cy);
+function boxGeometry(b: Box2) {
+  const g = new THREE.BoxGeometry(b.len, b.y1 - b.y0, b.thick);
+  g.rotateY(Math.atan2(b.uy, b.ux));
+  g.translate(b.cx, (b.y0 + b.y1) / 2, -b.cy);
   return g.toNonIndexed();
 }
 
-function extrudeFill(fill: Fill, f: number, cx: number, cy: number, h: number) {
-  const toV = (p: number[]) => { const v: THREE.Vector2[] = []; for (let i = 0; i < p.length; i += 2) v.push(new THREE.Vector2((p[i] - cx) * f, (p[i + 1] - cy) * f)); return v; };
+function extrudeFill(fill: Fill, h: number) {
+  const toV = (p: number[]) => { const v: THREE.Vector2[] = []; for (let i = 0; i < p.length; i += 2) v.push(new THREE.Vector2(p[i], p[i + 1])); return v; };
   const shape = new THREE.Shape(toV(fill.outer));
   for (const hole of fill.holes) shape.holes.push(new THREE.Path(toV(hole)));
   const g = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, curveSegments: 1 });
@@ -36,61 +36,21 @@ function extrudeFill(fill: Fill, f: number, cx: number, cy: number, h: number) {
   return g.index ? g.toNonIndexed() : g;
 }
 
-function toMeters(segs: number[], f: number, cx: number, cy: number) {
-  const out = new Float64Array(segs.length);
-  for (let i = 0; i < segs.length; i += 2) { out[i] = (segs[i] - cx) * f; out[i + 1] = (segs[i + 1] - cy) * f; }
-  return out;
-}
-
 const lum = (c: number) => (0.299 * ((c >> 16) & 255) + 0.587 * ((c >> 8) & 255) + 0.114 * (c & 255)) / 255;
 
-/** Construit les géométries 3D à partir des calques et de leur rôle. */
-export function buildGeometry({ groups, settings: P, factor: f, center: [cx, cy], showPlan }: SceneInput) {
-  const wallGeoms: THREE.BufferGeometry[] = [], glassGeoms: THREE.BufferGeometry[] = [];
+/** Construit les géométries 3D à partir des calques et de leur rôle (emprise : footprints.ts). */
+export function buildGeometry({ groups, settings: P, factor: f, center, showPlan }: SceneInput) {
+  const fp = floorFootprint(groups, P, f, center);
+  const wallGeoms = [...fp.walls.map(boxGeometry), ...fp.fills.map((fill) => extrudeFill(fill, P.hWall))];
+  const glassGeoms = fp.glass.map(boxGeometry);
   const lines: { segs: Float64Array; color: number; door: boolean; name: string }[] = [];
-  let walls = 0, windows = 0;
-
-  const wallLines: number[] = [];
-  for (const g of groups) {
-    if (roleOf(g, P) !== 'mur') continue;
-    if (g.kind === 'fill') for (const fill of g.fills) { wallGeoms.push(extrudeFill(fill, f, cx, cy, P.hWall)); walls++; }
-    else for (const v of g.segs) wallLines.push(v);
-  }
-  if (wallLines.length) {
-    const s = toMeters(wallLines, f, cx, cy);
-    const { boxes, leftovers } = pairWalls(s, 0.03, P.tMax);
-    for (const b of boxes) wallGeoms.push(boxGeometry(b.x, b.y, b.ux, b.uy, b.len, b.thick, 0, P.hWall));
-    // Dans un plan en double trait, les petits restes (retours, angles) sont déjà couverts par les murs voisins.
-    const minLeft = boxes.length ? P.tMax : 0.02;
-    for (const l of leftovers) {
-      if (l.len <= minLeft) continue;
-      wallGeoms.push(boxGeometry(l.x, l.y, l.ux, l.uy, l.len + (boxes.length ? 0 : P.tWall), P.tWall, 0, P.hWall));
-      walls++;
-    }
-    walls += boxes.length;
-  }
-
-  for (const g of groups) {
-    if (roleOf(g, P) !== 'fenetre') continue;
-    for (const cl of clusterSegments(toMeters(g.segs, f, cx, cy), 0.08)) {
-      const r = minAreaRect(cl);
-      if (!r || r.L < 0.25) continue;
-      const W = r.W < 0.04 ? P.tWall : r.W;
-      const top = Math.min(P.sill + P.hWin, P.hWall);
-      if (P.sill > 0) wallGeoms.push(boxGeometry(r.cx, r.cy, r.ux, r.uy, r.L, W, 0, Math.min(P.sill, P.hWall)));
-      if (P.hWall > top) wallGeoms.push(boxGeometry(r.cx, r.cy, r.ux, r.uy, r.L, W, top, P.hWall));
-      if (top > P.sill) glassGeoms.push(boxGeometry(r.cx, r.cy, r.ux, r.uy, r.L, Math.min(0.03, W), P.sill, top));
-      windows++;
-    }
-  }
-
   for (const g of groups) {
     const role = roleOf(g, P);
     if (role === 'porte' || (role === 'plan' && showPlan)) {
-      lines.push({ segs: toMeters(g.segs, f, cx, cy), color: role === 'porte' ? 0xa3622a : lum(g.color) > 0.82 ? 0x6b7480 : g.color, door: role === 'porte', name: g.name });
+      lines.push({ segs: toMeters(g.segs, f, center[0], center[1]), color: role === 'porte' ? 0xa3622a : lum(g.color) > 0.82 ? 0x6b7480 : g.color, door: role === 'porte', name: g.name });
     }
   }
-  return { wallGeoms, glassGeoms, lines, walls, windows };
+  return { wallGeoms, glassGeoms, lines, walls: fp.wallCount, windows: fp.windowCount };
 }
 
 /**
@@ -105,6 +65,7 @@ export class PlanViewer {
   private sun = new THREE.DirectionalLight(0xffffff, 2.2);
   private model = new THREE.Group();
   private markers = new THREE.Group();
+  private route = new THREE.Group();
   private grid: THREE.GridHelper | null = null;
   private box = new THREE.Box3();
   private resizeObs: ResizeObserver;
@@ -131,6 +92,9 @@ export class PlanViewer {
     glass: new THREE.MeshStandardMaterial({ color: 0x8ec3ea, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.45 }),
     slab: new THREE.MeshStandardMaterial({ color: 0xd6d0c4, roughness: 1, metalness: 0 }),
     edges: new THREE.LineBasicMaterial({ color: 0x2c3138, transparent: true, opacity: 0.55 }),
+    ghost: new THREE.MeshStandardMaterial({ color: 0xc9cdd3, roughness: 0.9, transparent: true, opacity: 0.28, depthWrite: false }),
+    ghostSlab: new THREE.MeshStandardMaterial({ color: 0xd6d0c4, roughness: 1, transparent: true, opacity: 0.35, depthWrite: false }),
+    route: new THREE.MeshStandardMaterial({ color: 0xd9730d, emissive: 0x7a3300, roughness: 0.35 }),
   };
 
   private container: HTMLElement;
@@ -151,7 +115,7 @@ export class PlanViewer {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0005;
-    this.scene.add(this.sun, this.sun.target, this.model, this.markers);
+    this.scene.add(this.sun, this.sun.target, this.model, this.markers, this.route);
 
     // Épingle de l'équipement sélectionné : tige + tête, dimensionnées à chaque sélection.
     this.pin = new THREE.Group();
@@ -211,30 +175,29 @@ export class PlanViewer {
   }
 
   /** Reconstruit la maquette. Renvoie de quoi afficher les compteurs. */
-  build(input: SceneInput, gridColor: string): BuildStats {
-    const { settings: P } = input;
-    this.factor = input.factor;
-    this.center = input.center;
-    this.hWall = P.hWall;
+  /** Murs, vitrages et traits au sol d'un étage, dans un groupe (coordonnées de l'étage). */
+  private floorGroup(input: SceneInput, wallMat: THREE.Material, edges: boolean) {
     const built = buildGeometry(input);
-    this.disposeChildren(this.model);
-
+    const group = new THREE.Group();
     if (built.wallGeoms.length) {
       const g = mergeGeometries(built.wallGeoms, false);
       built.wallGeoms.forEach((x) => x.dispose());
-      const mesh = new THREE.Mesh(g, this.materials.wall);
+      const mesh = new THREE.Mesh(g, wallMat);
       mesh.name = 'Murs';
       mesh.castShadow = mesh.receiveShadow = true;
-      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), this.materials.edges);
-      edges.userData.noExport = true;
-      this.model.add(mesh, edges);
+      group.add(mesh);
+      if (edges) {
+        const e = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), this.materials.edges);
+        e.userData.noExport = true;
+        group.add(e);
+      }
     }
     if (built.glassGeoms.length) {
       const g = mergeGeometries(built.glassGeoms, false);
       built.glassGeoms.forEach((x) => x.dispose());
       const mesh = new THREE.Mesh(g, this.materials.glass);
       mesh.name = 'Vitrages';
-      this.model.add(mesh);
+      group.add(mesh);
     }
     for (const l of built.lines) {
       const pos = new Float32Array((l.segs.length / 2) * 3);
@@ -244,36 +207,109 @@ export class PlanViewer {
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       const line = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: l.color }));
       line.name = l.name;
-      this.model.add(line);
+      group.add(line);
     }
+    return { group, walls: built.walls, windows: built.windows };
+  }
 
-    const box = new THREE.Box3().setFromObject(this.model);
-    if (box.isEmpty()) box.set(new THREE.Vector3(-5, 0, -5), new THREE.Vector3(5, P.hWall, 5));
-    if (P.slab) {
-      const slab = new THREE.Mesh(new THREE.BoxGeometry(box.max.x - box.min.x + 0.4, 0.12, box.max.z - box.min.z + 0.4), this.materials.slab);
-      slab.name = 'Dalle';
-      slab.position.set((box.min.x + box.max.x) / 2, -0.06, (box.min.z + box.max.z) / 2);
-      slab.receiveShadow = true;
-      this.model.add(slab);
-    }
+  private addSlab(target: THREE.Group, box: THREE.Box3, y: number, material: THREE.Material = this.materials.slab) {
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(box.max.x - box.min.x + 0.4, 0.12, box.max.z - box.min.z + 0.4), material);
+    slab.name = 'Dalle';
+    slab.position.set((box.min.x + box.max.x) / 2, y - 0.06, (box.min.z + box.max.z) / 2);
+    slab.receiveShadow = true;
+    target.add(slab);
+  }
 
+  /** Grille au sol, soleil et ombres dimensionnés sur la maquette. */
+  private frameScene(box: THREE.Box3, gridY: number, gridColor: string) {
     const size = Math.max(box.max.x - box.min.x, box.max.z - box.min.z, 4);
     if (this.grid) { this.scene.remove(this.grid); this.grid.geometry.dispose(); (this.grid.material as THREE.Material).dispose(); }
     const gsize = Math.ceil(size * 1.6);
     this.grid = new THREE.GridHelper(gsize, gsize, new THREE.Color(gridColor), new THREE.Color(gridColor));
-    this.grid.position.set((box.min.x + box.max.x) / 2, P.slab ? -0.121 : -0.001, (box.min.z + box.max.z) / 2);
+    this.grid.position.set((box.min.x + box.max.x) / 2, gridY, (box.min.z + box.max.z) / 2);
     (this.grid.material as THREE.Material).transparent = true;
     (this.grid.material as THREE.Material).opacity = 0.7;
     this.scene.add(this.grid);
-
     const c = box.getCenter(new THREE.Vector3());
-    this.sun.position.set(c.x + size * 0.6, size * 1.2 + 5, c.z + size * 0.9);
+    const height = box.max.y - box.min.y;
+    this.sun.position.set(c.x + size * 0.6, box.max.y + size * 1.2 + 5, c.z + size * 0.9);
     this.sun.target.position.copy(c);
     const sc = this.sun.shadow.camera;
-    sc.left = sc.bottom = -size; sc.right = sc.top = size; sc.near = 0.1; sc.far = size * 4 + 20;
+    sc.left = sc.bottom = -size - height; sc.right = sc.top = size + height; sc.near = 0.1; sc.far = size * 4 + height * 2 + 20;
     sc.updateProjectionMatrix();
     this.box = box;
-    return { walls: built.walls, windows: built.windows, width: box.max.x - box.min.x, depth: box.max.z - box.min.z };
+  }
+
+  /** Reconstruit la maquette d'un étage. Renvoie de quoi afficher les compteurs. */
+  build(input: SceneInput, gridColor: string): BuildStats {
+    const { settings: P } = input;
+    this.factor = input.factor;
+    this.center = input.center;
+    this.hWall = P.hWall;
+    this.disposeChildren(this.model);
+    this.disposeChildren(this.route);
+    const { group, walls, windows } = this.floorGroup(input, this.materials.wall, true);
+    for (const o of [...group.children]) this.model.add(o);
+    const box = new THREE.Box3().setFromObject(this.model);
+    if (box.isEmpty()) box.set(new THREE.Vector3(-5, 0, -5), new THREE.Vector3(5, P.hWall, 5));
+    if (P.slab) this.addSlab(this.model, box, 0);
+    this.frameScene(box, P.slab ? -0.121 : -0.001, gridColor);
+    return { walls, windows, width: box.max.x - box.min.x, depth: box.max.z - box.min.z };
+  }
+
+  /**
+   * Bâtiment : les étages empilés à leur altitude, décalés pour se superposer. Les murs
+   * peuvent être rendus transparents pour laisser voir un tracé qui traverse les étages.
+   */
+  buildStack(floors: { input: SceneInput; elevation: number; offset: [number, number]; name: string }[], gridColor: string, transparent: boolean) {
+    this.disposeChildren(this.model);
+    this.disposeChildren(this.markers);
+    this.pointsMesh = null;
+    this.pin.visible = false;
+    this.pinTarget = null;
+    const wallMat = transparent ? this.materials.ghost : this.materials.wall;
+    for (const f of floors) {
+      const { group } = this.floorGroup(f.input, wallMat, !transparent);
+      const box = new THREE.Box3().setFromObject(group);
+      // En mode transparent, les dalles le sont aussi : un tracé à l'étage du dessous reste visible.
+      if (!box.isEmpty()) this.addSlab(group, box, 0, transparent ? this.materials.ghostSlab : this.materials.slab);
+      group.name = f.name;
+      group.position.set(f.offset[0], f.elevation, -f.offset[1]);
+      this.model.add(group);
+    }
+    this.model.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(this.model);
+    if (box.isEmpty()) box.set(new THREE.Vector3(-5, 0, -5), new THREE.Vector3(5, 3, 5));
+    const lowest = Math.min(...floors.map((f) => f.elevation), 0);
+    this.frameScene(box, lowest - 0.121, gridColor);
+  }
+
+  /** Tracé : tube orange, sphère verte au départ, rouge à l'arrivée. Coordonnées de scène. */
+  setRoute(points: THREE.Vector3[] | null) {
+    this.disposeChildren(this.route);
+    if (!points || points.length < 2) return;
+    const scale = Math.max(this.box.getSize(new THREE.Vector3()).length() / 400, 0.05);
+    const r = Math.min(scale, 0.12);
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      const len = a.distanceTo(b);
+      if (len < 1e-4) continue;
+      const cyl = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 10), this.materials.route);
+      cyl.position.copy(a).add(b).multiplyScalar(0.5);
+      cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+      cyl.name = 'Tracé';
+      this.route.add(cyl);
+      const joint = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), this.materials.route);
+      joint.position.copy(b);
+      this.route.add(joint);
+    }
+    const end = (p: THREE.Vector3, color: number) => {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(r * 3.5, 20, 14), new THREE.MeshStandardMaterial({ color, roughness: 0.4 }));
+      m.position.copy(p);
+      this.route.add(m);
+    };
+    end(points[0], 0x2e9e5b);
+    end(points[points.length - 1], 0xd23c32);
   }
 
   private toScene(e: Equipment, y = 0.05) {
@@ -374,9 +410,10 @@ export class PlanViewer {
 
   private exportRoot(zUp: boolean) {
     const root = new THREE.Group();
-    this.model.updateMatrixWorld(true);
-    this.model.traverse((o) => {
-      if (o.userData.noExport || o === this.model) return;
+    // Le tracé est exporté avec la maquette : utile pour le dossier de câblage.
+    for (const top of [this.model, this.route]) top.updateMatrixWorld(true);
+    const visit = (o: THREE.Object3D) => {
+      if (o.userData.noExport || o === this.model || o === this.route) return;
       let c: THREE.Object3D | null = null;
       if ((o as THREE.Mesh).isMesh) c = new THREE.Mesh((o as THREE.Mesh).geometry, (o as THREE.Mesh).material);
       else if ((o as THREE.LineSegments).isLineSegments && !zUp) c = new THREE.LineSegments((o as THREE.LineSegments).geometry, (o as THREE.LineSegments).material);
@@ -384,7 +421,9 @@ export class PlanViewer {
       c.name = o.name;
       c.applyMatrix4(o.matrixWorld);
       root.add(c);
-    });
+    };
+    this.model.traverse(visit);
+    this.route.traverse(visit);
     // Impression 3D : Z vers le haut (convention des logiciels de découpe).
     if (zUp) root.rotation.x = Math.PI / 2;
     root.updateMatrixWorld(true);
@@ -406,6 +445,7 @@ export class PlanViewer {
     this.resizeObs.disconnect();
     this.disposeChildren(this.model);
     this.disposeChildren(this.markers);
+    this.disposeChildren(this.route);
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

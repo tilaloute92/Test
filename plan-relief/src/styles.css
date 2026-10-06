@@ -276,3 +276,8 @@ mark { background: color-mix(in srgb, var(--accent) 22%, transparent); color: in
   .userbox .who { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ---------- Tracés ---------- */
+.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.steps li::marker { color: var(--muted); font-family: var(--font-mono); }
+details summary { cursor: pointer; }

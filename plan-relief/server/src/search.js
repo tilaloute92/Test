@@ -32,7 +32,7 @@ function indexFor(plan) {
     const attrs = e.attributes ? Object.entries(e.attributes).flat().join(' ') : '';
     // Les indications écrites à côté d'un équipement comptent comme les siennes.
     const ind = e.indications ? e.indications.join(' ') : '';
-    const hay = normalize([e.label, e.type, e.layer, attrs, e.notes, ind].join(' '));
+    const hay = normalize([e.label, e.type, e.layer, attrs, e.notes, ind, e.passage ? `passage ${e.passage}` : ''].join(' '));
     // Version sans espaces ajoutée : l'OCR coupe parfois un repère (« CAM-0 7 ») et doit
     // quand même répondre à « CAM-07 ».
     return { e, label: normalize(e.label), hay: `${hay} ${hay.replace(/ /g, '')}` };

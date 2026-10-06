@@ -124,16 +124,22 @@ test('recherche insensible aux accents, mots répartis entre équipement et fich
 
 test('modification avec contrôle de version (409 si le plan a changé entre-temps)', async () => {
   const cur = (await api(`/api/plans/${planId}`)).body;
-  const eq = [...cur.equipment, { kind: 'manuel', label: 'Borne Wi-Fi B-12', type: 'Borne Wi-Fi', x: 10, y: 10 }];
-  const ok = await api(`/api/plans/${planId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: cur.version, equipment: eq, notes: 'MAJ' }) });
+  const eq = [...cur.equipment, { kind: 'manuel', label: 'Borne Wi-Fi B-12', type: 'Borne Wi-Fi', x: 10, y: 10 },
+    { kind: 'manuel', label: 'Gaine technique', type: 'Gaine', x: 20, y: 10, passage: 'GT-3' }];
+  const ok = await api(`/api/plans/${planId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: cur.version, equipment: eq, notes: 'MAJ', level: '1.4', floorHeight: 3.456 }) });
   assert.equal(ok.status, 200);
+  assert.equal(ok.body.level, 1, 'niveau arrondi à l\'entier');
+  assert.equal(ok.body.floorHeight, 3.46);
+  assert.equal(ok.body.name, 'RDC', 'les champs non envoyés sont conservés');
   assert.equal(ok.body.version, cur.version + 1);
-  assert.equal(ok.body.equipment.length, 3);
+  assert.equal(ok.body.equipment.length, 4);
+  assert.equal(ok.body.equipment[3].passage, 'GT-3');
   const stale = await api(`/api/plans/${planId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: cur.version, name: 'écrasement' }) });
   assert.equal(stale.status, 409);
   assert.equal(stale.body.current.name, 'RDC');
   const found = await api('/api/search?q=wifi');
   assert.equal(found.body.total, 1);
+  assert.equal((await api('/api/search?q=passage%20gt3')).body.total, 1);
 });
 
 test('identifiant invalide : jamais de chemin construit à partir de la saisie', async () => {

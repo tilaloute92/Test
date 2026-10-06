@@ -95,6 +95,8 @@ export function uploadPlan(file: File, data: object) {
   return request<{ plan: PlanSummary; duplicateOf: { id: string; name: string } | null }>('/plans', { method: 'POST', body: fd, timeout: 300000 });
 }
 
+export type SearchHitList = SearchHit[];
+
 export function searchEquipment(params: { q: string; site?: string; kind?: string; plan?: string }) {
   const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]);
   return request<{ total: number; results: SearchHit[] }>(`/search?${qs}`);

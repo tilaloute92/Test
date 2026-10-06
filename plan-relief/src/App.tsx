@@ -7,6 +7,7 @@ import { PlansLibrary } from './components/PlansLibrary';
 import { PlanView } from './components/PlanView';
 import { SearchView } from './components/SearchView';
 import { SettingsView } from './components/SettingsView';
+import { RouteView } from './components/RouteView';
 
 /**
  * Navigation par l'ancre de l'adresse (#/plans, #/plan/<id>?eq=<id>, #/recherche…) :
@@ -17,6 +18,7 @@ export type Route =
   | { page: 'plans' }
   | { page: 'plan'; id: string; eq?: string }
   | { page: 'recherche'; q?: string }
+  | { page: 'trace'; de?: string; a?: string }
   | { page: 'parametres' };
 
 function parseHash(): Route {
@@ -26,6 +28,7 @@ function parseHash(): Route {
   if (a === 'plan' && b) return { page: 'plan', id: b, eq: params.get('eq') || undefined };
   if (a === 'recherche') return { page: 'recherche', q: params.get('q') || undefined };
   if (a === 'parametres') return { page: 'parametres' };
+  if (a === 'trace') return { page: 'trace', de: params.get('de') || undefined, a: params.get('a') || undefined };
   return { page: 'plans' };
 }
 
@@ -34,6 +37,10 @@ export function hrefOf(r: Route): string {
     case 'plan': return `#/plan/${r.id}${r.eq ? `?eq=${encodeURIComponent(r.eq)}` : ''}`;
     case 'recherche': return `#/recherche${r.q ? `?q=${encodeURIComponent(r.q)}` : ''}`;
     case 'parametres': return '#/parametres';
+    case 'trace': {
+      const qs = new URLSearchParams(Object.entries({ de: r.de, a: r.a }).filter(([, v]) => v) as [string, string][]).toString();
+      return `#/trace${qs ? `?${qs}` : ''}`;
+    }
     default: return '#/plans';
   }
 }
@@ -59,6 +66,7 @@ export default function App() {
   const [status, setStatus] = useState<'checking' | 'down' | 'login' | 'ready'>('checking');
   const [user, setUser] = useState<User | null>(null);
   const [route, setRoute] = useState<Route>(parseHash);
+  const [navCount, setNavCount] = useState(0);
   const { theme, cycle } = useTheme();
   const toast = useToast();
 
@@ -72,7 +80,9 @@ export default function App() {
 
   useEffect(() => { check(); }, [check]);
   useEffect(() => {
-    const onHash = () => setRoute(parseHash());
+    // Chaque navigation compte, même vers une adresse identique : un lien de tracé rouvert
+    // après des changements faits sur la page doit recalculer le tracé du lien.
+    const onHash = () => { setNavCount((n) => n + 1); setRoute(parseHash()); };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
@@ -122,6 +132,7 @@ export default function App() {
         <nav className="nav" aria-label="Navigation principale">
           {nav('plans', 'Plans')}
           {nav('recherche', 'Recherche')}
+          {nav('trace', 'Tracés')}
           {nav('parametres', 'Paramètres')}
         </nav>
         <div className="spacer" />
@@ -136,11 +147,12 @@ export default function App() {
           <button type="button" className="btn sm" onClick={doLogout}>Se déconnecter</button>
         </div>
       </header>
-      <main className={`content${route.page === 'plan' ? ' full' : ''}`}>
+      <main className={`content${route.page === 'plan' || route.page === 'trace' ? ' full' : ''}`}>
         {route.page === 'plans' && <PlansLibrary />}
         {route.page === 'plan' && <PlanView key={route.id} id={route.id} focusEq={route.eq} />}
         {route.page === 'recherche' && <SearchView initialQuery={route.q} />}
         {route.page === 'parametres' && <SettingsView />}
+        {route.page === 'trace' && <RouteView key={navCount} de={route.de} a={route.a} />}
       </main>
     </div>
   );

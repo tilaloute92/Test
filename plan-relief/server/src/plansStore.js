@@ -61,7 +61,21 @@ export function cleanMeta(input, previous = {}) {
     building: pick('building', 120),
     floor: pick('floor', 60),
     notes: pick('notes', 2000),
+    // Niveau de l'étage dans le bâtiment (0 = RDC) et hauteur de sol à sol : servent aux
+    // tracés entre étages. null = non renseigné (niveau déduit du libellé d'étage).
+    level: optNum('level', -20, 300, true),
+    floorHeight: optNum('floorHeight', 1, 30, false),
   };
+
+  function optNum(key, min, max, integer) {
+    if (!(key in src)) return previous[key] ?? null;
+    const v = src[key];
+    if (v === null || v === '' || v === undefined) return null;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return previous[key] ?? null;
+    const c = Math.min(max, Math.max(min, n));
+    return integer ? Math.round(c) : Math.round(c * 100) / 100;
+  }
 }
 
 export function cleanSettings(input) {
@@ -117,6 +131,8 @@ export function cleanEquipment(list) {
     if (Object.keys(attributes).length) item.attributes = attributes;
     const notes = str(raw.notes, 2000);
     if (notes) item.notes = notes;
+    const passage = str(raw.passage, 60);
+    if (passage) item.passage = passage;
     if (Array.isArray(raw.indications)) {
       const ind = raw.indications.slice(0, 12).map((t) => str(String(t ?? ''), 300)).filter(Boolean);
       if (ind.length) item.indications = ind;

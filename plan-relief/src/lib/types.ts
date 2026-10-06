@@ -35,6 +35,11 @@ export interface Equipment {
   notes?: string;
   /** Indications écrites près de cet équipement sur le plan (blocs uniquement). */
   indications?: string[];
+  /**
+   * Nom du passage entre étages (gaine technique, colonne montante, escalier…). Deux
+   * équipements portant le même nom sur deux étages d'un bâtiment sont reliés pour les tracés.
+   */
+  passage?: string;
 }
 
 export interface PlanSettings {
@@ -56,6 +61,10 @@ export interface PlanMeta {
   building: string;
   floor: string;
   notes: string;
+  /** Ordre de l'étage dans le bâtiment (0 = RDC, 1 = R+1, -1 = sous-sol). null : déduit du libellé d'étage. */
+  level?: number | null;
+  /** Hauteur de sol à sol, en mètres (montées entre étages). */
+  floorHeight?: number | null;
 }
 
 export interface PlanSummary extends PlanMeta {

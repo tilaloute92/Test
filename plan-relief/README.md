@@ -42,6 +42,21 @@ client/serveur) : voir [`packaging/INSTALL.md`](packaging/INSTALL.md) et
   trouve une lecture « CAM-0 7 »). Les mots peuvent viser l'équipement
   ou la fiche du plan : `switch bât B` trouve les switchs des plans du bâtiment B. Filtres par
   site et par origine. Chaque résultat ouvre le plan centré sur l'équipement.
+- **Tracés** (onglet Tracés, ou « Tracé depuis ici / jusqu'ici » sur un équipement) : chemin
+  le plus court entre deux équipements d'un même bâtiment, pour estimer un passage de câble.
+  - Sur un étage, le tracé contourne les murs et passe par les ouvertures (portes), sans sortir
+    du bâtiment sauf nécessité. Traversée des murs (carottage) possible en option ; si aucun
+    chemin n'existe par les portes, le tracé traverse un mur et le signale.
+  - Entre étages, il passe par les **passages verticaux** : un équipement ou une indication
+    (gaine technique, colonne montante, escalier, ascenseur) marqué « passage entre étages »
+    avec le même nom sur chaque plan (GT-3…). Le nom est proposé d'après le texte du plan.
+  - Un **bâtiment** = les plans de même site et même bâtiment. Chaque plan a un **niveau**
+    (déduit de l'étage : RDC → 0, R+1 → 1, SS1 → -1, ou saisi sur la fiche) et une **hauteur
+    d'étage** (3 m par défaut). Les étages sont superposés automatiquement grâce à leurs
+    passages communs.
+  - Résultat : longueur par tronçon, montées entre étages, descentes du faux plafond aux
+    équipements, total avec marge (15 % par défaut) ; vue 3D du bâtiment, étages empilés, murs
+    transparents. Le lien du tracé se partage et se recalcule à l'ouverture.
 - **Recherche dans un plan** : filtre de la liste et des repères 3D en direct.
 - **Liens directs** : l'adresse pointe sur l'équipement sélectionné (`#/plan/<id>?eq=<id>`),
   bouton « Copier le lien ».
@@ -73,7 +88,8 @@ plan-relief/
 │   ├── api.ts                       appels au service
 │   ├── auth/                        SSO Microsoft (MSAL)
 │   ├── components/                  écrans : bibliothèque, import, plan 3D, recherche, paramètres
-│   └── lib/                         lecture DXF/PDF, indications (indications.ts), OCR (ocr.ts), géométrie, scène 3D
+│   └── lib/                         lecture DXF/PDF, indications, OCR, géométrie, scène 3D,
+│                                    tracés (route.ts : grille et plus court chemin ; building.ts : étages)
 ├── scripts/copy-ocr-assets.mjs      copie le moteur OCR et le modèle français dans public/ocr/ (avant dev et build)
 ├── public/web.config                en-têtes de sécurité et limites IIS
 ├── server/                          service Node.js (Express)

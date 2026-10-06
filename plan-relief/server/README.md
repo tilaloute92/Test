@@ -47,8 +47,8 @@ data/
 ├── config.json           configuration LDAP
 ├── meta.json             compteur de version (témoin de cohérence pour la sauvegarde)
 ├── plans/<uuid>/
-│   ├── plan.json         fiche, réglages 3D, équipements et indications (avec les indications
-│   │                     rattachées à chaque équipement, champ `indications`)
+│   ├── plan.json         fiche (dont niveau et hauteur d'étage), réglages 3D, équipements et
+│   │                     indications (`indications` rattachées, `passage` entre étages)
 │   └── source.dxf|pdf    fichier d'origine, jamais modifié
 └── corbeille/<uuid>_<date>/   plans retirés du stock
 ```

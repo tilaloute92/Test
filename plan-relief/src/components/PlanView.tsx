@@ -3,6 +3,8 @@ import * as api from '../api';
 import { hrefOf, navigate } from '../App';
 import { drawingCenter, drawingFactor, mergeExtracted, newId, readDrawing, roleOf, withIndications } from '../lib/drawing';
 import { mergeOcr } from '../lib/indications';
+import { DEFAULT_FLOOR_HEIGHT, guessLevel, suggestPassage } from '../lib/building';
+import { encodeEndpoint, readDraft } from '../lib/traceLink';
 import { ocrPdfPage, type OcrProgress } from '../lib/ocr';
 import { PlanViewer, type BuildStats } from '../lib/viewer';
 import { DEFAULT_SETTINGS, KIND_LABELS, ROLE_LABELS, UNIT_NAMES, type Drawing, type Equipment, type EquipmentKind, type PlanRecord, type PlanSettings, type Role, type Unit } from '../lib/types';
@@ -353,6 +355,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                         <span className="chip"><span className={`dot kind-${selectedEq.kind}`} />{KIND_LABELS[selectedEq.kind]}</span>
                         {selectedEq.type && <span className="chip mono">{selectedEq.type}</span>}
+                        {selectedEq.passage && <span className="chip">Passage entre étages : <b>{selectedEq.passage}</b></span>}
                       </div>
                       <h4>{selectedEq.label || selectedEq.type}</h4>
                       <dl className="kv">
@@ -365,6 +368,8 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                         <button type="button" className="btn sm" onClick={() => focusOn(selectedEq)}>Centrer la vue</button>
                         <button type="button" className="btn sm" onClick={() => setDraft(selectedEq)}>Modifier</button>
                         <button type="button" className="btn sm" onClick={copyLink}>Copier le lien</button>
+                        <a className="btn sm" href={hrefOf({ page: 'trace', de: encodeEndpoint({ planId: id, eqId: selectedEq.id }), a: readDraft().a })}>Tracé depuis ici</a>
+                        <a className="btn sm" href={hrefOf({ page: 'trace', de: readDraft().de, a: encodeEndpoint({ planId: id, eqId: selectedEq.id }) })}>Tracé jusqu'ici</a>
                         <button type="button" className="btn sm danger" onClick={() => removeEq(selectedEq)}>Supprimer</button>
                       </div>
                     </div>
@@ -379,7 +384,9 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                         <span className="t"><Highlight text={e.label || e.type} query={query} /></span>
                         <span className="s">{[e.type !== e.label ? e.type : '', e.layer].filter(Boolean).join(' · ') || KIND_LABELS[e.kind]}</span>
                       </span>
-                      {e.indications?.length
+                      {e.passage
+                        ? <span className="tag" title="Passage entre étages">⇅ {e.passage}</span>
+                        : e.indications?.length
                         ? <span className="tag" title={e.indications.join(' · ')}>{e.indications.length} ind.</span>
                         : e.attributes && <span className="tag">{Object.keys(e.attributes).length} attr.</span>}
                     </button>
@@ -594,7 +601,7 @@ function EquipmentDialog({ value, types, isNew, saving, onCancel, onSave }: { va
       onClose={onCancel}
       footer={<>
         <button type="button" className="btn" onClick={onCancel}>Annuler</button>
-        <button type="button" className="btn primary" disabled={!valid || saving} onClick={() => onSave({ ...e, label: e.label.trim(), type: e.type.trim(), notes: e.notes?.trim() || undefined })}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+        <button type="button" className="btn primary" disabled={!valid || saving} onClick={() => onSave({ ...e, label: e.label.trim(), type: e.type.trim(), notes: e.notes?.trim() || undefined, passage: e.passage?.trim() || undefined })}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
       </>}
     >
       <div className="grid2">
@@ -607,6 +614,16 @@ function EquipmentDialog({ value, types, isNew, saving, onCancel, onSave }: { va
           <input id="eq-type" className="input" list="eq-types" value={e.type} maxLength={120} onChange={(ev) => setE({ ...e, type: ev.target.value })} placeholder="Switch, Baie, Caméra, Prise RJ45…" />
           <datalist id="eq-types">{types.map((t) => <option key={t} value={t} />)}</datalist>
         </label>
+        <div className="field wide">
+          <label className="check" htmlFor="eq-is-passage">
+            <input id="eq-is-passage" type="checkbox" checked={e.passage !== undefined} onChange={(ev) => setE({ ...e, passage: ev.target.checked ? (suggestPassage(e) || e.label) : undefined })} />
+            Passage entre étages (gaine technique, colonne montante, escalier, ascenseur…)
+          </label>
+          {e.passage !== undefined && (
+            <input id="eq-passage" className="input" value={e.passage} maxLength={60} onChange={(ev) => setE({ ...e, passage: ev.target.value })} placeholder="GT-3" aria-label="Nom du passage" />
+          )}
+          {e.passage !== undefined && <span className="muted small">Donnez le même nom à ce passage sur chaque plan du bâtiment : les tracés changeront d'étage par là.</span>}
+        </div>
         <label className="field wide">
           <span>Notes</span>
           <textarea id="eq-notes" className="textarea" value={e.notes ?? ''} maxLength={2000} onChange={(ev) => setE({ ...e, notes: ev.target.value })} placeholder="Modèle, n° de série, port de brassage…" />
@@ -619,13 +636,16 @@ function EquipmentDialog({ value, types, isNew, saving, onCancel, onSave }: { va
 
 function MetaDialog({ plan, saving, onCancel, onSave }: { plan: PlanRecord; saving: boolean; onCancel: () => void; onSave: (m: Partial<PlanRecord>) => void }) {
   const [m, setM] = useState({ name: plan.name, site: plan.site, building: plan.building, floor: plan.floor, notes: plan.notes });
+  const [level, setLevel] = useState(plan.level == null ? '' : String(plan.level));
+  const [height, setHeight] = useState(plan.floorHeight == null ? '' : String(plan.floorHeight));
+  const guessed = guessLevel(m.floor);
   return (
     <Modal
       title="Fiche du plan"
       onClose={onCancel}
       footer={<>
         <button type="button" className="btn" onClick={onCancel}>Annuler</button>
-        <button type="button" className="btn primary" disabled={!m.name.trim() || saving} onClick={() => onSave(m)}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+        <button type="button" className="btn primary" disabled={!m.name.trim() || saving} onClick={() => onSave({ ...m, level: level === '' ? null : Number(level), floorHeight: height === '' ? null : Number(height) })}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
       </>}
     >
       <div className="grid2">
@@ -633,6 +653,15 @@ function MetaDialog({ plan, saving, onCancel, onSave }: { plan: PlanRecord; savi
         <label className="field"><span>Site</span><input id="meta-site" className="input" value={m.site} maxLength={120} onChange={(e) => setM({ ...m, site: e.target.value })} /></label>
         <label className="field"><span>Bâtiment</span><input id="meta-building" className="input" value={m.building} maxLength={120} onChange={(e) => setM({ ...m, building: e.target.value })} /></label>
         <label className="field"><span>Étage / niveau</span><input id="meta-floor" className="input" value={m.floor} maxLength={60} onChange={(e) => setM({ ...m, floor: e.target.value })} /></label>
+        <label className="field">
+          <span>Niveau (ordre des étages)</span>
+          <input id="meta-level" className="input num" type="number" step="1" value={level} onChange={(e) => setLevel(e.target.value)} placeholder={guessed == null ? '0 = RDC' : `${guessed} (déduit de l'étage)`} />
+        </label>
+        <label className="field">
+          <span>Hauteur d'étage (sol à sol)</span>
+          <span className="inputwrap"><input id="meta-height" type="number" step="0.05" min="1" value={height} onChange={(e) => setHeight(e.target.value)} placeholder={String(DEFAULT_FLOOR_HEIGHT)} /><span className="unit">m</span></span>
+        </label>
+        <p className="muted small wide" style={{ margin: 0 }}>Les plans d'un même site et d'un même bâtiment forment un bâtiment pour les tracés. Le niveau se déduit de l'étage (RDC, R+1, SS1…) s'il n'est pas saisi.</p>
         <label className="field wide"><span>Notes</span><textarea id="meta-notes" className="textarea" value={m.notes} maxLength={2000} onChange={(e) => setM({ ...m, notes: e.target.value })} /></label>
       </div>
       <p className="muted small">Ajouté le {fmtDate(plan.createdAt)} par {plan.createdBy}.</p>
