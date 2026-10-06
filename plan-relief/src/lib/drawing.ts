@@ -1,6 +1,7 @@
 import { readDxf } from './dxf';
 import { readPdf } from './pdf';
 import { segBounds } from './geometry';
+import { INDICATION_RADIUS_M, attachIndications } from './indications';
 import { PT_TO_M, UNIT_FACTORS, type Drawing, type Equipment, type Format, type Group, type PlanSettings, type Role } from './types';
 
 export function formatOf(fileName: string): Format | null {
@@ -31,6 +32,11 @@ export function drawingCenter(groups: Group[]): [number, number] {
  */
 export function mergeExtracted(current: Equipment[], extracted: Equipment[]): Equipment[] {
   return [...extracted, ...current.filter((e) => e.kind === 'manuel')];
+}
+
+/** Rattache les indications aux équipements voisins, à l'échelle du plan (voir indications.ts). */
+export function withIndications(list: Equipment[], format: Format, settings: PlanSettings): Equipment[] {
+  return attachIndications(list, INDICATION_RADIUS_M / drawingFactor(format, settings));
 }
 
 export const newId = () => `m-${crypto.randomUUID().slice(0, 13)}`;

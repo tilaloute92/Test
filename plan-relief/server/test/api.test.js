@@ -77,7 +77,7 @@ test('import d\'un DXF, puis lecture et téléchargement du fichier d\'origine',
       name: 'RDC', site: 'Siège', building: 'B', floor: 'RDC',
       settings: { unit: 'mm', roles: { MURS: 'mur' } },
       equipment: [
-        { kind: 'bloc', label: 'SW-B-01', type: 'SWITCH', layer: 'RESEAU', x: 1, y: 2, attributes: { REPERE: 'SW-B-01', MODELE: 'Cisco C9300' } },
+        { kind: 'bloc', label: 'SW-B-01', type: 'SWITCH', layer: 'RESEAU', x: 1, y: 2, attributes: { REPERE: 'SW-B-01', MODELE: 'Cisco C9300' }, indications: ['Alimenté par onduleur UPS-2', 42, ''] },
         { kind: 'texte', label: 'Baie de brassage', layer: 'TEXTE', x: 3, y: 4 },
         { kind: 'texte', label: '', x: 5, y: 6 },
         { kind: 'texte', label: 'sans position' },
@@ -115,6 +115,11 @@ test('recherche insensible aux accents, mots répartis entre équipement et fich
   assert.equal(r.body.total, 0, 'le nom du site seul ne doit pas renvoyer tous les équipements');
   r = await api('/api/search?q=sw&kind=texte');
   assert.equal(r.body.total, 0);
+  r = await api('/api/search?q=' + encodeURIComponent('onduleur ups2'));
+  assert.equal(r.body.total, 1, 'une indication écrite à côté fait ressortir l\'équipement');
+  assert.deepEqual(r.body.results[0].equipment.indications, ['Alimenté par onduleur UPS-2', '42']);
+  r = await api('/api/search?q=' + encodeURIComponent('C 9300'));
+  assert.equal(r.body.total, 1, 'espaces parasites (OCR) tolérés');
 });
 
 test('modification avec contrôle de version (409 si le plan a changé entre-temps)', async () => {

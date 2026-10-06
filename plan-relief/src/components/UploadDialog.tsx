@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import * as api from '../api';
-import { formatOf, readDrawing } from '../lib/drawing';
+import { drawingFactor, formatOf, readDrawing, withIndications } from '../lib/drawing';
+import { mergeOcr } from '../lib/indications';
+import { ocrPdfPage, type OcrProgress } from '../lib/ocr';
 import { DEFAULT_SETTINGS, UNIT_NAMES, type Drawing, type PlanSummary } from '../lib/types';
 import { Modal, fmtSize, useToast } from './ui';
 
@@ -11,7 +13,9 @@ export function UploadDialog({ sites, plans, onClose, onDone }: { sites: string[
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState({ name: '', site: '', building: '', floor: '', notes: '' });
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState<'' | 'lecture' | 'envoi'>('');
+  const [busy, setBusy] = useState<'' | 'lecture' | 'ocr' | 'envoi'>('');
+  const [ocr, setOcr] = useState(false);
+  const [progress, setProgress] = useState<OcrProgress | null>(null);
   const [over, setOver] = useState(false);
   const toast = useToast();
 
@@ -23,6 +27,9 @@ export function UploadDialog({ sites, plans, onClose, onDone }: { sites: string[
     try {
       const d = await readDrawing(b, formatOf(f.name)!, p);
       setDrawing(d);
+      // Peu de texte dans un PDF : plan scanné ou texte AutoCAD exporté en traits. La lecture
+      // par OCR est alors proposée d'office.
+      setOcr(d.format === 'pdf' && d.equipment.filter((e) => e.kind === 'texte').length < 10);
     } catch (err) {
       setDrawing(null);
       setError(`Lecture impossible : ${(err as Error).message}. Vérifiez qu'il s'agit d'un DXF (ASCII) ou d'un PDF vectoriel.`);
@@ -51,32 +58,48 @@ export function UploadDialog({ sites, plans, onClose, onDone }: { sites: string[
   };
 
   const submit = async () => {
-    if (!file || !drawing) return;
-    setBusy('envoi');
+    if (!file || !drawing || !buf) return;
     setError('');
+    let phase: 'ocr' | 'envoi' = 'envoi';
     try {
       const settings = { ...DEFAULT_SETTINGS, unit: drawing.unit?.unit ?? 'm', pdfPage: page };
-      const res = await api.uploadPlan(file, { ...meta, settings, equipment: drawing.equipment });
+      let equipment = drawing.equipment;
+      if (drawing.format === 'pdf' && ocr) {
+        phase = 'ocr';
+        setBusy('ocr');
+        const read = await ocrPdfPage(buf, page, setProgress);
+        equipment = mergeOcr(equipment, read, 0.5 / drawingFactor('pdf', settings));
+        toast(`${read.length.toLocaleString('fr-FR')} indications lues par OCR.`);
+      }
+      equipment = withIndications(equipment, drawing.format, settings);
+      phase = 'envoi';
+      setBusy('envoi');
+      const res = await api.uploadPlan(file, { ...meta, settings, equipment });
       if (res.duplicateOf) toast(`Plan ajouté. Le même fichier figurait déjà en stock sous le nom « ${res.duplicateOf.name} ».`, 'warn');
-      else toast(`Plan « ${res.plan.name} » ajouté : ${res.plan.equipmentCount.toLocaleString('fr-FR')} équipements indexés.`);
+      else toast(`Plan « ${res.plan.name} » ajouté : ${res.plan.equipmentCount.toLocaleString('fr-FR')} équipements et indications indexés.`);
       onDone(res.plan.id);
     } catch (err) {
-      setError((err as Error).message);
+      setError(phase === 'ocr' ? `Lecture OCR impossible : ${(err as Error).message}. Décochez la lecture OCR pour mettre le plan en stock sans elle.` : (err as Error).message);
       setBusy('');
+      setProgress(null);
     }
   };
 
-  const counts = drawing ? { bloc: drawing.equipment.filter((e) => e.kind === 'bloc').length, texte: drawing.equipment.filter((e) => e.kind === 'texte').length } : null;
+  const counts = drawing ? {
+    bloc: drawing.equipment.filter((e) => e.kind === 'bloc').length,
+    texte: drawing.equipment.filter((e) => e.kind === 'texte' && !/PDF$/.test(e.type)).length,
+    annot: drawing.equipment.filter((e) => /PDF$/.test(e.type)).length,
+  } : null;
 
   return (
     <Modal
       title="Ajouter un plan"
-      onClose={busy === 'envoi' ? () => {} : onClose}
+      onClose={busy === 'envoi' || busy === 'ocr' ? () => {} : onClose}
       wide
       footer={<>
-        <button type="button" className="btn" onClick={onClose} disabled={busy === 'envoi'}>Annuler</button>
+        <button type="button" className="btn" onClick={onClose} disabled={busy === 'envoi' || busy === 'ocr'}>Annuler</button>
         <button type="button" className="btn primary" onClick={submit} disabled={!drawing || !!busy || !meta.name.trim()}>
-          {busy === 'envoi' ? 'Envoi en cours…' : 'Mettre en stock'}
+          {busy === 'ocr' ? 'Lecture des indications…' : busy === 'envoi' ? 'Envoi en cours…' : 'Mettre en stock'}
         </button>
       </>}
     >
@@ -96,9 +119,29 @@ export function UploadDialog({ sites, plans, onClose, onDone }: { sites: string[
 
       {drawing && counts && (
         <div className="notice ok">
-          <p><strong>{drawing.equipment.length.toLocaleString('fr-FR')} équipements détectés</strong> : {counts.bloc.toLocaleString('fr-FR')} blocs et {counts.texte.toLocaleString('fr-FR')} textes, sur {drawing.groups.length} {drawing.format === 'pdf' ? 'groupes de traits' : 'calques'}.</p>
+          <p><strong>{drawing.equipment.length.toLocaleString('fr-FR')} éléments recherchables</strong> : {counts.bloc.toLocaleString('fr-FR')} blocs d'équipement, {counts.texte.toLocaleString('fr-FR')} indications écrites{counts.annot ? <>, {counts.annot.toLocaleString('fr-FR')} commentaires PDF</> : null}, sur {drawing.groups.length} {drawing.format === 'pdf' ? 'groupes de traits' : 'calques'}.</p>
+          <p className="small">Chaque indication est aussi rattachée au bloc d'équipement le plus proche (moins de 1,5 m) : chercher ce qui est écrit à côté d'un équipement le fait ressortir.</p>
           {drawing.unit && <p className="small">Unité {drawing.unit.source === 'file' ? 'lue dans le fichier' : 'déduite de la taille du dessin'} : {UNIT_NAMES[drawing.unit.unit]}. Modifiable ensuite dans l'onglet Maquette 3D.</p>}
-          {drawing.format === 'pdf' && drawing.equipment.length === 0 && <p className="small">Aucun texte trouvé : s'il s'agit d'un plan scanné, vous pourrez placer les équipements à la main.</p>}
+
+        </div>
+      )}
+
+      {drawing?.format === 'pdf' && (
+        <label className="check" htmlFor="upload-ocr" style={{ alignItems: 'flex-start' }}>
+          <input id="upload-ocr" type="checkbox" checked={ocr} onChange={(e) => setOcr(e.target.checked)} disabled={!!busy} />
+          <span>
+            Lire aussi les indications dessinées ou scannées (reconnaissance de caractères)
+            <span className="muted small" style={{ display: 'block' }}>
+              {counts && counts.texte < 10 ? 'Recommandé : ce PDF contient peu de texte (plan scanné, ou texte AutoCAD exporté en traits). ' : 'Utile si une partie des indications est scannée ou dessinée en traits. '}
+              Compter 30 secondes à 2 minutes. La lecture se fait dans votre navigateur, rien n'est envoyé à l'extérieur.
+            </span>
+          </span>
+        </label>
+      )}
+      {busy === 'ocr' && progress && (
+        <div className="notice" role="status">
+          <p>{progress.step}… {Math.round(progress.ratio * 100)} %</p>
+          <progress max={1} value={progress.ratio} style={{ width: '100%' }} />
         </div>
       )}
 

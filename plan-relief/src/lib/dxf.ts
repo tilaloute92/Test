@@ -210,6 +210,26 @@ export function extractDxfEquipment(text: string): Equipment[] {
         out.push({ id: `t${nt++}`, kind: 'texte', label: label.slice(0, 200), type: '', layer: e.layer || '0', x, y });
         return;
       }
+      case 'MULTILEADER':
+      case 'MLEADER': {
+        // Étiquette à flèche : le texte est en code 304, sa position en 12/22 (sinon le point
+        // de base 10/20).
+        closeInsert();
+        const label = cleanMtext(e.mtext || '');
+        const tx = Number.isFinite(e.tx) ? e.tx : x, ty = Number.isFinite(e.ty) ? e.ty : y;
+        if (!isUsefulLabel(label) || !Number.isFinite(tx) || !Number.isFinite(ty)) return;
+        out.push({ id: `t${nt++}`, kind: 'texte', label: label.slice(0, 200), type: 'Étiquette à flèche', layer: e.layer || '0', x: tx, y: ty });
+        return;
+      }
+      case 'DIMENSION': {
+        // Une cote dont le texte a été remplacé porte souvent une indication (« HSP 2,50 »,
+        // « Passage gaine »). « <> » est la valeur mesurée : seul le texte ajouté compte.
+        closeInsert();
+        const label = cleanMtext(String(e.text || '').replace(/<>/g, ' '));
+        if (!isUsefulLabel(label) || !Number.isFinite(e.tx) || !Number.isFinite(e.ty)) return;
+        out.push({ id: `t${nt++}`, kind: 'texte', label: label.slice(0, 200), type: 'Cote annotée', layer: e.layer || '0', x: e.tx, y: e.ty });
+        return;
+      }
       default:
         closeInsert();
     }
@@ -236,8 +256,14 @@ export function extractDxfEquipment(text: string): Equipment[] {
       case 1: cur.text = value; break;
       // MTEXT long : les morceaux en code 3 précèdent le dernier morceau en code 1.
       case 3: (cur.chunks ||= []).push(value); break;
-      case 10: cur.x = parseFloat(value); break;
-      case 20: cur.y = parseFloat(value); break;
+      // Première occurrence seulement : un MULTILEADER répète ces codes dans ses sous-objets.
+      case 10: if (cur.x === undefined) cur.x = parseFloat(value); break;
+      case 20: if (cur.y === undefined) cur.y = parseFloat(value); break;
+      case 11: if (cur.type === 'DIMENSION' && cur.tx === undefined) cur.tx = parseFloat(value); break;
+      case 21: if (cur.type === 'DIMENSION' && cur.ty === undefined) cur.ty = parseFloat(value); break;
+      case 12: if (cur.tx === undefined) cur.tx = parseFloat(value); break;
+      case 22: if (cur.ty === undefined) cur.ty = parseFloat(value); break;
+      case 304: if (cur.mtext === undefined) cur.mtext = value; break;
       case 66: cur.hasAttribs = parseInt(value, 10) === 1; break;
       default: break;
     }

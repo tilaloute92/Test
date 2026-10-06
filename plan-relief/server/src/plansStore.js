@@ -117,6 +117,10 @@ export function cleanEquipment(list) {
     if (Object.keys(attributes).length) item.attributes = attributes;
     const notes = str(raw.notes, 2000);
     if (notes) item.notes = notes;
+    if (Array.isArray(raw.indications)) {
+      const ind = raw.indications.slice(0, 12).map((t) => str(String(t ?? ''), 300)).filter(Boolean);
+      if (ind.length) item.indications = ind;
+    }
     if (!item.label && !item.type) continue;
     out.push(item);
   }

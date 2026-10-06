@@ -15,7 +15,9 @@ const luminance = (c: number) => (0.299 * ((c >> 16) & 255) + 0.587 * ((c >> 8) 
 
 export async function openPdf(buf: ArrayBuffer) {
   // isEvalSupported : la CSP interdit eval, et rien ici n'en a besoin (pas de rendu de polices).
-  return pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
+  // Copie : pdf.js transfère les données à son worker, ce qui viderait le tampon de
+  // l'appelant (encore utilisé pour l'OCR, le changement de page et « Télécharger l'original »).
+  return pdfjsLib.getDocument({ data: new Uint8Array(buf.slice(0)), isEvalSupported: false }).promise;
 }
 
 interface Sub { pts: number[]; closed: boolean }
@@ -148,10 +150,16 @@ function guessPdfRoles(groups: Group[]) {
   }
 }
 
-/** Textes de la page, fusionnés quand ils se suivent sur une même ligne (« SW », « -B- », « 01 »). */
+interface Run { text: string; x: number; y: number; endX: number; h: number }
+
+/**
+ * Textes de la page. Les fragments d'une même ligne sont fusionnés (« SW », « -B- », « 01 »),
+ * puis les lignes d'un même bloc d'indication (alignées à gauche, à interligne normal) sont
+ * réunies : « Baie de brassage » / « B-12 » / « 42U » donne une seule indication.
+ */
 async function pageTexts(page: pdfjsLib.PDFPageProxy): Promise<Equipment[]> {
   const content = await page.getTextContent();
-  const runs: { text: string; x: number; y: number; endX: number; h: number }[] = [];
+  const runs: Run[] = [];
   for (const it of content.items as { str?: string; transform?: number[]; width?: number }[]) {
     if (!it.str || !it.transform) continue;
     const [a, b, , , x, y] = it.transform;
@@ -159,26 +167,73 @@ async function pageTexts(page: pdfjsLib.PDFPageProxy): Promise<Equipment[]> {
     const last = runs[runs.length - 1];
     if (last && Math.abs(last.y - y) < h * 0.5 && x - last.endX < h * 0.6 && x >= last.x) {
       last.text += (x - last.endX > h * 0.15 ? ' ' : '') + it.str;
-      last.endX = x + (it.width ?? 0);
+      last.endX = Math.max(last.endX, x + (it.width ?? 0));
     } else {
       runs.push({ text: it.str, x, y, endX: x + (it.width ?? 0), h });
     }
   }
+  const lines = runs.map((r) => ({ ...r, text: r.text.replace(/\s+/g, ' ').trim() })).filter((r) => r.text);
+  const blocks: { lines: Run[] }[] = [];
+  for (const l of lines) {
+    const prev = blocks[blocks.length - 1];
+    const p = prev?.lines[prev.lines.length - 1];
+    if (p && Math.abs(p.x - l.x) < p.h * 0.6 && p.y - l.y > p.h * 0.6 && p.y - l.y < p.h * 1.9 && Math.abs(p.h - l.h) < p.h * 0.35 && prev.lines.length < 6) {
+      prev.lines.push(l);
+    } else {
+      blocks.push({ lines: [l] });
+    }
+  }
   const out: Equipment[] = [];
-  for (const r of runs) {
-    const label = r.text.replace(/\s+/g, ' ').trim();
+  for (const b of blocks) {
+    const label = b.lines.map((l) => l.text).join(' ').replace(/\s+/g, ' ').trim();
     if (!isUsefulLabel(label)) continue;
-    out.push({ id: `t${out.length}`, kind: 'texte', label: label.slice(0, 200), type: '', layer: '', x: (r.x + r.endX) / 2, y: r.y + r.h / 2 });
+    const first = b.lines[0], last = b.lines[b.lines.length - 1];
+    const x = (Math.min(...b.lines.map((l) => l.x)) + Math.max(...b.lines.map((l) => l.endX))) / 2;
+    out.push({ id: `t${out.length}`, kind: 'texte', label: label.slice(0, 200), type: '', layer: '', x, y: (first.y + first.h + last.y) / 2 });
   }
   return out;
 }
+
+const ANNOT_LABELS: Record<string, string> = {
+  FreeText: 'Commentaire PDF', Text: 'Note PDF', Square: 'Annotation PDF', Circle: 'Annotation PDF', Polygon: 'Annotation PDF',
+  PolyLine: 'Annotation PDF', Line: 'Annotation PDF', Ink: 'Annotation PDF', Stamp: 'Tampon PDF', Highlight: 'Surlignage PDF',
+  Underline: 'Annotation PDF', Caret: 'Annotation PDF',
+};
+
+/** Commentaires ajoutés au PDF (Acrobat, Bluebeam, Foxit…) : texte, auteur, position. */
+async function pageAnnotations(page: pdfjsLib.PDFPageProxy): Promise<Equipment[]> {
+  const annots = (await page.getAnnotations({ intent: 'display' })) as {
+    subtype?: string; rect?: number[]; contentsObj?: { str?: string }; contents?: string; titleObj?: { str?: string }; subjectObj?: { str?: string };
+  }[];
+  const out: Equipment[] = [];
+  for (const a of annots) {
+    const type = a.subtype && ANNOT_LABELS[a.subtype];
+    if (!type || !a.rect) continue;
+    const text = cleanAnnot(a.contentsObj?.str ?? a.contents ?? '');
+    const subject = cleanAnnot(a.subjectObj?.str ?? '');
+    const label = text || subject;
+    if (!isUsefulLabel(label)) continue;
+    const attributes: Record<string, string> = {};
+    const author = cleanAnnot(a.titleObj?.str ?? '');
+    if (author) attributes.Auteur = author;
+    if (subject && subject !== label) attributes.Objet = subject;
+    out.push({
+      id: `a${out.length}`, kind: 'texte', label: label.slice(0, 200), type, layer: '',
+      x: (a.rect[0] + a.rect[2]) / 2, y: (a.rect[1] + a.rect[3]) / 2,
+      ...(Object.keys(attributes).length ? { attributes } : {}),
+      ...(label.length > 200 ? { notes: label.slice(0, 2000) } : {}),
+    });
+  }
+  return out;
+}
+const cleanAnnot = (s: string) => s.replace(/\s+/g, ' ').trim();
 
 export async function readPdf(buf: ArrayBuffer, pageNum: number): Promise<Drawing> {
   const doc = await openPdf(buf);
   try {
     const page = await doc.getPage(Math.min(Math.max(1, pageNum), doc.numPages));
-    const [groups, equipment] = await Promise.all([pageGroups(page), pageTexts(page)]);
-    return { format: 'pdf', groups, equipment, pageCount: doc.numPages };
+    const [groups, texts, annots] = await Promise.all([pageGroups(page), pageTexts(page), pageAnnotations(page)]);
+    return { format: 'pdf', groups, equipment: [...texts, ...annots], pageCount: doc.numPages };
   } finally {
     doc.destroy();
   }

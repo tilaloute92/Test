@@ -4,7 +4,8 @@ import { allPlans } from './plansStore.js';
  * Recherche d'équipements dans toute la bibliothèque.
  *
  * Insensible à la casse et aux accents ; tous les mots saisis doivent apparaître, dans
- * n'importe quel champ (repère, type de bloc, calque, attributs, notes) ou dans la fiche
+ * n'importe quel champ (repère, type de bloc, calque, attributs, notes, indications écrites
+ * à côté de l'équipement) ou dans la fiche
  * du plan (nom, site, bâtiment, étage). Ainsi « switch bat B » trouve les switchs du
  * bâtiment B même si « bâtiment B » n'est écrit que sur la fiche du plan.
  *
@@ -29,7 +30,12 @@ function indexFor(plan) {
   if (hit && hit.version === plan.version) return hit;
   const items = plan.equipment.map((e) => {
     const attrs = e.attributes ? Object.entries(e.attributes).flat().join(' ') : '';
-    return { e, label: normalize(e.label), hay: normalize([e.label, e.type, e.layer, attrs, e.notes].join(' ')) };
+    // Les indications écrites à côté d'un équipement comptent comme les siennes.
+    const ind = e.indications ? e.indications.join(' ') : '';
+    const hay = normalize([e.label, e.type, e.layer, attrs, e.notes, ind].join(' '));
+    // Version sans espaces ajoutée : l'OCR coupe parfois un repère (« CAM-0 7 ») et doit
+    // quand même répondre à « CAM-07 ».
+    return { e, label: normalize(e.label), hay: `${hay} ${hay.replace(/ /g, '')}` };
   });
   const entry = { version: plan.version, planHay: normalize([plan.name, plan.site, plan.building, plan.floor].join(' ')), items };
   cache.set(plan.id, entry);

@@ -62,8 +62,8 @@ Sur le serveur (Windows Server 2022, à jour) :
 Si Suivi Infra & Réseau est déjà installé sur ce serveur, les prérequis 3 à 6 sont déjà
 en place.
 
-> Le paquet embarque les dépendances du service : **aucun accès Internet n'est nécessaire
-> sur le serveur**. Le navigateur des utilisateurs n'appelle Internet que pour la connexion
+> Le paquet embarque les dépendances du service et le moteur de lecture OCR : **aucun accès
+> Internet n'est nécessaire sur le serveur**. Le navigateur des utilisateurs n'appelle Internet que pour la connexion
 > Microsoft, si elle est activée.
 
 ## 3. Transférer et vérifier le paquet
@@ -191,6 +191,7 @@ côté sous `web.config.nouveau-<date>`).
 | Import refusé : « Fichier trop volumineux » | Plan > 100 Mo. Augmentez `MAX_UPLOAD_MB` dans `.env` **et** `maxAllowedContentLength` dans `web.config`. |
 | Import bloqué vers 30 Mo avec une erreur 404.13 | `web.config` personnalisé sans la section `requestLimits` : reprenez-la depuis `web.config.nouveau-<date>`. |
 | « Ce plan a été modifié entre-temps par X » | Un collègue a enregistré le même plan pendant votre saisie. Le serveur refuse d'écraser son travail ; le plan est rechargé, refaites votre modification. |
+| Lecture OCR : « Lecture OCR impossible » | `web.config` personnalisé sans le type `.gz` ou sans `'wasm-unsafe-eval'` dans la CSP : reprenez-les depuis `web.config.nouveau-<date>`. Vérifiez que `https://<site>/ocr/fra.traineddata.gz` se télécharge. |
 | Connexion Microsoft : fenêtre blanche ou erreur `redirect_uri` | L'URI `https://<site>/auth-redirect.html` n'est pas déclarée en « Application monopage (SPA) » dans Entra ID. |
 | Un plan supprimé par erreur | Il est dans `data\corbeille\<id>_<date>` : arrêtez le service, déplacez-le dans `data\plans\<id>`, redémarrez. |
 | La sauvegarde échoue tous les soirs | Droits d'écriture du compte d'exécution sur le partage (voir §6). Journal : `<destination>\sauvegarde.log`. |

@@ -2,3 +2,4 @@ node_modules
 dist
 packaging/out/
 *.local
+public/ocr/

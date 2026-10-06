@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api';
 import { hrefOf, navigate } from '../App';
-import { drawingCenter, drawingFactor, mergeExtracted, newId, readDrawing, roleOf } from '../lib/drawing';
+import { drawingCenter, drawingFactor, mergeExtracted, newId, readDrawing, roleOf, withIndications } from '../lib/drawing';
+import { mergeOcr } from '../lib/indications';
+import { ocrPdfPage, type OcrProgress } from '../lib/ocr';
 import { PlanViewer, type BuildStats } from '../lib/viewer';
 import { DEFAULT_SETTINGS, KIND_LABELS, ROLE_LABELS, UNIT_NAMES, type Drawing, type Equipment, type EquipmentKind, type PlanRecord, type PlanSettings, type Role, type Unit } from '../lib/types';
 import { Highlight, Modal, downloadBlob, fmtDate, fmtNum, useConfirm, useToast } from './ui';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[-_./\\#]+/g, '');
-const eqHay = (e: Equipment) => norm([e.label, e.type, e.layer, e.notes, ...(e.attributes ? Object.entries(e.attributes).flat() : [])].join(' '));
+const eqHay = (e: Equipment) => {
+  const h = norm([e.label, e.type, e.layer, e.notes, ...(e.indications ?? []), ...(e.attributes ? Object.entries(e.attributes).flat() : [])].join(' '));
+  // Même tolérance que le serveur aux espaces parasites de l'OCR (« CAM-0 7 »).
+  return `${h} ${h.replace(/\s+/g, '')}`;
+};
 const MAX_ROWS = 400;
 
 /** Couleurs du thème lues dans les variables CSS, relues quand le thème change. */
@@ -47,6 +53,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
   const [stats, setStats] = useState<BuildStats | null>(null);
   const [labelPos, setLabelPos] = useState<{ x: number; y: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [rereadOpen, setRereadOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<PlanViewer | null>(null);
   const bufRef = useRef<ArrayBuffer | null>(null);
@@ -196,7 +203,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
     try {
       const d = await readDrawing(bufRef.current, 'pdf', page);
       const nextSettings = { ...settings, pdfPage: page };
-      if (await save({ settings: nextSettings, equipment: mergeExtracted(plan.equipment, d.equipment) }, `Page ${page} enregistrée.`)) {
+      if (await save({ settings: nextSettings, equipment: withIndications(mergeExtracted(plan.equipment, d.equipment), 'pdf', nextSettings) }, `Page ${page} enregistrée.`)) {
         setDrawing(d);
         setSettings(nextSettings);
         setDirty(false);
@@ -211,13 +218,39 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
 
   const removeEq = async (e: Equipment) => {
     const ok = await confirm({ title: 'Supprimer cet équipement', message: <p>« {e.label || e.type} » ne sera plus proposé dans les recherches.</p>, confirmLabel: 'Supprimer', danger: true });
-    if (ok && plan && await saveEquipment(plan.equipment.filter((x) => x.id !== e.id), 'Équipement supprimé.')) select(null);
+    if (ok && plan && await saveEquipment(withIndications(plan.equipment.filter((x) => x.id !== e.id), plan.file.format, settings), 'Équipement supprimé.')) select(null);
+  };
+
+  /**
+   * Relit le fichier d'origine : nouvelles règles de lecture des indications pour un plan
+   * mis en stock avant elles, ou lecture OCR demandée après coup.
+   */
+  const reread = async (withOcr: boolean) => {
+    if (!plan || !bufRef.current) return;
+    setRereadOpen(false);
+    try {
+      setLoading('Relecture du plan…');
+      const d = await readDrawing(bufRef.current, plan.file.format, settings.pdfPage);
+      let extracted = d.equipment;
+      if (withOcr && plan.file.format === 'pdf') {
+        const read = await ocrPdfPage(bufRef.current, settings.pdfPage, (p: OcrProgress) => setLoading(`${p.step}… ${Math.round(p.ratio * 100)} %`));
+        extracted = mergeOcr(extracted, read, 0.5 / drawingFactor('pdf', settings));
+      }
+      const list = withIndications(mergeExtracted(plan.equipment, extracted), plan.file.format, settings);
+      const texts = list.filter((e) => e.kind === 'texte').length;
+      if (await saveEquipment(list, `Plan relu : ${list.length.toLocaleString('fr-FR')} éléments recherchables, dont ${texts.toLocaleString('fr-FR')} indications.`)) select(null);
+    } catch (err) {
+      toast(`Relecture impossible : ${(err as Error).message}`, 'error');
+    } finally {
+      setLoading('');
+    }
   };
 
   const saveDraft = async (e: Equipment) => {
     if (!plan) return;
     const exists = plan.equipment.some((x) => x.id === e.id);
-    const list = exists ? plan.equipment.map((x) => (x.id === e.id ? e : x)) : [...plan.equipment, e];
+    // Un équipement ajouté à la main récupère lui aussi les indications écrites à côté de lui.
+    const list = withIndications(exists ? plan.equipment.map((x) => (x.id === e.id ? e : x)) : [...plan.equipment, e], plan.file.format, settings);
     if (await saveEquipment(list, exists ? 'Équipement modifié.' : `« ${e.label} » ajouté au plan.`)) {
       setDraft(null);
       select(e.id);
@@ -311,6 +344,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                   <button type="button" className="btn" onClick={() => { setPlacing(true); select(null); }} disabled={placing || saving}>
                     {placing ? 'Cliquez sur la vue 3D…' : 'Ajouter un équipement sur le plan'}
                   </button>
+                  <button type="button" className="btn ghost sm" onClick={() => setRereadOpen(true)} disabled={saving || !!loading}>Relire les indications du plan</button>
                 </div>
 
                 {selectedEq && (
@@ -325,6 +359,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                         {selectedEq.layer && <><dt>Calque</dt><dd>{selectedEq.layer}</dd></>}
                         {selectedEq.attributes && Object.entries(selectedEq.attributes).map(([k, v]) => <FragmentKV key={k} k={k} v={v} />)}
                         {selectedEq.notes && <><dt>Notes</dt><dd>{selectedEq.notes}</dd></>}
+                        {selectedEq.indications?.length ? <><dt>Écrit à côté</dt><dd>{selectedEq.indications.map((t, i) => <div key={i}><Highlight text={t} query={query} /></div>)}</dd></> : null}
                       </dl>
                       <div className="toolbar">
                         <button type="button" className="btn sm" onClick={() => focusOn(selectedEq)}>Centrer la vue</button>
@@ -344,7 +379,9 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                         <span className="t"><Highlight text={e.label || e.type} query={query} /></span>
                         <span className="s">{[e.type !== e.label ? e.type : '', e.layer].filter(Boolean).join(' · ') || KIND_LABELS[e.kind]}</span>
                       </span>
-                      {e.attributes && <span className="tag">{Object.keys(e.attributes).length} attr.</span>}
+                      {e.indications?.length
+                        ? <span className="tag" title={e.indications.join(' · ')}>{e.indications.length} ind.</span>
+                        : e.attributes && <span className="tag">{Object.keys(e.attributes).length} attr.</span>}
                     </button>
                   ))}
                   {filtered.length > MAX_ROWS && <div className="sec muted small">{(filtered.length - MAX_ROWS).toLocaleString('fr-FR')} autres résultats : précisez la recherche.</div>}
@@ -427,6 +464,9 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
           onCancel={() => setDraft(null)}
           onSave={saveDraft}
         />
+      )}
+      {rereadOpen && plan && (
+        <RereadDialog format={plan.file.format} onCancel={() => setRereadOpen(false)} onConfirm={reread} />
       )}
       {editMeta && plan && (
         <MetaDialog
@@ -596,6 +636,29 @@ function MetaDialog({ plan, saving, onCancel, onSave }: { plan: PlanRecord; savi
         <label className="field wide"><span>Notes</span><textarea id="meta-notes" className="textarea" value={m.notes} maxLength={2000} onChange={(e) => setM({ ...m, notes: e.target.value })} /></label>
       </div>
       <p className="muted small">Ajouté le {fmtDate(plan.createdAt)} par {plan.createdBy}.</p>
+    </Modal>
+  );
+}
+
+function RereadDialog({ format, onCancel, onConfirm }: { format: 'dxf' | 'pdf'; onCancel: () => void; onConfirm: (ocr: boolean) => void }) {
+  const [ocr, setOcr] = useState(format === 'pdf');
+  return (
+    <Modal
+      title="Relire les indications du plan"
+      onClose={onCancel}
+      footer={<>
+        <button type="button" className="btn" onClick={onCancel}>Annuler</button>
+        <button type="button" className="btn primary" onClick={() => onConfirm(ocr)}>Relire le plan</button>
+      </>}
+    >
+      <p style={{ margin: 0 }}>Le fichier d'origine est relu : blocs, textes{format === 'dxf' ? ', étiquettes à flèche et cotes annotées' : ' et commentaires PDF'}. Chaque indication est rattachée à l'équipement le plus proche.</p>
+      {format === 'pdf' && (
+        <label className="check" htmlFor="reread-ocr" style={{ alignItems: 'flex-start' }}>
+          <input id="reread-ocr" type="checkbox" checked={ocr} onChange={(e) => setOcr(e.target.checked)} />
+          <span>Lire aussi les indications dessinées ou scannées (OCR, 30 secondes à 2 minutes)</span>
+        </label>
+      )}
+      <p className="notice warn small" style={{ margin: 0 }}>Les modifications faites sur les éléments lus dans le fichier (nom, notes) seront perdues. Les équipements ajoutés à la main sont conservés.</p>
     </Modal>
   );
 }

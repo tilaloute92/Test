@@ -33,6 +33,8 @@ export interface Equipment {
   y: number;
   attributes?: Record<string, string>;
   notes?: string;
+  /** Indications écrites près de cet équipement sur le plan (blocs uniquement). */
+  indications?: string[];
 }
 
 export interface PlanSettings {
@@ -114,7 +116,7 @@ export const ROLE_LABELS: [Role, string][] = [
 
 export const KIND_LABELS: Record<EquipmentKind, string> = {
   bloc: 'Bloc',
-  texte: 'Texte',
+  texte: 'Indication',
   manuel: 'Ajouté à la main',
 };
 

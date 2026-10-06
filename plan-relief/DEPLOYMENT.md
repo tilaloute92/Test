@@ -46,12 +46,12 @@ Copiez le contenu de `dist/` dans `C:\inetpub\plan-relief\`.
 
 | Réglage | Rôle |
 | --- | --- |
-| `Content-Security-Policy` | Scripts, polices et worker PDF servis par le site uniquement ; réseau limité au site et aux domaines Microsoft (SSO). Pas de `*` : l'application n'appelle aucune API tierce. |
+| `Content-Security-Policy` | Scripts, polices, worker PDF et moteur OCR servis par le site uniquement ; réseau limité au site et aux domaines Microsoft (SSO). Pas de `*` : l'application n'appelle aucune API tierce. `'wasm-unsafe-eval'` autorise seulement la compilation du moteur OCR (WebAssembly, dossier `ocr/` du site) ; `eval()` et le JavaScript en ligne restent interdits. |
 | `X-Frame-Options: DENY`, `frame-ancestors 'none'` | Anti-clickjacking. |
 | `Strict-Transport-Security` | HTTPS forcé pendant un an. |
 | `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` | Mêmes en-têtes que Suivi Infra & Réseau. |
 | `requestLimits maxAllowedContentLength` | 110 Mo : import de plans jusqu'à 100 Mo (IIS bloque à 30 Mo par défaut). |
-| `mimeMap .mjs`, `.woff2` | Types de fichiers que IIS ne sert pas par défaut. |
+| `mimeMap .mjs`, `.woff2`, `.gz` | Types de fichiers que IIS ne sert pas par défaut (`.gz` : modèle de langue de l'OCR). |
 
 ## 4. Site IIS et HTTPS
 

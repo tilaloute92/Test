@@ -44,7 +44,7 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
       <div className="page-head">
         <div>
           <h1>Rechercher un équipement</h1>
-          <p>Dans les {plans.length} plan{plans.length > 1 ? 's' : ''} en stock, soit {totalEq.toLocaleString('fr-FR')} équipements : repère, type de bloc, attributs (modèle, n° de série…), texte du plan, notes.</p>
+          <p>Dans les {plans.length} plan{plans.length > 1 ? 's' : ''} en stock, soit {totalEq.toLocaleString('fr-FR')} éléments : repères et attributs des blocs, indications écrites sur les plans (textes, étiquettes, commentaires, OCR), notes.</p>
         </div>
       </div>
 
@@ -111,6 +111,9 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
                               {Object.entries(e.attributes).slice(0, 6).map(([k, v]) => <span key={k}>{k} <b><Highlight text={v} query={q} /></b></span>)}
                             </div>
                           )}
+                          {e.indications?.length ? (
+                            <div className="cell-sub">Écrit à côté : {e.indications.slice(0, 4).map((t, i) => <span key={i}>{i ? ' · ' : ''}« <Highlight text={t} query={q} /> »</span>)}{e.indications.length > 4 ? ' …' : ''}</div>
+                          ) : null}
                           {e.notes && <div className="cell-sub"><Highlight text={e.notes.slice(0, 120)} query={q} /></div>}
                           {e.layer && <div className="cell-sub mono">{e.layer}</div>}
                         </td>

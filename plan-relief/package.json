@@ -4,7 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/copy-ocr-assets.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/copy-ocr-assets.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint src",
     "preview": "vite preview"
@@ -14,10 +16,12 @@
     "@fontsource/archivo": "^5.2.5",
     "@fontsource/ibm-plex-mono": "^5.2.5",
     "@fontsource/ibm-plex-sans": "^5.2.5",
+    "@tesseract.js-data/fra": "^1.0.0",
     "dxf-parser": "1.1.2",
     "pdfjs-dist": "3.11.174",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "tesseract.js": "^6.0.1",
     "three": "^0.170.0"
   },
   "devDependencies": {

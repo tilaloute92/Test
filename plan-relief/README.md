@@ -15,16 +15,31 @@ client/serveur) : voir [`packaging/INSTALL.md`](packaging/INSTALL.md) et
   fiche (site, bâtiment, étage, notes) ; le fichier d'origine est conservé tel quel et
   téléchargeable. Un fichier déjà en stock est signalé. Retirer un plan le déplace dans la
   corbeille du serveur.
-- **Détection automatique des équipements** à l'import :
-  - DXF : chaque **bloc inséré** (son nom devient le type : `SWITCH`, `BORNE_WIFI`…) avec ses
-    **attributs** (`REPERE`, `MODELE`, `SERIE`…) ; le repère sert de nom. Chaque **texte**
-    (TEXT, MTEXT) aussi : noms de locaux, étiquettes.
-  - PDF : chaque **texte** de la page, fragments d'une même ligne regroupés.
-  - Les cotes (« 3.50 ») et les textes d'un seul caractère sont écartés.
+- **Équipements détectés à l'import** (DXF) : chaque **bloc inséré** (son nom devient le type :
+  `SWITCH`, `BORNE_WIFI`…) avec ses **attributs** (`REPERE`, `MODELE`, `SERIE`…) ; le repère
+  sert de nom.
+- **Indications lues sur les plans**, toutes recherchables :
+
+  | Source | Ce qui est lu |
+  | --- | --- |
+  | DXF | Textes (TEXT, MTEXT, sur plusieurs lignes), **étiquettes à flèche** (MULTILEADER), **cotes annotées** (texte ajouté à une cote, ex. « <> HSP sous faux plafond ») |
+  | PDF | Texte de la page, les lignes d'un même bloc réunies (« Local serveur » / « climatisation CLIM-4 » → une indication) |
+  | PDF | **Commentaires et annotations** (Acrobat, Bluebeam, Foxit…) : texte, auteur, objet |
+  | PDF scanné ou texte en traits | **Lecture OCR** (reconnaissance de caractères), proposée d'office quand la page contient peu de texte. Tourne dans le navigateur, avec un modèle français servi par le site : rien n'est envoyé à l'extérieur. Fiabilité de chaque lecture conservée. |
+
+  Les cotes chiffrées seules (« 3.50 ») et les textes d'un seul caractère sont écartés.
+- **Rattachement aux équipements** : chaque indication est aussi rattachée au bloc ou à
+  l'équipement ajouté à la main le plus proche (moins de 1,5 m). Chercher ce qui est écrit à
+  côté d'un équipement le fait ressortir : « onduleur » trouve le switch près duquel est écrit
+  « Cisco 9200 secours - onduleur UPS-2 », même si le bloc n'a aucun attribut.
+- **Relire les indications** d'un plan déjà en stock (bouton dans l'onglet Équipements), avec
+  ou sans OCR : pour les plans importés avant une amélioration de la lecture, ou pour lancer
+  l'OCR après coup. Les équipements ajoutés à la main sont conservés.
 - **Ajout à la main** : sur la vue 3D, cliquez à l'emplacement ; repère, type, notes. Pour les
   plans sans textes exploitables (PDF scanné) ou les équipements absents du plan.
-- **Recherche** dans tous les plans : insensible aux accents, à la casse et aux tirets
-  (`sw b 01` trouve `SW-B-01`, `wifi` trouve `Wi-Fi`). Les mots peuvent viser l'équipement
+- **Recherche** dans tous les plans : insensible aux accents, à la casse, aux tirets et aux
+  espaces parasites de l'OCR (`sw b 01` trouve `SW-B-01`, `wifi` trouve `Wi-Fi`, `CAM-07`
+  trouve une lecture « CAM-0 7 »). Les mots peuvent viser l'équipement
   ou la fiche du plan : `switch bât B` trouve les switchs des plans du bâtiment B. Filtres par
   site et par origine. Chaque résultat ouvre le plan centré sur l'équipement.
 - **Recherche dans un plan** : filtre de la liste et des repères 3D en direct.
@@ -42,11 +57,11 @@ client/serveur) : voir [`packaging/INSTALL.md`](packaging/INSTALL.md) et
 
 | Format | Prise en charge |
 | --- | --- |
-| DXF ASCII | Géométrie : LINE, LWPOLYLINE/POLYLINE (arcs compris), ARC, CIRCLE, ELLIPSE, SPLINE (approchée), SOLID, blocs imbriqués. Équipements : INSERT + ATTRIB, TEXT, MTEXT (premier niveau). |
+| DXF ASCII | Géométrie : LINE, LWPOLYLINE/POLYLINE (arcs compris), ARC, CIRCLE, ELLIPSE, SPLINE (approchée), SOLID, blocs imbriqués. Équipements et indications (premier niveau) : INSERT + ATTRIB, TEXT, MTEXT, MULTILEADER, texte ajouté aux cotes. |
 | DXF binaire | Refusé, avec explication : réenregistrer en DXF ASCII. |
 | DWG | Refusé, avec explication : AutoCAD « Enregistrer sous → DXF » ou ODA File Converter. |
-| PDF vectoriel | Tracés et aplats de la page choisie (regroupés par épaisseur et couleur), textes. |
-| PDF scanné | Stocké et affiché sans géométrie ni textes : équipements à placer à la main. |
+| PDF vectoriel | Tracés et aplats de la page choisie (regroupés par épaisseur et couleur), textes, commentaires ; OCR en option pour le texte exporté en traits. |
+| PDF scanné | Pas de géométrie 3D ; indications lues par OCR, équipements à placer à la main. |
 
 ## Structure
 
@@ -58,7 +73,8 @@ plan-relief/
 │   ├── api.ts                       appels au service
 │   ├── auth/                        SSO Microsoft (MSAL)
 │   ├── components/                  écrans : bibliothèque, import, plan 3D, recherche, paramètres
-│   └── lib/                         lecture DXF/PDF, extraction des équipements, géométrie, scène 3D
+│   └── lib/                         lecture DXF/PDF, indications (indications.ts), OCR (ocr.ts), géométrie, scène 3D
+├── scripts/copy-ocr-assets.mjs      copie le moteur OCR et le modèle français dans public/ocr/ (avant dev et build)
 ├── public/web.config                en-têtes de sécurité et limites IIS
 ├── server/                          service Node.js (Express)
 │   ├── src/auth/                    local (bcrypt), LDAP, SSO, session — repris de Suivi Infra
