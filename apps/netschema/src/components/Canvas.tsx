@@ -179,6 +179,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
   const connectFrom = useDiagram((s) => s.connectFrom)
   const selectedNodes = useDiagram((s) => s.selectedNodes)
   const selectedLinks = useDiagram((s) => s.selectedLinks)
+  const projecteurLiens = useDiagram((s) => s.projecteurLiens)
   const selectedAnnotations = useDiagram((s) => s.selectedAnnotations)
   const snap = useDiagram((s) => s.snap)
   const showGrid = useDiagram((s) => s.showGrid)
@@ -2100,6 +2101,33 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
               Analyse d'impact : un halo dit l'état de chaque équipement, sans toucher au dessin
               du schéma lui-même — on doit pouvoir lire les deux en même temps.
             */}
+            {/*
+              Projecteur : le chemin qu'on vient de demander à voir.
+
+              Il bat quelques secondes puis s'efface de lui-même. Posé par-dessus les
+              liaisons mais sans capter le pointeur, il montre sans gêner — et il est exclu
+              des exports, parce qu'un repère de lecture n'appartient pas au document.
+            */}
+            {projecteurLiens.length > 0 && (
+              <g data-export="false" pointerEvents="none">
+                {projecteurLiens.map((id) => {
+                  const geometry = geometries.get(id)
+                  if (!geometry) return null
+                  return (
+                    <path
+                      key={`projecteur-${id}`}
+                      className="trait-battant"
+                      d={geometry.d}
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth={11}
+                      strokeLinecap="round"
+                    />
+                  )
+                })}
+              </g>
+            )}
+
             {impact && (
               <g data-export="false" pointerEvents="none">
                 {display.nodes.map((node) => {
@@ -2122,6 +2150,30 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                     />
                   )
                 })}
+                {/*
+                  Les liaisons coupées battent.
+
+                  La croix dit « celle-ci est morte » quand on la cherche ; le battement le
+                  dit quand on ne la cherche pas encore. Sur un schéma de deux cents
+                  équipements, c'est la différence entre trouver et balayer.
+                */}
+                {display.links.map((link) => {
+                  if (!impact.liensCoupes.has(link.id)) return null
+                  const geometry = geometries.get(link.id)
+                  if (!geometry) return null
+                  return (
+                    <path
+                      key={`battement-coupe-${link.id}`}
+                      className="trait-battant"
+                      d={geometry.d}
+                      fill="none"
+                      stroke={COULEURS_IMPACT.panne}
+                      strokeWidth={9}
+                      strokeLinecap="round"
+                    />
+                  )
+                })}
+
                 {/* Liaisons hors service : marquées d'une croix à mi-parcours. */}
                 {display.links.map((link) => {
                   if (!impact.liensCoupes.has(link.id)) return null
@@ -2159,7 +2211,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
       </>
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bands, bounds, cadresCouches, clusterVips, clusters, connectFrom, crossings, detail, diagram, direction, display, eteints, familles, flagged, geometries, impact, labels, labelsLocked, linkOffsets, linkStyle, locked, nodeById, osi, ovales, rails, realIds, selectedAnnotations, selectedLinks, selectedNodes, showInterco, showIp, showLags, showLegend, showSpeeds, showVlans, sites, source, style, usagesAffiches, zones, beginEndpointDragStable, beginLabelDragStable, beginLagDragStable, beginLayerDragStable, beginWaypointDragStable, onAnnotationHandleDownStable, onAnnotationPointerDownStable, onLinkHoverStable, onLinkPointerDownStable, onNodeHoverStable, onNodePointerDownStable, ouvrirEditionStable, ouvrirEditionAnnotationStable, removeWaypointStable, isRealLinkStable],
+    [bands, bounds, cadresCouches, clusterVips, clusters, connectFrom, crossings, detail, diagram, direction, display, eteints, familles, flagged, geometries, impact, labels, labelsLocked, linkOffsets, linkStyle, locked, nodeById, osi, ovales, projecteurLiens, rails, realIds, selectedAnnotations, selectedLinks, selectedNodes, showInterco, showIp, showLags, showLegend, showSpeeds, showVlans, sites, source, style, usagesAffiches, zones, beginEndpointDragStable, beginLabelDragStable, beginLagDragStable, beginLayerDragStable, beginWaypointDragStable, onAnnotationHandleDownStable, onAnnotationPointerDownStable, onLinkHoverStable, onLinkPointerDownStable, onNodeHoverStable, onNodePointerDownStable, ouvrirEditionStable, ouvrirEditionAnnotationStable, removeWaypointStable, isRealLinkStable],
   )
 
 

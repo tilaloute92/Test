@@ -196,6 +196,15 @@ interface DiagramStore {
   vlanFocus: string | null
   setVlanFocus: (id: string | null) => void
   /**
+   * Liaisons que l'application montre du doigt, le temps d'un battement.
+   *
+   * C'est un repère, pas un état du document : il s'efface tout seul. Sans cela, la
+   * désignation resterait posée sur le schéma et deviendrait du bruit dès la manipulation
+   * suivante.
+   */
+  projecteurLiens: string[]
+  montrerLiens: (ids: string[], duree?: number) => void
+  /**
    * Suivre les VLAN le long des trunks. Un VLAN déclaré sur le cœur de réseau atteint tout
    * ce que les trunks desservent : c'est la réalité du domaine de diffusion, et c'est ce
    * qu'on veut voir en vue logique. Débrayable pour ne montrer que ce qui est écrit.
@@ -501,6 +510,9 @@ function nettoyer<T extends object>(patch: T): Partial<T> {
   return propre as Partial<T>
 }
 
+/** Minuterie du projecteur de liaisons ; hors du magasin, car ce n'est pas un état. */
+let minuterieProjecteur: ReturnType<typeof setTimeout> | undefined
+
 export const useDiagram = create<DiagramStore>((set, get) => ({
   diagram: pagesInitiales[indexInitial],
   pages: pagesInitiales,
@@ -530,6 +542,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   showInterco: true,
   vueLogique: 'routage' as VueLogique,
   vlanFocus: null as string | null,
+  projecteurLiens: [] as string[],
   vlanPropagation: true,
   viewMode: 'architecture',
   appView: 'diagram',
@@ -2912,6 +2925,17 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         ? 'Les VLAN sont suivis le long des trunks : les vues logiques montrent leur portée réelle.'
         : 'Les VLAN ne sont plus suivis : seul ce qui est écrit sur les équipements et les liaisons compte.',
     )
+  },
+
+  montrerLiens: (ids, duree = 4200) => {
+    set({ projecteurLiens: ids })
+    if (minuterieProjecteur) clearTimeout(minuterieProjecteur)
+    if (ids.length === 0) return
+    minuterieProjecteur = setTimeout(() => {
+      // On ne retire que ce qu'on a posé : si une autre désignation est arrivée entre-temps,
+      // c'est elle qui tient, et sa propre minuterie s'en chargera.
+      if (useDiagram.getState().projecteurLiens === ids) set({ projecteurLiens: [] })
+    }, duree)
   },
 
   setVlanFocus: (id) => {

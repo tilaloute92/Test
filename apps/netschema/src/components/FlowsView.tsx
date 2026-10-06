@@ -395,12 +395,14 @@ function TraceurDeChemin() {
         {rapport && rapport.chemins.length > 0 && (
           <Btn
             onClick={() => {
-              select({
-                nodes: rapport.chemins[0].etapes.map((etape) => etape.node.id),
-                links: rapport.chemins[0].etapes
-                  .map((etape) => etape.link?.id)
-                  .filter((id): id is string => !!id),
-              })
+              const liens = rapport.chemins[0].etapes
+                .map((etape) => etape.link?.id)
+                .filter((id): id is string => !!id)
+              select({ nodes: rapport.chemins[0].etapes.map((etape) => etape.node.id), links: liens })
+              // La sélection dit ce qui est retenu ; le battement dit où regarder. Sur un
+              // grand schéma, basculer de vue et chercher un liseré bleu parmi deux cents
+              // traits ne vaut rien — alors le chemin bat quelques secondes.
+              useDiagram.getState().montrerLiens(liens)
               setAppView('diagram')
             }}
             title="Sélectionner ce chemin sur le schéma"
