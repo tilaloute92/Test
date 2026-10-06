@@ -307,15 +307,16 @@ export function filterWallFills<T extends { outer: number[]; holes: number[][] }
 }
 
 /**
- * Ressemblance d'un ensemble de traits à des murs en double trait : somme des carrés des
- * longueurs des pans appariés d'au moins minLen. De longs murs continus l'emportent sur une
- * multitude de petits rectangles (baies, mobilier) ; les familles de traits serrés
- * (hachures, escaliers) sont déjà écartées par pairWalls.
+ * Ressemblance d'un ensemble de traits à des murs en double trait : longueur totale des pans
+ * appariés d'au moins minLen. Les petits dessins (écritures, symboles) et les familles de
+ * traits serrés (hachures, escaliers, tableaux du cartouche) sont écartés avant le calcul.
+ * Une somme simple, et non des carrés : le double cadre de la feuille, très long mais seul,
+ * ne doit pas l'emporter sur les centaines de mètres de murs d'un étage.
  */
 export function wallScore(segs: ArrayLike<number>, minT: number, maxT: number, minLen: number): number {
   let score = 0;
   const kept = dropSmallMarks(Float64Array.from(segs), minT / 4, minLen * 2, minT, maxT);
-  for (const b of pairWalls(kept, minT, maxT).boxes) if (b.len >= minLen) score += b.len * b.len;
+  for (const b of pairWalls(kept, minT, maxT).boxes) if (b.len >= minLen) score += b.len;
   return score;
 }
 

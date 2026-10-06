@@ -141,23 +141,21 @@ async function pageGroups(page: pdfjsLib.PDFPageProxy): Promise<Group[]> {
 
 function guessPdfRoles(groups: Group[]) {
   for (const g of groups) g.guess = g.kind === 'fill' && luminance(g.color) > 0.92 ? 'ignore' : 'plan';
-  // Aplats sombres : murs pochés, à condition d'y trouver de vrais pans de mur (au moins 1 m
-  // au 1:100) une fois écartées les écritures en police pleine et les symboles.
-  const darkFills = groups.filter((g) => g.kind === 'fill' && luminance(g.color) < 0.4 &&
-    filterWallFills(g.fills, 57, 1.4).some((f) => (minAreaRect(f.outer)?.L ?? 0) >= 28));
-  if (darkFills.length) { for (const g of darkFills) g.guess = 'mur'; return; }
-  const strokes = groups.filter((g) => g.kind === 'line' && g.segs.length >= 16);
-  if (strokes.length <= 1) return;
-  // Murs en double trait : on retient le ou les groupes qui forment de longs murs. Le trait le
-  // plus épais n'est pas un bon indice : sur un plan technique, ce sont souvent les baies, les
-  // chemins de câbles ou les équipements qui sont dessinés en gras, pas les murs.
-  const scores = strokes.map((g) => (g.segs.length > MAX_SCORED_SEGS ? 0 : pdfWallScore(g.segs)));
-  const best = Math.max(...scores);
+  // Les murs sont cherchés par leur forme, dans les traits (murs en double trait) comme dans
+  // les aplats (murs pochés), tous notés sur la même échelle : longueur de mur reconnue.
+  // L'épaisseur du trait n'est pas un bon indice : sur un plan technique, ce sont souvent
+  // les baies, les chemins de câbles ou les équipements qui sont dessinés en gras.
+  const scored = groups
+    .filter((g) => (g.kind === 'line' ? g.segs.length >= 16 && g.segs.length <= MAX_SCORED_SEGS * 4 : g.guess !== 'ignore'))
+    .map((g) => ({ g, score: groupWallScore(g) }));
+  const best = Math.max(0, ...scored.map((x) => x.score));
   if (best > 0) {
-    strokes.forEach((g, k) => { if (scores[k] >= best * 0.4) g.guess = 'mur'; });
+    for (const { g, score } of scored) if (score >= best * 0.6) g.guess = 'mur';
     return;
   }
   // Plan en simple trait : à défaut de mieux, le trait le plus épais.
+  const strokes = groups.filter((g) => g.kind === 'line' && g.segs.length >= 16);
+  if (strokes.length <= 1) return;
   const maxW = Math.max(...strokes.map((g) => g.width ?? 0));
   for (const g of strokes) if (g.width === maxW && maxW > 0) g.guess = 'mur';
 }
@@ -165,7 +163,30 @@ function guessPdfRoles(groups: Group[]) {
 const MAX_SCORED_SEGS = 400_000;
 // L'échelle du PDF n'est pas encore connue : on couvre les échelles courantes (1:50 à 1:200),
 // soit des murs de 10 à 60 cm entre 1,4 et 34 points, et des pans d'au moins 1 m au 1:200.
-const pdfWallScore = (segs: number[]) => wallScore(segs, 1.4, 34, 14);
+const MIN_T = 1.4, MAX_T = 34, MIN_LEN = 14;
+
+const saturation = (c: number) => {
+  const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255, mx = Math.max(r, g, b);
+  return mx ? (mx - Math.min(r, g, b)) / mx : 0;
+};
+
+function groupWallScore(g: Group): number {
+  if (g.kind === 'line') {
+    // Une couleur vive désigne d'ordinaire un réseau (chemin de câbles, gaine, tuyauterie),
+    // dessiné lui aussi en double trait : il ne passe devant le fond d'architecte (gris ou
+    // noir) que s'il est nettement plus long.
+    return wallScore(g.segs, MIN_T, MAX_T, MIN_LEN) * (saturation(g.color) > 0.35 ? 0.3 : 1);
+  }
+  // Aplats : murs pochés gris ou noirs uniquement. Les aplats de couleur sont des symboles,
+  // des zones ou des repères, jamais des murs.
+  if (luminance(g.color) >= 0.6 || saturation(g.color) > 0.35) return 0;
+  let score = 0;
+  for (const f of filterWallFills(g.fills, MIN_LEN * 4, MIN_T)) {
+    const L = minAreaRect(f.outer)?.L ?? 0;
+    if (L >= MIN_LEN) score += L;
+  }
+  return score;
+}
 
 interface Run { text: string; x: number; y: number; endX: number; h: number }
 
