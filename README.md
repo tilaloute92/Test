@@ -2,6 +2,8 @@
 
 Application de suivi d'activité pour une équipe infrastructures systèmes & réseau (6 personnes), pensée pour un chef d'équipe qui veut voir en un coup d'œil qui travaille sur quoi, la charge de chacun et le planning prévisionnel sur 3 semaines.
 
+> **Application sœur : Plan Relief.** Le dossier [`plan-relief/`](plan-relief/README.md) contient une seconde application, indépendante : bibliothèque de plans DXF/PDF stockés sur le serveur, recherche des équipements qu'ils contiennent, maquette 3D. Elle reprend l'installation, la sécurisation et la connexion de cette application (voir [`plan-relief/packaging/INSTALL.md`](plan-relief/packaging/INSTALL.md)).
+
 ## Fonctionnement métier
 
 - Volume hebdomadaire cible de 35h par personne (modifiable individuellement dans l'onglet Équipe), journée coupée en deux : **matin = MCO & incidents**, **après-midi = projets**.

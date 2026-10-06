@@ -1,46 +1,85 @@
 # Plan Relief
 
-Application web qui transforme un plan 2D (DXF ou PDF vectoriel) en maquette 3D, puis l'exporte en GLB, OBJ ou STL.
+Bibliothèque de plans de bâtiments partagée par l'équipe : on y dépose les plans DXF ou PDF,
+ils sont conservés sur le serveur, et les équipements qu'ils contiennent (switchs, baies,
+bornes Wi-Fi, caméras, prises…) deviennent recherchables. Chaque plan s'affiche en maquette
+3D, l'équipement recherché y est pointé.
 
-Tout tient dans `index.html` : pas d'installation ni de serveur. Les bibliothèques (Three.js, dxf-parser, pdf.js) sont chargées depuis un CDN, donc une connexion internet est nécessaire.
+Installation, sécurisation et connexion identiques à **Suivi Infra & Réseau** (mode
+client/serveur) : voir [`packaging/INSTALL.md`](packaging/INSTALL.md) et
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
 
-## Lancer
+## Fonctionnalités
 
-Ouvrir `index.html` dans un navigateur récent (Chrome, Edge, Firefox, Safari). Si le navigateur bloque les modules en `file://`, servir le dossier :
-
-```bash
-cd plan-relief && python3 -m http.server 8000
-# puis http://localhost:8000
-```
-
-Un plan d'exemple (appartement T3) est chargé au démarrage.
-
-## Utilisation
-
-1. **Importer** un `.dxf` ou un `.pdf` (bouton ou glisser-déposer).
-2. **Échelle** : pour un DXF, l'unité est lue dans l'en-tête (`$INSUNITS`) ou déduite de la taille du dessin. Pour un PDF, saisir l'échelle du plan (1:50, 1:100…).
-3. **Calques** : choisir le rôle de chaque calque.
-   - *Murs* : montés à la hauteur indiquée. Les murs en double trait sont remplis entre leurs deux faces. Un trait seul devient un mur de l'épaisseur « Murs en trait simple ». Les aplats pleins d'un PDF sont extrudés tels quels, trous compris.
-   - *Fenêtres* : chaque symbole (groupe de traits qui se touchent) donne une allège, un vitrage et un linteau.
-   - *Portes* : dessinées au sol. L'ouverture reste visible grâce à la coupure du mur.
-   - *Plan au sol* : mobilier, sanitaires… tracés au sol.
-   - *Ignorer* : cotes, textes, hachures…
-4. **Dimensions** : hauteur des murs, allège et hauteur des fenêtres, dalle de sol.
-5. **Exporter** : GLB (Blender, visionneuses web), OBJ (SketchUp, 3ds Max…), STL (impression 3D, orienté Z vers le haut). Coordonnées en mètres.
-
-Les rôles sont devinés à partir des noms de calques (`MUR`, `WALL`, `CLOISON` → murs ; `FEN`, `WIN`, `VITR` → fenêtres ; `PORTE`, `DOOR` → portes ; `COTE`, `DIM`, `TEXT`, `HACH` → ignorés).
+- **Plans en stock** : import DXF (ASCII) ou PDF vectoriel, jusqu'à 100 Mo. Chaque plan a une
+  fiche (site, bâtiment, étage, notes) ; le fichier d'origine est conservé tel quel et
+  téléchargeable. Un fichier déjà en stock est signalé. Retirer un plan le déplace dans la
+  corbeille du serveur.
+- **Détection automatique des équipements** à l'import :
+  - DXF : chaque **bloc inséré** (son nom devient le type : `SWITCH`, `BORNE_WIFI`…) avec ses
+    **attributs** (`REPERE`, `MODELE`, `SERIE`…) ; le repère sert de nom. Chaque **texte**
+    (TEXT, MTEXT) aussi : noms de locaux, étiquettes.
+  - PDF : chaque **texte** de la page, fragments d'une même ligne regroupés.
+  - Les cotes (« 3.50 ») et les textes d'un seul caractère sont écartés.
+- **Ajout à la main** : sur la vue 3D, cliquez à l'emplacement ; repère, type, notes. Pour les
+  plans sans textes exploitables (PDF scanné) ou les équipements absents du plan.
+- **Recherche** dans tous les plans : insensible aux accents, à la casse et aux tirets
+  (`sw b 01` trouve `SW-B-01`, `wifi` trouve `Wi-Fi`). Les mots peuvent viser l'équipement
+  ou la fiche du plan : `switch bât B` trouve les switchs des plans du bâtiment B. Filtres par
+  site et par origine. Chaque résultat ouvre le plan centré sur l'équipement.
+- **Recherche dans un plan** : filtre de la liste et des repères 3D en direct.
+- **Liens directs** : l'adresse pointe sur l'équipement sélectionné (`#/plan/<id>?eq=<id>`),
+  bouton « Copier le lien ».
+- **Maquette 3D** (même moteur que le prototype) : rôle de chaque calque (murs, fenêtres,
+  portes, plan au sol, ignorer), murs en double trait remplis, fenêtres avec allège, vitrage
+  et linteau, unité ou échelle, hauteurs. Les réglages sont **enregistrés sur le serveur**
+  pour toute l'équipe. Export GLB, OBJ, STL.
+- **Paramètres** : comptes locaux, Active Directory / LDAP, état du SSO Microsoft.
+- **Conflits** : si un collègue a enregistré le même plan entre-temps, la modification est
+  refusée plutôt que d'écraser son travail, et le plan est rechargé.
 
 ## Formats
 
 | Format | Prise en charge |
-|---|---|
-| DXF | LINE, LWPOLYLINE/POLYLINE (arcs compris), ARC, CIRCLE, ELLIPSE, SPLINE (approchée), SOLID, blocs INSERT imbriqués. Textes, cotes et hachures ignorés. |
-| DWG | Non lisible directement (format fermé). Convertir en DXF : AutoCAD « Enregistrer sous → DXF », ou ODA File Converter (gratuit). |
-| PDF vectoriel | Tracés et aplats de la page choisie, regroupés par épaisseur et couleur, car un PDF n'a pas de calques. |
-| PDF scanné | Non pris en charge : une image ne contient aucun trait exploitable. |
+| --- | --- |
+| DXF ASCII | Géométrie : LINE, LWPOLYLINE/POLYLINE (arcs compris), ARC, CIRCLE, ELLIPSE, SPLINE (approchée), SOLID, blocs imbriqués. Équipements : INSERT + ATTRIB, TEXT, MTEXT (premier niveau). |
+| DXF binaire | Refusé, avec explication : réenregistrer en DXF ASCII. |
+| DWG | Refusé, avec explication : AutoCAD « Enregistrer sous → DXF » ou ODA File Converter. |
+| PDF vectoriel | Tracés et aplats de la page choisie (regroupés par épaisseur et couleur), textes. |
+| PDF scanné | Stocké et affiché sans géométrie ni textes : équipements à placer à la main. |
 
-## Limites
+## Structure
 
-- Une seule hauteur de mur pour tout le plan. Pas d'étages, de toitures ni d'escaliers.
-- Pas de linteau au-dessus des portes.
-- La détection des murs en double trait suppose des faces parallèles distantes de 3 cm à « Épaisseur max. » (60 cm par défaut).
+```
+plan-relief/
+├── index.html, auth-redirect.html   pages (application, retour de connexion Microsoft)
+├── src/
+│   ├── App.tsx                      connexion obligatoire, navigation (#/plans, #/recherche…)
+│   ├── api.ts                       appels au service
+│   ├── auth/                        SSO Microsoft (MSAL)
+│   ├── components/                  écrans : bibliothèque, import, plan 3D, recherche, paramètres
+│   └── lib/                         lecture DXF/PDF, extraction des équipements, géométrie, scène 3D
+├── public/web.config                en-têtes de sécurité et limites IIS
+├── server/                          service Node.js (Express)
+│   ├── src/auth/                    local (bcrypt), LDAP, SSO, session — repris de Suivi Infra
+│   ├── src/plansStore.js            bibliothèque sur disque (écritures atomiques, versions)
+│   ├── src/search.js                recherche d'équipements
+│   └── test/                        tests de bout en bout (npm test)
+└── packaging/                       paquet Windows Server 2022 et scripts PowerShell
+```
+
+## Développement
+
+```bash
+cd plan-relief/server
+npm install
+cp .env.example .env      # JWT_SECRET, COOKIE_SECURE=false en local
+npm run create-user -- admin MotDePasse123 "Administrateur"
+npm start                 # http://127.0.0.1:4100
+
+cd ..                     # plan-relief/
+npm install
+npm run dev               # http://localhost:5173, /api relayé vers le service
+```
+
+Contrôles avant livraison : `npm run build` et `npm run lint` (interface), `npm test` (service).
