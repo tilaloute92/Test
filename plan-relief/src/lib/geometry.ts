@@ -67,6 +67,9 @@ export function segBounds(lists: ArrayLike<number>[]): Bounds | null {
   return minX === Infinity ? null : { minX, minY, maxX, maxY };
 }
 
+/** Longueur cumulée des traits parallèles voisins, en nombre de fois la longueur du trait. */
+const STACK_DENSITY = 2.5;
+
 export interface WallBox { x: number; y: number; ux: number; uy: number; len: number; thick: number }
 export interface Leftover { len: number; x: number; y: number; ux: number; uy: number }
 
@@ -98,6 +101,7 @@ export function pairWalls(s: Float64Array, minT: number, maxT: number): { boxes:
     }
   }
   const seen = new Set<number>();
+  const dens = new Float64Array(n);
   const cands: { i: number; j: number; d: number; lo: number; hi: number }[] = [];
   for (const list of grid.values()) {
     for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length; b++) {
@@ -116,8 +120,16 @@ export function pairWalls(s: Float64Array, minT: number, maxT: number): { boxes:
       const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(L[i], Math.max(t1, t2));
       if (hi - lo < 0.02) continue;
       cands.push({ i, j, d, lo, hi });
+      // Part de chaque trait longée par l'autre (sur le trait j, la longueur commune est la même).
+      dens[i] += (hi - lo) / L[i];
+      dens[j] += (hi - lo) / L[j];
     }
   }
+  // Un mur a une face en vis-à-vis (2 pour un mur à doublage). Un trait longé par 3 traits
+  // parallèles ou plus appartient à une famille de traits serrés : hachures, marches
+  // d'escalier, détail de baies informatiques ou de mobilier. Ce n'est pas un mur : ces
+  // traits ne forment ni bloc ni reste extrudé.
+  const stack = Array.from(dens, (v) => v >= STACK_DENSITY);
   cands.sort((a, b) => Math.abs(a.d) - Math.abs(b.d));
 
   const covered: [number, number][][] = Array.from({ length: n }, () => []);
@@ -128,6 +140,7 @@ export function pairWalls(s: Float64Array, minT: number, maxT: number): { boxes:
   };
   const boxes: WallBox[] = [];
   for (const { i, j, d, lo, hi } of cands) {
+    if (stack[i] || stack[j]) continue;
     const ax = X[i] + UX[i] * lo, ay = Y[i] + UY[i] * lo, bx = X[i] + UX[i] * hi, by = Y[i] + UY[i] * hi;
     const pa = (ax - X[j]) * UX[j] + (ay - Y[j]) * UY[j], pb = (bx - X[j]) * UX[j] + (by - Y[j]) * UY[j];
     const jlo = Math.max(0, Math.min(pa, pb)), jhi = Math.min(L[j], Math.max(pa, pb));
@@ -140,7 +153,7 @@ export function pairWalls(s: Float64Array, minT: number, maxT: number): { boxes:
   }
   const leftovers: Leftover[] = [];
   for (let k = 0; k < n; k++) {
-    if (L[k] < 0.02) continue;
+    if (L[k] < 0.02 || stack[k]) continue;
     const iv = covered[k].sort((a, b) => a[0] - b[0]);
     let t = 0;
     const gaps: [number, number][] = [];
@@ -149,6 +162,18 @@ export function pairWalls(s: Float64Array, minT: number, maxT: number): { boxes:
     for (const [a, b] of gaps) leftovers.push({ len: b - a, x: X[k] + UX[k] * (a + b) / 2, y: Y[k] + UY[k] * (a + b) / 2, ux: UX[k], uy: UY[k] });
   }
   return { boxes, leftovers };
+}
+
+/**
+ * Ressemblance d'un ensemble de traits à des murs en double trait : somme des carrés des
+ * longueurs des pans appariés d'au moins minLen. De longs murs continus l'emportent sur une
+ * multitude de petits rectangles (baies, mobilier) ; les familles de traits serrés
+ * (hachures, escaliers) sont déjà écartées par pairWalls.
+ */
+export function wallScore(segs: ArrayLike<number>, minT: number, maxT: number, minLen: number): number {
+  let score = 0;
+  for (const b of pairWalls(Float64Array.from(segs), minT, maxT).boxes) if (b.len >= minLen) score += b.len * b.len;
+  return score;
 }
 
 /** Regroupe les traits qui se touchent (symboles de fenêtre). */

@@ -1,6 +1,6 @@
 import DxfParser from 'dxf-parser';
-import { IDENTITY, apply, arcPoints, bulgePoints, mul, segBounds, type Mat } from './geometry';
-import type { Drawing, Equipment, Group, Role, Unit } from './types';
+import { IDENTITY, apply, arcPoints, bulgePoints, mul, segBounds, wallScore, type Mat } from './geometry';
+import { UNIT_FACTORS, type Drawing, type Equipment, type Group, type Role, type Unit } from './types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- entités DXF non typées par dxf-parser */
 
@@ -287,5 +287,18 @@ export function readDxf(buf: ArrayBuffer): Drawing {
     const size = b ? Math.max(b.maxX - b.minX, b.maxY - b.minY) : 0;
     unit = { unit: size > 2000 ? 'mm' : size > 200 ? 'cm' : 'm', source: 'guess' };
   }
+  guessWallLayers(groups, UNIT_FACTORS[unit.unit]);
   return { format: 'dxf', groups, equipment, unit, pageCount: 1 };
+}
+
+/**
+ * Aucun calque ne s'appelle « mur », « cloison »… : on retient le ou les calques qui forment
+ * de longs murs en double trait (10 à 60 cm d'épaisseur, pans d'au moins 1 m).
+ */
+function guessWallLayers(groups: Group[], f: number) {
+  if (groups.some((g) => g.guess === 'mur')) return;
+  const cands = groups.filter((g) => g.guess === 'plan' && g.segs.length >= 16 && g.segs.length <= 400_000);
+  const scores = cands.map((g) => wallScore(g.segs, 0.1 / f, 0.6 / f, 1 / f));
+  const best = Math.max(0, ...scores);
+  if (best > 0) cands.forEach((g, k) => { if (scores[k] >= best * 0.4) g.guess = 'mur'; });
 }

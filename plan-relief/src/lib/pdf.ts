@@ -1,6 +1,6 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url';
-import { IDENTITY, apply, mul, pointInPolygon, polygonArea, type Mat } from './geometry';
+import { IDENTITY, apply, mul, pointInPolygon, wallScore, polygonArea, type Mat } from './geometry';
 import { isUsefulLabel } from './dxf';
 import type { Drawing, Equipment, Group } from './types';
 
@@ -144,11 +144,25 @@ function guessPdfRoles(groups: Group[]) {
   const darkFills = groups.filter((g) => g.kind === 'fill' && luminance(g.color) < 0.4 && g.fills.length >= 1);
   if (darkFills.length) { for (const g of darkFills) g.guess = 'mur'; return; }
   const strokes = groups.filter((g) => g.kind === 'line' && g.segs.length >= 16);
-  if (strokes.length > 1) {
-    const maxW = Math.max(...strokes.map((g) => g.width ?? 0));
-    for (const g of strokes) if (g.width === maxW && maxW > 0) g.guess = 'mur';
+  if (strokes.length <= 1) return;
+  // Murs en double trait : on retient le ou les groupes qui forment de longs murs. Le trait le
+  // plus épais n'est pas un bon indice : sur un plan technique, ce sont souvent les baies, les
+  // chemins de câbles ou les équipements qui sont dessinés en gras, pas les murs.
+  const scores = strokes.map((g) => (g.segs.length > MAX_SCORED_SEGS ? 0 : pdfWallScore(g.segs)));
+  const best = Math.max(...scores);
+  if (best > 0) {
+    strokes.forEach((g, k) => { if (scores[k] >= best * 0.4) g.guess = 'mur'; });
+    return;
   }
+  // Plan en simple trait : à défaut de mieux, le trait le plus épais.
+  const maxW = Math.max(...strokes.map((g) => g.width ?? 0));
+  for (const g of strokes) if (g.width === maxW && maxW > 0) g.guess = 'mur';
 }
+
+const MAX_SCORED_SEGS = 400_000;
+// L'échelle du PDF n'est pas encore connue : on couvre les échelles courantes (1:50 à 1:200),
+// soit des murs de 10 à 60 cm entre 1,4 et 34 points, et des pans d'au moins 1 m au 1:200.
+const pdfWallScore = (segs: number[]) => wallScore(segs, 1.4, 34, 14);
 
 interface Run { text: string; x: number; y: number; endX: number; h: number }
 
