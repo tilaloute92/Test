@@ -123,6 +123,7 @@ export class PlanViewer {
     this.controls.keyPanSpeed = 25;
     this.renderer.domElement.tabIndex = 0;
     this.controls.listenToKeyEvents(this.renderer.domElement);
+    this.controls.addEventListener('change', () => { this.dirty = true; });
 
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f96, 1.6));
     this.sun.castShadow = true;
@@ -154,10 +155,12 @@ export class PlanViewer {
   }
 
   setBackground(color: string) {
+    this.dirty = true;
     this.scene.background = new THREE.Color(color);
   }
 
   private resize() {
+    this.dirty = true;
     const w = this.container.clientWidth, h = this.container.clientHeight;
     if (!w || !h) return;
     this.renderer.setSize(w, h);
@@ -165,8 +168,16 @@ export class PlanViewer {
     this.camera.updateProjectionMatrix();
   }
 
+  /**
+   * Rendu à la demande : une image n'est calculée que si la vue a bougé ou si la scène a
+   * changé. Sur un grand plan, redessiner en continu occupait le processeur même vue
+   * immobile, au détriment du reste (lecture OCR d'une page, par exemple).
+   */
+  private dirty = true;
   private frame() {
     this.controls.update();
+    if (!this.dirty) return;
+    this.dirty = false;
     this.renderer.render(this.scene, this.camera);
     if (this.pinTarget) {
       const p = this.pinTarget.clone().project(this.camera);
@@ -257,6 +268,7 @@ export class PlanViewer {
 
   /** Reconstruit la maquette d'un étage. Renvoie de quoi afficher les compteurs. */
   build(input: SceneInput, gridColor: string): BuildStats {
+    this.dirty = true;
     const { settings: P } = input;
     this.factor = input.factor;
     this.center = input.center;
@@ -277,6 +289,7 @@ export class PlanViewer {
    * peuvent être rendus transparents pour laisser voir un tracé qui traverse les étages.
    */
   buildStack(floors: { input: SceneInput; elevation: number; offset: [number, number]; name: string }[], gridColor: string, transparent: boolean) {
+    this.dirty = true;
     this.disposeChildren(this.model);
     this.disposeChildren(this.markers);
     this.pointsMesh = null;
@@ -301,6 +314,7 @@ export class PlanViewer {
 
   /** Tracé : tube orange, sphère verte au départ, rouge à l'arrivée. Coordonnées de scène. */
   setRoute(points: THREE.Vector3[] | null) {
+    this.dirty = true;
     this.disposeChildren(this.route);
     this.renderer.shadowMap.needsUpdate = true;
     if (!points || points.length < 2) return;
@@ -337,6 +351,7 @@ export class PlanViewer {
    * haut que les murs pour se voir de loin (vert : escalier, bleu : ascenseur).
    */
   setLandmarks(list: Equipment[], visible: boolean) {
+    this.dirty = true;
     this.disposeChildren(this.landmarks);
     this.landmarks.visible = visible;
     const h = this.hWall * 1.25;
@@ -360,6 +375,7 @@ export class PlanViewer {
 
   /** Repères des équipements (un point par équipement, couleur de sa catégorie, à défaut de son origine). */
   setMarkers(list: Equipment[], visible: boolean) {
+    this.dirty = true;
     this.disposeChildren(this.markers);
     this.pointsMesh = null;
     this.pointIds = list.map((e) => e.id);
@@ -384,6 +400,7 @@ export class PlanViewer {
 
   /** Met en évidence un équipement (épingle + étiquette) et, si demandé, centre la vue dessus. */
   select(e: Equipment | null, focus: boolean) {
+    this.dirty = true;
     if (!e) { this.pin.visible = false; this.pinTarget = null; this.onLabelMove(null); return; }
     const base = this.toScene(e, 0);
     const scale = Math.max(this.box.getSize(new THREE.Vector3()).length() / 120, 0.08);
@@ -411,6 +428,7 @@ export class PlanViewer {
   }
 
   fit(mode: '3d' | 'top' = this.viewMode) {
+    this.dirty = true;
     this.viewMode = mode;
     const c = this.box.getCenter(new THREE.Vector3());
     const r = Math.max(this.box.getSize(new THREE.Vector3()).length() / 2, 2);
