@@ -21,8 +21,10 @@ export interface OcrProgress { step: string; ratio: number }
  * recouvrent, pour ne couper aucun repère.
  */
 const SCALE = 400 / 72;
-const TILE = 3000;
-const OVERLAP = 320;
+// Tuiles de 2000 pixels : sur une image plus grande et chargée, l'analyse de mise en page de
+// Tesseract écarte des textes isolés (sigles de cabine « ASC », « MC » d'un plan réel).
+const TILE = 2000;
+const OVERLAP = 300;
 const MIN_CONFIDENCE = 55;
 
 export interface OcrOptions {
