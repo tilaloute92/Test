@@ -160,6 +160,15 @@ test('équipements ajoutés par catégorie : nettoyés, trouvés par mot-clé et
   assert.equal(all.body.total, 1);
   assert.equal(all.body.results[0].equipment.label, 'TEL-01');
   assert.equal((await api('/api/search?q=tel&category=wifi')).body.total, 0);
+  // Escalier repéré : emprise conservée, catégorie cherchable.
+  const cur2 = (await api(`/api/plans/${planId}`)).body;
+  const r2 = await api(`/api/plans/${planId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: cur2.version, equipment: [...cur2.equipment,
+    { kind: 'bloc', label: 'Escalier 1', type: 'Escalier', category: 'escalier', x: 5, y: 5, footprint: { w: 3, d: 2.5, angle: 0 } },
+    { kind: 'bloc', label: 'Ascenseur 1', type: 'Ascenseur', category: 'ascenseur', x: 9, y: 5, footprint: { w: -1, d: 2, angle: 0 } }] }) });
+  assert.deepEqual(r2.body.equipment.find((e) => e.label === 'Escalier 1').footprint, { w: 3, d: 2.5, angle: 0 });
+  assert.equal(r2.body.equipment.find((e) => e.label === 'Ascenseur 1').footprint, undefined, 'emprise invalide écartée');
+  assert.equal((await api('/api/search?q=monte-charge')).body.total, 1);
+  assert.equal((await api('/api/search?category=escalier')).body.total, 1);
 });
 
 test('identifiant invalide : jamais de chemin construit à partir de la saisie', async () => {

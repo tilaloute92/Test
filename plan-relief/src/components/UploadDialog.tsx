@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import * as api from '../api';
-import { drawingFactor, formatOf, readDrawing, withIndications } from '../lib/drawing';
+import { detectLandmarks, drawingFactor, formatOf, readDrawing, withIndications } from '../lib/drawing';
 import { mergeOcr } from '../lib/indications';
 import { ocrPdfPage, type OcrProgress } from '../lib/ocr';
 import { DEFAULT_SETTINGS, UNIT_NAMES, type Drawing, type PlanSummary } from '../lib/types';
@@ -71,7 +71,8 @@ export function UploadDialog({ sites, plans, onClose, onDone }: { sites: string[
         equipment = mergeOcr(equipment, read, 0.5 / drawingFactor('pdf', settings));
         toast(`${read.length.toLocaleString('fr-FR')} indications lues par OCR.`);
       }
-      equipment = withIndications(equipment, drawing.format, settings);
+      // Escaliers et ascenseurs repérés (marches dessinées, textes « ASC », « MC »…).
+      equipment = withIndications(detectLandmarks(equipment, drawing.groups, drawing.format, settings).list, drawing.format, settings);
       phase = 'envoi';
       setBusy('envoi');
       const res = await api.uploadPlan(file, { ...meta, settings, equipment });

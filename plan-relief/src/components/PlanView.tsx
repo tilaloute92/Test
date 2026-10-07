@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api';
 import { hrefOf, navigate } from '../App';
-import { drawingCenter, drawingFactor, mergeExtracted, newId, readDrawing, roleOf, withIndications } from '../lib/drawing';
+import { detectLandmarks, drawingCenter, drawingFactor, mergeExtracted, newId, readDrawing, roleOf, withIndications } from '../lib/drawing';
 import { mergeOcr } from '../lib/indications';
 import { DEFAULT_FLOOR_HEIGHT, guessLevel, suggestPassage } from '../lib/building';
 import { encodeEndpoint, readDraft } from '../lib/traceLink';
@@ -150,6 +150,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
 
   useEffect(() => {
     viewerRef.current?.setMarkers(filtered, showMarkers);
+    viewerRef.current?.setLandmarks(filtered.filter((e) => e.footprint), showMarkers);
   }, [filtered, showMarkers, stats]);
 
   const selectedEq = equipment.find((e) => e.id === selected) ?? null;
@@ -225,7 +226,8 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
     try {
       const d = await readDrawing(bufRef.current, 'pdf', page);
       const nextSettings = { ...settings, pdfPage: page };
-      if (await save({ settings: nextSettings, equipment: withIndications(mergeExtracted(plan.equipment, d.equipment), 'pdf', nextSettings) }, `Page ${page} enregistrée.`)) {
+      const found = detectLandmarks(mergeExtracted(plan.equipment, d.equipment), d.groups, 'pdf', nextSettings);
+      if (await save({ settings: nextSettings, equipment: withIndications(found.list, 'pdf', nextSettings) }, `Page ${page} enregistrée.`)) {
         setDrawing(d);
         setSettings(nextSettings);
         setDirty(false);
@@ -258,13 +260,28 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
         const read = await ocrPdfPage(bufRef.current, settings.pdfPage, (p: OcrProgress) => setLoading(`${p.step}… ${Math.round(p.ratio * 100)} %`));
         extracted = mergeOcr(extracted, read, 0.5 / drawingFactor('pdf', settings));
       }
-      const list = withIndications(mergeExtracted(plan.equipment, extracted), plan.file.format, settings);
+      const found = detectLandmarks(mergeExtracted(plan.equipment, extracted), d.groups, plan.file.format, settings);
+      const list = withIndications(found.list, plan.file.format, settings);
       const texts = list.filter((e) => e.kind === 'texte').length;
       if (await saveEquipment(list, `Plan relu : ${list.length.toLocaleString('fr-FR')} éléments recherchables, dont ${texts.toLocaleString('fr-FR')} indications.`)) select(null);
     } catch (err) {
       toast(`Relecture impossible : ${(err as Error).message}`, 'error');
     } finally {
       setLoading('');
+    }
+  };
+
+  /** Repérage seul, sur les textes déjà connus du plan (y compris ceux lus par OCR). */
+  const findLandmarks = async () => {
+    if (!plan || !drawing) return;
+    const found = detectLandmarks(plan.equipment, drawing.groups, plan.file.format, settings);
+    const msg = found.stairs + found.lifts
+      ? `${found.stairs} escalier(s) et ${found.lifts} ascenseur(s) repérés : filtres Escalier / Ascenseur, ou « Tracé depuis ici ».`
+      : plan.file.format === 'pdf' && !plan.equipment.some((e) => e.kind === 'texte')
+        ? 'Aucun escalier ni ascenseur repéré. Les ascenseurs se reconnaissent à leur texte (ASC, MC…) : lancez d\'abord « Relire les indications du plan » avec la lecture OCR.'
+        : 'Aucun escalier ni ascenseur repéré sur ce plan. Vous pouvez les ajouter à la main (catégories Escalier et Ascenseur).';
+    if (await saveEquipment(withIndications(found.list, plan.file.format, settings), msg)) {
+      if (found.stairs + found.lifts) setHiddenCats([]);
     }
   };
 
@@ -385,6 +402,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                     </div>
                   </div>
                   <button type="button" className="btn ghost sm" onClick={() => setRereadOpen(true)} disabled={saving || !!loading}>Relire les indications du plan</button>
+                  <button type="button" className="btn ghost sm" onClick={findLandmarks} disabled={saving || !!loading || !drawing}>Repérer escaliers et ascenseurs</button>
                 </div>
 
                 {selectedEq && (

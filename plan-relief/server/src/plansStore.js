@@ -135,6 +135,11 @@ export function cleanEquipment(list) {
     const passage = str(raw.passage, 60);
     if (passage) item.passage = passage;
     if (Object.hasOwn(CATEGORIES, raw.category)) item.category = raw.category;
+    const fp = raw.footprint;
+    if (fp && typeof fp === 'object') {
+      const w = Number(fp.w), d = Number(fp.d), angle = Number(fp.angle);
+      if ([w, d, angle].every(Number.isFinite) && w > 0 && d > 0) item.footprint = { w, d, angle };
+    }
     if (Array.isArray(raw.indications)) {
       const ind = raw.indications.slice(0, 12).map((t) => str(String(t ?? ''), 300)).filter(Boolean);
       if (ind.length) item.indications = ind;

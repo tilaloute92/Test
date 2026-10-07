@@ -65,6 +65,7 @@ export class PlanViewer {
   private sun = new THREE.DirectionalLight(0xffffff, 2.2);
   private model = new THREE.Group();
   private markers = new THREE.Group();
+  private landmarks = new THREE.Group();
   private route = new THREE.Group();
   private grid: THREE.GridHelper | null = null;
   private box = new THREE.Box3();
@@ -127,7 +128,7 @@ export class PlanViewer {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0005;
-    this.scene.add(this.sun, this.sun.target, this.model, this.markers, this.route);
+    this.scene.add(this.sun, this.sun.target, this.model, this.markers, this.route, this.landmarks);
 
     // Épingle de l'équipement sélectionné : tige + tête, dimensionnées à chaque sélection.
     this.pin = new THREE.Group();
@@ -331,6 +332,32 @@ export class PlanViewer {
     return new THREE.Vector3((e.x - this.center[0]) * this.factor, y, -(e.y - this.center[1]) * this.factor);
   }
 
+  /**
+   * Escaliers et ascenseurs : volume coloré semi-transparent sur leur emprise, un peu plus
+   * haut que les murs pour se voir de loin (vert : escalier, bleu : ascenseur).
+   */
+  setLandmarks(list: Equipment[], visible: boolean) {
+    this.disposeChildren(this.landmarks);
+    this.landmarks.visible = visible;
+    const h = this.hWall * 1.25;
+    for (const e of list) {
+      if (!e.footprint) continue;
+      const color = categoryOf(e.category)?.color ?? 0xd9730d;
+      const w = Math.max(e.footprint.w * this.factor, 0.3), d = Math.max(e.footprint.d * this.factor, 0.3);
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const box = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.28, depthWrite: false }));
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color }));
+      const item = new THREE.Group();
+      item.add(box, edges);
+      item.position.copy(this.toScene(e, h / 2));
+      // Repère du dessin (x, y) → scène (x, -z) : l'angle du plan devient une rotation autour de y.
+      item.rotation.y = e.footprint.angle;
+      item.name = e.label;
+      item.userData.noExport = true;
+      this.landmarks.add(item);
+    }
+  }
+
   /** Repères des équipements (un point par équipement, couleur de sa catégorie, à défaut de son origine). */
   setMarkers(list: Equipment[], visible: boolean) {
     this.disposeChildren(this.markers);
@@ -458,6 +485,7 @@ export class PlanViewer {
   dispose() {
     this.renderer.setAnimationLoop(null);
     this.resizeObs.disconnect();
+    this.disposeChildren(this.landmarks);
     this.disposeChildren(this.model);
     this.disposeChildren(this.markers);
     this.disposeChildren(this.route);

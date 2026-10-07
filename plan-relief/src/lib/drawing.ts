@@ -2,6 +2,7 @@ import { readDxf } from './dxf';
 import { readPdf } from './pdf';
 import { segBounds } from './geometry';
 import { INDICATION_RADIUS_M, attachIndications } from './indications';
+import { withLandmarks } from './landmarks';
 import { PT_TO_M, UNIT_FACTORS, type Drawing, type Equipment, type Format, type Group, type PlanSettings, type Role } from './types';
 
 export function formatOf(fileName: string): Format | null {
@@ -40,3 +41,8 @@ export function withIndications(list: Equipment[], format: Format, settings: Pla
 }
 
 export const newId = () => `m-${crypto.randomUUID().slice(0, 13)}`;
+
+/** Repère escaliers et ascenseurs (voir landmarks.ts), à l'échelle du plan. */
+export function detectLandmarks(list: Equipment[], groups: Group[], format: Format, settings: PlanSettings) {
+  return withLandmarks(list, groups, settings, drawingFactor(format, settings));
+}

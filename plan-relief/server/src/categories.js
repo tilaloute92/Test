@@ -11,5 +11,7 @@ export const CATEGORIES = {
   baie: { label: 'Baie / armoire', words: 'baie armoire brassage coffret' },
   acces: { label: "Contrôle d'accès", words: "controle d'acces badge lecteur interphone gache" },
   electrique: { label: 'Électricité', words: 'electricite electrique tableau onduleur' },
+  escalier: { label: 'Escalier', words: 'escalier escaliers marches cage volee' },
+  ascenseur: { label: 'Ascenseur', words: 'ascenseur elevateur lift monte-charge monte-malade monte-lit cabine' },
   autre: { label: 'Autre', words: '' },
 };

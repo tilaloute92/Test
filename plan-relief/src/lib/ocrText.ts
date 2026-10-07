@@ -44,7 +44,8 @@ export function paragraphLabels(lines: OcrLine[], minConfidence: number): OcrLab
     y: (Math.min(...ls.map((l) => l.y0)) + Math.max(...ls.map((l) => l.y1))) / 2,
   });
   // Moins de 3 lettres ou chiffres : trop court pour être lu sûrement (« Se », « 5e », « Li »).
-  const keep = (label: string) => isUsefulLabel(label) && label.replace(/[^\p{L}\d]/gu, '').length >= 3;
+  // Sauf les sigles de cabine d'ascenseur (« MC » monte-charge, « MM » monte-malade), utiles au repérage.
+  const keep = (label: string) => isUsefulLabel(label) && (label.replace(/[^\p{L}\d]/gu, '').length >= 3 || /^(MC|MM)$/.test(label));
   if (ok.length > 1 && ok.every((l) => REF.test(l.text))) {
     return ok.filter((l) => keep(l.text)).map((l) => ({ label: l.text.slice(0, 200), ...center([l]), confidence: Math.round(l.confidence) }));
   }

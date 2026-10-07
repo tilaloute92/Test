@@ -7,7 +7,7 @@ export type EquipmentKind = 'bloc' | 'texte' | 'manuel';
  * Catégories d'équipements, pour les ajouts sur les plans et les filtres de recherche.
  * Même liste côté service (server/src/categories.js) : identifiants et mots-clés.
  */
-export type Category = 'wifi' | 'telephonie' | 'camera' | 'reseau' | 'baie' | 'acces' | 'electrique' | 'autre';
+export type Category = 'wifi' | 'telephonie' | 'camera' | 'reseau' | 'baie' | 'acces' | 'electrique' | 'escalier' | 'ascenseur' | 'autre';
 export interface CategoryInfo {
   id: Category;
   label: string;
@@ -24,6 +24,8 @@ export const CATEGORIES: CategoryInfo[] = [
   { id: 'baie', label: 'Baie / armoire', prefix: 'BAIE', color: 0x475569, hint: 'Baie de brassage, armoire, coffret' },
   { id: 'acces', label: "Contrôle d'accès", prefix: 'CA', color: 0xb45309, hint: 'Lecteur de badge, interphone, gâche' },
   { id: 'electrique', label: 'Électricité', prefix: 'ELEC', color: 0xca8a04, hint: 'Tableau, onduleur, prise ondulée' },
+  { id: 'escalier', label: 'Escalier', prefix: 'ESC', color: 0x15803d, hint: 'Cage d\'escalier : point de départ des tracés' },
+  { id: 'ascenseur', label: 'Ascenseur', prefix: 'ASC', color: 0x1d4ed8, hint: 'Ascenseur, monte-charge, monte-malade' },
   { id: 'autre', label: 'Autre', prefix: 'EQ', color: 0xd9730d, hint: 'Tout autre équipement' },
 ];
 export const categoryOf = (id: string | undefined): CategoryInfo | undefined => CATEGORIES.find((c) => c.id === id);
@@ -60,6 +62,8 @@ export interface Equipment {
   attributes?: Record<string, string>;
   /** Catégorie choisie à l'ajout (ou après coup) : couleur du repère et filtre de recherche. */
   category?: Category;
+  /** Emprise au sol (escalier, ascenseur repérés) : largeur et profondeur en unités du dessin, angle en radians. */
+  footprint?: { w: number; d: number; angle: number };
   notes?: string;
   /** Indications écrites près de cet équipement sur le plan (blocs uniquement). */
   indications?: string[];
