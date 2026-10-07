@@ -37,7 +37,10 @@ export function cleanOcrText(raw: string): string {
  * « …/4 R ») en donne une par repère, chacune à sa place.
  */
 export function paragraphLabels(lines: OcrLine[], minConfidence: number): OcrLabel[] {
-  const ok = lines.map((l) => ({ ...l, text: cleanOcrText(l.text) })).filter((l) => l.confidence >= minConfidence && l.text);
+  // Un repère (« G-3-05/03/007/4 R ») a une forme assez stricte pour être gardé à fiabilité
+  // plus basse qu'un texte libre : c'est là que l'OCR hésite le plus, sur les petits repères.
+  const ok = lines.map((l) => ({ ...l, text: cleanOcrText(l.text) }))
+    .filter((l) => l.text && (l.confidence >= minConfidence || (l.confidence >= minConfidence - 20 && REF.test(l.text))));
   if (!ok.length) return [];
   const center = (ls: OcrLine[]) => ({
     x: (Math.min(...ls.map((l) => l.x0)) + Math.max(...ls.map((l) => l.x1))) / 2,

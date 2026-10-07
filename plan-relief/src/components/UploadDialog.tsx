@@ -15,6 +15,7 @@ export function UploadDialog({ sites, plans, onClose, onDone }: { sites: string[
   const [error, setError] = useState('');
   const [busy, setBusy] = useState<'' | 'lecture' | 'ocr' | 'envoi'>('');
   const [ocr, setOcr] = useState(false);
+  const [vertical, setVertical] = useState(false);
   const [progress, setProgress] = useState<OcrProgress | null>(null);
   const [over, setOver] = useState(false);
   const toast = useToast();
@@ -67,7 +68,7 @@ export function UploadDialog({ sites, plans, onClose, onDone }: { sites: string[
       if (drawing.format === 'pdf' && ocr) {
         phase = 'ocr';
         setBusy('ocr');
-        const read = await ocrPdfPage(buf, page, setProgress);
+        const read = await ocrPdfPage(buf, page, setProgress, { vertical });
         equipment = mergeOcr(equipment, read, 0.5 / drawingFactor('pdf', settings));
         toast(`${read.length.toLocaleString('fr-FR')} indications lues par OCR.`);
       }
@@ -134,9 +135,15 @@ export function UploadDialog({ sites, plans, onClose, onDone }: { sites: string[
             Lire aussi les indications dessinées ou scannées (reconnaissance de caractères)
             <span className="muted small" style={{ display: 'block' }}>
               {counts && counts.texte < 10 ? 'Recommandé : ce PDF contient peu de texte (plan scanné, ou texte AutoCAD exporté en traits). ' : 'Utile si une partie des indications est scannée ou dessinée en traits. '}
-              Compter 30 secondes à 2 minutes. La lecture se fait dans votre navigateur, rien n'est envoyé à l'extérieur.
+              Compter 1 à 3 minutes pour une grande feuille. La lecture se fait dans votre navigateur, rien n'est envoyé à l'extérieur.
             </span>
           </span>
+        </label>
+      )}
+      {drawing?.format === 'pdf' && ocr && (
+        <label className="check" htmlFor="upload-ocr-vertical" style={{ alignItems: 'flex-start', marginLeft: 24 }}>
+          <input id="upload-ocr-vertical" type="checkbox" checked={vertical} onChange={(e) => setVertical(e.target.checked)} disabled={!!busy} />
+          <span>Lire aussi les textes écrits à la verticale <span className="muted small">(durée doublée)</span></span>
         </label>
       )}
       {busy === 'ocr' && progress && (

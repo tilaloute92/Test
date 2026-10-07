@@ -35,6 +35,7 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
   const [from, setFrom] = useState<Resolved | null>(null);
   const [to, setTo] = useState<Resolved | null>(null);
   const [allowWalls, setAllowWalls] = useState(false);
+  const [orthogonal, setOrthogonal] = useState(true);
   const [height, setHeight] = useState<Height>('plafond');
   const [margin, setMargin] = useState(15);
   const [transparent, setTransparent] = useState(true);
@@ -106,7 +107,7 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
         const eq = f.plan.equipment.find((e) => e.id === r.eqId) ?? r.eq;
         return { planId: r.planId, x: eq.x * f.factor, y: eq.y * f.factor, label: r.label };
       };
-      const route = await computeRoute(floors, pos(from), pos(to), { allowWalls }, setBusy);
+      const route = await computeRoute(floors, pos(from), pos(to), { allowWalls, orthogonal }, setBusy);
       setResult({ route, floors, height });
     } catch (err) {
       setError(err instanceof RouteError ? err.message : `Calcul impossible : ${(err as Error).message}`);
@@ -192,6 +193,10 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
               <label className="field">
                 <span>Marge de longueur</span>
                 <span className="inputwrap"><input id="trace-margin" type="number" min="0" max="100" step="5" value={margin} onChange={(e) => setMargin(Math.max(0, Number(e.target.value) || 0))} /><span className="unit">%</span></span>
+              </label>
+              <label className="check" htmlFor="trace-ortho" style={{ alignItems: 'flex-start' }}>
+                <input id="trace-ortho" type="checkbox" checked={orthogonal} onChange={(e) => setOrthogonal(e.target.checked)} />
+                <span>Angles droits<span className="muted small" style={{ display: 'block' }}>Le tracé suit les axes du bâtiment avec le moins de coudes possible, comme un chemin de câbles. Décoché : le plus court en lignes droites.</span></span>
               </label>
               <label className="check" htmlFor="trace-walls" style={{ alignItems: 'flex-start' }}>
                 <input id="trace-walls" type="checkbox" checked={allowWalls} onChange={(e) => setAllowWalls(e.target.checked)} />

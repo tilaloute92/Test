@@ -249,7 +249,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
    * Relit le fichier d'origine : nouvelles règles de lecture des indications pour un plan
    * mis en stock avant elles, ou lecture OCR demandée après coup.
    */
-  const reread = async (withOcr: boolean) => {
+  const reread = async (withOcr: boolean, vertical = false) => {
     if (!plan || !bufRef.current) return;
     setRereadOpen(false);
     try {
@@ -257,7 +257,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
       const d = await readDrawing(bufRef.current, plan.file.format, settings.pdfPage);
       let extracted = d.equipment;
       if (withOcr && plan.file.format === 'pdf') {
-        const read = await ocrPdfPage(bufRef.current, settings.pdfPage, (p: OcrProgress) => setLoading(`${p.step}… ${Math.round(p.ratio * 100)} %`));
+        const read = await ocrPdfPage(bufRef.current, settings.pdfPage, (p: OcrProgress) => setLoading(`${p.step}… ${Math.round(p.ratio * 100)} %`), { vertical });
         extracted = mergeOcr(extracted, read, 0.5 / drawingFactor('pdf', settings));
       }
       const found = detectLandmarks(mergeExtracted(plan.equipment, extracted), d.groups, plan.file.format, settings);
@@ -756,22 +756,29 @@ function MetaDialog({ plan, saving, onCancel, onSave }: { plan: PlanRecord; savi
   );
 }
 
-function RereadDialog({ format, onCancel, onConfirm }: { format: 'dxf' | 'pdf'; onCancel: () => void; onConfirm: (ocr: boolean) => void }) {
+function RereadDialog({ format, onCancel, onConfirm }: { format: 'dxf' | 'pdf'; onCancel: () => void; onConfirm: (ocr: boolean, vertical: boolean) => void }) {
   const [ocr, setOcr] = useState(format === 'pdf');
+  const [vertical, setVertical] = useState(false);
   return (
     <Modal
       title="Relire les indications du plan"
       onClose={onCancel}
       footer={<>
         <button type="button" className="btn" onClick={onCancel}>Annuler</button>
-        <button type="button" className="btn primary" onClick={() => onConfirm(ocr)}>Relire le plan</button>
+        <button type="button" className="btn primary" onClick={() => onConfirm(ocr, ocr && vertical)}>Relire le plan</button>
       </>}
     >
       <p style={{ margin: 0 }}>Le fichier d'origine est relu : blocs, textes{format === 'dxf' ? ', étiquettes à flèche et cotes annotées' : ' et commentaires PDF'}. Chaque indication est rattachée à l'équipement le plus proche.</p>
       {format === 'pdf' && (
         <label className="check" htmlFor="reread-ocr" style={{ alignItems: 'flex-start' }}>
           <input id="reread-ocr" type="checkbox" checked={ocr} onChange={(e) => setOcr(e.target.checked)} />
-          <span>Lire aussi les indications dessinées ou scannées (OCR, 30 secondes à 2 minutes)</span>
+          <span>Lire aussi les indications dessinées ou scannées (OCR, 1 à 3 minutes pour une grande feuille)</span>
+        </label>
+      )}
+      {format === 'pdf' && ocr && (
+        <label className="check" htmlFor="reread-ocr-vertical" style={{ alignItems: 'flex-start', marginLeft: 24 }}>
+          <input id="reread-ocr-vertical" type="checkbox" checked={vertical} onChange={(e) => setVertical(e.target.checked)} />
+          <span>Lire aussi les textes écrits à la verticale <span className="muted small">(durée doublée)</span></span>
         </label>
       )}
       <p className="notice warn small" style={{ margin: 0 }}>Les modifications faites sur les éléments lus dans le fichier (nom, notes) seront perdues. Les équipements ajoutés à la main sont conservés.</p>

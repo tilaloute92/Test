@@ -14,20 +14,27 @@ import type { Equipment } from './types';
 export interface OcrProgress { step: string; ratio: number }
 
 /**
- * Résolution de lecture : 300 dpi, quelle que soit la taille de la feuille. Un repère de
- * 2 mm de haut fait alors une vingtaine de pixels ; à 200 dpi l'OCR n'en lit presque plus
- * aucun. Une feuille A0 à 300 dpi dépasse ce qu'un navigateur accepte en une seule image :
- * la page est lue par tuiles qui se recouvrent, pour ne couper aucun repère.
+ * Résolution de lecture : 400 dpi, quelle que soit la taille de la feuille. Sur un plan VDI
+ * réel, 400 dpi lit un tiers de repères de plus que 300 dpi (petits repères de 1,5 à 2 mm) ;
+ * à 200 dpi l'OCR n'en lit presque plus aucun. Une feuille A0 à cette résolution dépasse ce
+ * qu'un navigateur accepte en une seule image : la page est lue par tuiles qui se
+ * recouvrent, pour ne couper aucun repère.
  */
-const SCALE = 300 / 72;
-const TILE = 2400;
-const OVERLAP = 240;
+const SCALE = 400 / 72;
+const TILE = 3000;
+const OVERLAP = 320;
 const MIN_CONFIDENCE = 55;
 
-export async function ocrPdfPage(buf: ArrayBuffer, pageNum: number, onProgress: (p: OcrProgress) => void): Promise<Equipment[]> {
+export interface OcrOptions {
+  /** Relire chaque zone tournée d'un quart de tour : textes écrits à la verticale (temps doublé). */
+  vertical?: boolean;
+}
+
+export async function ocrPdfPage(buf: ArrayBuffer, pageNum: number, onProgress: (p: OcrProgress) => void, opts: OcrOptions = {}): Promise<Equipment[]> {
   onProgress({ step: 'Préparation de la page', ratio: 0.01 });
   const doc = await openPdf(buf);
   const canvas = document.createElement('canvas');
+  const turned = document.createElement('canvas');
   try {
     const page = await doc.getPage(pageNum);
     const viewport = page.getViewport({ scale: SCALE });
@@ -67,16 +74,33 @@ export async function ocrPdfPage(buf: ArrayBuffer, pageNum: number, onProgress: 
         // Zone vide (marges, cour) : rien à lire, on gagne le temps de l'OCR.
         if (hasInk(ctx, canvas.width, canvas.height)) {
           tileShare = 1;
-          const { data } = await worker.recognize(canvas, {}, { blocks: true, text: false });
-          for (const block of data.blocks ?? []) {
-            for (const para of block.paragraphs) {
-              const lines: OcrLine[] = para.lines.map((l) => {
-                // Pixels de la tuile → coordonnées de la page PDF (rotation de page comprise).
-                const [ax, ay] = viewport.convertToPdfPoint(x0 + l.bbox.x0, y0 + l.bbox.y0);
-                const [bx, by] = viewport.convertToPdfPoint(x0 + l.bbox.x1, y0 + l.bbox.y1);
-                return { text: l.text, x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by), confidence: l.confidence };
-              });
-              found.push(...paragraphLabels(lines, MIN_CONFIDENCE));
+          const read = async (img: HTMLCanvasElement, toTile: (x: number, y: number) => [number, number]) => {
+            const { data } = await worker.recognize(img, {}, { blocks: true, text: false });
+            for (const block of data.blocks ?? []) {
+              for (const para of block.paragraphs) {
+                const lines: OcrLine[] = para.lines.map((l) => {
+                  // Pixels de la tuile → coordonnées de la page PDF (rotation de page comprise).
+                  const [tx0, ty0] = toTile(l.bbox.x0, l.bbox.y0), [tx1, ty1] = toTile(l.bbox.x1, l.bbox.y1);
+                  const [ax, ay] = viewport.convertToPdfPoint(x0 + tx0, y0 + ty0);
+                  const [bx, by] = viewport.convertToPdfPoint(x0 + tx1, y0 + ty1);
+                  return { text: l.text, x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by), confidence: l.confidence };
+                });
+                found.push(...paragraphLabels(lines, MIN_CONFIDENCE));
+              }
+            }
+          };
+          await read(canvas, (x, y) => [x, y]);
+          if (opts.vertical) {
+            // Quart de tour dans le sens inverse des aiguilles : un texte qui monte se lit à
+            // l'horizontale. Pixel (x, y) de l'image tournée = pixel (W - y, x) de la tuile.
+            const W = canvas.width;
+            turned.width = canvas.height;
+            turned.height = W;
+            const tctx = turned.getContext('2d');
+            if (tctx) {
+              tctx.setTransform(0, -1, 1, 0, 0, W);
+              tctx.drawImage(canvas, 0, 0);
+              await read(turned, (x, y) => [W - y, x]);
             }
           }
         }
@@ -92,6 +116,7 @@ export async function ocrPdfPage(buf: ArrayBuffer, pageNum: number, onProgress: 
     }
   } finally {
     canvas.width = 0; canvas.height = 0;
+    turned.width = 0; turned.height = 0;
     doc.destroy();
   }
 }

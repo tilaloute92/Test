@@ -38,6 +38,11 @@ export interface Endpoint { planId: string; x: number; y: number }
 export interface RouteOptions {
   /** Autoriser la traversée des murs (carottage), avec une forte pénalité. */
   allowWalls: boolean;
+  /**
+   * Angles droits : le tracé suit les axes du plan, comme un chemin de câbles, avec le moins
+   * de changements de direction possible. Sinon, chemin le plus court en lignes droites.
+   */
+  orthogonal?: boolean;
 }
 
 export interface Leg {
@@ -351,7 +356,53 @@ class Heap {
   }
 }
 
-interface Search { dist: Float64Array; prev: Int32Array }
+interface Search {
+  dist: Float64Array;
+  prev: Int32Array;
+  /** Angles droits : chemin par états (case × direction d'arrivée). */
+  ortho?: { dist: Float64Array; prev: Int32Array };
+}
+
+/** Pénalité d'un changement de direction, en mètres : évite les escaliers de petits coudes. */
+const TURN_COST = 1.5;
+const DIRS: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+/**
+ * Plus court chemin à angles droits : déplacements selon les 4 axes seulement, chaque
+ * changement de direction coûtant TURN_COST. Les états sont (case, direction d'arrivée).
+ */
+function dijkstraOrtho(g: FloorGrid, start: number, targets: number[], allowWalls: boolean): Search {
+  const n = g.w * g.h, w = g.w;
+  const sd = new Float64Array(n * 4).fill(Infinity);
+  const sp = new Int32Array(n * 4).fill(-1);
+  const done = new Uint8Array(n * 4);
+  const pending = new Set(targets);
+  const heap = new Heap();
+  for (let d = 0; d < 4; d++) { sd[start * 4 + d] = 0; heap.push(start * 4 + d, 0); }
+  const cost = (k: number) => (g.kind[k] === WALL ? (allowWalls ? WALL_COST : Infinity) : g.voids[k] ? VOID_COST : g.outside[k] ? OUTSIDE_COST : 1);
+  while (heap.size) {
+    const [st, dd] = heap.pop();
+    if (done[st]) continue;
+    done[st] = 1;
+    const k = st >> 2, dir = st & 3;
+    pending.delete(k);
+    if (!pending.size && targets.length) break;
+    const i = k % w, j = (k - i) / w;
+    for (let nd = 0; nd < 4; nd++) {
+      const ni = i + DIRS[nd][0], nj = j + DIRS[nd][1];
+      if (ni < 0 || nj < 0 || ni >= w || nj >= g.h) continue;
+      const nk = nj * w + ni, ns = nk * 4 + nd;
+      if (done[ns]) continue;
+      const c = cost(nk);
+      if (c === Infinity) continue;
+      const v = dd + c * g.cell + (nd !== dir && k !== start ? TURN_COST : 0);
+      if (v < sd[ns]) { sd[ns] = v; sp[ns] = st; heap.push(ns, v); }
+    }
+  }
+  const dist = new Float64Array(n).fill(Infinity);
+  for (let k = 0; k < n; k++) dist[k] = Math.min(sd[k * 4], sd[k * 4 + 1], sd[k * 4 + 2], sd[k * 4 + 3]);
+  return { dist, prev: new Int32Array(0), ortho: { dist: sd, prev: sp } };
+}
 
 /** Dijkstra depuis une case ; s'arrête quand toutes les cibles sont atteintes. */
 function dijkstra(g: FloorGrid, start: number, targets: number[], allowWalls: boolean): Search {
@@ -412,13 +463,33 @@ function lineFree(g: FloorGrid, a: number, b: number, outside: number, voids: nu
 
 function extractLeg(g: FloorGrid, s: Search, from: number, to: number): { points: [number, number][]; length: number; wallCrossings: number; outside: boolean; throughVoid: boolean } {
   const cells: number[] = [];
-  for (let k = to; k !== -1; k = s.prev[k]) { cells.push(k); if (k === from) break; }
+  if (s.ortho) {
+    const { dist, prev } = s.ortho;
+    let st = to * 4;
+    for (let d = 1; d < 4; d++) if (dist[to * 4 + d] < dist[st]) st = to * 4 + d;
+    for (; st !== -1; st = prev[st]) { cells.push(st >> 2); if (st >> 2 === from && prev[st] === -1) break; }
+  } else {
+    for (let k = to; k !== -1; k = s.prev[k]) { cells.push(k); if (k === from) break; }
+  }
   cells.reverse();
   let wallCrossings = 0, outside = false, throughVoid = false;
   for (let i = 0; i < cells.length; i++) {
     if (g.kind[cells[i]] === WALL && (i === 0 || g.kind[cells[i - 1]] !== WALL)) wallCrossings++;
     if (g.outside[cells[i]]) outside = true;
     if (g.voids[cells[i]]) throughVoid = true;
+  }
+  if (s.ortho) {
+    // Angles droits : on ne garde que les coudes.
+    const kept = [cells[0]];
+    for (let k = 1; k + 1 < cells.length; k++) {
+      const a = cells[k - 1], b = cells[k], c = cells[k + 1];
+      if (b - a !== c - b) kept.push(b);
+    }
+    if (cells.length > 1) kept.push(cells[cells.length - 1]);
+    const points = dejog(g, kept.map((k) => g.center(k)));
+    let length = 0;
+    for (let k = 1; k < points.length; k++) length += Math.hypot(points[k][0] - points[k - 1][0], points[k][1] - points[k - 1][1]);
+    return { points, length, wallCrossings, outside, throughVoid };
   }
   // Lissage : on saute directement au point le plus loin visible en ligne droite.
   const kept = [cells[0]];
@@ -434,6 +505,94 @@ function extractLeg(g: FloorGrid, s: Search, from: number, to: number): { points
   let length = 0;
   for (let k = 1; k < points.length; k++) length += Math.hypot(points[k][0] - points[k - 1][0], points[k][1] - points[k - 1][1]);
   return { points, length, wallCrossings, outside, throughVoid };
+}
+
+/** Cases de mur rencontrées sur un tronçon droit (horizontal ou vertical). */
+function wallsOn(g: FloorGrid, a: [number, number], b: [number, number]): number {
+  const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (g.cell / 2)));
+  let walls = 0, last = -1;
+  for (let k = 0; k <= n; k++) {
+    const c = g.idx(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n);
+    if (c !== last && g.kind[c] === WALL) walls++;
+    last = c;
+  }
+  return walls;
+}
+
+/**
+ * Supprime les petits décrochements (moins de 60 cm) d'un tracé à angles droits : deux
+ * tronçons parallèles reliés par un court tronçon sont remis dans l'alignement du plus
+ * long, si cela ne fait pas traverser davantage de murs.
+ */
+function dejog(g: FloorGrid, pts: [number, number][]): [number, number][] {
+  const p = pts.map((q) => [q[0], q[1]] as [number, number]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 0; i + 3 < p.length; i++) {
+      const a = p[i], b = p[i + 1], c = p[i + 2], d = p[i + 3];
+      const horiz = (u: number[], v: number[]) => Math.abs(u[1] - v[1]) < 1e-9;
+      if (horiz(a, b) !== horiz(c, d) || horiz(a, b) === horiz(b, c)) continue;
+      if (Math.hypot(c[0] - b[0], c[1] - b[1]) >= 0.6) continue;
+      const before = wallsOn(g, a, b) + wallsOn(g, b, c) + wallsOn(g, c, d);
+      const ab = Math.hypot(b[0] - a[0], b[1] - a[1]), cd = Math.hypot(d[0] - c[0], d[1] - c[1]);
+      // On aligne le tronçon le plus court sur le plus long (extrémités du tracé exclues).
+      const canFirst = i > 0, canSecond = i + 4 < p.length;
+      if (!canFirst && !canSecond) continue;
+      const moveFirst = ab < cd ? canFirst : !canSecond;
+      const na: [number, number] = [a[0], a[1]], nd: [number, number] = [d[0], d[1]];
+      if (moveFirst) { if (horiz(a, b)) na[1] = c[1]; else na[0] = c[0]; } else { if (horiz(c, d)) nd[1] = b[1]; else nd[0] = b[0]; }
+      const after = moveFirst ? wallsOn(g, p[i - 1], na) + wallsOn(g, na, d) : wallsOn(g, a, nd) + wallsOn(g, nd, p[i + 4]);
+      const old = moveFirst ? wallsOn(g, p[i - 1], a) + before : before + wallsOn(g, d, p[i + 4]);
+      if (after > old) continue;
+      if (moveFirst) { p.splice(i, 3, na); } else { p.splice(i + 1, 3, nd); }
+      changed = true;
+      break;
+    }
+  }
+  return p;
+}
+
+/**
+ * Angles droits jusqu'aux équipements eux-mêmes : les extrémités exactes remplacent les
+ * centres de cases, en décalant le premier et le dernier tronçon pour rester d'équerre.
+ */
+function orthoEnds(pts: [number, number][], a: [number, number], b: [number, number]): [number, number][] {
+  if (pts.length < 2) return [a, [a[0], b[1]], b];
+  // Équipement loin de sa case (dessiné dans un mur, case libre la plus proche à plus de
+  // 50 cm) : on garde le tracé tel quel et on le rejoint par un coude, plutôt que de décaler
+  // un tronçon entier au risque de le faire passer dans un mur.
+  const far = (q: [number, number], c: [number, number]) => Math.hypot(q[0] - c[0], q[1] - c[1]) > 0.5;
+  if (far(a, pts[0]) || far(b, pts[pts.length - 1])) {
+    const out: [number, number][] = [a, [a[0], pts[0][1]], ...pts, [b[0], pts[pts.length - 1][1]], b];
+    return out.filter((q, i) => !i || Math.hypot(q[0] - out[i - 1][0], q[1] - out[i - 1][1]) > 1e-6);
+  }
+  const p = pts.map((q) => [q[0], q[1]] as [number, number]);
+  const align = (i: number, j: number, to: [number, number]) => {
+    // Le tronçon p[i]→p[j] reste parallèle à lui-même et passe par « to ».
+    if (Math.abs(p[i][1] - p[j][1]) < 1e-9) { p[i][1] = to[1]; p[j][1] = to[1]; } else { p[i][0] = to[0]; p[j][0] = to[0]; }
+  };
+  align(0, 1, a);
+  p[0] = [a[0], a[1]];
+  const n = p.length;
+  if (n === 2) {
+    // Un seul tronçon : coude si les deux extrémités ne sont pas alignées.
+    const out: [number, number][] = [a];
+    if (Math.abs(a[0] - b[0]) > 1e-9 && Math.abs(a[1] - b[1]) > 1e-9) out.push(Math.abs(pts[0][1] - pts[1][1]) < 1e-9 ? [b[0], a[1]] : [a[0], b[1]]);
+    out.push(b);
+    return out;
+  }
+  align(n - 2, n - 1, b);
+  p[n - 1] = [b[0], b[1]];
+  // Points redevenus alignés : on retire les intermédiaires inutiles.
+  const out: [number, number][] = [p[0]];
+  for (let k = 1; k + 1 < p.length; k++) {
+    const u = out[out.length - 1], v = p[k], w = p[k + 1];
+    const col = (Math.abs(u[0] - v[0]) < 1e-9 && Math.abs(v[0] - w[0]) < 1e-9) || (Math.abs(u[1] - v[1]) < 1e-9 && Math.abs(v[1] - w[1]) < 1e-9);
+    if (!col) out.push(v);
+  }
+  out.push(p[p.length - 1]);
+  return out;
 }
 
 /* ---------------------------------------------------------------------------------------
@@ -503,7 +662,7 @@ export async function computeRoute(
       onProgress(`Recherche du chemin — ${f.name}`);
       await new Promise((r) => setTimeout(r, 0));
       const g = await gridOf(f);
-      const s = dijkstra(g, origin.cell, targets.map((t) => t.cell), allowWalls);
+      const s = (options.orthogonal ? dijkstraOrtho : dijkstra)(g, origin.cell, targets.map((t) => t.cell), allowWalls);
       for (const t of targets) add(origin.id, t.id, s.dist[t.cell]);
     };
     const sameFloor = from.planId === to.planId;
@@ -562,11 +721,14 @@ export async function computeRoute(
     if (a.planId === b.planId) {
       const f = byId.get(a.planId)!, g = await gridOf(f);
       onProgress(`Tracé — ${f.name}`);
-      const s = dijkstra(g, a.cell, [b.cell], allowWalls);
+      const s = (options.orthogonal ? dijkstraOrtho : dijkstra)(g, a.cell, [b.cell], allowWalls);
       const leg = extractLeg(g, s, a.cell, b.cell);
       // Raccorde le tracé aux positions exactes des équipements (hors grille).
-      leg.points[0] = [a.x, a.y];
-      leg.points[leg.points.length - 1] = [b.x, b.y];
+      if (options.orthogonal) leg.points = orthoEnds(leg.points, [a.x, a.y], [b.x, b.y]);
+      else {
+        leg.points[0] = [a.x, a.y];
+        leg.points[leg.points.length - 1] = [b.x, b.y];
+      }
       leg.length = leg.points.reduce((n, p, k) => (k ? n + Math.hypot(p[0] - leg.points[k - 1][0], p[1] - leg.points[k - 1][1]) : 0), 0);
       horizontal += leg.length;
       steps.push({ type: 'leg', leg: { planId: a.planId, ...leg, from: a.label, to: b.label } });
