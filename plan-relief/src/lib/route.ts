@@ -26,6 +26,11 @@ export interface FloorInput {
   passages: { key: string; label: string; x: number; y: number }[];
   /** Emprise du dessin en mètres, pour dimensionner la grille. */
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
+  /**
+   * Tous les traits du plan (x1, y1, x2, y2 en mètres), murs ou non : là où rien n'est
+   * dessiné sur une grande surface fermée (patio, cour intérieure, trémie), on ne passe pas.
+   */
+  ink?: Float32Array;
 }
 
 export interface Endpoint { planId: string; x: number; y: number }
@@ -42,6 +47,8 @@ export interface Leg {
   length: number;
   wallCrossings: number;
   outside: boolean;
+  /** Passe par une zone vide (patio, cour) faute d'autre chemin. */
+  throughVoid: boolean;
   from: string;
   to: string;
 }
@@ -67,6 +74,12 @@ const MIN_CELL = 0.15;
 const MARGIN = 3;
 const OUTSIDE_COST = 8;
 const WALL_COST = 40;
+/** Zone vide (patio, cour) : évitée sauf s'il n'y a vraiment pas d'autre chemin. */
+const VOID_COST = 30;
+const VOID_TILE = 1.5;
+const VOID_MIN_AREA = 40;
+/** Une ouverture plus étroite que ceci (porte, fenêtre) arrête l'extension d'une zone vide. */
+const GAP_MAX = 3;
 
 const FREE = 0, WALL = 1;
 
@@ -76,6 +89,8 @@ export class FloorGrid {
   readonly kind: Uint8Array;
   /** 1 = hors du bâtiment (atteint depuis le bord sans franchir de mur). */
   readonly outside: Uint8Array;
+  /** 1 = zone vide fermée (patio, cour intérieure) : rien n'y est dessiné. */
+  readonly voids: Uint8Array;
 
   constructor(floor: FloorInput) {
     const b = floor.bounds;
@@ -88,6 +103,102 @@ export class FloorGrid {
     this.kind = new Uint8Array(this.w * this.h);
     this.rasterize(floor.footprint);
     this.outside = this.findOutside();
+    this.voids = floor.ink ? this.findVoids(floor.ink) : new Uint8Array(this.w * this.h);
+  }
+
+  /**
+   * Zones vides : grandes surfaces (40 m² au moins) où le plan ne dessine rien, à l'intérieur
+   * du bâtiment. Leurs cœurs sont trouvés sur des carreaux de 1,5 m sans aucun trait, puis
+   * étendus jusqu'aux murs qui les bordent, sans franchir les ouvertures étroites (portes,
+   * fenêtres de façade) : les pièces voisines ne sont pas touchées.
+   */
+  private findVoids(ink: Float32Array): Uint8Array {
+    const { w, h, cell } = this;
+    const out = new Uint8Array(w * h);
+    const tw = Math.ceil((w * cell) / VOID_TILE), th = Math.ceil((h * cell) / VOID_TILE);
+    const inked = new Uint8Array(tw * th);
+    const mark = (x: number, y: number) => {
+      const ti = Math.floor((x - this.x0) / VOID_TILE), tj = Math.floor((y - this.y0) / VOID_TILE);
+      if (ti >= 0 && tj >= 0 && ti < tw && tj < th) inked[tj * tw + ti] = 1;
+    };
+    for (let i = 0; i < ink.length; i += 4) {
+      const x1 = ink[i], y1 = ink[i + 1], x2 = ink[i + 2], y2 = ink[i + 3];
+      const n = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / (VOID_TILE / 2)));
+      for (let k = 0; k <= n; k++) mark(x1 + ((x2 - x1) * k) / n, y1 + ((y2 - y1) * k) / n);
+    }
+    // Cœurs : carreaux vides voisins. L'extérieur est vide lui aussi, mais il s'étend jusqu'au
+    // bord du dessin (cadre de la feuille compris) ; un patio est enclos par le bâtiment.
+    // (Le calcul d'« extérieur » de la grille n'est pas utilisé ici : sur un plan dont les
+    // façades ont de larges ouvertures, il déborde dans le bâtiment et jusque dans les patios.)
+    const edge = Math.ceil((MARGIN + VOID_TILE) / VOID_TILE);
+    const tileOutside = (t: number) => {
+      const ti = t % tw, tj = (t - ti) / tw;
+      return ti < edge || tj < edge || ti >= tw - edge || tj >= th - edge;
+    };
+    const seen = new Uint8Array(tw * th);
+    const core = new Uint8Array(tw * th);
+    const seeds: number[] = [];
+    for (let t0 = 0; t0 < tw * th; t0++) {
+      if (seen[t0] || inked[t0] || tileOutside(t0)) continue;
+      const comp = [t0];
+      seen[t0] = 1;
+      for (let q = 0; q < comp.length; q++) {
+        const t = comp[q], ti = t % tw, tj = (t - ti) / tw;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const ni = ti + di, nj = tj + dj;
+          if (ni < 0 || nj < 0 || ni >= tw || nj >= th) continue;
+          const nt = nj * tw + ni;
+          if (!seen[nt] && !inked[nt] && !tileOutside(nt)) { seen[nt] = 1; comp.push(nt); }
+        }
+      }
+      if (comp.length * VOID_TILE * VOID_TILE < VOID_MIN_AREA) continue;
+      // Touche le bord du dessin : c'est l'extérieur.
+      if (comp.some((t) => { const ti = t % tw, tj = (t - ti) / tw; return ti <= edge || tj <= edge || ti >= tw - edge - 1 || tj >= th - edge - 1; })) continue;
+      for (const t of comp) {
+        const ti = t % tw, tj = (t - ti) / tw;
+        core[t] = 1;
+        seeds.push(this.idx(this.x0 + (ti + 0.5) * VOID_TILE, this.y0 + (tj + 0.5) * VOID_TILE));
+      }
+    }
+    if (!seeds.length) return out;
+    // Ouvertures étroites : murs à moins de GAP_MAX de part et d'autre, en ligne ou en colonne.
+    const lim = Math.ceil(GAP_MAX / cell);
+    const narrow = new Uint8Array(w * h);
+    const runs = (len: number, at: (n: number) => number) => {
+      const before = new Int32Array(len), after = new Int32Array(len);
+      let last = -lim * 2;
+      for (let n = 0; n < len; n++) { if (this.kind[at(n)] === WALL) last = n; before[n] = n - last; }
+      last = len + lim * 2;
+      for (let n = len - 1; n >= 0; n--) { if (this.kind[at(n)] === WALL) last = n; after[n] = last - n; }
+      for (let n = 0; n < len; n++) if (before[n] + after[n] - 1 <= lim) narrow[at(n)] = 1;
+    };
+    for (let j = 0; j < h; j++) runs(w, (n) => j * w + n);
+    for (let i = 0; i < w; i++) runs(h, (n) => n * w + i);
+    // L'extension ne dépasse pas d'un carreau le cœur vide : elle rejoint les murs qui le
+    // bordent sans s'engager dans un couloir voisin par une large ouverture.
+    const near = (k: number) => {
+      const ti = Math.floor(((k % w) * cell) / VOID_TILE), tj = Math.floor((Math.floor(k / w) * cell) / VOID_TILE);
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const ni = ti + di, nj = tj + dj;
+        if (ni >= 0 && nj >= 0 && ni < tw && nj < th && core[nj * tw + ni]) return true;
+      }
+      return false;
+    };
+    const queue: number[] = [];
+    const push = (k: number) => {
+      if (out[k] || this.kind[k] === WALL || narrow[k] || !near(k)) return;
+      out[k] = 1;
+      queue.push(k);
+    };
+    for (const k of seeds) push(k);
+    for (let q = 0; q < queue.length; q++) {
+      const k = queue[q], i = k % w;
+      if (i > 0) push(k - 1);
+      if (i < w - 1) push(k + 1);
+      if (k >= w) push(k - w);
+      if (k < w * (h - 1)) push(k + w);
+    }
+    return out;
   }
 
   idx(x: number, y: number) {
@@ -252,7 +363,7 @@ function dijkstra(g: FloorGrid, start: number, targets: number[], allowWalls: bo
   const heap = new Heap();
   dist[start] = 0;
   heap.push(start, 0);
-  const cost = (k: number) => (g.kind[k] === WALL ? (allowWalls ? WALL_COST : Infinity) : g.outside[k] ? OUTSIDE_COST : 1);
+  const cost = (k: number) => (g.kind[k] === WALL ? (allowWalls ? WALL_COST : Infinity) : g.voids[k] ? VOID_COST : g.outside[k] ? OUTSIDE_COST : 1);
   const D = Math.SQRT2;
   while (heap.size) {
     const [k, d] = heap.pop();
@@ -278,8 +389,8 @@ function dijkstra(g: FloorGrid, start: number, targets: number[], allowWalls: bo
   return { dist, prev };
 }
 
-/** Une case n'est traversée en ligne droite que si elle est libre et du même côté (dedans/dehors). */
-function lineFree(g: FloorGrid, a: number, b: number, outside: number): boolean {
+/** Une case n'est traversée en ligne droite que si elle est libre et du même côté (dedans/dehors, hors zone vide). */
+function lineFree(g: FloorGrid, a: number, b: number, outside: number, voids: number): boolean {
   const w = g.w;
   let x0 = a % w, y0 = (a - x0) / w;
   const x1 = b % w, y1 = (b - x1) / w;
@@ -287,7 +398,7 @@ function lineFree(g: FloorGrid, a: number, b: number, outside: number): boolean 
   let err = dx - dy;
   for (;;) {
     const k = y0 * w + x0;
-    if (g.kind[k] === WALL || g.outside[k] !== outside) return false;
+    if (g.kind[k] === WALL || g.outside[k] !== outside || g.voids[k] !== voids) return false;
     if (x0 === x1 && y0 === y1) return true;
     const e2 = 2 * err;
     // Pas en diagonale : vérifie aussi les deux cases d'angle (pas de fuite entre deux murs).
@@ -299,14 +410,15 @@ function lineFree(g: FloorGrid, a: number, b: number, outside: number): boolean 
   }
 }
 
-function extractLeg(g: FloorGrid, s: Search, from: number, to: number): { points: [number, number][]; length: number; wallCrossings: number; outside: boolean } {
+function extractLeg(g: FloorGrid, s: Search, from: number, to: number): { points: [number, number][]; length: number; wallCrossings: number; outside: boolean; throughVoid: boolean } {
   const cells: number[] = [];
   for (let k = to; k !== -1; k = s.prev[k]) { cells.push(k); if (k === from) break; }
   cells.reverse();
-  let wallCrossings = 0, outside = false;
+  let wallCrossings = 0, outside = false, throughVoid = false;
   for (let i = 0; i < cells.length; i++) {
     if (g.kind[cells[i]] === WALL && (i === 0 || g.kind[cells[i - 1]] !== WALL)) wallCrossings++;
     if (g.outside[cells[i]]) outside = true;
+    if (g.voids[cells[i]]) throughVoid = true;
   }
   // Lissage : on saute directement au point le plus loin visible en ligne droite.
   const kept = [cells[0]];
@@ -314,14 +426,14 @@ function extractLeg(g: FloorGrid, s: Search, from: number, to: number): { points
   while (i < cells.length - 1) {
     let j = i + 1;
     const free = g.kind[cells[i]] !== WALL;
-    while (j + 1 < cells.length && free && g.kind[cells[j + 1]] !== WALL && lineFree(g, cells[i], cells[j + 1], g.outside[cells[i]])) j++;
+    while (j + 1 < cells.length && free && g.kind[cells[j + 1]] !== WALL && lineFree(g, cells[i], cells[j + 1], g.outside[cells[i]], g.voids[cells[i]])) j++;
     kept.push(cells[j]);
     i = j;
   }
   const points = kept.map((k) => g.center(k));
   let length = 0;
   for (let k = 1; k < points.length; k++) length += Math.hypot(points[k][0] - points[k - 1][0], points[k][1] - points[k - 1][1]);
-  return { points, length, wallCrossings, outside };
+  return { points, length, wallCrossings, outside, throughVoid };
 }
 
 /* ---------------------------------------------------------------------------------------
@@ -467,5 +579,6 @@ export async function computeRoute(
   const warnings: string[] = [];
   if (wallsForced) warnings.push("Aucun chemin par les ouvertures : le tracé traverse des murs (carottage à prévoir). Vérifiez que les portes sont bien des ouvertures dans les murs du plan.");
   if (steps.some((s) => s.type === 'leg' && s.leg.outside)) warnings.push("Le tracé passe par l'extérieur du bâtiment sur une partie du parcours.");
+  if (steps.some((s) => s.type === 'leg' && s.leg.throughVoid)) warnings.push("Aucun autre chemin : le tracé traverse une zone vide du plan (patio, cour intérieure, trémie). Vérifiez qu'elle est réellement praticable.");
   return { steps, horizontal, vertical, total: horizontal + vertical, wallsForced, warnings };
 }

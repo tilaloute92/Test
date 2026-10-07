@@ -1,5 +1,5 @@
 import * as api from '../api';
-import { drawingFactor, readDrawing } from './drawing';
+import { drawingFactor, readDrawing, roleOf } from './drawing';
 import { floorFootprint, type Footprint } from './footprints';
 import { segBounds } from './geometry';
 import type { FloorInput } from './route';
@@ -98,10 +98,17 @@ export async function loadBuilding(members: PlanSummary[], onProgress: (t: strin
       minX: Math.min(b.minX, eqB.minX) * factor, minY: Math.min(b.minY, eqB.minY) * factor,
       maxX: Math.max(b.maxX, eqB.maxX) * factor, maxY: Math.max(b.maxY, eqB.maxY) * factor,
     };
+    // Tous les traits visibles du plan, pour reconnaître les zones où rien n'est dessiné.
+    const inkList: number[] = [];
+    for (const g of drawing.groups) {
+      if (roleOf(g, settings) === 'ignore') continue;
+      for (const v of g.segs) inkList.push(v * factor);
+    }
+    const ink = Float32Array.from(inkList);
     const passages = plan.equipment.filter((e) => e.passage).map((e) => ({ key: passageKey(e.passage!), label: e.passage!, ...toM(e, factor) }));
     const floor: LoadedFloor = {
       planId: plan.id, name: [plan.floor || plan.name, plan.floor ? plan.name : ''].filter(Boolean).join(' — '),
-      elevation, footprint, passages, bounds, plan, drawing, factor, level, floorHeight, offset: [0, 0],
+      elevation, footprint, passages, bounds, ink, plan, drawing, factor, level, floorHeight, offset: [0, 0],
     };
     floors.push(floor);
     prev = floor;
