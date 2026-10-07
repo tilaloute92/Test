@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { MapControls } from 'three/addons/controls/MapControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
@@ -61,7 +61,7 @@ export class PlanViewer {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(45, 1, 0.05, 5000);
-  private controls: OrbitControls;
+  private controls: MapControls;
   private sun = new THREE.DirectionalLight(0xffffff, 2.2);
   private model = new THREE.Group();
   private markers = new THREE.Group();
@@ -105,11 +105,23 @@ export class PlanViewer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Maquette immobile : les ombres sont calculées une fois par construction, pas à chaque
+    // image (sur un grand plan, c'est ce qui rendait la navigation saccadée).
+    this.renderer.shadowMap.autoUpdate = false;
     container.appendChild(this.renderer.domElement);
 
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    // Navigation « carte » : glisser déplace la vue sur le plan, clic droit (ou deux doigts)
+    // la fait tourner, la molette zoome vers le pointeur et non vers le centre du plan :
+    // on va là où l'on regarde. Flèches du clavier une fois la vue cliquée.
+    this.controls = new MapControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.12;
+    this.controls.zoomToCursor = true;
+    this.controls.minDistance = 0.5;
     this.controls.maxPolarAngle = Math.PI * 0.495;
+    this.controls.keyPanSpeed = 25;
+    this.renderer.domElement.tabIndex = 0;
+    this.controls.listenToKeyEvents(this.renderer.domElement);
 
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f96, 1.6));
     this.sun.castShadow = true;
@@ -238,6 +250,8 @@ export class PlanViewer {
     sc.left = sc.bottom = -size - height; sc.right = sc.top = size + height; sc.near = 0.1; sc.far = size * 4 + height * 2 + 20;
     sc.updateProjectionMatrix();
     this.box = box;
+    this.controls.maxDistance = Math.max(size, height, 10) * 6;
+    this.renderer.shadowMap.needsUpdate = true;
   }
 
   /** Reconstruit la maquette d'un étage. Renvoie de quoi afficher les compteurs. */
@@ -287,6 +301,7 @@ export class PlanViewer {
   /** Tracé : tube orange, sphère verte au départ, rouge à l'arrivée. Coordonnées de scène. */
   setRoute(points: THREE.Vector3[] | null) {
     this.disposeChildren(this.route);
+    this.renderer.shadowMap.needsUpdate = true;
     if (!points || points.length < 2) return;
     const scale = Math.max(this.box.getSize(new THREE.Vector3()).length() / 400, 0.05);
     const r = Math.min(scale, 0.12);

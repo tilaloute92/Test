@@ -8,7 +8,7 @@ import { encodeEndpoint, readDraft } from '../lib/traceLink';
 import { ocrPdfPage, type OcrProgress } from '../lib/ocr';
 import { PlanViewer, type BuildStats } from '../lib/viewer';
 import { CATEGORIES, DEFAULT_SETTINGS, KIND_LABELS, ROLE_LABELS, UNIT_NAMES, categoryOf, cssColor, type Category, type Drawing, type Equipment, type EquipmentKind, type PlanRecord, type PlanSettings, type Role, type Unit } from '../lib/types';
-import { Highlight, Modal, downloadBlob, fmtDate, fmtNum, useConfirm, useToast } from './ui';
+import { Highlight, Modal, downloadBlob, fmtDate, fmtNum, useConfirm, useToast, NavHint } from './ui';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[-_./\\#]+/g, '');
 const eqHay = (e: Equipment) => {
@@ -466,6 +466,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
 
         <section className="stage" aria-label="Vue 3D">
           <div className="viewport" ref={containerRef} />
+          <NavHint />
           <div className="tools">
             <div className="seg" role="group" aria-label="Point de vue">
               <button type="button" onClick={() => viewerRef.current?.fit('3d')}>3D</button>

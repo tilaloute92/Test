@@ -6,7 +6,7 @@ import { buildingMembers, levelOf, loadBuilding, type LoadedFloor } from '../lib
 import { computeRoute, RouteError, type RouteResult } from '../lib/route';
 import { PlanViewer } from '../lib/viewer';
 import { DEFAULT_SETTINGS, KIND_LABELS, type Equipment, type PlanSummary } from '../lib/types';
-import { fmtNum, Highlight } from './ui';
+import { fmtNum, Highlight, NavHint } from './ui';
 import { decodeEndpoint, encodeEndpoint, writeDraft, type EndpointRef } from '../lib/traceLink';
 
 interface Resolved extends EndpointRef { label: string; type: string; plan: PlanSummary; eq: Equipment }
@@ -245,6 +245,7 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
         </aside>
         <section className="stage" aria-label="Vue 3D du bâtiment">
           <div className="viewport" ref={containerRef} />
+          <NavHint />
           <div className="tools">
             <div className="seg" role="group" aria-label="Point de vue">
               <button type="button" onClick={() => viewerRef.current?.fit('3d')}>3D</button>

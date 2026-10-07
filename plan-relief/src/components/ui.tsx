@@ -121,3 +121,15 @@ export function downloadBlob(blob: Blob, name: string) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
+
+/** Rappel des gestes de navigation dans la vue 3D (souris, pavé tactile, écran tactile). */
+export function NavHint() {
+  return (
+    <div className="navhint" aria-label="Se déplacer dans la vue">
+      <span><b>Glisser</b> : se déplacer</span>
+      <span><b>Molette</b> : zoomer vers le pointeur</span>
+      <span><b>Clic droit + glisser</b> : tourner</span>
+      <span><b>Flèches</b> : se déplacer (après un clic sur la vue)</span>
+    </div>
+  );
+}

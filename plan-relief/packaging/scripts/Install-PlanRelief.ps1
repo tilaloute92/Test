@@ -112,10 +112,20 @@ function Stop-PlanReliefTask {
     $entry = Join-Path $ServicePath 'src\index.js'
     Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -like '*Start-PlanReliefService.ps1*' } |
-        ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null }
+        ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null }
     Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -like "*$entry*" } |
-        ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null }
+        ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null }
+    # Arrêter la tâche planifiée termine déjà ses processus, mais pas instantanément : un
+    # processus peut disparaître entre sa recherche et son arrêt (d'où -ErrorAction ci-dessus),
+    # ou tenir encore ses fichiers ouverts. On attend qu'il soit vraiment parti avant de
+    # remplacer les fichiers du service (10 s au plus).
+    foreach ($i in 1..20) {
+        $left = @(Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='powershell.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -like "*$entry*" -or $_.CommandLine -like '*Start-PlanReliefService.ps1*' })
+        if (-not $left) { break }
+        Start-Sleep -Milliseconds 500
+    }
 }
 
 # ---------------------------------------------------------------------------------------

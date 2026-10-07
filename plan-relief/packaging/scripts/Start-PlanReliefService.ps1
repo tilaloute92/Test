@@ -71,7 +71,7 @@ Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyCon
     Where-Object { $_.CommandLine -like "*$entry*" } |
     ForEach-Object {
         Write-SupervisorLog ("arret d'une instance precedente (processus {0})" -f $_.ProcessId)
-        Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null
+        Invoke-CimMethod -InputObject $_ -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null
     }
 
 while ($true) {
