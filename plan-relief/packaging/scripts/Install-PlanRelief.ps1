@@ -262,13 +262,35 @@ function Get-ComparableConfig([string] $path) {
     if ($hsts) { $hsts.SetAttribute('value', 'max-age=0') }
     $doc.OuterXml
 }
+# Copie du web.config tel que publié par le dernier paquet : il permet de distinguer une
+# vraie personnalisation (à conserver) d'une version précédente du paquet (à remplacer).
+$publishedCopy = Join-Path $SitePath 'web.paquet.config'
 $configDiffers = $false
+$previousPackage = $false
 if (Test-Path $existingConfig) {
-    $configDiffers = (Get-ComparableConfig $existingConfig) -ne (Get-ComparableConfig $packagedConfig)
+    $mineCmp = Get-ComparableConfig $existingConfig
+    if ($mineCmp -ne (Get-ComparableConfig $packagedConfig)) {
+        if (Test-Path $publishedCopy) {
+            $configDiffers = $mineCmp -ne (Get-ComparableConfig $publishedCopy)
+            $previousPackage = -not $configDiffers
+        } else {
+            # Paquets antérieurs, qui ne déposaient pas cette copie : leur web.config porte
+            # l'en-tête « Configuration IIS pour "Plan Relief" ». Il est remplacé, et une copie
+            # de sauvegarde est gardée au cas où il aurait été retouché.
+            $previousPackage = (Get-Content $existingConfig -Raw -Encoding UTF8) -match 'Configuration IIS pour "Plan Relief"'
+            $configDiffers = -not $previousPackage
+        }
+    }
+}
+$savedOld = $null
+if ($previousPackage) {
+    $savedOld = Join-Path ([IO.Path]::GetTempPath()) ("plan-relief-web.config.avant-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    Copy-Item $existingConfig $savedOld -Force
 }
 
 Get-ChildItem -Path $SitePath -Exclude 'web.config' | Remove-Item -Recurse -Force
 Copy-Item -Path (Join-Path $PackageRoot 'site\*') -Destination $SitePath -Recurse -Force -Exclude 'web.config'
+Copy-Item $packagedConfig $publishedCopy -Force
 
 if ($configDiffers) {
     $backup = Join-Path $SitePath ("web.config.nouveau-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -288,6 +310,11 @@ if ($configDiffers) {
     }
 } else {
     Copy-Item $packagedConfig $existingConfig -Force
+    if ($savedOld) {
+        $kept = Join-Path $SitePath ("web.config.avant-mise-a-jour-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+        Move-Item $savedOld $kept -Force
+        Write-Ok "web.config remplacé par celui de ce paquet (l'ancien est gardé : $([IO.Path]::GetFileName($kept)))"
+    }
 }
 Write-Ok 'Fichiers du site publiés'
 
