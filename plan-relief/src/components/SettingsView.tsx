@@ -148,6 +148,7 @@ function About() {
       <div className="card-h"><h2>Données et sauvegarde</h2></div>
       <div className="card-b small">
         <p style={{ margin: 0 }}>Les plans (fichiers d'origine), leurs équipements et les comptes sont stockés sur le serveur, dans le dossier <code>data\</code> du service. C'est la seule copie : la sauvegarde quotidienne doit être en place (<code>Register-PlanReliefBackup.ps1</code>, voir INSTALL.md).</p>
+        <p className="muted" style={{ margin: 0 }}>Version de l'application : <span className="mono">{__APP_VERSION__}</span>. Après une mise à jour du serveur, chaque poste doit afficher la nouvelle version ; sinon, actualisez la page (Ctrl+F5).</p>
         <p className="muted" style={{ margin: 0 }}>Un plan retiré du stock est déplacé dans <code>data\corbeille\</code> : un administrateur peut le remettre dans <code>data\plans\</code> puis redémarrer le service.</p>
       </div>
     </section>

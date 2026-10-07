@@ -541,3 +541,8 @@ Write-Host ""
 Write-Host "    Vérification :" -ForegroundColor Yellow
 Write-Host "      .\Test-PlanRelief.ps1 -HostName $HostName -Port $Port"
 Write-Host ""
+$siteVersion = (Get-Content (Join-Path $PackageRoot 'VERSION.txt') -ErrorAction SilentlyContinue | Select-Object -First 1)
+Write-Host "    Mise à jour : sur chaque poste, la version affichée sous l'écran de connexion" -ForegroundColor Yellow
+Write-Host "      (et dans Paramètres) doit être $(if ($siteVersion) { "« $siteVersion »" } else { 'celle de ce paquet' })."
+Write-Host "      Sinon, actualisez la page une fois avec Ctrl+F5 (ancienne version gardée par le navigateur)."
+Write-Host ""

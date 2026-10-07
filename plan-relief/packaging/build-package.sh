@@ -60,6 +60,10 @@ echo "==> Assemblage du paquet"
 # 1. Le site statique — publié par IIS.
 mkdir -p "$STAGE/site"
 cp -r dist/. "$STAGE/site/"
+# Version affichée par l'application (injectée au build) : rappelée par l'installateur pour
+# vérifier qu'aucun poste ne garde l'ancienne version en cache.
+grep -ho "${VERSION} du [0-9-]* [0-9:]* UTC" dist/assets/*.js | head -1 > "$STAGE/VERSION.txt"
+[ -s "$STAGE/VERSION.txt" ] || { echo "Version introuvable dans le build" >&2; exit 1; }
 
 # 2. Le service (plans, recherche, authentification), dépendances incluses.
 mkdir -p "$STAGE/service"

@@ -73,6 +73,7 @@ export function LoginScreen({ onLogin }: { onLogin: (u: api.User) => void }) {
             <button type="button" className="btn" onClick={microsoft} disabled={busy}>Se connecter avec Microsoft</button>
           </>
         )}
+        <p className="muted small mono" style={{ textAlign: 'center', margin: 0 }}>Version {__APP_VERSION__}</p>
       </div>
     </div>
   );

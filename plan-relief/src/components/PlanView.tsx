@@ -587,6 +587,12 @@ function ModelSettings({ drawing, settings, onChange, onRole, onPage, onExport }
         {noWall
           ? <p className="notice warn small">Aucun calque n'est affecté aux murs : choisissez « Murs » sur celui qui les contient pour obtenir un volume.</p>
           : <p className="muted small">Les murs sont montés en hauteur, les fenêtres reçoivent allège, vitrage et linteau, le reste est tracé au sol.</p>}
+        {Object.keys(settings.roles).length > 0 && (
+          <div className="notice small">
+            <p>{Object.keys(settings.roles).length} groupe(s) réglé(s) à la main : ils ne suivent pas la détection automatique.</p>
+            <button type="button" className="btn sm" onClick={() => onChange('roles', {})}>Rétablir la détection automatique</button>
+          </div>
+        )}
         <div className="layers">
           {drawing.groups.map((g, i) => {
             const role = roleOf(g, settings);
