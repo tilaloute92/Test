@@ -22,8 +22,11 @@ export interface FloorInput {
   /** Altitude du sol de l'étage, en mètres. */
   elevation: number;
   footprint: Footprint;
-  /** Passages verticaux de l'étage, en mètres dans le repère de l'étage. */
-  passages: { key: string; label: string; x: number; y: number }[];
+  /**
+   * Passages verticaux de l'étage, en mètres dans le repère de l'étage. `kind` : passage
+   * nommé à la main, ou escalier / ascenseur / gaine repérés et reliés automatiquement.
+   */
+  passages: { key: string; label: string; x: number; y: number; kind?: PassageKind }[];
   /** Emprise du dessin en mètres, pour dimensionner la grille. */
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
   /**
@@ -33,6 +36,7 @@ export interface FloorInput {
   ink?: Float32Array;
 }
 
+export type PassageKind = 'manuel' | 'gaine' | 'escalier' | 'ascenseur';
 export interface Endpoint { planId: string; x: number; y: number }
 
 export interface RouteOptions {
@@ -43,6 +47,8 @@ export interface RouteOptions {
    * de changements de direction possible. Sinon, chemin le plus court en lignes droites.
    */
   orthogonal?: boolean;
+  /** Types de passages entre étages autorisés (tous si absent). */
+  passageKinds?: PassageKind[];
 }
 
 export interface Leg {
@@ -57,7 +63,7 @@ export interface Leg {
   from: string;
   to: string;
 }
-export interface Rise { key: string; label: string; fromPlan: string; toPlan: string; length: number }
+export interface Rise { key: string; label: string; kind: PassageKind; fromPlan: string; toPlan: string; length: number }
 export type Step = { type: 'leg'; leg: Leg } | { type: 'rise'; rise: Rise };
 
 export interface RouteResult {
@@ -598,7 +604,7 @@ function orthoEnds(pts: [number, number][], a: [number, number], b: [number, num
 /* ---------------------------------------------------------------------------------------
  * Enchaînement des étages
  * ------------------------------------------------------------------------------------- */
-interface Node { id: string; planId: string; cell: number; label: string; key?: string; x: number; y: number }
+interface Node { id: string; planId: string; cell: number; label: string; key?: string; kind?: PassageKind; x: number; y: number }
 
 export async function computeRoute(
   floors: FloorInput[],
@@ -615,7 +621,8 @@ export async function computeRoute(
   const lo = Math.min(fFrom.elevation, fTo.elevation) - 0.01, hi = Math.max(fFrom.elevation, fTo.elevation) + 0.01;
   const used = floors.filter((f) => f.elevation >= lo && f.elevation <= hi);
   const keyFloors = new Map<string, Set<string>>();
-  for (const f of used) for (const p of f.passages) {
+  const allowed = (p: FloorInput['passages'][number]) => !options.passageKinds || options.passageKinds.includes(p.kind ?? 'manuel');
+  for (const f of used) for (const p of f.passages.filter(allowed)) {
     if (!keyFloors.has(p.key)) keyFloors.set(p.key, new Set());
     keyFloors.get(p.key)!.add(f.planId);
   }
@@ -638,9 +645,9 @@ export async function computeRoute(
   for (const f of used) {
     const g = await gridOf(f);
     const list: Node[] = [];
-    for (const p of f.passages) {
+    for (const p of f.passages.filter(allowed)) {
       if ((keyFloors.get(p.key)?.size ?? 0) < 2) continue;
-      list.push({ id: `${f.planId}|${p.key}`, planId: f.planId, cell: g.snap(g.idx(p.x, p.y)), label: p.label, key: p.key, x: p.x, y: p.y });
+      list.push({ id: `${f.planId}|${p.key}`, planId: f.planId, cell: g.snap(g.idx(p.x, p.y)), label: p.label, key: p.key, kind: p.kind, x: p.x, y: p.y });
     }
     nodesByFloor.set(f.planId, list);
   }
@@ -706,7 +713,7 @@ export async function computeRoute(
   }
   if (!seq) {
     if (from.planId !== to.planId) {
-      throw new RouteError("Aucun passage entre étages ne relie le départ à l'arrivée. Marquez les gaines techniques, colonnes montantes ou escaliers comme « passage entre étages », avec le même nom sur chaque plan.");
+      throw new RouteError("Aucun passage entre étages ne relie le départ à l'arrivée. Sur chaque plan, lancez « Repérer escaliers, ascenseurs et gaines » (ou ajoutez-les à la main au même endroit d'un étage à l'autre), vérifiez les types de passages autorisés dans les options, ou marquez une gaine « passage entre étages » avec le même nom sur chaque plan.");
     }
     throw new RouteError("Aucun chemin trouvé entre ces deux points sur ce plan.");
   }
@@ -735,7 +742,7 @@ export async function computeRoute(
     } else {
       const length = Math.abs(byId.get(a.planId)!.elevation - byId.get(b.planId)!.elevation);
       vertical += length;
-      steps.push({ type: 'rise', rise: { key: a.key!, label: a.label, fromPlan: a.planId, toPlan: b.planId, length } });
+      steps.push({ type: 'rise', rise: { key: a.key!, label: a.label, kind: a.kind ?? 'manuel', fromPlan: a.planId, toPlan: b.planId, length } });
     }
   }
   const warnings: string[] = [];

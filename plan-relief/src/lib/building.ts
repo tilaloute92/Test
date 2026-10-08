@@ -2,7 +2,7 @@ import * as api from '../api';
 import { drawingFactor, readDrawing, roleOf } from './drawing';
 import { floorFootprint, type Footprint } from './footprints';
 import { segBounds } from './geometry';
-import type { FloorInput } from './route';
+import type { FloorInput, PassageKind } from './route';
 import { DEFAULT_SETTINGS, type Drawing, type Equipment, type PlanRecord, type PlanSummary } from './types';
 
 export const DEFAULT_FLOOR_HEIGHT = 3;
@@ -61,6 +61,8 @@ export interface LoadedFloor extends FloorInput {
   floorHeight: number;
   /** Décalage appliqué pour superposer cet étage aux autres (mètres), d'après les passages communs. */
   offset: [number, number];
+  /** Escaliers, ascenseurs et gaines de l'étage, candidats à une liaison automatique. */
+  autos: AutoCandidate[];
   footprint: Footprint;
 }
 
@@ -105,16 +107,68 @@ export async function loadBuilding(members: PlanSummary[], onProgress: (t: strin
       for (const v of g.segs) inkList.push(v * factor);
     }
     const ink = Float32Array.from(inkList);
-    const passages = plan.equipment.filter((e) => e.passage).map((e) => ({ key: passageKey(e.passage!), label: e.passage!, ...toM(e, factor) }));
+    // Passages nommés à la main ; escaliers, ascenseurs et gaines (repérés ou ajoutés) sans nom
+    // de passage deviennent candidats à une liaison automatique (voir linkAutoPassages).
+    const passages: FloorInput['passages'] = plan.equipment.filter((e) => e.passage).map((e) => ({ key: passageKey(e.passage!), label: e.passage!, kind: 'manuel' as PassageKind, ...toM(e, factor) }));
+    const autos: AutoCandidate[] = plan.equipment
+      .filter((e) => !e.passage && (e.category === 'escalier' || e.category === 'ascenseur' || e.category === 'gaine'))
+      .map((e) => ({ kind: e.category as AutoCandidate['kind'], label: e.label, ...toM(e, factor) }));
     const floor: LoadedFloor = {
       planId: plan.id, name: [plan.floor || plan.name, plan.floor ? plan.name : ''].filter(Boolean).join(' — '),
-      elevation, footprint, passages, bounds, ink, plan, drawing, factor, level, floorHeight, offset: [0, 0],
+      elevation, footprint, passages, bounds, ink, plan, drawing, factor, level, floorHeight, offset: [0, 0], autos,
     };
     floors.push(floor);
     prev = floor;
   }
   alignFloors(floors);
+  linkAutoPassages(floors);
   return floors;
+}
+
+interface AutoCandidate { kind: 'escalier' | 'ascenseur' | 'gaine'; label: string; x: number; y: number }
+
+/** Distance maximale entre deux éléments superposés d'étages voisins pour les relier. */
+const LINK_DIST = 4;
+
+/**
+ * Relie automatiquement les escaliers, ascenseurs et gaines superposés d'un étage à l'autre :
+ * un élément est relié à celui de même type de l'étage voisin le plus proche (à moins de
+ * 4 m, une fois les étages superposés). Une chaîne d'éléments ainsi reliés devient un
+ * passage vertical, nommé d'après l'élément de l'étage le plus bas (« Escalier 3 »).
+ */
+function linkAutoPassages(floors: LoadedFloor[]) {
+  const nodes: { f: LoadedFloor; c: AutoCandidate }[] = floors.flatMap((f) => f.autos.map((c) => ({ f, c })));
+  const parent = nodes.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const index = new Map(nodes.map((n, i) => [n, i]));
+  for (let k = 0; k + 1 < floors.length; k++) {
+    const A = floors[k], B = floors[k + 1];
+    const used = new Set<AutoCandidate>();
+    // Paires les plus proches d'abord, chaque élément relié au plus une fois par étage voisin.
+    const pairs: { a: AutoCandidate; b: AutoCandidate; d: number }[] = [];
+    for (const b of B.autos) for (const a of A.autos) {
+      if (a.kind !== b.kind) continue;
+      const d = Math.hypot(a.x + A.offset[0] - b.x - B.offset[0], a.y + A.offset[1] - b.y - B.offset[1]);
+      if (d <= LINK_DIST) pairs.push({ a, b, d });
+    }
+    pairs.sort((p, q) => p.d - q.d);
+    for (const { a, b } of pairs) {
+      if (used.has(a) || used.has(b)) continue;
+      used.add(a); used.add(b);
+      const ia = index.get(nodes.find((n) => n.c === a)!)!, ib = index.get(nodes.find((n) => n.c === b)!)!;
+      parent[find(ia)] = find(ib);
+    }
+  }
+  const comps = new Map<number, { f: LoadedFloor; c: AutoCandidate }[]>();
+  nodes.forEach((n, i) => { const r = find(i); comps.set(r, [...(comps.get(r) ?? []), n]); });
+  let k = 0;
+  for (const members of comps.values()) {
+    if (new Set(members.map((m) => m.f.planId)).size < 2) continue;
+    const lowest = members.reduce((a, b) => (a.f.level <= b.f.level ? a : b));
+    const key = `AUTO-${++k}`;
+    const label = lowest.c.label;
+    for (const m of members) m.f.passages.push({ key, label, x: m.c.x, y: m.c.y, kind: m.c.kind });
+  }
 }
 
 /**
@@ -133,6 +187,25 @@ function alignFloors(floors: LoadedFloor[]) {
       }
     }
     if (n) f.offset = [sx / n, sy / n];
+    else if (placed.length) f.offset = alignByLandmarks(f, placed[placed.length - 1]);
     placed.push(f);
   }
+}
+
+/**
+ * Sans passage nommé commun : recalage d'après les escaliers, ascenseurs et gaines. Parmi
+ * les décalages qui superposent un élément de l'étage sur un élément de même type de
+ * l'étage précédent, on retient celui qui en superpose le plus (à 1,5 m près). Sans
+ * accord net (moins de 2 éléments), les dessins sont supposés de même origine.
+ */
+function alignByLandmarks(f: LoadedFloor, ref: LoadedFloor): [number, number] {
+  const score = (dx: number, dy: number) => f.autos.filter((c) => ref.autos.some((r) => r.kind === c.kind && Math.hypot(r.x + ref.offset[0] - c.x - dx, r.y + ref.offset[1] - c.y - dy) <= 1.5)).length;
+  let best: [number, number] = [0, 0], bestN = score(0, 0);
+  for (const c of f.autos) for (const r of ref.autos) {
+    if (r.kind !== c.kind) continue;
+    const dx = r.x + ref.offset[0] - c.x, dy = r.y + ref.offset[1] - c.y;
+    const n = score(dx, dy);
+    if (n > bestN + (Math.hypot(dx, dy) > 0.5 ? 0 : -1)) { best = [dx, dy]; bestN = n; }
+  }
+  return bestN >= 2 ? best : [0, 0];
 }

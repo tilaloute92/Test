@@ -275,13 +275,13 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
   const findLandmarks = async () => {
     if (!plan || !drawing) return;
     const found = detectLandmarks(plan.equipment, drawing.groups, plan.file.format, settings);
-    const msg = found.stairs + found.lifts
-      ? `${found.stairs} escalier(s) et ${found.lifts} ascenseur(s) repérés : filtres Escalier / Ascenseur, ou « Tracé depuis ici ».`
+    const msg = found.stairs + found.lifts + found.risers
+      ? `${found.stairs} escalier(s), ${found.lifts} ascenseur(s) et ${found.risers} gaine(s) repérés : ils servent aussi de passages entre étages pour les tracés.`
       : plan.file.format === 'pdf' && !plan.equipment.some((e) => e.kind === 'texte')
         ? 'Aucun escalier ni ascenseur repéré. Les ascenseurs se reconnaissent à leur texte (ASC, MC…) : lancez d\'abord « Relire les indications du plan » avec la lecture OCR.'
         : 'Aucun escalier ni ascenseur repéré sur ce plan. Vous pouvez les ajouter à la main (catégories Escalier et Ascenseur).';
     if (await saveEquipment(withIndications(found.list, plan.file.format, settings), msg)) {
-      if (found.stairs + found.lifts) setHiddenCats([]);
+      if (found.stairs + found.lifts + found.risers) setHiddenCats([]);
     }
   };
 
@@ -402,7 +402,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                     </div>
                   </div>
                   <button type="button" className="btn ghost sm" onClick={() => setRereadOpen(true)} disabled={saving || !!loading}>Relire les indications du plan</button>
-                  <button type="button" className="btn ghost sm" onClick={findLandmarks} disabled={saving || !!loading || !drawing}>Repérer escaliers et ascenseurs</button>
+                  <button type="button" className="btn ghost sm" onClick={findLandmarks} disabled={saving || !!loading || !drawing}>Repérer escaliers, ascenseurs et gaines</button>
                 </div>
 
                 {selectedEq && (

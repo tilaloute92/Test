@@ -16,7 +16,7 @@ import type { Equipment, Group, PlanSettings } from './types';
  */
 
 const DETECTION = 'Détection';
-export const isDetectedLandmark = (e: Equipment) => !!e.attributes?.[DETECTION] && (e.category === 'escalier' || e.category === 'ascenseur');
+export const isDetectedLandmark = (e: Equipment) => !!e.attributes?.[DETECTION] && (e.category === 'escalier' || e.category === 'ascenseur' || e.category === 'gaine');
 
 interface Flight { cx: number; cy: number; ux: number; uy: number; len: number; run: number; steps: number; minX: number; minY: number; maxX: number; maxY: number }
 
@@ -153,12 +153,14 @@ const LIFT_WORDS: [RegExp, string][] = [
   [/^(MM|MONTE MALADES?|MONTE LITS?)( |$)/, 'Monte-malade'],
 ];
 const STAIR_WORDS = /^(ESC|ESCALIERS?|STAIRS?|CAGE D ESCALIER)( |$)/;
+/** Passages verticaux des câbles : « VTP CFA/SSI », « GT-3 », « Gaine technique », « Colonne C4 »… */
+const RISER_WORDS = /^(VTP|GTL|GAINES? TECHNIQUES?|GAINE|GT ?\d+[A-Z]?|COLONNES? MONTANTES?|COLONNE ?[A-Z]?\d+|CM ?\d+|TREMIE|SHUNT)( |$)/;
 
 /**
  * Remplace les escaliers et ascenseurs repérés précédemment par un nouveau repérage.
  * `f` : mètres par unité du dessin.
  */
-export function withLandmarks(list: Equipment[], groups: Group[], settings: PlanSettings, f: number): { list: Equipment[]; stairs: number; lifts: number } {
+export function withLandmarks(list: Equipment[], groups: Group[], settings: PlanSettings, f: number): { list: Equipment[]; stairs: number; lifts: number; risers: number } {
   const kept = list.filter((e) => !isDetectedLandmark(e));
   const texts = kept.filter((e) => e.label.length <= 30);
   const out: Equipment[] = [];
@@ -219,5 +221,22 @@ export function withLandmarks(list: Equipment[], groups: Group[], settings: Plan
       attributes: { [DETECTION]: `automatique (texte « ${l.text} »)` },
     });
   }
-  return { list: [...kept, ...out], stairs: stairList.length, lifts: lifts.length };
+  // Gaines et colonnes montantes : textes, un repère par gaine (textes voisins fusionnés).
+  const risers: { x: number; y: number; text: string }[] = [];
+  for (const t of texts) {
+    if (!RISER_WORDS.test(norm(t.label))) continue;
+    const x = t.x * f, y = t.y * f;
+    if (risers.some((r) => Math.hypot(r.x - x, r.y - y) < 1.5)) continue;
+    risers.push({ x, y, text: t.label });
+  }
+  risers.sort((a, b) => b.y - a.y || a.x - b.x);
+  risers.forEach((r, i) => {
+    out.push({
+      id: `auto-gt-${i + 1}`, kind: 'bloc', category: 'gaine',
+      label: r.text.replace(/\s+/g, ' ').trim(), type: 'Gaine / colonne montante', layer: '',
+      x: r.x / f, y: r.y / f, footprint: { w: 1.2 / f, d: 1.2 / f, angle: 0 },
+      attributes: { [DETECTION]: `automatique (texte « ${r.text} »)` },
+    });
+  });
+  return { list: [...kept, ...out], stairs: stairList.length, lifts: lifts.length, risers: risers.length };
 }

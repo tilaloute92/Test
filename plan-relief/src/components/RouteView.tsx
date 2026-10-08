@@ -3,7 +3,15 @@ import * as THREE from 'three';
 import * as api from '../api';
 import { hrefOf } from '../App';
 import { buildingMembers, levelOf, loadBuilding, type LoadedFloor } from '../lib/building';
-import { computeRoute, RouteError, type RouteResult } from '../lib/route';
+import { computeRoute, RouteError, type PassageKind, type RouteResult } from '../lib/route';
+
+const PASSAGE_KINDS: [PassageKind, string, string][] = [
+  ['gaine', 'Gaines et colonnes montantes', 'Chemin normal des câbles d\'un étage à l\'autre.'],
+  ['escalier', 'Escaliers', ''],
+  ['ascenseur', 'Ascenseurs et monte-charges', 'Interdit pour les câbles courants : à réserver à un cheminement de personnes.'],
+  ['manuel', 'Passages nommés sur les plans', 'Équipements marqués « passage entre étages ».'],
+];
+const RISE_LABEL: Record<PassageKind, string> = { manuel: 'Passage', gaine: 'Gaine', escalier: 'Escalier', ascenseur: 'Ascenseur' };
 import { PlanViewer } from '../lib/viewer';
 import { DEFAULT_SETTINGS, KIND_LABELS, type Equipment, type PlanSummary } from '../lib/types';
 import { fmtNum, Highlight, NavHint } from './ui';
@@ -36,6 +44,8 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
   const [to, setTo] = useState<Resolved | null>(null);
   const [allowWalls, setAllowWalls] = useState(false);
   const [orthogonal, setOrthogonal] = useState(true);
+  // Pas de câbles dans une gaine d'ascenseur : ascenseurs exclus par défaut.
+  const [kinds, setKinds] = useState<PassageKind[]>(['manuel', 'gaine', 'escalier']);
   const [height, setHeight] = useState<Height>('plafond');
   const [margin, setMargin] = useState(15);
   const [transparent, setTransparent] = useState(true);
@@ -107,7 +117,7 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
         const eq = f.plan.equipment.find((e) => e.id === r.eqId) ?? r.eq;
         return { planId: r.planId, x: eq.x * f.factor, y: eq.y * f.factor, label: r.label };
       };
-      const route = await computeRoute(floors, pos(from), pos(to), { allowWalls, orthogonal }, setBusy);
+      const route = await computeRoute(floors, pos(from), pos(to), { allowWalls, orthogonal, passageKinds: kinds }, setBusy);
       setResult({ route, floors, height });
     } catch (err) {
       setError(err instanceof RouteError ? err.message : `Calcul impossible : ${(err as Error).message}`);
@@ -198,6 +208,15 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
                 <input id="trace-ortho" type="checkbox" checked={orthogonal} onChange={(e) => setOrthogonal(e.target.checked)} />
                 <span>Angles droits<span className="muted small" style={{ display: 'block' }}>Le tracé suit les axes du bâtiment avec le moins de coudes possible, comme un chemin de câbles. Décoché : le plus court en lignes droites.</span></span>
               </label>
+              <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
+                <span>Changement d'étage par</span>
+                {PASSAGE_KINDS.map(([k, label, hint]) => (
+                  <label key={k} className="check" htmlFor={`trace-kind-${k}`} style={{ alignItems: 'flex-start' }}>
+                    <input id={`trace-kind-${k}`} type="checkbox" checked={kinds.includes(k)} onChange={(e) => setKinds(e.target.checked ? [...kinds, k] : kinds.filter((x) => x !== k))} />
+                    <span>{label}{hint && <span className="muted small" style={{ display: 'block' }}>{hint}</span>}</span>
+                  </label>
+                ))}
+              </fieldset>
               <label className="check" htmlFor="trace-walls" style={{ alignItems: 'flex-start' }}>
                 <input id="trace-walls" type="checkbox" checked={allowWalls} onChange={(e) => setAllowWalls(e.target.checked)} />
                 <span>Autoriser la traversée des murs (carottage)<span className="muted small" style={{ display: 'block' }}>Sinon le tracé passe par les portes, et ne traverse un mur qu'en dernier recours, avec un avertissement.</span></span>
@@ -232,7 +251,8 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
                         </>
                       ) : (
                         <>
-                          <b>Passage {s.rise.label}</b> — {floorName(s.rise.fromPlan)} → {floorName(s.rise.toPlan)} : <span className="num">{fmtNum(s.rise.length, 1)} m</span>
+                          <b>{s.rise.kind === 'manuel' ? `Passage ${s.rise.label}` : s.rise.label}</b> — {floorName(s.rise.fromPlan)} → {floorName(s.rise.toPlan)} : <span className="num">{fmtNum(s.rise.length, 1)} m</span>
+                          {s.rise.kind !== 'manuel' && <span className="tag" style={{ marginLeft: 6 }}>{RISE_LABEL[s.rise.kind].toLowerCase()}, relié automatiquement</span>}
                         </>
                       )}
                     </li>
@@ -243,7 +263,7 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
             )}
             {!result && !error && (
               <div className="sec muted small">
-                <p style={{ margin: 0 }}>Pour un tracé entre étages, chaque plan du bâtiment doit avoir le même site et le même bâtiment sur sa fiche, un niveau (déduit de l'étage : RDC, R+1, SS1…), et les gaines ou escaliers doivent être marqués « passage entre étages » avec le même nom sur chaque plan.</p>
+                <p style={{ margin: 0 }}>Tracé entre étages : chaque plan du bâtiment doit avoir le même site et le même bâtiment sur sa fiche, et un niveau (déduit de l'étage : RDC, R+1, SS1…). Les gaines, escaliers et ascenseurs repérés sur les plans (bouton « Repérer escaliers, ascenseurs et gaines ») sont reliés automatiquement d'un étage à l'autre quand ils se superposent. Une gaine peut aussi être marquée « passage entre étages » avec le même nom sur chaque plan : ce nom fait foi.</p>
               </div>
             )}
           </div>
@@ -287,7 +307,7 @@ function FloorsNote({ floors }: { floors: LoadedFloor[] }) {
               <td><a href={hrefOf({ page: 'plan', id: f.planId })}>{f.name}</a>{f.plan.level == null && <div className="cell-sub">niveau déduit de « {f.plan.floor || '—'} »</div>}</td>
               <td className="num">{levelOf(f.plan)}</td>
               <td className="num">{fmtNum(f.elevation, 1)} m</td>
-              <td className="num">{f.passages.map((p) => p.label).join(', ') || '—'}</td>
+              <td className="num">{f.passages.map((p) => p.label).join(', ') || '—'}{f.autos.length > 0 && <div className="cell-sub">{f.autos.length} escalier(s), ascenseur(s) ou gaine(s) repéré(s)</div>}</td>
             </tr>
           ))}
         </tbody>

@@ -13,5 +13,6 @@ export const CATEGORIES = {
   electrique: { label: 'Électricité', words: 'electricite electrique tableau onduleur' },
   escalier: { label: 'Escalier', words: 'escalier escaliers marches cage volee' },
   ascenseur: { label: 'Ascenseur', words: 'ascenseur elevateur lift monte-charge monte-malade monte-lit cabine' },
+  gaine: { label: 'Gaine / colonne montante', words: 'gaine technique colonne montante vtp passage vertical tremie shunt' },
   autre: { label: 'Autre', words: '' },
 };
