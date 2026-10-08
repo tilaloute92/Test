@@ -33,7 +33,7 @@ export function UploadDialog({ sites, plans, onClose, onDone }: { sites: string[
       setOcr(d.format === 'pdf' && d.equipment.filter((e) => e.kind === 'texte').length < 10);
     } catch (err) {
       setDrawing(null);
-      setError(`Lecture impossible : ${(err as Error).message}. Vérifiez qu'il s'agit d'un DXF (ASCII) ou d'un PDF vectoriel.`);
+      setError(`Lecture impossible : ${(err as Error).message}. Vérifiez qu'il s'agit d'un DXF (ASCII) ou d'un PDF vectoriel. (Application version ${__APP_VERSION__})`);
     } finally {
       setBusy('');
     }
