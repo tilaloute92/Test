@@ -171,7 +171,7 @@ export function withLandmarks(list: Equipment[], groups: Group[], settings: Plan
   // escalier tournant sont séparées par le jour central).
   const flights = findStairFlights(groups, settings, f);
   const parent = flights.map((_, i) => i);
-  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const find = (i: number): number => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
   const M = 2;
   for (let i = 0; i < flights.length; i++) for (let j = i + 1; j < flights.length; j++) {
     const a = flights[i], b = flights[j];

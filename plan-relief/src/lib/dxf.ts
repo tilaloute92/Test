@@ -1,5 +1,5 @@
 import DxfParser from 'dxf-parser';
-import { IDENTITY, apply, arcPoints, bulgePoints, mul, segBounds, wallScore, type Mat } from './geometry';
+import { IDENTITY, apply, arcPoints, bulgePoints, maxOf, mul, segBounds, wallScore, type Mat } from './geometry';
 import { UNIT_FACTORS, type Drawing, type Equipment, type Group, type Role, type Unit } from './types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- entités DXF non typées par dxf-parser */
@@ -299,6 +299,6 @@ function guessWallLayers(groups: Group[], f: number) {
   if (groups.some((g) => g.guess === 'mur')) return;
   const cands = groups.filter((g) => g.guess === 'plan' && g.segs.length >= 16 && g.segs.length <= 400_000);
   const scores = cands.map((g) => wallScore(g.segs, 0.1 / f, 0.6 / f, 1 / f));
-  const best = Math.max(0, ...scores);
+  const best = Math.max(0, maxOf(scores));
   if (best > 0) cands.forEach((g, k) => { if (scores[k] >= best * 0.4) g.guess = 'mur'; });
 }

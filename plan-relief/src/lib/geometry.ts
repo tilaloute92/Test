@@ -70,6 +70,14 @@ export function segBounds(lists: ArrayLike<number>[]): Bounds | null {
 /** Longueur cumulée des traits parallèles voisins, en nombre de fois la longueur du trait. */
 const STACK_DENSITY = 2.5;
 
+/**
+ * Minimum et maximum d'une liste de valeurs, sans `Math.min(...liste)` : au-delà d'environ
+ * 100 000 valeurs, passer la liste en arguments dépasse la pile d'appels du navigateur
+ * (« Maximum call stack size exceeded »).
+ */
+export function minOf(values: ArrayLike<number>): number { let m = Infinity; for (let i = 0; i < values.length; i++) if (values[i] < m) m = values[i]; return m; }
+export function maxOf(values: ArrayLike<number>): number { let m = -Infinity; for (let i = 0; i < values.length; i++) if (values[i] > m) m = values[i]; return m; }
+
 export interface WallBox { x: number; y: number; ux: number; uy: number; len: number; thick: number }
 export interface Leftover { len: number; x: number; y: number; ux: number; uy: number }
 
@@ -191,7 +199,7 @@ export function textRuns(boxes: BBox[]): Set<number> {
   const parent = Int32Array.from({ length: n }, (_, i) => i);
   const find = (i: number) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
   const size = boxes.map((b) => Math.max(b.maxX - b.minX, b.maxY - b.minY));
-  const maxSize = Math.max(0, ...size);
+  const maxSize = Math.max(0, maxOf(size));
   const order = boxes.map((_, i) => i).sort((a, b) => boxes[a].minX - boxes[b].minX);
   for (let a = 0; a < n; a++) {
     const i = order[a], A = boxes[i];

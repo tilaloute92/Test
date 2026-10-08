@@ -71,7 +71,7 @@ export async function ocrPdfPage(buf: ArrayBuffer, pageNum: number, onProgress: 
       await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT, user_defined_dpi: '300' });
       const found: OcrLabel[] = [];
       if (vectorShare) {
-        found.push(...await readVectorLines(worker, lines, (r) => onProgress({ step: `Lecture des textes dessinés (${Math.round(r * 100)} %)`, ratio: 0.05 + vectorShare * r })));
+        for (const l of await readVectorLines(worker, lines, (r) => onProgress({ step: `Lecture des textes dessinés (${Math.round(r * 100)} %)`, ratio: 0.05 + vectorShare * r }))) found.push(l);
         await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT, user_defined_dpi: '300' });
       }
       // 2. Lecture de l'image de la page par zones : textes scannés, images, et ce que la

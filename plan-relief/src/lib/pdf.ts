@@ -1,6 +1,6 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url';
-import { IDENTITY, apply, filterWallFills, minAreaRect, mul, pointInPolygon, wallScore, polygonArea, type Mat } from './geometry';
+import { IDENTITY, apply, filterWallFills, maxOf, minAreaRect, mul, pointInPolygon, wallScore, polygonArea, type Mat } from './geometry';
 import { isUsefulLabel } from './dxf';
 import type { Drawing, Equipment, Group } from './types';
 
@@ -148,7 +148,7 @@ function guessPdfRoles(groups: Group[]) {
   const scored = groups
     .filter((g) => (g.kind === 'line' ? g.segs.length >= 16 && g.segs.length <= MAX_SCORED_SEGS * 4 : g.guess !== 'ignore'))
     .map((g) => ({ g, score: groupWallScore(g) }));
-  const best = Math.max(0, ...scored.map((x) => x.score));
+  const best = Math.max(0, maxOf(scored.map((x) => x.score)));
   if (best > 0) {
     for (const { g, score } of scored) if (score >= best * 0.6) g.guess = 'mur';
     return;
@@ -156,7 +156,7 @@ function guessPdfRoles(groups: Group[]) {
   // Plan en simple trait : à défaut de mieux, le trait le plus épais.
   const strokes = groups.filter((g) => g.kind === 'line' && g.segs.length >= 16);
   if (strokes.length <= 1) return;
-  const maxW = Math.max(...strokes.map((g) => g.width ?? 0));
+  const maxW = maxOf(strokes.map((g) => g.width ?? 0));
   for (const g of strokes) if (g.width === maxW && maxW > 0) g.guess = 'mur';
 }
 

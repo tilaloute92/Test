@@ -139,7 +139,7 @@ const LINK_DIST = 4;
 function linkAutoPassages(floors: LoadedFloor[]) {
   const nodes: { f: LoadedFloor; c: AutoCandidate }[] = floors.flatMap((f) => f.autos.map((c) => ({ f, c })));
   const parent = nodes.map((_, i) => i);
-  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const find = (i: number): number => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
   const index = new Map(nodes.map((n, i) => [n, i]));
   for (let k = 0; k + 1 < floors.length; k++) {
     const A = floors[k], B = floors[k + 1];

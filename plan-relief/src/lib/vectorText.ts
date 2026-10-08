@@ -1,3 +1,4 @@
+import { maxOf, minOf } from './geometry';
 /**
  * Textes dessinés en vectoriel (AutoCAD exporte souvent ses textes en contours de lettres,
  * sans texte PDF) : regroupement des contours en lignes, puis rendu de chaque ligne seule,
@@ -103,8 +104,8 @@ function makeLine(all: Piece[], dir: 'h' | 'v'): TextLine | null {
   const hs = all.map((p) => (dir === 'h' ? p.y1 - p.y0 : p.x1 - p.x0)).sort((a, b) => a - b);
   const tall = hs[Math.floor(hs.length * 0.75)] || 0;
   const g = all.length >= 4 ? all.filter((p) => (dir === 'h' ? p.y1 - p.y0 : p.x1 - p.x0) <= tall * 1.6 + 0.05) : all;
-  const x0 = Math.min(...g.map((p) => p.x0)), x1 = Math.max(...g.map((p) => p.x1));
-  const y0 = Math.min(...g.map((p) => p.y0)), y1 = Math.max(...g.map((p) => p.y1));
+  const x0 = minOf(g.map((p) => p.x0)), x1 = maxOf(g.map((p) => p.x1));
+  const y0 = minOf(g.map((p) => p.y0)), y1 = maxOf(g.map((p) => p.y1));
   const len = dir === 'h' ? x1 - x0 : y1 - y0, height = dir === 'h' ? y1 - y0 : x1 - x0;
   return g.length >= 2 && len >= 1.2 * height && height > 0.5 ? { pieces: g, dir, x0, y0, x1, y1, height } : null;
 }
@@ -173,7 +174,7 @@ export function renderBatches(lines: TextLine[], flip = false): Batch[] {
   const flush = () => {
     if (!cur.length) return;
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(...cur.map((g) => g.w));
+    canvas.width = maxOf(cur.map((g) => g.w));
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = '#fff';

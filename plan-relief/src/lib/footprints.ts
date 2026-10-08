@@ -45,7 +45,7 @@ export function floorFootprint(groups: Group[], P: PlanSettings, f: number, cent
     if (g.kind === 'fill') {
       // Écritures et symboles en aplat écartés : seuls les murs pochés et les poteaux restent.
       const kept = filterWallFills(g.fills.map((fill) => fillToMeters(fill, f, cx, cy)), SMALL_MARK_M, 0.05);
-      fills.push(...kept);
+      for (const k of kept) fills.push(k);
       wallCount += kept.length;
     }
     else for (const v of g.segs) wallLines.push(v);
