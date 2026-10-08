@@ -13,6 +13,9 @@ import type { Equipment } from './types';
  * langue française. Aucun envoi à un service extérieur, aucun CDN.
  */
 
+/** Type des indications lues par OCR (reconnues ainsi lors d'une réanalyse sans OCR). */
+export const OCR_TYPE = 'Lu par OCR';
+
 export interface OcrProgress { step: string; ratio: number }
 
 /**
@@ -125,7 +128,7 @@ export async function ocrPdfPage(buf: ArrayBuffer, pageNum: number, onProgress: 
       onProgress({ step: 'Terminé', ratio: 1 });
       // Tolérances en points PDF : un texte de plan fait 2 à 3 mm sur la feuille.
       return dedupeOcr(found, 8, 4).map((o, i) => ({
-        id: `o${i}`, kind: 'texte' as const, label: o.label, type: 'Lu par OCR', layer: '', x: o.x, y: o.y, attributes: { Fiabilité: `${o.confidence} %` },
+        id: `o${i}`, kind: 'texte' as const, label: o.label, type: OCR_TYPE, layer: '', x: o.x, y: o.y, attributes: { Fiabilité: `${o.confidence} %` },
       }));
     } finally {
       await worker.terminate();

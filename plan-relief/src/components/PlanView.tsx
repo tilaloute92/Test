@@ -2,10 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api';
 import { hrefOf, navigate } from '../App';
 import { detectLandmarks, drawingCenter, drawingFactor, mergeExtracted, newId, readDrawing, roleOf, withIndications } from '../lib/drawing';
-import { mergeOcr } from '../lib/indications';
+import { reanalysePlan } from '../lib/reanalyse';
 import { DEFAULT_FLOOR_HEIGHT, guessLevel, suggestPassage } from '../lib/building';
 import { encodeEndpoint, readDraft } from '../lib/traceLink';
-import { ocrPdfPage, type OcrProgress } from '../lib/ocr';
 import { PlanViewer, type BuildStats } from '../lib/viewer';
 import { CATEGORIES, DEFAULT_SETTINGS, KIND_LABELS, ROLE_LABELS, UNIT_NAMES, categoryOf, cssColor, type Category, type Drawing, type Equipment, type EquipmentKind, type PlanRecord, type PlanSettings, type Role, type Unit } from '../lib/types';
 import { Highlight, Modal, downloadBlob, fmtDate, fmtNum, useConfirm, useToast, NavHint } from './ui';
@@ -254,22 +253,15 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
     setRereadOpen(false);
     try {
       setLoading('Relecture du plan…');
-      const d = await readDrawing(bufRef.current, plan.file.format, settings.pdfPage);
-      let extracted = d.equipment;
-      if (withOcr && plan.file.format === 'pdf') {
-        const read = await ocrPdfPage(bufRef.current, settings.pdfPage, (p: OcrProgress) => setLoading(`${p.step}… ${Math.round(p.ratio * 100)} %`), { vertical });
-        extracted = mergeOcr(extracted, read, 0.5 / drawingFactor('pdf', settings));
-      }
-      const found = detectLandmarks(mergeExtracted(plan.equipment, extracted), d.groups, plan.file.format, settings);
-      const list = withIndications(found.list, plan.file.format, settings);
-      const texts = list.filter((e) => e.kind === 'texte').length;
-      if (await saveEquipment(list, `Plan relu : ${list.length.toLocaleString('fr-FR')} éléments recherchables, dont ${texts.toLocaleString('fr-FR')} indications.`)) select(null);
+      const res = await reanalysePlan({ ...plan, settings }, bufRef.current, { ocr: withOcr, vertical }, (step) => setLoading(`${step}…`));
+      if (await saveEquipment(res.list, `Plan relu : ${res.list.length.toLocaleString('fr-FR')} éléments recherchables, dont ${res.texts.toLocaleString('fr-FR')} indications.`)) select(null);
     } catch (err) {
       toast(`Relecture impossible : ${(err as Error).message}`, 'error');
     } finally {
       setLoading('');
     }
   };
+
 
   /** Repérage seul, sur les textes déjà connus du plan (y compris ceux lus par OCR). */
   const findLandmarks = async () => {
@@ -772,7 +764,7 @@ function RereadDialog({ format, onCancel, onConfirm }: { format: 'dxf' | 'pdf'; 
       {format === 'pdf' && (
         <label className="check" htmlFor="reread-ocr" style={{ alignItems: 'flex-start' }}>
           <input id="reread-ocr" type="checkbox" checked={ocr} onChange={(e) => setOcr(e.target.checked)} />
-          <span>Lire aussi les indications dessinées ou scannées (OCR, 1 à 3 minutes pour une grande feuille)</span>
+          <span>Refaire la lecture OCR des indications dessinées ou scannées (1 à 3 minutes pour une grande feuille ; décoché, les textes déjà lus par OCR sont conservés)</span>
         </label>
       )}
       {format === 'pdf' && ocr && (
