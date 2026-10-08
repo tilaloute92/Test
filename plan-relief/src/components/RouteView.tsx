@@ -12,7 +12,7 @@ const PASSAGE_KINDS: [PassageKind, string, string][] = [
   ['manuel', 'Passages nommés sur les plans', 'Équipements marqués « passage entre étages ».'],
 ];
 const RISE_LABEL: Record<PassageKind, string> = { manuel: 'Passage', gaine: 'Gaine', escalier: 'Escalier', ascenseur: 'Monte-charge / ascenseur' };
-import { PlanViewer } from '../lib/viewer';
+import { PlanViewer, type FloorLabelStyle } from '../lib/viewer';
 import { DEFAULT_SETTINGS, KIND_LABELS, type Equipment, type PlanSummary } from '../lib/types';
 import { fmtNum, Highlight, NavHint } from './ui';
 import { decodeEndpoint, encodeEndpoint, writeDraft, type EndpointRef } from '../lib/traceLink';
@@ -58,6 +58,12 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
   const [playing, setPlaying] = useState(() => !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
   const [follow, setFollow] = useState(false);
   const [curStep, setCurStep] = useState<number | null>(null);
+  // Étages masqués dans la vue (identifiants de plan), pour ne garder que l'arrivée par exemple.
+  const [hiddenFloors, setHiddenFloors] = useState<string[]>([]);
+  const [labelStyle] = useState<FloorLabelStyle>(() => {
+    try { const v = localStorage.getItem('planrelief.etiquettesEtages'); if (v === 'dalle' || v === 'facade' || v === 'cote') return v; } catch { /* stockage indisponible */ }
+    return 'dalle';
+  });
   const segStep = useRef<number[]>([]);
   const playingRef = useRef(playing);
   playingRef.current = playing;
@@ -128,6 +134,7 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
       };
       const route = await computeRoute(floors, pos(from), pos(to), { allowWalls, orthogonal, passageKinds: kinds }, setBusy);
       setResult({ route, floors, height });
+      setHiddenFloors([]);
     } catch (err) {
       setError(err instanceof RouteError ? err.message : `Calcul impossible : ${(err as Error).message}`);
     } finally {
@@ -147,11 +154,12 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
     v.setBackground(colors.stage);
     if (!result) return;
     const { floors, route } = result;
-    const involved = new Set(route.steps.flatMap((s) => (s.type === 'leg' ? [s.leg.planId] : [s.rise.fromPlan, s.rise.toPlan])));
+    // Étages du tracé : ceux des tronçons et ceux que traverse l'ascenseur entre les deux.
+    const involved = new Set(floorsCrossed(route.steps, floors).flatMap((c) => (c.planId ? [c.planId] : [])));
     const shown = onlyRoute ? floors.filter((f) => involved.has(f.planId)) : floors;
     v.buildStack(shown.map((f) => ({
       input: { groups: f.drawing.groups, settings: { ...DEFAULT_SETTINGS, ...f.plan.settings }, factor: f.factor, center: [0, 0], showPlan: true },
-      elevation: f.elevation, offset: f.offset, name: f.name,
+      elevation: f.elevation, offset: f.offset, name: f.name, id: f.planId,
     })), colors.line, transparent);
     const byId = new Map(floors.map((f) => [f.planId, f]));
     const hRoute = (f: LoadedFloor) => (result.height === 'plafond' ? Math.max(0.3, (f.plan.settings.hWall ?? 2.5) - 0.15) : 0.15);
@@ -168,15 +176,25 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
     v.setRoute(pts);
     setCurStep(null);
     if (playingRef.current) v.playRoute();
-    // Numéros d'étage dans la vue : départ, étages traversés et arrivée en couleur.
-    const crossed = floorsCrossed(route.steps, floors);
-    const onRoute = new Map(crossed.map((c, i) => [c.level, i === 0 ? 'start' : i === crossed.length - 1 ? 'end' : 'pass'] as const));
-    const labels = new Map<number, { text: string; elevation: number; state: 'start' | 'end' | 'pass' | 'other' }>();
-    for (const f of shown) labels.set(f.level, { text: levelName(f.level), elevation: f.elevation, state: onRoute.get(f.level) ?? 'other' });
-    for (const c of crossed) if (!labels.has(c.level)) labels.set(c.level, { text: levelName(c.level), elevation: c.elevation, state: onRoute.get(c.level)! });
-    v.setFloorLabels([...labels.values()]);
     v.fit('3d');
   }, [result, transparent, onlyRoute, colors]);
+
+  // Étages masqués et numéros d'étage incrustés (sans recadrer la vue).
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v || !result) return;
+    const { floors, route } = result;
+    v.setHiddenFloors(hiddenFloors);
+    // Étages du tracé : ceux des tronçons et ceux que traverse l'ascenseur entre les deux.
+    const involved = new Set(floorsCrossed(route.steps, floors).flatMap((c) => (c.planId ? [c.planId] : [])));
+    const shown = onlyRoute ? floors.filter((f) => involved.has(f.planId)) : floors;
+    const crossed = floorsCrossed(route.steps, floors);
+    const onRoute = new Map(crossed.map((c, i) => [c.level, i === 0 ? 'start' : i === crossed.length - 1 ? 'end' : 'pass'] as const));
+    const labels = new Map<number, Parameters<PlanViewer['setFloorLabels']>[0][number]>();
+    for (const f of shown) labels.set(f.level, { text: levelName(f.level), name: f.plan.name, elevation: f.elevation, state: onRoute.get(f.level) ?? 'other', slab: !hiddenFloors.includes(f.planId) });
+    for (const c of crossed) if (!labels.has(c.level)) labels.set(c.level, { text: levelName(c.level), elevation: c.elevation, state: onRoute.get(c.level)!, slab: false });
+    v.setFloorLabels([...labels.values()], labelStyle);
+  }, [result, transparent, onlyRoute, colors, hiddenFloors, labelStyle]);
 
   const descents = result && result.height === 'plafond'
     ? (() => {
@@ -193,6 +211,17 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
   const floorName = (id: string) => result?.floors.find((f) => f.planId === id)?.name ?? '';
   const levelOfPlan = (id: string) => result?.floors.find((f) => f.planId === id)?.level ?? 0;
   const crossed = result ? floorsCrossed(result.route.steps, result.floors) : [];
+  // Étages présents dans la vue, du départ vers l'arrivée (puis les autres, de haut en bas).
+  const legPlans = result ? result.route.steps.flatMap((st) => (st.type === 'leg' ? [st.leg.planId] : [])) : [];
+  const firstPlan = legPlans[0], lastPlan = legPlans[legPlans.length - 1];
+  const viewFloors = result
+    ? (() => {
+      const involved = new Set(crossed.flatMap((c) => (c.planId ? [c.planId] : [])));
+      const inView = onlyRoute ? result.floors.filter((f) => involved.has(f.planId)) : result.floors;
+      const order = new Map(crossed.map((c, i) => [c.planId, i]));
+      return [...inView].sort((x, y) => (order.get(x.planId) ?? 1e9) - (order.get(y.planId) ?? 1e9) || y.level - x.level);
+    })()
+    : [];
   /** Étages parcourus par une montée ou une descente, dans le sens du tracé. */
   const riseFloors = (fromPlan: string, toPlan: string) => {
     const a = levelOfPlan(fromPlan), b = levelOfPlan(toPlan);
@@ -327,6 +356,26 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
               <label className="check" htmlFor="trace-ghost"><input id="trace-ghost" type="checkbox" checked={transparent} onChange={(e) => setTransparent(e.target.checked)} /> Murs transparents</label>
             </div>
           </div>
+          {result && viewFloors.length > 1 && (
+            <div className="floorpanel" role="group" aria-label="Étages affichés">
+              <div className="floorpanel-h">Étages affichés</div>
+              {viewFloors.map((f) => {
+                const role = f.planId === firstPlan ? 'départ' : f.planId === lastPlan ? 'arrivée' : crossed.some((c) => c.planId === f.planId) ? 'traversé' : '';
+                return (
+                  <label key={f.planId} className="check" htmlFor={`floor-${f.planId}`} title={f.name}>
+                    <input id={`floor-${f.planId}`} type="checkbox" checked={!hiddenFloors.includes(f.planId)} onChange={(e) => setHiddenFloors((h) => (e.target.checked ? h.filter((x) => x !== f.planId) : [...h, f.planId]))} />
+                    <span className={`lvl${f.planId === firstPlan ? ' start' : f.planId === lastPlan ? ' end' : ''}`}>{levelName(f.level)}</span>
+                    {role && <span className="muted small">{role}</span>}
+                  </label>
+                );
+              })}
+              <div className="floorpanel-b">
+                <button type="button" className="btn sm" onClick={() => setHiddenFloors(viewFloors.filter((f) => f.planId !== lastPlan).map((f) => f.planId))}>Arrivée seule</button>
+                <button type="button" className="btn sm" onClick={() => setHiddenFloors(viewFloors.filter((f) => f.planId !== lastPlan && f.planId !== firstPlan).map((f) => f.planId))}>Départ + arrivée</button>
+                {hiddenFloors.length > 0 && <button type="button" className="btn sm ghost" onClick={() => setHiddenFloors([])}>Tout afficher</button>}
+              </div>
+            </div>
+          )}
           {result && (
             <div className="stats">
               <span className="pill"><b>{result.floors.length}</b> étage{result.floors.length > 1 ? 's' : ''} dans le bâtiment</span>

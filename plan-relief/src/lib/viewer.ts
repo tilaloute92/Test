@@ -57,6 +57,9 @@ export function buildGeometry({ groups, settings: P, factor: f, center, showPlan
  * Scène 3D d'un plan : maquette, repères d'équipements, sélection et placement à la souris,
  * exports. Classe impérative pilotée par le composant React PlanView.
  */
+export type FloorLabelState = 'start' | 'end' | 'pass' | 'other';
+export type FloorLabelStyle = 'dalle' | 'facade' | 'cote';
+
 export class PlanViewer {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -206,7 +209,7 @@ export class PlanViewer {
         m.geometry?.dispose();
         const mat = m.material as THREE.Material | undefined;
         if (mat && !Object.values(this.materials).includes(mat as never)) {
-          (mat as THREE.SpriteMaterial).map?.dispose();
+          (mat as THREE.MeshBasicMaterial).map?.dispose();
           mat.dispose();
         }
       });
@@ -303,7 +306,7 @@ export class PlanViewer {
    * Bâtiment : les étages empilés à leur altitude, décalés pour se superposer. Les murs
    * peuvent être rendus transparents pour laisser voir un tracé qui traverse les étages.
    */
-  buildStack(floors: { input: SceneInput; elevation: number; offset: [number, number]; name: string }[], gridColor: string, transparent: boolean) {
+  buildStack(floors: { input: SceneInput; elevation: number; offset: [number, number]; name: string; id?: string }[], gridColor: string, transparent: boolean) {
     this.dirty = true;
     this.disposeChildren(this.model);
     this.disposeChildren(this.markers);
@@ -317,6 +320,7 @@ export class PlanViewer {
       // En mode transparent, les dalles le sont aussi : un tracé à l'étage du dessous reste visible.
       if (!box.isEmpty()) this.addSlab(group, box, 0, transparent ? this.materials.ghostSlab : this.materials.slab);
       group.name = f.name;
+      group.userData.floorId = f.id;
       group.position.set(f.offset[0], f.elevation, -f.offset[1]);
       this.model.add(group);
     }
@@ -328,51 +332,158 @@ export class PlanViewer {
   }
 
   /**
-   * Étiquettes de numéro d'étage (R+3, RDC…) à gauche du bâtiment, à l'altitude de chaque
-   * étage. `state` : départ (vert), arrivée (rouge), traversé (orange), autre (gris).
+   * Numéros d'étage (R+3, RDC…) incrustés dans la maquette, selon `style` :
+   * - `dalle` : peints à plat sur la dalle, à l'angle avant gauche de l'étage ;
+   * - `facade` : bandeau de couleur le long du nez de dalle, plaque du numéro sur la façade ;
+   * - `cote` : échelle de niveaux d'architecte (▼ R+3  +9,00 m) à côté du bâtiment.
+   * `state` : départ (vert), arrivée (rouge), traversé (orange), autre (gris).
    */
-  setFloorLabels(labels: { text: string; elevation: number; state: 'start' | 'end' | 'pass' | 'other' }[]) {
+  setFloorLabels(
+    labels: { text: string; name?: string; elevation: number; state: FloorLabelState; slab: boolean }[],
+    style: FloorLabelStyle = 'dalle',
+  ) {
     this.dirty = true;
     this.disposeChildren(this.floorLabels);
     if (!labels.length) return;
     const box = new THREE.Box3().setFromObject(this.model);
     if (box.isEmpty()) return;
     const size = box.getSize(new THREE.Vector3());
-    const h = Math.max(1.2, Math.min(6, Math.max(size.x, size.z) / 22));
-    const colors = { start: '#2e9e5b', end: '#d23c32', pass: '#e07b1a', other: '#7b828c' };
-    const x = box.min.x - h * 1.8, z = (box.min.z + box.max.z) / 2;
-    // Étages rapprochés : les étiquettes sont écartées en colonne, reliées à leur étage par un trait.
-    let prevY = -Infinity;
-    const leader: number[] = [];
-    for (const l of [...labels].sort((p, q) => p.elevation - q.elevation)) {
-      const y = Math.max(l.elevation + h * 0.6, prevY + h * 1.15);
-      prevY = y;
-      leader.push(x + h, y - h * 0.5, z, box.min.x, l.elevation + 0.05, z);
+    const span = Math.max(size.x, size.z);
+    const sorted = [...labels].sort((a, b) => a.elevation - b.elevation);
+    const gaps = sorted.slice(1).map((l, i) => l.elevation - sorted[i].elevation).filter((g) => g > 0.5);
+    const gap = gaps.length ? Math.min(...gaps) : 3;
+    const COLORS: Record<FloorLabelState, string> = { start: '#2e9e5b', end: '#d23c32', pass: '#e07b1a', other: '#6b7280' };
+    const aniso = this.renderer.capabilities.getMaxAnisotropy();
+
+    /** Plan texturé (canvas) ; `draw` reçoit le contexte et la taille du canvas. */
+    const plate = (w: number, h: number, px: number, draw: (c: CanvasRenderingContext2D, W: number, H: number) => void) => {
       const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      canvas.width = 256; canvas.height = 128;
-      ctx.fillStyle = colors[l.state];
-      ctx.beginPath();
-      ctx.roundRect(4, 4, 248, 120, 24);
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '700 72px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(l.text, 128, 68, 230);
+      canvas.width = Math.round(px * (w / h)); canvas.height = px;
+      const ctx = canvas.getContext('2d')!;
+      draw(ctx, canvas.width, canvas.height);
       const tex = new THREE.CanvasTexture(canvas);
       tex.colorSpace = THREE.SRGBColorSpace;
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
-      sprite.renderOrder = 10;
-      sprite.scale.set(h * 2, h, 1);
-      sprite.position.set(x, y, z);
-      sprite.name = `Étage ${l.text}`;
-      this.floorLabels.add(sprite);
+      tex.anisotropy = aniso;
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, side: THREE.DoubleSide }));
+      mesh.renderOrder = 5;
+      return mesh;
+    };
+    const font = (px: number, weight = 700) => `${weight} ${px}px "Segoe UI", system-ui, sans-serif`;
+    const round = (c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => { c.beginPath(); c.roundRect(x, y, w, h, r); };
+    const lines: number[] = [];
+    const lineColors: number[] = [];
+    const labelsCote: { m: THREE.Mesh; l: (typeof labels)[number]; h: number; w: number; x: number; z: number; color: string }[] = [];
+    const seg = (a: THREE.Vector3, b: THREE.Vector3, color: string) => {
+      lines.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      const c = new THREE.Color(color);
+      lineColors.push(c.r, c.g, c.b, c.r, c.g, c.b);
+    };
+
+    // Rang de chaque étage ayant une dalle : les marquages sont décalés pour ne pas se masquer.
+    let rank = 0;
+    for (const l of [...sorted].reverse()) {
+      const color = COLORS[l.state];
+      if (style === 'dalle') {
+        if (!l.slab) continue;
+        // Marquage peint sur la dalle, le long du bord avant ; un étage par emplacement.
+        const h = Math.max(2, Math.min(12, span / 11)), w = h * 2.6;
+        const m = plate(w, h, 256, (c, W, H) => {
+          round(c, 6, 6, W - 12, H - 12, H * 0.16);
+          c.fillStyle = color; c.globalAlpha = 0.9; c.fill(); c.globalAlpha = 1;
+          c.lineWidth = 6; c.strokeStyle = 'rgba(255,255,255,0.9)'; c.stroke();
+          c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle';
+          c.font = font(H * (l.name ? 0.5 : 0.62));
+          c.fillText(l.text, W / 2, H * (l.name ? 0.4 : 0.53), W - 40);
+          if (l.name) { c.font = font(H * 0.15, 600); c.fillText(l.name, W / 2, H * 0.78, W - 40); }
+        });
+        m.rotation.x = -Math.PI / 2;
+        m.position.set(box.min.x + h * 0.3 + w / 2 + rank * w * 1.08, l.elevation + 0.03, box.max.z - h / 2 - h * 0.3);
+        m.name = `Étage ${l.text}`;
+        this.floorLabels.add(m);
+        rank++;
+      } else if (style === 'facade') {
+        if (!l.slab) continue;
+        // Onglet posé à plat dans le prolongement de la dalle, hors du plan, avec un liseré
+        // de la même couleur le long du nez de dalle (façades avant et droite).
+        const bh = Math.min(0.5, gap * 0.15);
+        const band = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false });
+        const front = new THREE.Mesh(new THREE.PlaneGeometry(size.x, bh), band);
+        front.position.set((box.min.x + box.max.x) / 2, l.elevation - bh / 2, box.max.z + 0.25);
+        const side = new THREE.Mesh(new THREE.PlaneGeometry(size.z, bh), band.clone());
+        side.rotation.y = Math.PI / 2;
+        side.position.set(box.max.x + 0.25, l.elevation - bh / 2, (box.min.z + box.max.z) / 2);
+        this.floorLabels.add(front, side);
+        const h = Math.max(2, Math.min(10, span / 13)), w = h * 2.1;
+        const m = plate(w, h, 192, (c, W, H) => {
+          c.beginPath();
+          c.moveTo(4, 0); c.lineTo(W - 4, 0); c.lineTo(W - 4, H - 40); c.quadraticCurveTo(W - 4, H - 4, W - 40, H - 4);
+          c.lineTo(40, H - 4); c.quadraticCurveTo(4, H - 4, 4, H - 40); c.closePath();
+          c.fillStyle = color; c.fill();
+          c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle';
+          c.font = font(H * 0.56);
+          c.fillText(l.text, W / 2, H * 0.52, W - 24);
+        });
+        m.rotation.x = -Math.PI / 2;
+        m.position.set(box.min.x + h * 0.3 + w / 2 + rank * w * 1.12, l.elevation - 0.02, box.max.z + 0.25 + h / 2);
+        m.name = `Étage ${l.text}`;
+        this.floorLabels.add(m);
+        rank++;
+      } else {
+        // Cote de niveau : mât vertical, trait de niveau, ▼ et numéro + altitude. Si deux
+        // niveaux sont trop proches, la plaque est remontée et reliée à son niveau.
+        const x = box.min.x - span * 0.03, z = box.max.z + span * 0.03;
+        const h = Math.max(1.2, span / 22), w = h * 4.4;
+        seg(new THREE.Vector3(x, l.elevation, z), new THREE.Vector3(box.min.x, l.elevation, box.max.z), color);
+        const m = plate(w, h, 128, (c, _W, H) => {
+          const tri = H * 0.62;
+          c.fillStyle = 'rgba(255,255,255,0.92)'; round(c, 0, 0, _W, H, H * 0.18); c.fill();
+          c.lineWidth = 4; c.strokeStyle = color; c.stroke();
+          c.fillStyle = color;
+          c.beginPath(); c.moveTo(14, H * 0.2); c.lineTo(14 + tri, H * 0.2); c.lineTo(14 + tri / 2, H * 0.2 + tri * 0.8); c.closePath();
+          if (l.slab) c.fill(); else { c.lineWidth = 5; c.stroke(); }
+          c.textBaseline = 'middle'; c.textAlign = 'left';
+          c.font = font(H * 0.58); c.fillStyle = l.slab ? color : '#6b7280';
+          c.fillText(l.text, tri + 26, H * 0.54);
+          const tw = c.measureText(l.text).width;
+          c.font = font(H * 0.36, 500); c.fillStyle = '#4b5563';
+          const alt = `${l.elevation >= 0 ? '+' : '−'}${Math.abs(l.elevation).toFixed(2).replace('.', ',')} m`;
+          c.fillText(alt, tri + 40 + tw, H * 0.56);
+        });
+        this.floorLabels.add(m);
+        m.name = `Étage ${l.text}`;
+        labelsCote.push({ m, l, h, w, x, z, color });
+      }
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(leader, 3));
-    this.floorLabels.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x7b828c })));
+    if (style === 'cote' && labelsCote.length) {
+      // Du bas vers le haut : chaque plaque au niveau de son étage, ou juste au-dessus de la précédente.
+      let y0 = -Infinity;
+      for (const c of labelsCote.reverse()) {
+        const y = Math.max(c.l.elevation + c.h * 0.55, y0 + c.h * 1.12);
+        y0 = y;
+        // Plaque tournée vers le point de vue par défaut (avant droit), à gauche du mât.
+        const theta = Math.atan2(0.75, 1.1);
+        const ax = new THREE.Vector3(Math.cos(theta), 0, -Math.sin(theta));
+        c.m.rotation.y = theta;
+        c.m.position.set(c.x, y, c.z).addScaledVector(ax, -(c.w / 2 + c.h * 0.6));
+        const foot = new THREE.Vector3(c.x, y - c.h * 0.5, c.z).addScaledVector(ax, -c.h * 0.6);
+        seg(foot, new THREE.Vector3(c.x, c.l.elevation, c.z), c.color);
+      }
+      const x = labelsCote[0].x, z = labelsCote[0].z;
+      seg(new THREE.Vector3(x, sorted[0].elevation - 0.5, z), new THREE.Vector3(x, sorted[sorted.length - 1].elevation + 0.5, z), '#6b7280');
+    }
+    if (lines.length) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(lineColors, 3));
+      this.floorLabels.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true })));
+    }
+  }
+
+  /** Masque les étages dont l'identifiant est dans `hidden` (le tracé reste affiché en entier). */
+  setHiddenFloors(hidden: string[]) {
+    for (const g of this.model.children) g.visible = !hidden.includes(g.userData.floorId);
+    this.renderer.shadowMap.needsUpdate = true;
+    this.dirty = true;
   }
 
   /** Tracé : tube orange, sphère verte au départ, rouge à l'arrivée. Coordonnées de scène. */
