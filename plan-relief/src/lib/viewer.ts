@@ -68,6 +68,16 @@ export class PlanViewer {
   private landmarks = new THREE.Group();
   private route = new THREE.Group();
   private floorLabels = new THREE.Group();
+  private runnerGroup = new THREE.Group();
+  /** Animation du trajet : boule verte qui parcourt le tracé du départ vers l'arrivée. */
+  private runner: {
+    mesh: THREE.Object3D; pts: THREE.Vector3[]; cum: number[]; total: number; duration: number;
+    t0: number; pausedAt: number | null; seg: number; prev: THREE.Vector3;
+  } | null = null;
+  private routePts: THREE.Vector3[] = [];
+  private follow = false;
+  /** Appelé quand la boule entre dans un nouveau segment du tracé (indice du point de départ du segment). */
+  onRouteProgress: (segment: number) => void = () => {};
   private grid: THREE.GridHelper | null = null;
   private box = new THREE.Box3();
   private resizeObs: ResizeObserver;
@@ -130,7 +140,7 @@ export class PlanViewer {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0005;
-    this.scene.add(this.sun, this.sun.target, this.model, this.markers, this.route, this.landmarks, this.floorLabels);
+    this.scene.add(this.sun, this.sun.target, this.model, this.markers, this.route, this.landmarks, this.floorLabels, this.runnerGroup);
 
     // Épingle de l'équipement sélectionné : tige + tête, dimensionnées à chaque sélection.
     this.pin = new THREE.Group();
@@ -176,6 +186,7 @@ export class PlanViewer {
    */
   private dirty = true;
   private frame() {
+    if (this.runner && this.runner.pausedAt === null) this.stepRunner(performance.now());
     this.controls.update();
     if (!this.dirty) return;
     this.dirty = false;
@@ -367,6 +378,8 @@ export class PlanViewer {
   /** Tracé : tube orange, sphère verte au départ, rouge à l'arrivée. Coordonnées de scène. */
   setRoute(points: THREE.Vector3[] | null) {
     this.dirty = true;
+    this.stopRoute();
+    this.routePts = points && points.length >= 2 ? points.map((p) => p.clone()) : [];
     this.disposeChildren(this.route);
     this.renderer.shadowMap.needsUpdate = true;
     if (!points || points.length < 2) return;
@@ -392,6 +405,81 @@ export class PlanViewer {
     };
     end(points[0], 0x2e9e5b);
     end(points[points.length - 1], 0xd23c32);
+  }
+
+  /**
+   * Lance (ou relance depuis le départ) la boule verte sur le tracé. Vitesse constante, durée
+   * de 6 à 24 s selon la longueur ; elle marque une pause à l'arrivée puis recommence.
+   */
+  playRoute() {
+    const pts = this.routePts;
+    if (pts.length < 2) return;
+    this.stopRoute();
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
+    const total = cum[cum.length - 1];
+    if (total < 1e-3) return;
+    // Taille lisible quel que soit le bâtiment : environ 1/60 de sa diagonale, 0,3 m au moins.
+    const r = Math.max(0.3, this.box.getSize(new THREE.Vector3()).length() / 60) / 4.5;
+    const mesh = new THREE.Group();
+    mesh.userData.noExport = true;
+    mesh.name = 'Trajet animé';
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(r * 4.5, 24, 16), new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x16a34a, emissiveIntensity: 0.6, roughness: 0.3 }));
+    // Halo dessiné par-dessus les murs : la boule reste visible derrière une cloison.
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(r * 6.5, 24, 16), new THREE.MeshBasicMaterial({ color: 0x22c55e, transparent: true, opacity: 0.3, depthTest: false, depthWrite: false }));
+    halo.renderOrder = 11;
+    mesh.add(ball, halo);
+    mesh.position.copy(pts[0]);
+    this.runnerGroup.add(mesh);
+    this.runner = { mesh, pts, cum, total, duration: Math.min(24, Math.max(6, total / 8)) * 1000, t0: performance.now(), pausedAt: null, seg: -1, prev: pts[0].clone() };
+    this.dirty = true;
+  }
+
+  /** Met la boule en pause (true) ou la relance là où elle s'était arrêtée (false). */
+  pauseRoute(paused: boolean) {
+    const r = this.runner;
+    if (!r) { if (!paused) this.playRoute(); return; }
+    const now = performance.now();
+    if (paused && r.pausedAt === null) r.pausedAt = now - r.t0;
+    else if (!paused && r.pausedAt !== null) { r.t0 = now - r.pausedAt; r.pausedAt = null; }
+  }
+
+  stopRoute() {
+    this.runner = null;
+    this.disposeChildren(this.runnerGroup);
+    this.dirty = true;
+  }
+
+  /** La caméra accompagne la boule (elle se déplace avec elle, sans changer d'angle). */
+  setFollow(on: boolean) {
+    this.follow = on;
+    if (on && this.runner) {
+      const d = this.runner.mesh.position.clone().sub(this.controls.target);
+      this.controls.target.add(d);
+      this.camera.position.add(d);
+      this.dirty = true;
+    }
+  }
+
+  private stepRunner(now: number) {
+    const r = this.runner!;
+    const PAUSE = 1500;
+    let t = now - r.t0;
+    if (t > r.duration + PAUSE) { r.t0 = now; t = 0; }
+    const d = Math.min(t / r.duration, 1) * r.total;
+    let lo = 0, hi = r.cum.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (r.cum[m] <= d) lo = m; else hi = m; }
+    const len = r.cum[hi] - r.cum[lo];
+    const pos = r.pts[lo].clone().lerp(r.pts[hi], len > 0 ? (d - r.cum[lo]) / len : 0);
+    r.mesh.position.copy(pos);
+    if (this.follow) {
+      const delta = pos.clone().sub(r.prev);
+      this.controls.target.add(delta);
+      this.camera.position.add(delta);
+    }
+    r.prev.copy(pos);
+    if (lo !== r.seg) { r.seg = lo; this.onRouteProgress(lo); }
+    this.dirty = true;
   }
 
   private toScene(e: Equipment, y = 0.05) {

@@ -54,6 +54,13 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [result, setResult] = useState<{ route: RouteResult; floors: LoadedFloor[]; height: Height } | null>(null);
+  // Animation du trajet : arrêtée d'office si l'utilisateur a demandé moins d'animations.
+  const [playing, setPlaying] = useState(() => !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+  const [follow, setFollow] = useState(false);
+  const [curStep, setCurStep] = useState<number | null>(null);
+  const segStep = useRef<number[]>([]);
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<PlanViewer | null>(null);
   const autoRun = useRef(Boolean(de && a));
@@ -63,6 +70,7 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
     if (!containerRef.current) return;
     const v = new PlanViewer(containerRef.current);
     viewerRef.current = v;
+    v.onRouteProgress = (seg) => setCurStep(segStep.current[seg] ?? null);
     return () => { v.dispose(); viewerRef.current = null; };
   }, []);
 
@@ -149,12 +157,17 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
     const hRoute = (f: LoadedFloor) => (result.height === 'plafond' ? Math.max(0.3, (f.plan.settings.hWall ?? 2.5) - 0.15) : 0.15);
     const world = (f: LoadedFloor, x: number, y: number) => new THREE.Vector3(x + f.offset[0], f.elevation + hRoute(f), -(y + f.offset[1]));
     const pts: THREE.Vector3[] = [];
-    for (const s of route.steps) {
-      if (s.type !== 'leg') continue;
+    const ptStep: number[] = [];
+    route.steps.forEach((s, i) => {
+      if (s.type !== 'leg') return;
       const f = byId.get(s.leg.planId)!;
-      for (const [x, y] of s.leg.points) pts.push(world(f, x, y));
-    }
+      for (const [x, y] of s.leg.points) { pts.push(world(f, x, y)); ptStep.push(i); }
+    });
+    // Étape de chaque segment : celle du tronçon, ou la montée/descente entre deux tronçons.
+    segStep.current = ptStep.slice(0, -1).map((st, i) => (ptStep[i + 1] === st ? st : st + 1));
     v.setRoute(pts);
+    setCurStep(null);
+    if (playingRef.current) v.playRoute();
     // Numéros d'étage dans la vue : départ, étages traversés et arrivée en couleur.
     const crossed = floorsCrossed(route.steps, floors);
     const onRoute = new Map(crossed.map((c, i) => [c.level, i === 0 ? 'start' : i === crossed.length - 1 ? 'end' : 'pass'] as const));
@@ -267,7 +280,7 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
                 {result.route.warnings.map((w) => <div key={w} className="notice warn small">{w}</div>)}
                 <ol className="steps">
                   {result.route.steps.map((s, i) => (
-                    <li key={i}>
+                    <li key={i} className={curStep === i ? 'current' : undefined} aria-current={curStep === i ? 'step' : undefined}>
                       {s.type === 'leg' ? (
                         <>
                           <b>{floorName(s.leg.planId)}</b> — de « {s.leg.from} » à « {s.leg.to} » : <span className="num">{fmtNum(s.leg.length, 1)} m</span>
@@ -302,6 +315,13 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
               <button type="button" onClick={() => viewerRef.current?.fit('3d')}>3D</button>
               <button type="button" onClick={() => viewerRef.current?.fit('top')}>Dessus</button>
             </div>
+            {result && (
+              <div className="seg" role="group" aria-label="Animation du trajet">
+                <button type="button" aria-pressed={playing} onClick={() => { const v = viewerRef.current; if (!v) return; v.pauseRoute(playing); setPlaying(!playing); }}>{playing ? '⏸ Pause' : '▶ Animer le trajet'}</button>
+                <button type="button" onClick={() => { viewerRef.current?.playRoute(); setPlaying(true); }}>↺ Rejouer</button>
+                <label className="check" htmlFor="trace-follow"><input id="trace-follow" type="checkbox" checked={follow} onChange={(e) => { setFollow(e.target.checked); viewerRef.current?.setFollow(e.target.checked); }} /> Suivre la boule</label>
+              </div>
+            )}
             <div className="seg">
               <label className="check" htmlFor="trace-only"><input id="trace-only" type="checkbox" checked={onlyRoute} onChange={(e) => setOnlyRoute(e.target.checked)} /> Étages du tracé seulement</label>
               <label className="check" htmlFor="trace-ghost"><input id="trace-ghost" type="checkbox" checked={transparent} onChange={(e) => setTransparent(e.target.checked)} /> Murs transparents</label>
@@ -311,6 +331,16 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
             <div className="stats">
               <span className="pill"><b>{result.floors.length}</b> étage{result.floors.length > 1 ? 's' : ''} dans le bâtiment</span>
               <span className="pill">Tracé <b>{fmtNum(total, 1)} m</b></span>
+              {curStep !== null && result.route.steps[curStep] && (() => {
+                const st = result.route.steps[curStep];
+                return (
+                  <span className="pill"><span className="dot" style={{ background: '#22c55e' }} />
+                    {st.type === 'leg'
+                      ? <>Étage <b>{levelName(levelOfPlan(st.leg.planId))}</b></>
+                      : <>{levelOfPlan(st.rise.toPlan) >= levelOfPlan(st.rise.fromPlan) ? '↑' : '↓'} <b>{levelName(levelOfPlan(st.rise.fromPlan))} → {levelName(levelOfPlan(st.rise.toPlan))}</b></>}
+                  </span>
+                );
+              })()}
               {crossed.length > 1 && <span className="pill">Étages <b>{crossed.map((c) => levelName(c.level)).join(' → ')}</b></span>}
             </div>
           )}
