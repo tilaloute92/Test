@@ -16,6 +16,7 @@ export function SettingsView() {
         </div>
       </div>
       <LocalUsers />
+      <Admins />
       <Ldap />
       <Sso />
       <About />
@@ -24,8 +25,8 @@ export function SettingsView() {
 }
 
 function LocalUsers() {
-  const [users, setUsers] = useState<{ username: string; name: string }[] | null>(null);
-  const [form, setForm] = useState({ username: '', name: '', password: '' });
+  const [users, setUsers] = useState<{ username: string; name: string; role: api.Role }[] | null>(null);
+  const [form, setForm] = useState<{ username: string; name: string; password: string; role: api.Role }>({ username: '', name: '', password: '', role: 'lecteur' });
   const [error, setError] = useState('');
   const confirm = useConfirm();
   const toast = useToast();
@@ -36,11 +37,11 @@ function LocalUsers() {
     e.preventDefault();
     setError('');
     const exists = users?.some((u) => u.username.toLowerCase() === form.username.trim().toLowerCase());
-    if (exists && !(await confirm({ title: 'Remplacer le compte', message: <p>Le compte « {form.username} » existe déjà : son nom et son mot de passe seront remplacés.</p>, confirmLabel: 'Remplacer' }))) return;
+    if (exists && !(await confirm({ title: 'Remplacer le compte', message: <p>Le compte « {form.username} » existe déjà : son nom, son mot de passe et son profil seront remplacés.</p>, confirmLabel: 'Remplacer' }))) return;
     try {
-      await api.createLocalUser(form.username.trim(), form.password, form.name.trim());
+      await api.createLocalUser(form.username.trim(), form.password, form.name.trim(), form.role);
       toast(exists ? 'Compte mis à jour.' : 'Compte créé.');
-      setForm({ username: '', name: '', password: '' });
+      setForm({ username: '', name: '', password: '', role: 'lecteur' });
       load();
     } catch (err) {
       setError((err as Error).message);
@@ -57,16 +58,18 @@ function LocalUsers() {
       <div className="card-h"><h2>Comptes locaux</h2></div>
       <div className="card-b">
         <p className="muted small">Mots de passe stockés hachés (bcrypt) sur le serveur, jamais en clair. 10 tentatives de connexion par quart d'heure et par poste.</p>
+        <p className="muted small"><strong>Administrateur</strong> : paramètres, ajout, réanalyse, modification et retrait des plans. <strong>Lecteur</strong> : consultation, recherche et tracés uniquement.</p>
         {error && <div className="notice error">{error}</div>}
         {users && (
           <div className="tablewrap">
             <table className="data">
-              <thead><tr><th>Identifiant</th><th>Nom</th><th /></tr></thead>
+              <thead><tr><th>Identifiant</th><th>Nom</th><th>Profil</th><th /></tr></thead>
               <tbody>
                 {users.map((u) => (
                   <tr key={u.username}>
                     <td className="mono">{u.username}</td>
                     <td>{u.name}</td>
+                    <td>{u.role === 'admin' ? 'Administrateur' : 'Lecteur'}</td>
                     <td style={{ textAlign: 'right' }}><button type="button" className="btn sm danger" onClick={() => remove(u.username)}>Supprimer</button></td>
                   </tr>
                 ))}
@@ -78,8 +81,41 @@ function LocalUsers() {
           <label className="field"><span>Identifiant</span><input id="user-login" className="input" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} required autoComplete="off" /></label>
           <label className="field"><span>Nom affiché</span><input id="user-name" className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
           <label className="field"><span>Mot de passe (8 caractères minimum)</span><input id="user-password" className="input" type="password" minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required autoComplete="new-password" /></label>
+          <label className="field"><span>Profil</span><select id="user-role" className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as api.Role })}><option value="lecteur">Lecteur (consultation, recherche, tracés)</option><option value="admin">Administrateur</option></select></label>
           <div className="field" style={{ justifyContent: 'flex-end' }}><button type="submit" className="btn primary">Créer ou mettre à jour</button></div>
         </form>
+      </div>
+    </section>
+  );
+}
+
+function Admins() {
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const toast = useToast();
+  useEffect(() => { api.getAdmins().then((r) => setText(r.admins.join('\n'))).catch((e) => setError(e.message)); }, []);
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    if (text === null) return;
+    try {
+      const r = await api.saveAdmins(text.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean));
+      setText(r.admins.join('\n'));
+      toast('Liste des administrateurs enregistrée.');
+      setError('');
+    } catch (err) { setError((err as Error).message); }
+  };
+  return (
+    <section className="card">
+      <div className="card-h"><h2>Administrateurs Active Directory / Microsoft</h2></div>
+      <div className="card-b">
+        <p className="muted small">Les comptes Active Directory et Microsoft sont <strong>lecteurs</strong> par défaut. Indiquez ici, un par ligne, les identifiants qui doivent être administrateurs (ex. <code>jdupont</code>, <code>MONDOMAINE\jdupont</code> ou <code>jdupont@monentreprise.fr</code> : le domaine est ignoré). Le profil est vérifié à chaque requête.</p>
+        {error && <div className="notice error">{error}</div>}
+        {text !== null && (
+          <form onSubmit={save}>
+            <textarea id="admins-list" className="input mono" rows={4} style={{ width: '100%' }} value={text} onChange={(e) => setText(e.target.value)} placeholder={'jdupont\nmmartin@monentreprise.fr'} />
+            <div style={{ marginTop: 8 }}><button type="submit" className="btn primary">Enregistrer</button></div>
+          </form>
+        )}
       </div>
     </section>
   );

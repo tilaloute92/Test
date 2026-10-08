@@ -7,6 +7,7 @@ import { PlansLibrary } from './components/PlansLibrary';
 import { PlanView } from './components/PlanView';
 import { SearchView } from './components/SearchView';
 import { SettingsView } from './components/SettingsView';
+import { UserContext } from './components/session';
 import { RouteView } from './components/RouteView';
 
 /**
@@ -126,6 +127,7 @@ export default function App() {
   );
 
   return (
+    <UserContext.Provider value={user}>
     <div className="shell">
       <header className="topbar">
         <Brand />
@@ -133,7 +135,7 @@ export default function App() {
           {nav('plans', 'Plans')}
           {nav('recherche', 'Recherche')}
           {nav('trace', 'Tracés')}
-          {nav('parametres', 'Paramètres')}
+          {user.role === 'admin' && nav('parametres', 'Paramètres')}
         </nav>
         <div className="spacer" />
         <div className="userbox">
@@ -142,7 +144,7 @@ export default function App() {
           </button>
           <div className="who">
             <span>{user.name || user.username}</span>
-            {user.method && <span className="method">{METHOD_LABELS[user.method]}</span>}
+            <span className="method">{[user.method && METHOD_LABELS[user.method], user.role === 'admin' ? 'administrateur' : 'lecteur'].filter(Boolean).join(' · ')}</span>
           </div>
           <button type="button" className="btn sm" onClick={doLogout}>Se déconnecter</button>
         </div>
@@ -151,9 +153,12 @@ export default function App() {
         {route.page === 'plans' && <PlansLibrary />}
         {route.page === 'plan' && <PlanView key={route.id} id={route.id} focusEq={route.eq} />}
         {route.page === 'recherche' && <SearchView initialQuery={route.q} />}
-        {route.page === 'parametres' && <SettingsView />}
+        {route.page === 'parametres' && (user.role === 'admin' ? <SettingsView /> : (
+          <div className="page"><div className="notice">Les paramètres sont réservés aux administrateurs.</div></div>
+        ))}
         {route.page === 'trace' && <RouteView key={navCount} de={route.de} a={route.a} />}
       </main>
     </div>
+    </UserContext.Provider>
   );
 }

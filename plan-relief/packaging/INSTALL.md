@@ -147,6 +147,22 @@ node scripts\create-local-user.js admin "MotDePasseSolide123!" "Administrateur"
 Ce compte sert à la première connexion ; les autres comptes et LDAP se gèrent ensuite dans
 l'onglet **Paramètres**.
 
+### Profils
+
+| Profil | Droits |
+|---|---|
+| **Administrateur** | Paramètres, ajout, réanalyse, modification et retrait des plans, ajout d'équipements |
+| **Lecteur** | Consultation des plans, recherche, tracés, téléchargement et export |
+
+- Comptes locaux : profil choisi à la création dans **Paramètres** (les comptes existants avant
+  cette version restent administrateurs). En ligne de commande, 4e argument facultatif :
+  `node scripts\create-local-user.js jdupont "MotDePasse123!" "Jean Dupont" lecteur`.
+- Comptes Active Directory et Microsoft : lecteurs par défaut ; les administrateurs sont listés
+  dans **Paramètres → Administrateurs Active Directory / Microsoft** (identifiant, avec ou sans
+  domaine).
+- Le profil est vérifié par le service à chaque requête : un lecteur ne peut rien modifier,
+  même en appelant l'API directement.
+
 ## 6. Mettre en place la sauvegarde (obligatoire)
 
 ```powershell

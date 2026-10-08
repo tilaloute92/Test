@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // Crée ou met à jour un compte local, à exécuter sur le serveur :
-//   npm run create-user -- <identifiant> <mot-de-passe> ["Nom complet"]
+//   npm run create-user -- <identifiant> <mot-de-passe> ["Nom complet"] [admin|lecteur]
+// (administrateur par défaut)
 // Sert à créer le tout premier compte (nécessaire pour pouvoir ensuite gérer
 // les autres depuis l'application, onglet Paramètres → Authentification locale,
 // une fois connecté).
 import 'dotenv/config';
 import { upsertLocalUser } from '../src/auth/localAuth.js';
 
-const [, , username, password, name] = process.argv;
+const [, , username, password, name, role = 'admin'] = process.argv;
 
 if (!username || !password) {
   console.error('Usage : npm run create-user -- <identifiant> <mot-de-passe> ["Nom complet"]');
@@ -18,5 +19,9 @@ if (password.length < 8) {
   process.exit(1);
 }
 
-await upsertLocalUser(username, password, name);
-console.log(`Compte "${username}" créé/mis à jour.`);
+if (!['admin', 'lecteur'].includes(role)) {
+  console.error('Profil inconnu : admin ou lecteur.');
+  process.exit(1);
+}
+await upsertLocalUser(username, password, name, role);
+console.log(`Compte "${username}" créé/mis à jour (${role === 'admin' ? 'administrateur' : 'lecteur'}).`);

@@ -7,7 +7,8 @@ import type { PlanRecord, PlanSummary, SearchHit } from './lib/types';
  * IIS (DEPLOYMENT.md). Dans les deux cas l'appel reste « même origine » pour le navigateur.
  */
 
-export interface User { username: string; name: string; method?: 'local' | 'ldap' | 'sso' }
+export type Role = 'admin' | 'lecteur';
+export interface User { username: string; name: string; method?: 'local' | 'ldap' | 'sso'; role?: Role }
 export interface LoginMethods { local: boolean; ldap: boolean; sso: { tenantId: string; clientId: string } | null }
 export interface LdapConfig { enabled: boolean; url: string; userDnPattern: string }
 
@@ -66,9 +67,11 @@ export const loginLdap = (username: string, password: string) => request<User>('
 export const loginSso = (idToken: string) => request<User>('/auth/sso', { method: 'POST', body: JSON.stringify({ idToken }) });
 export const logout = () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' });
 
-export const listLocalUsers = () => request<{ username: string; name: string }[]>('/auth/local-users');
-export const createLocalUser = (username: string, password: string, name: string) =>
-  request<{ ok: boolean }>('/auth/local-users', { method: 'POST', body: JSON.stringify({ username, password, name }) });
+export const listLocalUsers = () => request<{ username: string; name: string; role: Role }[]>('/auth/local-users');
+export const createLocalUser = (username: string, password: string, name: string, role: Role) =>
+  request<{ ok: boolean }>('/auth/local-users', { method: 'POST', body: JSON.stringify({ username, password, name, role }) });
+export const getAdmins = () => request<{ admins: string[] }>('/auth/admins');
+export const saveAdmins = (admins: string[]) => request<{ admins: string[] }>('/auth/admins', { method: 'PUT', body: JSON.stringify({ admins }) });
 export const deleteLocalUser = (username: string) => request<{ ok: boolean }>(`/auth/local-users/${encodeURIComponent(username)}`, { method: 'DELETE' });
 export const getLdapConfig = () => request<LdapConfig>('/auth/ldap-config');
 export const saveLdapConfig = (cfg: LdapConfig) => request<LdapConfig>('/auth/ldap-config', { method: 'PUT', body: JSON.stringify(cfg) });

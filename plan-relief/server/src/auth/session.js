@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
+import { roleOf } from './roles.js';
 
 // Nom distinct de celui de Suivi Infra & Réseau : les deux applications peuvent tourner
 // sur le même serveur sans que la session de l'une ne soit envoyée à l'autre.
@@ -42,6 +43,12 @@ export function requireAuth(req, res, next) {
   } catch {
     res.status(401).json({ error: 'Session invalide ou expirée.' });
   }
+}
+
+/** Réservé aux administrateurs (à placer après requireAuth). */
+export function requireAdmin(req, res, next) {
+  if (roleOf(req.user) !== 'admin') return res.status(403).json({ error: 'Action réservée aux administrateurs.' });
+  next();
 }
 
 export function currentUser(req) {

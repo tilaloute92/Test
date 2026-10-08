@@ -171,6 +171,41 @@ test('équipements ajoutés par catégorie : nettoyés, trouvés par mot-clé et
   assert.equal((await api('/api/search?category=escalier')).body.total, 1);
 });
 
+test('profils : un lecteur consulte, cherche et trace, mais ne modifie rien', async () => {
+  const json = { 'content-type': 'application/json' };
+  // L'administrateur crée un lecteur ; il ne peut pas se rétrograder lui-même (dernier admin local).
+  assert.equal((await api('/api/auth/me')).body.role, 'admin');
+  assert.equal((await api('/api/auth/local-users', { method: 'POST', headers: json, body: JSON.stringify({ username: 'lecteur', password: 'MotDePasse123', name: 'Lecteur', role: 'lecteur' }) })).status, 200);
+  assert.equal((await api('/api/auth/local-users', { method: 'POST', headers: json, body: JSON.stringify({ username: 'admin', password: 'MotDePasse123', role: 'lecteur' }) })).status, 400);
+  assert.equal((await api('/api/auth/local-users/admin', { method: 'DELETE' })).status, 400);
+  const users = (await api('/api/auth/local-users')).body;
+  assert.deepEqual(users.map((u) => `${u.username}:${u.role}`).sort(), ['admin:admin', 'lecteur:lecteur']);
+  const adminCookie = cookie;
+  cookie = '';
+  const login = await api('/api/auth/local', { method: 'POST', headers: json, body: JSON.stringify({ username: 'lecteur', password: 'MotDePasse123' }) });
+  assert.equal(login.body.role, 'lecteur');
+  try {
+    // Lecture : autorisée.
+    assert.equal((await api('/api/plans')).status, 200);
+    assert.equal((await api(`/api/plans/${planId}`)).status, 200);
+    assert.equal((await api(`/api/plans/${planId}/file`)).status, 200);
+    assert.equal((await api('/api/search?q=tel')).status, 200);
+    // Écriture et paramètres : refusés.
+    const cur = (await api(`/api/plans/${planId}`)).body;
+    assert.equal((await api(`/api/plans/${planId}`, { method: 'PATCH', headers: json, body: JSON.stringify({ version: cur.version, name: 'piraté' }) })).status, 403);
+    assert.equal((await api(`/api/plans/${planId}`, { method: 'DELETE' })).status, 403);
+    assert.equal((await api('/api/plans', { method: 'POST', body: uploadForm('a.dxf', DXF, { name: 'x' }) })).status, 403);
+    assert.equal((await api('/api/auth/local-users')).status, 403);
+    assert.equal((await api('/api/auth/ldap-config')).status, 403);
+    assert.equal((await api('/api/auth/admins', { method: 'PUT', headers: json, body: JSON.stringify({ admins: ['moi'] }) })).status, 403);
+  } finally {
+    cookie = adminCookie;
+  }
+  // Administrateurs Active Directory / Microsoft : liste nettoyée.
+  const adm = await api('/api/auth/admins', { method: 'PUT', headers: json, body: JSON.stringify({ admins: [' jdupont ', 'jdupont', 'MARTIN@ex.fr', ''] }) });
+  assert.deepEqual(adm.body.admins, ['jdupont', 'MARTIN@ex.fr']);
+});
+
 test('identifiant invalide : jamais de chemin construit à partir de la saisie', async () => {
   assert.equal((await api('/api/plans/..%2F..%2Fusers.json/file')).status, 404);
   assert.equal((await api('/api/plans/not-an-id')).status, 404);

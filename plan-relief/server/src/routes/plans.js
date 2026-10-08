@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { Router } from 'express';
 import multer from 'multer';
 import { config } from '../config.js';
-import { requireAuth } from '../auth/session.js';
+import { requireAuth, requireAdmin } from '../auth/session.js';
 import {
   listPlans, getPlan, createPlan, updatePlan, trashPlan, sourcePath, summary, isPlanId, VersionConflict,
 } from '../plansStore.js';
@@ -24,7 +24,7 @@ plansRouter.get('/', (_req, res) => {
   res.json(listPlans());
 });
 
-plansRouter.post('/', (req, res, next) => {
+plansRouter.post('/', requireAdmin, (req, res, next) => {
   upload.single('file')(req, res, (err) => {
     if (err) {
       const tooBig = err.code === 'LIMIT_FILE_SIZE';
@@ -77,7 +77,7 @@ plansRouter.get('/:id/file', (req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 
-plansRouter.patch('/:id', (req, res) => {
+plansRouter.patch('/:id', requireAdmin, (req, res) => {
   if (!isPlanId(req.params.id)) return res.status(404).json({ error: 'Plan introuvable.' });
   try {
     const plan = updatePlan(req.params.id, req.body || {}, who(req));
@@ -89,7 +89,7 @@ plansRouter.patch('/:id', (req, res) => {
   }
 });
 
-plansRouter.delete('/:id', (req, res) => {
+plansRouter.delete('/:id', requireAdmin, (req, res) => {
   if (!isPlanId(req.params.id) || !trashPlan(req.params.id)) return res.status(404).json({ error: 'Plan introuvable.' });
   res.json({ ok: true });
 });

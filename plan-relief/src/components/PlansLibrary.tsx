@@ -4,6 +4,7 @@ import { hrefOf, navigate } from '../App';
 import type { PlanSummary } from '../lib/types';
 import { UploadDialog } from './UploadDialog';
 import { ReanalyseDialog } from './ReanalyseDialog';
+import { useIsAdmin } from './session';
 import { fmtDate, fmtSize, Highlight } from './ui';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -13,6 +14,7 @@ export function PlansLibrary() {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('');
   const [site, setSite] = useState('');
+  const isAdmin = useIsAdmin();
   const [uploading, setUploading] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [reanalysing, setReanalysing] = useState<PlanSummary[] | null>(null);
@@ -43,7 +45,7 @@ export function PlansLibrary() {
         </div>
         <div className="toolbar">
           <a className="btn" href={hrefOf({ page: 'recherche' })}>Rechercher un équipement</a>
-          <button type="button" className="btn primary" onClick={() => setUploading(true)}>Ajouter un plan</button>
+          {isAdmin && <button type="button" className="btn primary" onClick={() => setUploading(true)}>Ajouter un plan</button>}
         </div>
       </div>
 
@@ -52,9 +54,9 @@ export function PlansLibrary() {
       {plans && plans.length > 0 && (
         <div className="toolbar">
           <input id="plans-filter" className="input grow" type="search" placeholder="Filtrer par nom, site, bâtiment, étage…" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filtrer les plans" />
-          <button type="button" className="btn" disabled={!selected.length} onClick={() => setReanalysing((plans ?? []).filter((p) => selected.includes(p.id)))} title="Relire les plans cochés avec les règles de lecture actuelles">
+          {isAdmin && <button type="button" className="btn" disabled={!selected.length} onClick={() => setReanalysing((plans ?? []).filter((p) => selected.includes(p.id)))} title="Relire les plans cochés avec les règles de lecture actuelles">
             Réanalyser{selected.length ? ` (${selected.length})` : ''}
-          </button>
+          </button>}
           {sites.length > 1 && (
             <select id="plans-site" className="select" style={{ width: 'auto' }} value={site} onChange={(e) => setSite(e.target.value)} aria-label="Site">
               <option value="">Tous les sites</option>
@@ -68,8 +70,12 @@ export function PlansLibrary() {
         <div className="card">
           <div className="empty">
             <h3>Aucun plan en stock</h3>
-            <p>Ajoutez un plan DXF ou PDF : il est conservé sur le serveur, et les équipements qu'il contient deviennent recherchables par toute l'équipe.</p>
-            <button type="button" className="btn primary" onClick={() => setUploading(true)}>Ajouter le premier plan</button>
+            {isAdmin ? (
+              <>
+                <p>Ajoutez un plan DXF ou PDF : il est conservé sur le serveur, et les équipements qu'il contient deviennent recherchables par toute l'équipe.</p>
+                <button type="button" className="btn primary" onClick={() => setUploading(true)}>Ajouter le premier plan</button>
+              </>
+            ) : <p>Les plans sont ajoutés par les administrateurs de l'application.</p>}
           </div>
         </div>
       )}
@@ -79,14 +85,14 @@ export function PlansLibrary() {
           <table className="data">
             <thead>
               <tr>
-                <th style={{ width: 32 }}><input type="checkbox" aria-label="Tout cocher" checked={allShown} onChange={toggleAll} /></th>
+                {isAdmin && <th style={{ width: 32 }}><input type="checkbox" aria-label="Tout cocher" checked={allShown} onChange={toggleAll} /></th>}
                 <th>Plan</th><th>Site</th><th>Bâtiment</th><th>Étage</th><th className="num">Équipements</th><th>Fichier</th><th>Mis à jour</th>
               </tr>
             </thead>
             <tbody>
               {shown.map((p) => (
                 <tr key={p.id} className="clickable" onClick={() => navigate({ page: 'plan', id: p.id })}>
-                  <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`Cocher ${p.name}`} checked={selected.includes(p.id)} onChange={() => toggle(p.id)} /></td>
+                  {isAdmin && <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`Cocher ${p.name}`} checked={selected.includes(p.id)} onChange={() => toggle(p.id)} /></td>}
                   <td>
                     <a href={hrefOf({ page: 'plan', id: p.id })} className="cell-title" style={{ color: 'inherit', textDecoration: 'none' }} onClick={(e) => e.stopPropagation()}>
                       <Highlight text={p.name} query={filter} />
@@ -105,7 +111,7 @@ export function PlansLibrary() {
                 </tr>
               ))}
               {shown.length === 0 && (
-                <tr><td colSpan={8} className="muted">Aucun plan ne correspond à ce filtre.</td></tr>
+                <tr><td colSpan={isAdmin ? 8 : 7} className="muted">Aucun plan ne correspond à ce filtre.</td></tr>
               )}
             </tbody>
           </table>

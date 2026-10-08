@@ -7,6 +7,7 @@ import { DEFAULT_FLOOR_HEIGHT, guessLevel, suggestPassage } from '../lib/buildin
 import { encodeEndpoint, readDraft } from '../lib/traceLink';
 import { PlanViewer, type BuildStats } from '../lib/viewer';
 import { CATEGORIES, DEFAULT_SETTINGS, KIND_LABELS, ROLE_LABELS, UNIT_NAMES, categoryOf, cssColor, type Category, type Drawing, type Equipment, type EquipmentKind, type PlanRecord, type PlanSettings, type Role, type Unit } from '../lib/types';
+import { useIsAdmin } from './session';
 import { Highlight, Modal, downloadBlob, fmtDate, fmtNum, useConfirm, useToast, NavHint } from './ui';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[-_./\\#]+/g, '');
@@ -51,6 +52,7 @@ function useStageColors() {
 }
 
 export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
+  const isAdmin = useIsAdmin();
   const [plan, setPlan] = useState<PlanRecord | null>(null);
   const [drawing, setDrawing] = useState<Drawing | null>(null);
   const [settings, setSettings] = useState<PlanSettings>(DEFAULT_SETTINGS);
@@ -349,9 +351,9 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
         )}
         {plan && (
           <div className="actions">
-            <button type="button" className="btn sm" onClick={() => setEditMeta(true)}>Modifier la fiche</button>
+            {isAdmin && <button type="button" className="btn sm" onClick={() => setEditMeta(true)}>Modifier la fiche</button>}
             <button type="button" className="btn sm" onClick={() => bufRef.current && downloadBlob(new Blob([bufRef.current]), plan.file.name)}>Télécharger l'original</button>
-            <button type="button" className="btn sm danger" onClick={deletePlan}>Retirer du stock</button>
+            {isAdmin && <button type="button" className="btn sm danger" onClick={deletePlan}>Retirer du stock</button>}
           </div>
         )}
       </div>
@@ -383,6 +385,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                       ))}
                     </div>
                   )}
+                  {isAdmin && <>
                   <div className="addbox">
                     <span className="muted small">Ajouter sur le plan :</span>
                     <div className="addcats" role="group" aria-label="Ajouter un équipement">
@@ -395,6 +398,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                   </div>
                   <button type="button" className="btn ghost sm" onClick={() => setRereadOpen(true)} disabled={saving || !!loading}>Relire les indications du plan</button>
                   <button type="button" className="btn ghost sm" onClick={findLandmarks} disabled={saving || !!loading || !drawing}>Repérer escaliers, ascenseurs et gaines</button>
+                  </>}
                 </div>
 
                 {selectedEq && (
@@ -415,11 +419,11 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                       </dl>
                       <div className="toolbar">
                         <button type="button" className="btn sm" onClick={() => focusOn(selectedEq)}>Centrer la vue</button>
-                        <button type="button" className="btn sm" onClick={() => setDraft(selectedEq)}>Modifier</button>
+                        {isAdmin && <button type="button" className="btn sm" onClick={() => setDraft(selectedEq)}>Modifier</button>}
                         <button type="button" className="btn sm" onClick={copyLink}>Copier le lien</button>
                         <a className="btn sm" href={hrefOf({ page: 'trace', de: encodeEndpoint({ planId: id, eqId: selectedEq.id }), a: readDraft().a })}>Tracé depuis ici</a>
                         <a className="btn sm" href={hrefOf({ page: 'trace', de: readDraft().de, a: encodeEndpoint({ planId: id, eqId: selectedEq.id }) })}>Tracé jusqu'ici</a>
-                        <button type="button" className="btn sm danger" onClick={() => removeEq(selectedEq)}>Supprimer</button>
+                        {isAdmin && <button type="button" className="btn sm danger" onClick={() => removeEq(selectedEq)}>Supprimer</button>}
                       </div>
                     </div>
                   </div>
@@ -444,7 +448,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                   {filtered.length === 0 && (
                     <div className="empty small">
                       {equipment.length === 0
-                        ? <>Aucun équipement détecté dans ce fichier. Ajoutez-les sur le plan avec les boutons ci-dessus.</>
+                        ? (isAdmin ? <>Aucun équipement détecté dans ce fichier. Ajoutez-les sur le plan avec les boutons ci-dessus.</> : <>Aucun équipement détecté dans ce fichier.</>)
                         : <>Aucun équipement ne correspond.</>}
                     </div>
                   )}
@@ -460,10 +464,11 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                 onRole={setRole}
                 onPage={changePage}
                 onExport={doExport}
+                readOnly={!isAdmin}
               />
             )}
           </div>
-          {tab === 'model' && dirty && (
+          {tab === 'model' && dirty && isAdmin && (
             <div className="savebar">
               <span>Réglages modifiés</span>
               <span className="toolbar">
@@ -542,13 +547,14 @@ function FragmentKV({ k, v }: { k: string; v: string }) {
   return <><dt>{k}</dt><dd>{v}</dd></>;
 }
 
-function ModelSettings({ drawing, settings, onChange, onRole, onPage, onExport }: {
+function ModelSettings({ drawing, settings, onChange, onRole, onPage, onExport, readOnly }: {
   drawing: Drawing;
   settings: PlanSettings;
   onChange: <K extends keyof PlanSettings>(k: K, v: PlanSettings[K]) => void;
   onRole: (id: string, r: Role) => void;
   onPage: (p: number) => void;
   onExport: (f: 'glb' | 'obj' | 'stl') => void;
+  readOnly?: boolean;
 }) {
   const num = (key: 'hWall' | 'tWall' | 'tMax' | 'sill' | 'hWin', label: string, step = 0.05) => (
     <label className="field">
@@ -562,6 +568,7 @@ function ModelSettings({ drawing, settings, onChange, onRole, onPage, onExport }
   const noWall = !drawing.groups.some((g) => roleOf(g, settings) === 'mur');
   return (
     <>
+      {readOnly && <div className="sec"><div className="notice small">Consultation : vous pouvez essayer des réglages sur votre écran, mais seul un administrateur peut les enregistrer pour l'équipe.</div></div>}
       <div className="sec">
         <h3>Échelle</h3>
         {drawing.format === 'dxf' ? (
@@ -580,7 +587,7 @@ function ModelSettings({ drawing, settings, onChange, onRole, onPage, onExport }
             {drawing.pageCount > 1 && (
               <label className="field">
                 <span>Page</span>
-                <select id="set-page" className="select" value={settings.pdfPage} onChange={(e) => onPage(Number(e.target.value))}>
+                <select id="set-page" className="select" disabled={readOnly} value={settings.pdfPage} onChange={(e) => onPage(Number(e.target.value))}>
                   {Array.from({ length: drawing.pageCount }, (_, i) => <option key={i} value={i + 1}>Page {i + 1} / {drawing.pageCount}</option>)}
                 </select>
               </label>
