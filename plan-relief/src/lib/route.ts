@@ -713,7 +713,7 @@ export async function computeRoute(
   }
   if (!seq) {
     if (from.planId !== to.planId) {
-      throw new RouteError("Aucun passage entre étages ne relie le départ à l'arrivée. Sur chaque plan, lancez « Repérer escaliers, ascenseurs et gaines » (ou ajoutez-les à la main au même endroit d'un étage à l'autre), vérifiez les types de passages autorisés dans les options, ou marquez une gaine « passage entre étages » avec le même nom sur chaque plan.");
+      throw new RouteError("Aucun passage entre étages ne relie le départ à l'arrivée. Sur chaque plan, lancez « Repérer escaliers, ascenseurs et gaines » (les monte-charges et ascenseurs sont reconnus à leur sigle MC, ASC… : relecture OCR nécessaire sur un PDF dont les textes sont dessinés), ou ajoutez-les à la main au même endroit d'un étage à l'autre. Vérifiez aussi les types de passages autorisés dans les options.");
     }
     throw new RouteError("Aucun chemin trouvé entre ces deux points sur ce plan.");
   }

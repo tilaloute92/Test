@@ -6,12 +6,12 @@ import { buildingMembers, levelOf, loadBuilding, type LoadedFloor } from '../lib
 import { computeRoute, RouteError, type PassageKind, type RouteResult } from '../lib/route';
 
 const PASSAGE_KINDS: [PassageKind, string, string][] = [
-  ['gaine', 'Gaines et colonnes montantes', 'Chemin normal des câbles d\'un étage à l\'autre.'],
+  ['ascenseur', 'Monte-charges et ascenseurs', 'Le tracé monte ou descend par la cabine la plus proche, selon que l\'arrivée est au-dessus ou en dessous.'],
+  ['gaine', 'Gaines et colonnes montantes', ''],
   ['escalier', 'Escaliers', ''],
-  ['ascenseur', 'Ascenseurs et monte-charges', 'Interdit pour les câbles courants : à réserver à un cheminement de personnes.'],
   ['manuel', 'Passages nommés sur les plans', 'Équipements marqués « passage entre étages ».'],
 ];
-const RISE_LABEL: Record<PassageKind, string> = { manuel: 'Passage', gaine: 'Gaine', escalier: 'Escalier', ascenseur: 'Ascenseur' };
+const RISE_LABEL: Record<PassageKind, string> = { manuel: 'Passage', gaine: 'Gaine', escalier: 'Escalier', ascenseur: 'Monte-charge / ascenseur' };
 import { PlanViewer } from '../lib/viewer';
 import { DEFAULT_SETTINGS, KIND_LABELS, type Equipment, type PlanSummary } from '../lib/types';
 import { fmtNum, Highlight, NavHint } from './ui';
@@ -44,8 +44,9 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
   const [to, setTo] = useState<Resolved | null>(null);
   const [allowWalls, setAllowWalls] = useState(false);
   const [orthogonal, setOrthogonal] = useState(true);
-  // Pas de câbles dans une gaine d'ascenseur : ascenseurs exclus par défaut.
-  const [kinds, setKinds] = useState<PassageKind[]>(['manuel', 'gaine', 'escalier']);
+  // Changement d'étage par les monte-charges et ascenseurs (règle d'exploitation du site) ;
+  // gaines, escaliers et passages nommés restent disponibles en option.
+  const [kinds, setKinds] = useState<PassageKind[]>(['ascenseur']);
   const [height, setHeight] = useState<Height>('plafond');
   const [margin, setMargin] = useState(15);
   const [transparent, setTransparent] = useState(true);
@@ -170,6 +171,7 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
     : 0;
   const total = result ? result.route.total + descents : 0;
   const floorName = (id: string) => result?.floors.find((f) => f.planId === id)?.name ?? '';
+  const elevationOf = (id: string) => result?.floors.find((f) => f.planId === id)?.elevation ?? 0;
 
   return (
     <div className="planview">
@@ -251,7 +253,7 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
                         </>
                       ) : (
                         <>
-                          <b>{s.rise.kind === 'manuel' ? `Passage ${s.rise.label}` : s.rise.label}</b> — {floorName(s.rise.fromPlan)} → {floorName(s.rise.toPlan)} : <span className="num">{fmtNum(s.rise.length, 1)} m</span>
+                          {elevationOf(s.rise.toPlan) >= elevationOf(s.rise.fromPlan) ? '↑ Montée' : '↓ Descente'} par <b>{s.rise.kind === 'manuel' ? `le passage ${s.rise.label}` : s.rise.label}</b> — {floorName(s.rise.fromPlan)} → {floorName(s.rise.toPlan)} : <span className="num">{fmtNum(s.rise.length, 1)} m</span>
                           {s.rise.kind !== 'manuel' && <span className="tag" style={{ marginLeft: 6 }}>{RISE_LABEL[s.rise.kind].toLowerCase()}, relié automatiquement</span>}
                         </>
                       )}
@@ -263,7 +265,7 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
             )}
             {!result && !error && (
               <div className="sec muted small">
-                <p style={{ margin: 0 }}>Tracé entre étages : chaque plan du bâtiment doit avoir le même site et le même bâtiment sur sa fiche, et un niveau (déduit de l'étage : RDC, R+1, SS1…). Les gaines, escaliers et ascenseurs repérés sur les plans (bouton « Repérer escaliers, ascenseurs et gaines ») sont reliés automatiquement d'un étage à l'autre quand ils se superposent. Une gaine peut aussi être marquée « passage entre étages » avec le même nom sur chaque plan : ce nom fait foi.</p>
+                <p style={{ margin: 0 }}>Tracé entre étages : chaque plan du bâtiment doit avoir le même site et le même bâtiment sur sa fiche, et un niveau (déduit de l'étage : RDC, R+1, SS1…). Le tracé change d'étage par les monte-charges et ascenseurs repérés sur les plans (bouton « Repérer escaliers, ascenseurs et gaines ») : chaque cabine est reliée automatiquement à celle qui se trouve au-dessus ou en dessous, et le tracé monte ou descend selon l'étage d'arrivée. Gaines, escaliers et passages nommés peuvent être autorisés dans les options.</p>
               </div>
             )}
           </div>
