@@ -67,6 +67,7 @@ export class PlanViewer {
   private markers = new THREE.Group();
   private landmarks = new THREE.Group();
   private route = new THREE.Group();
+  private floorLabels = new THREE.Group();
   private grid: THREE.GridHelper | null = null;
   private box = new THREE.Box3();
   private resizeObs: ResizeObserver;
@@ -129,7 +130,7 @@ export class PlanViewer {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0005;
-    this.scene.add(this.sun, this.sun.target, this.model, this.markers, this.route, this.landmarks);
+    this.scene.add(this.sun, this.sun.target, this.model, this.markers, this.route, this.landmarks, this.floorLabels);
 
     // Épingle de l'équipement sélectionné : tige + tête, dimensionnées à chaque sélection.
     this.pin = new THREE.Group();
@@ -193,7 +194,10 @@ export class PlanViewer {
         const m = c as THREE.Mesh;
         m.geometry?.dispose();
         const mat = m.material as THREE.Material | undefined;
-        if (mat && !Object.values(this.materials).includes(mat as never)) mat.dispose();
+        if (mat && !Object.values(this.materials).includes(mat as never)) {
+          (mat as THREE.SpriteMaterial).map?.dispose();
+          mat.dispose();
+        }
       });
     }
   }
@@ -310,6 +314,54 @@ export class PlanViewer {
     if (box.isEmpty()) box.set(new THREE.Vector3(-5, 0, -5), new THREE.Vector3(5, 3, 5));
     const lowest = Math.min(...floors.map((f) => f.elevation), 0);
     this.frameScene(box, lowest - 0.121, gridColor);
+  }
+
+  /**
+   * Étiquettes de numéro d'étage (R+3, RDC…) à gauche du bâtiment, à l'altitude de chaque
+   * étage. `state` : départ (vert), arrivée (rouge), traversé (orange), autre (gris).
+   */
+  setFloorLabels(labels: { text: string; elevation: number; state: 'start' | 'end' | 'pass' | 'other' }[]) {
+    this.dirty = true;
+    this.disposeChildren(this.floorLabels);
+    if (!labels.length) return;
+    const box = new THREE.Box3().setFromObject(this.model);
+    if (box.isEmpty()) return;
+    const size = box.getSize(new THREE.Vector3());
+    const h = Math.max(1.2, Math.min(6, Math.max(size.x, size.z) / 22));
+    const colors = { start: '#2e9e5b', end: '#d23c32', pass: '#e07b1a', other: '#7b828c' };
+    const x = box.min.x - h * 1.8, z = (box.min.z + box.max.z) / 2;
+    // Étages rapprochés : les étiquettes sont écartées en colonne, reliées à leur étage par un trait.
+    let prevY = -Infinity;
+    const leader: number[] = [];
+    for (const l of [...labels].sort((p, q) => p.elevation - q.elevation)) {
+      const y = Math.max(l.elevation + h * 0.6, prevY + h * 1.15);
+      prevY = y;
+      leader.push(x + h, y - h * 0.5, z, box.min.x, l.elevation + 0.05, z);
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      canvas.width = 256; canvas.height = 128;
+      ctx.fillStyle = colors[l.state];
+      ctx.beginPath();
+      ctx.roundRect(4, 4, 248, 120, 24);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 72px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(l.text, 128, 68, 230);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+      sprite.renderOrder = 10;
+      sprite.scale.set(h * 2, h, 1);
+      sprite.position.set(x, y, z);
+      sprite.name = `Étage ${l.text}`;
+      this.floorLabels.add(sprite);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(leader, 3));
+    this.floorLabels.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x7b828c })));
   }
 
   /** Tracé : tube orange, sphère verte au départ, rouge à l'arrivée. Coordonnées de scène. */

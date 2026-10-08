@@ -47,6 +47,54 @@ export function suggestPassage(e: Pick<Equipment, 'label' | 'type' | 'indication
 
 export const levelOf = (p: Pick<PlanSummary, 'level' | 'floor'>) => p.level ?? guessLevel(p.floor) ?? 0;
 
+/** Numéro d'étage court : RDC, R+3, R-1. */
+export const levelName = (level: number) => (level === 0 ? 'RDC' : level > 0 ? `R+${level}` : `R${level}`);
+
+export interface CrossedFloor {
+  level: number;
+  /** Plan de cet étage, s'il est dans l'application (sinon l'étage est seulement traversé). */
+  planId?: string;
+  name?: string;
+  /** Altitude estimée (mètres), pour placer l'étiquette dans la vue 3D. */
+  elevation: number;
+}
+
+/**
+ * Étages parcourus par un tracé, dans l'ordre du départ vers l'arrivée : l'étage du départ,
+ * chaque étage traversé par une montée ou une descente (y compris ceux sans plan), puis
+ * l'étage d'arrivée.
+ */
+export function floorsCrossed(
+  steps: ({ type: 'leg'; leg: { planId: string } } | { type: 'rise'; rise: { fromPlan: string; toPlan: string } })[],
+  floors: Pick<LoadedFloor, 'planId' | 'name' | 'level' | 'elevation' | 'floorHeight'>[],
+): CrossedFloor[] {
+  const byId = new Map(floors.map((f) => [f.planId, f]));
+  const byLevel = new Map(floors.map((f) => [f.level, f]));
+  const out: CrossedFloor[] = [];
+  const push = (level: number, elevation: number) => {
+    if (out.length && out[out.length - 1].level === level) return;
+    const f = byLevel.get(level);
+    out.push({ level, planId: f?.planId, name: f?.name, elevation: f ? f.elevation : elevation });
+  };
+  for (const s of steps) {
+    if (s.type === 'leg') {
+      const f = byId.get(s.leg.planId);
+      if (f) push(f.level, f.elevation);
+      continue;
+    }
+    const a = byId.get(s.rise.fromPlan), b = byId.get(s.rise.toPlan);
+    if (!a || !b) continue;
+    push(a.level, a.elevation);
+    const dir = Math.sign(b.level - a.level);
+    // Étages intermédiaires sans plan : altitude interpolée entre les deux étages reliés.
+    for (let l = a.level + dir; dir !== 0 && l !== b.level; l += dir) {
+      push(l, a.elevation + ((b.elevation - a.elevation) * (l - a.level)) / (b.level - a.level));
+    }
+    push(b.level, b.elevation);
+  }
+  return out;
+}
+
 /** Plans formant le même bâtiment que `plan` (même site et même bâtiment sur la fiche). */
 export function buildingMembers(plan: Pick<PlanSummary, 'id' | 'site' | 'building'>, all: PlanSummary[]): PlanSummary[] {
   if (!norm(plan.building)) return all.filter((p) => p.id === plan.id);

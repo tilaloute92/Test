@@ -287,5 +287,13 @@ mark { background: color-mix(in srgb, var(--accent) 22%, transparent); color: in
 /* ---------- Tracés ---------- */
 .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .steps li::marker { color: var(--muted); font-family: var(--font-mono); }
+.lvl { display: inline-block; padding: 1px 7px; border-radius: 999px; font: 600 12px/1.5 var(--font-mono); background: var(--chip-bg, rgba(127, 127, 127, 0.15)); border: 1px solid transparent; white-space: nowrap; }
+.lvl.start { background: #2e9e5b; color: #fff; }
+.lvl.end { background: #d23c32; color: #fff; }
+.lvl.noplan { background: transparent; border: 1px dashed var(--muted); color: var(--muted); }
+.floorpath { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.floorpath li { display: inline-flex; align-items: center; gap: 4px; }
+.floorpath .arrow { color: var(--muted); }
+.floorpath-box { margin: 10px 0 4px; }
 details summary { cursor: pointer; }
 .err { color: var(--err-fg); }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import * as api from '../api';
 import { hrefOf } from '../App';
-import { buildingMembers, levelOf, loadBuilding, type LoadedFloor } from '../lib/building';
+import { buildingMembers, floorsCrossed, levelName, levelOf, loadBuilding, type CrossedFloor, type LoadedFloor } from '../lib/building';
 import { computeRoute, RouteError, type PassageKind, type RouteResult } from '../lib/route';
 
 const PASSAGE_KINDS: [PassageKind, string, string][] = [
@@ -155,6 +155,13 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
       for (const [x, y] of s.leg.points) pts.push(world(f, x, y));
     }
     v.setRoute(pts);
+    // Numéros d'étage dans la vue : départ, étages traversés et arrivée en couleur.
+    const crossed = floorsCrossed(route.steps, floors);
+    const onRoute = new Map(crossed.map((c, i) => [c.level, i === 0 ? 'start' : i === crossed.length - 1 ? 'end' : 'pass'] as const));
+    const labels = new Map<number, { text: string; elevation: number; state: 'start' | 'end' | 'pass' | 'other' }>();
+    for (const f of shown) labels.set(f.level, { text: levelName(f.level), elevation: f.elevation, state: onRoute.get(f.level) ?? 'other' });
+    for (const c of crossed) if (!labels.has(c.level)) labels.set(c.level, { text: levelName(c.level), elevation: c.elevation, state: onRoute.get(c.level)! });
+    v.setFloorLabels([...labels.values()]);
     v.fit('3d');
   }, [result, transparent, onlyRoute, colors]);
 
@@ -171,6 +178,14 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
     : 0;
   const total = result ? result.route.total + descents : 0;
   const floorName = (id: string) => result?.floors.find((f) => f.planId === id)?.name ?? '';
+  const levelOfPlan = (id: string) => result?.floors.find((f) => f.planId === id)?.level ?? 0;
+  const crossed = result ? floorsCrossed(result.route.steps, result.floors) : [];
+  /** Étages parcourus par une montée ou une descente, dans le sens du tracé. */
+  const riseFloors = (fromPlan: string, toPlan: string) => {
+    const a = levelOfPlan(fromPlan), b = levelOfPlan(toPlan);
+    const i = crossed.findIndex((c) => c.level === a), j = crossed.findIndex((c, k) => k > i && c.level === b);
+    return i >= 0 && j > i ? crossed.slice(i, j + 1) : [];
+  };
   const elevationOf = (id: string) => result?.floors.find((f) => f.planId === id)?.elevation ?? 0;
 
   return (
@@ -242,6 +257,13 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
                     <dt>Tracé</dt><dd>{fmtNum(total, 1)} m</dd>
                   </dl>
                 </div>
+                {crossed.length > 1 && (
+                  <div className="floorpath-box">
+                    <div className="muted small">Étages traversés, du départ à l'arrivée ({crossed.length})</div>
+                    <FloorPath floors={crossed} ends />
+                    {crossed.some((c) => !c.planId) && <div className="muted small">En pointillés : étage traversé dont le plan n'est pas dans l'application.</div>}
+                  </div>
+                )}
                 {result.route.warnings.map((w) => <div key={w} className="notice warn small">{w}</div>)}
                 <ol className="steps">
                   {result.route.steps.map((s, i) => (
@@ -253,8 +275,10 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
                         </>
                       ) : (
                         <>
-                          {elevationOf(s.rise.toPlan) >= elevationOf(s.rise.fromPlan) ? '↑ Montée' : '↓ Descente'} par <b>{s.rise.kind === 'manuel' ? `le passage ${s.rise.label}` : s.rise.label}</b> — {floorName(s.rise.fromPlan)} → {floorName(s.rise.toPlan)} : <span className="num">{fmtNum(s.rise.length, 1)} m</span>
+                          {elevationOf(s.rise.toPlan) >= elevationOf(s.rise.fromPlan) ? '↑ Montée' : '↓ Descente'} par <b>{s.rise.kind === 'manuel' ? `le passage ${s.rise.label}` : s.rise.label}</b> de {Math.abs(levelOfPlan(s.rise.toPlan) - levelOfPlan(s.rise.fromPlan))} étage{Math.abs(levelOfPlan(s.rise.toPlan) - levelOfPlan(s.rise.fromPlan)) > 1 ? 's' : ''} : <span className="num">{fmtNum(s.rise.length, 1)} m</span>
                           {s.rise.kind !== 'manuel' && <span className="tag" style={{ marginLeft: 6 }}>{RISE_LABEL[s.rise.kind].toLowerCase()}, relié automatiquement</span>}
+                          <FloorPath floors={riseFloors(s.rise.fromPlan, s.rise.toPlan)} />
+                          <div className="cell-sub">{floorName(s.rise.fromPlan)} → {floorName(s.rise.toPlan)}</div>
                         </>
                       )}
                     </li>
@@ -287,6 +311,7 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
             <div className="stats">
               <span className="pill"><b>{result.floors.length}</b> étage{result.floors.length > 1 ? 's' : ''} dans le bâtiment</span>
               <span className="pill">Tracé <b>{fmtNum(total, 1)} m</b></span>
+              {crossed.length > 1 && <span className="pill">Étages <b>{crossed.map((c) => levelName(c.level)).join(' → ')}</b></span>}
             </div>
           )}
           {!result && !busy && <div className="busy" style={{ background: 'transparent' }}><span className="muted">Choisissez un départ et une arrivée, puis « Tracer ».</span></div>}
@@ -294,6 +319,26 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
         </section>
       </div>
     </div>
+  );
+}
+
+/** Suite des numéros d'étage (R+3 → R+4 → R+5), départ en vert et arrivée en rouge si `ends`. */
+function FloorPath({ floors, ends }: { floors: CrossedFloor[]; ends?: boolean }) {
+  if (floors.length < 2) return null;
+  return (
+    <ol className="floorpath" aria-label={`Étages : ${floors.map((c) => levelName(c.level)).join(', ')}`}>
+      {floors.map((c, i) => (
+        <li key={`${c.level}-${i}`}>
+          {i > 0 && <span className="arrow" aria-hidden="true">→</span>}
+          <span
+            className={`lvl${ends && i === 0 ? ' start' : ''}${ends && i === floors.length - 1 ? ' end' : ''}${c.planId ? '' : ' noplan'}`}
+            title={c.name ?? "Étage traversé : pas de plan dans l'application"}
+          >
+            {levelName(c.level)}
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
