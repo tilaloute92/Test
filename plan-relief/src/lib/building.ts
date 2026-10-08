@@ -45,7 +45,21 @@ export function suggestPassage(e: Pick<Equipment, 'label' | 'type' | 'indication
   return '';
 }
 
-export const levelOf = (p: Pick<PlanSummary, 'level' | 'floor'>) => p.level ?? guessLevel(p.floor) ?? 0;
+/**
+ * Niveau lu dans un nom de fichier ou de plan (« …_PLAN_GAL_2E_TZ… » → 2, « R+3 », « RDC »,
+ * « SS1 »). Plus prudent que `guessLevel` : seules les formes explicites sont reconnues.
+ */
+export function levelFromName(name: string): number | null {
+  const f = ` ${(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9+-]+/g, ' ')} `;
+  if (/ (rdc|rez de chaussee) /.test(f)) return 0;
+  let m = f.match(/ r ?\+ ?(\d{1,2}) /) || f.match(/ (\d{1,2}) ?(?:er|ere|e|eme) /) || f.match(/ (?:etage|niveau) (\d{1,2}) /);
+  if (m) return Number(m[1]);
+  m = f.match(/ (?:r ?- ?|ss|sous sol ?)(\d) /);
+  return m ? -Number(m[1]) : null;
+}
+
+/** Niveau d'un plan : champ niveau, sinon déduit du champ étage, sinon du nom du plan. */
+export const levelOf = (p: Pick<PlanSummary, 'level' | 'floor'> & { name?: string }) => p.level ?? guessLevel(p.floor) ?? levelFromName(p.name ?? '') ?? 0;
 
 /** Numéro d'étage court : RDC, R+3, R-1. */
 export const levelName = (level: number) => (level === 0 ? 'RDC' : level > 0 ? `R+${level}` : `R${level}`);

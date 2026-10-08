@@ -100,7 +100,7 @@ export function uploadPlan(file: File, data: object) {
 
 export type SearchHitList = SearchHit[];
 
-export function searchEquipment(params: { q: string; site?: string; kind?: string; category?: string; plan?: string }) {
+export function searchEquipment(params: { q: string; site?: string; kind?: string; category?: string; plan?: string; limit?: string }) {
   const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]);
   return request<{ total: number; results: SearchHit[] }>(`/search?${qs}`);
 }

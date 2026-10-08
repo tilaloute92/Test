@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import * as api from '../api';
 import { hrefOf } from '../App';
-import { buildingMembers, floorsCrossed, levelName, levelOf, loadBuilding, type CrossedFloor, type LoadedFloor } from '../lib/building';
+import { buildingMembers, floorsCrossed, guessLevel, levelFromName, levelName, levelOf, loadBuilding, type CrossedFloor, type LoadedFloor } from '../lib/building';
 import { computeRoute, RouteError, type PassageKind, type RouteResult } from '../lib/route';
 
 const PASSAGE_KINDS: [PassageKind, string, string][] = [
@@ -13,7 +13,7 @@ const PASSAGE_KINDS: [PassageKind, string, string][] = [
 ];
 const RISE_LABEL: Record<PassageKind, string> = { manuel: 'Passage', gaine: 'Gaine', escalier: 'Escalier', ascenseur: 'Monte-charge / ascenseur' };
 import { PlanViewer } from '../lib/viewer';
-import { DEFAULT_SETTINGS, KIND_LABELS, type Equipment, type PlanSummary } from '../lib/types';
+import { DEFAULT_SETTINGS, KIND_LABELS, type Equipment, type PlanSummary, type SearchHit } from '../lib/types';
 import { fmtNum, Highlight, NavHint } from './ui';
 import { decodeEndpoint, encodeEndpoint, writeDraft, type EndpointRef } from '../lib/traceLink';
 
@@ -426,7 +426,7 @@ function FloorsNote({ floors }: { floors: LoadedFloor[] }) {
         <tbody>
           {floors.map((f) => (
             <tr key={f.planId}>
-              <td><a href={hrefOf({ page: 'plan', id: f.planId })}>{f.name}</a>{f.plan.level == null && <div className="cell-sub">niveau déduit de « {f.plan.floor || '—'} »</div>}</td>
+              <td><a href={hrefOf({ page: 'plan', id: f.planId })}>{f.name}</a>{f.plan.level == null && <div className="cell-sub">{guessLevel(f.plan.floor) != null ? `niveau déduit de « ${f.plan.floor} »` : levelFromName(f.plan.name) != null ? 'niveau déduit du nom du plan' : 'niveau inconnu : renseignez l’étage sur la fiche du plan'}</div>}</td>
               <td className="num">{levelOf(f.plan)}</td>
               <td className="num">{fmtNum(f.elevation, 1)} m</td>
               <td className="num">{f.passages.map((p) => p.label).join(', ') || '—'}{f.autos.length > 0 && <div className="cell-sub">{f.autos.length} escalier(s), ascenseur(s) ou gaine(s) repéré(s)</div>}</td>
@@ -439,26 +439,63 @@ function FloorsNote({ floors }: { floors: LoadedFloor[] }) {
 }
 
 /** Choix d'un équipement : recherche dans toute la bibliothèque. */
+/** Numéro d'étage d'un plan (R+3, RDC…), ou son champ étage tel quel s'il n'est pas reconnu. */
+function floorTag(p: Pick<PlanSummary, 'level' | 'floor' | 'name'> | undefined) {
+  if (!p) return '?';
+  const l = p.level ?? guessLevel(p.floor) ?? levelFromName(p.name);
+  return l == null ? (p.floor || '?') : levelName(l);
+}
+
+const LANDMARK_CATS = new Set(['ascenseur', 'escalier', 'gaine']);
+
+/**
+ * Résultats d'un sélecteur de départ ou d'arrivée : les escaliers, ascenseurs et gaines repérés
+ * d'abord, puis le reste ; l'indication brute (« ASC » lu sur le plan) est retirée quand un
+ * ascenseur repéré au même endroit la remplace. Regroupés par étage, du plus bas au plus haut.
+ */
+function arrangeHits(hits: api.SearchHitList, plans: PlanSummary[]) {
+  const byPlan = new Map(plans.map((p) => [p.id, p]));
+  const marks = hits.filter((h) => LANDMARK_CATS.has(h.equipment.category ?? ''));
+  const kept = hits.filter((h) => !(h.equipment.kind === 'texte' && marks.some((m) => m.planId === h.planId
+    && (m.equipment.indications ?? []).some((t) => t.toLowerCase() === (h.equipment.label || '').toLowerCase())
+    && Math.hypot(m.equipment.x - h.equipment.x, m.equipment.y - h.equipment.y) < 0.5)));
+  const level = (h: SearchHit) => { const p = byPlan.get(h.planId); return p ? levelOf(p) : 0; };
+  const rank = (h: SearchHit) => (LANDMARK_CATS.has(h.equipment.category ?? '') ? 0 : h.equipment.kind === 'texte' ? 2 : 1);
+  kept.sort((a, b) => level(a) - level(b) || a.planName.localeCompare(b.planName, 'fr') || rank(a) - rank(b)
+    || (a.equipment.label || '').localeCompare(b.equipment.label || '', 'fr', { numeric: true }));
+  const groups: { planId: string; plan?: PlanSummary; hits: SearchHit[] }[] = [];
+  for (const h of kept) {
+    const g = groups[groups.length - 1];
+    if (g && g.planId === h.planId) g.hits.push(h);
+    else groups.push({ planId: h.planId, plan: byPlan.get(h.planId), hits: [h] });
+  }
+  return groups;
+}
+
 function EndpointPicker({ id, value, onChange }: { id: string; value: Resolved | null; onChange: (r: Resolved | null) => void }) {
   const [q, setQ] = useState('');
+  const [planFilter, setPlanFilter] = useState('');
   const [hits, setHits] = useState<api.SearchHitList>([]);
   const [plans, setPlans] = useState<PlanSummary[]>([]);
   useEffect(() => { api.listPlans().then(setPlans).catch(() => {}); }, []);
   useEffect(() => {
     if (!q.trim()) { setHits([]); return; }
     const t = window.setTimeout(() => {
-      api.searchEquipment({ q: q.trim() }).then((r) => setHits(r.results.slice(0, 12))).catch(() => setHits([]));
+      api.searchEquipment({ q: q.trim(), plan: planFilter, limit: '80' }).then((r) => setHits(r.results)).catch(() => setHits([]));
     }, 250);
     return () => window.clearTimeout(t);
-  }, [q]);
+  }, [q, planFilter]);
+  const groups = useMemo(() => arrangeHits(hits, plans), [hits, plans]);
+  const sortedPlans = useMemo(() => [...plans].sort((a, b) => (a.site || '').localeCompare(b.site || '', 'fr') || (a.building || '').localeCompare(b.building || '', 'fr') || levelOf(a) - levelOf(b)), [plans]);
 
   if (value) {
     return (
       <div className="detail">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
           <div style={{ minWidth: 0 }}>
-            <h4>{value.label}</h4>
-            <div className="muted small">{[value.type !== value.label ? value.type : '', value.plan.name, value.plan.floor].filter(Boolean).join(' · ')}</div>
+            <h4><span className="lvl">{floorTag(value.plan)}</span> {value.label}</h4>
+            <div className="muted small">{[value.type !== value.label ? value.type : '', value.plan.name].filter(Boolean).join(' · ')}</div>
+            <a className="small" href={hrefOf({ page: 'plan', id: value.planId, eq: value.eqId })} target="_blank" rel="noopener">Voir sur le plan ↗</a>
           </div>
           <button type="button" className="btn sm" onClick={() => onChange(null)}>Changer</button>
         </div>
@@ -467,29 +504,40 @@ function EndpointPicker({ id, value, onChange }: { id: string; value: Resolved |
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <input id={`pick-${id}`} className="input" type="search" placeholder="Repère, type, indication…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Chercher un équipement" />
-      {hits.length > 0 && (
-        <div className="layers">
-          {hits.map((h) => (
-            <button
-              key={`${h.planId}:${h.equipment.id}`}
-              type="button"
-              className="eqrow"
-              onClick={() => {
-                const plan = plans.find((p) => p.id === h.planId);
-                if (plan) onChange({ planId: h.planId, eqId: h.equipment.id, label: h.equipment.label || h.equipment.type, type: h.equipment.type, plan, eq: h.equipment });
-                setQ('');
-              }}
-            >
-              <span className={`dot kind-${h.equipment.kind}`} />
-              <span className="l">
-                <span className="t"><Highlight text={h.equipment.label || h.equipment.type} query={q} /></span>
-                <span className="s">{[KIND_LABELS[h.equipment.kind], h.planName, h.floor].filter(Boolean).join(' · ')}</span>
-              </span>
-            </button>
+      <select id={`pick-${id}-plan`} className="select" value={planFilter} onChange={(e) => setPlanFilter(e.target.value)} aria-label="Étage">
+        <option value="">Tous les étages</option>
+        {sortedPlans.map((p) => <option key={p.id} value={p.id}>{floorTag(p)} — {p.name}{p.building ? ` (bât. ${p.building})` : ''}</option>)}
+      </select>
+      <input id={`pick-${id}`} className="input" type="search" placeholder="Repère, type, indication… (ex. ascenseur, MC)" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Chercher un équipement" />
+      {groups.length > 0 && (
+        <div className="layers pickgroups">
+          {groups.map((g) => (
+            <div key={g.planId} role="group" aria-label={`${floorTag(g.plan)} — ${g.plan?.name ?? g.hits[0].planName}`}>
+              <div className="pickgroup-h"><span className="lvl">{floorTag(g.plan)}</span> <span className="muted">{g.plan?.name ?? g.hits[0].planName}</span></div>
+              {g.hits.map((h) => (
+                <button
+                  key={`${h.planId}:${h.equipment.id}`}
+                  type="button"
+                  className="eqrow"
+                  onClick={() => {
+                    const plan = plans.find((p) => p.id === h.planId);
+                    if (plan) onChange({ planId: h.planId, eqId: h.equipment.id, label: h.equipment.label || h.equipment.type, type: h.equipment.type, plan, eq: h.equipment });
+                    setQ('');
+                  }}
+                >
+                  <span className={`dot kind-${h.equipment.kind}`} />
+                  <span className="l">
+                    <span className="t"><Highlight text={h.equipment.label || h.equipment.type} query={q} /></span>
+                    <span className="s">{[h.equipment.type !== h.equipment.label ? h.equipment.type : '', KIND_LABELS[h.equipment.kind], ...(h.equipment.indications ?? []).slice(0, 2)].filter(Boolean).join(' · ')}</span>
+                  </span>
+                  <span className="lvl" title={h.planName}>{floorTag(g.plan)}</span>
+                </button>
+              ))}
+            </div>
           ))}
         </div>
       )}
+      {q.trim() && hits.length >= 80 && <div className="muted small">Plus de 80 résultats : précisez la recherche ou choisissez un étage.</div>}
     </div>
   );
 }

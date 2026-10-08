@@ -298,6 +298,9 @@ mark { background: color-mix(in srgb, var(--accent) 22%, transparent); color: in
 .floorpath { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .floorpath li { display: inline-flex; align-items: center; gap: 4px; }
 .floorpath .arrow { color: var(--muted); }
+.pickgroups { max-height: 420px; overflow: auto; }
+.pickgroup-h { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 12px; background: var(--panel); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pickgroups .eqrow .lvl { margin-left: auto; flex: none; }
 .floorpath-box { margin: 10px 0 4px; }
 .steps li { border-radius: 6px; padding: 2px 4px; transition: background 0.2s; }
 .steps li.current { background: rgba(34, 197, 94, 0.16); box-shadow: inset 3px 0 0 #22c55e; }
