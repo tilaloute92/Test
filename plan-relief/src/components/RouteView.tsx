@@ -12,7 +12,7 @@ const PASSAGE_KINDS: [PassageKind, string, string][] = [
   ['manuel', 'Passages nommés sur les plans', 'Équipements marqués « passage entre étages ».'],
 ];
 const RISE_LABEL: Record<PassageKind, string> = { manuel: 'Passage', gaine: 'Gaine', escalier: 'Escalier', ascenseur: 'Monte-charge / ascenseur' };
-import { PlanViewer, type FloorLabelStyle } from '../lib/viewer';
+import { PlanViewer } from '../lib/viewer';
 import { DEFAULT_SETTINGS, KIND_LABELS, type Equipment, type PlanSummary } from '../lib/types';
 import { fmtNum, Highlight, NavHint } from './ui';
 import { decodeEndpoint, encodeEndpoint, writeDraft, type EndpointRef } from '../lib/traceLink';
@@ -60,10 +60,6 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
   const [curStep, setCurStep] = useState<number | null>(null);
   // Étages masqués dans la vue (identifiants de plan), pour ne garder que l'arrivée par exemple.
   const [hiddenFloors, setHiddenFloors] = useState<string[]>([]);
-  const [labelStyle] = useState<FloorLabelStyle>(() => {
-    try { const v = localStorage.getItem('planrelief.etiquettesEtages'); if (v === 'dalle' || v === 'facade' || v === 'cote') return v; } catch { /* stockage indisponible */ }
-    return 'dalle';
-  });
   const segStep = useRef<number[]>([]);
   const playingRef = useRef(playing);
   playingRef.current = playing;
@@ -191,10 +187,10 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
     const crossed = floorsCrossed(route.steps, floors);
     const onRoute = new Map(crossed.map((c, i) => [c.level, i === 0 ? 'start' : i === crossed.length - 1 ? 'end' : 'pass'] as const));
     const labels = new Map<number, Parameters<PlanViewer['setFloorLabels']>[0][number]>();
-    for (const f of shown) labels.set(f.level, { text: levelName(f.level), name: f.plan.name, elevation: f.elevation, state: onRoute.get(f.level) ?? 'other', slab: !hiddenFloors.includes(f.planId) });
+    for (const f of shown) labels.set(f.level, { text: levelName(f.level), elevation: f.elevation, state: onRoute.get(f.level) ?? 'other', slab: !hiddenFloors.includes(f.planId) });
     for (const c of crossed) if (!labels.has(c.level)) labels.set(c.level, { text: levelName(c.level), elevation: c.elevation, state: onRoute.get(c.level)!, slab: false });
-    v.setFloorLabels([...labels.values()], labelStyle);
-  }, [result, transparent, onlyRoute, colors, hiddenFloors, labelStyle]);
+    v.setFloorLabels([...labels.values()]);
+  }, [result, transparent, onlyRoute, colors, hiddenFloors]);
 
   const descents = result && result.height === 'plafond'
     ? (() => {
