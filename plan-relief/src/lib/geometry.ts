@@ -84,45 +84,59 @@ export function pairWalls(s: Float64Array, minT: number, maxT: number): { boxes:
     const x1 = s[i * 4], y1 = s[i * 4 + 1], dx = s[i * 4 + 2] - x1, dy = s[i * 4 + 3] - y1, l = Math.hypot(dx, dy);
     X[i] = x1; Y[i] = y1; L[i] = l; UX[i] = l ? dx / l : 1; UY[i] = l ? dy / l : 0;
   }
-  // Grille spatiale : on ne compare que des segments voisins.
+  // Grille spatiale par orientation : on ne compare que des segments voisins et à peu près
+  // parallèles (tranches de 3°, la tranche voisine comprise pour la tolérance de 2°).
   const cell = Math.max(maxT * 2, 0.5);
+  const NB = 60;
+  const bin = new Int32Array(n);
+  for (let i = 0; i < n; i++) { let a = Math.atan2(UY[i], UX[i]); if (a < 0) a += Math.PI; bin[i] = Math.floor((a / Math.PI) * NB) % NB; }
+  const gkey = (gx: number, gy: number, b: number) => ((gx * 73856093) ^ (gy * 19349663) ^ (b * 83492791)) | 0;
   const grid = new Map<number, number[]>();
+  // Cases couvertes par chaque segment (gx0, gx1, gy0, gy1) ; gx0 > gx1 : segment ignoré.
+  const cells = new Int32Array(n * 4);
   for (let i = 0; i < n; i++) {
+    cells[i * 4] = 1; cells[i * 4 + 1] = 0;
     if (L[i] < 0.02) continue;
     const x2 = X[i] + UX[i] * L[i], y2 = Y[i] + UY[i] * L[i];
     const gx0 = Math.floor((Math.min(X[i], x2) - maxT) / cell), gx1 = Math.floor((Math.max(X[i], x2) + maxT) / cell);
     const gy0 = Math.floor((Math.min(Y[i], y2) - maxT) / cell), gy1 = Math.floor((Math.max(Y[i], y2) + maxT) / cell);
     if ((gx1 - gx0 + 1) * (gy1 - gy0 + 1) > 4000) continue;
+    cells[i * 4] = gx0; cells[i * 4 + 1] = gx1; cells[i * 4 + 2] = gy0; cells[i * 4 + 3] = gy1;
     for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
-      const key = (gx * 73856093) ^ (gy * 19349663);
+      const key = gkey(gx, gy, bin[i]);
       let list = grid.get(key);
       if (!list) grid.set(key, (list = []));
       list.push(i);
     }
   }
-  const seen = new Set<number>();
+  // Chaque paire voisine n'est examinée qu'une fois : pour le segment i, ses voisins j > i
+  // sont marqués au passage (marque = i). Pas d'ensemble des paires vues : sur un plan très
+  // chargé, il dépasserait la taille maximale d'un Set JavaScript (16,7 millions).
+  const mark = new Int32Array(n).fill(-1);
   const dens = new Float64Array(n);
   const cands: { i: number; j: number; d: number; lo: number; hi: number }[] = [];
-  for (const list of grid.values()) {
-    for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length; b++) {
-      let i = list[a], j = list[b];
-      if (i > j) [i, j] = [j, i];
-      const key = i * n + j;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      if (Math.abs(UX[i] * UY[j] - UY[i] * UX[j]) > 0.035) continue; // ~2°
-      const mx = X[j] + UX[j] * L[j] / 2, my = Y[j] + UY[j] * L[j] / 2;
-      const d = (mx - X[i]) * -UY[i] + (my - Y[i]) * UX[i];
-      const ad = Math.abs(d);
-      if (ad < minT || ad > maxT) continue;
-      const t1 = (X[j] - X[i]) * UX[i] + (Y[j] - Y[i]) * UY[i];
-      const t2 = t1 + L[j] * (UX[j] * UX[i] + UY[j] * UY[i]);
-      const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(L[i], Math.max(t1, t2));
-      if (hi - lo < 0.02) continue;
-      cands.push({ i, j, d, lo, hi });
-      // Part de chaque trait longée par l'autre (sur le trait j, la longueur commune est la même).
-      dens[i] += (hi - lo) / L[i];
-      dens[j] += (hi - lo) / L[j];
+  for (let i = 0; i < n; i++) {
+    const gx0 = cells[i * 4], gx1 = cells[i * 4 + 1], gy0 = cells[i * 4 + 2], gy1 = cells[i * 4 + 3];
+    for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) for (let db = -1; db <= 1; db++) {
+      const list = grid.get(gkey(gx, gy, (bin[i] + db + NB) % NB));
+      if (!list) continue;
+      for (const j of list) {
+        if (j <= i || mark[j] === i) continue;
+        mark[j] = i;
+        if (Math.abs(UX[i] * UY[j] - UY[i] * UX[j]) > 0.035) continue; // ~2°
+        const mx = X[j] + UX[j] * L[j] / 2, my = Y[j] + UY[j] * L[j] / 2;
+        const d = (mx - X[i]) * -UY[i] + (my - Y[i]) * UX[i];
+        const ad = Math.abs(d);
+        if (ad < minT || ad > maxT) continue;
+        const t1 = (X[j] - X[i]) * UX[i] + (Y[j] - Y[i]) * UY[i];
+        const t2 = t1 + L[j] * (UX[j] * UX[i] + UY[j] * UY[i]);
+        const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(L[i], Math.max(t1, t2));
+        if (hi - lo < 0.02) continue;
+        cands.push({ i, j, d, lo, hi });
+        // Part de chaque trait longée par l'autre (sur le trait j, la longueur commune est la même).
+        dens[i] += (hi - lo) / L[i];
+        dens[j] += (hi - lo) / L[j];
+      }
     }
   }
   // Un mur a une face en vis-à-vis (2 pour un mur à doublage). Un trait longé par 3 traits
