@@ -154,7 +154,9 @@ const LIFT_WORDS: [RegExp, string][] = [
 ];
 const STAIR_WORDS = /^(ESC|ESCALIERS?|STAIRS?|CAGE D ESCALIER)( |$)/;
 /** Passages verticaux des câbles : « VTP CFA/SSI », « GT-3 », « Gaine technique », « Colonne C4 »… */
-const RISER_WORDS = /^(VTP|GTL|GAINES? TECHNIQUES?|GAINE|GT ?\d+[A-Z]?|COLONNES? MONTANTES?|COLONNE ?[A-Z]?\d+|CM ?\d+|TREMIE|SHUNT)( |$)/;
+const RISER_WORDS = /^(VTP|GAINES? TECHNIQUES?|GAINE|GT ?\d+[A-Z]?|COLONNES? MONTANTES?|COLONNE ?[A-Z]?\d+|CM ?\d+|TREMIE|SHUNT)( |$)/;
+/** « Gaine tête de lit » (GTL d'hôpital) : goulotte au chevet, pas un passage vertical. */
+const NOT_RISER = /TETE DE LIT|^GTL\b/;
 
 /**
  * Remplace les escaliers et ascenseurs repérés précédemment par un nouveau repérage.
@@ -224,7 +226,7 @@ export function withLandmarks(list: Equipment[], groups: Group[], settings: Plan
   // Gaines et colonnes montantes : textes, un repère par gaine (textes voisins fusionnés).
   const risers: { x: number; y: number; text: string }[] = [];
   for (const t of texts) {
-    if (!RISER_WORDS.test(norm(t.label))) continue;
+    if (!RISER_WORDS.test(norm(t.label)) || NOT_RISER.test(norm(t.label))) continue;
     const x = t.x * f, y = t.y * f;
     if (risers.some((r) => Math.hypot(r.x - x, r.y - y) < 1.5)) continue;
     risers.push({ x, y, text: t.label });
