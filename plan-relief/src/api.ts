@@ -47,11 +47,15 @@ async function request<T>(path: string, init: RequestInit & { timeout?: number }
   return data as T;
 }
 
+/** Version du service, lue à la connexion (vide si le service est antérieur à 1.1.0). */
+export let serverVersion = '';
+
 // Une sonde courte : si le service est arrêté, le proxy peut mettre longtemps à le dire.
 export async function health(): Promise<boolean> {
   try {
     const res = await fetch('/api/health', { credentials: 'include', signal: AbortSignal.timeout(4000) });
     const body = await res.json();
+    if (typeof body.version === 'string') serverVersion = body.version;
     return res.ok && body.app === 'plan-relief';
   } catch {
     return false;
@@ -104,3 +108,43 @@ export function searchEquipment(params: { q: string; site?: string; kind?: strin
   const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]);
   return request<{ total: number; results: SearchHit[] }>(`/search?${qs}`);
 }
+
+/* ---------- Journal des modifications d'un plan ---------- */
+export interface JournalEntry {
+  id: string;
+  at: string;
+  user: string;
+  action?: 'création' | 'relecture';
+  summary?: string;
+  changes: { type: 'ajout' | 'modification' | 'suppression'; id: string; label: string; fields?: string[] }[];
+  meta?: string[];
+  settings?: boolean;
+  /** Équipements supprimés par cette entrée et encore restaurables. */
+  restorable: string[];
+}
+export const getJournal = (planId: string) => request<JournalEntry[]>(`/plans/${planId}/journal`);
+export const restoreEquipment = (planId: string, entryId: string, itemId: string) =>
+  request<PlanRecord>(`/plans/${planId}/restore`, { method: 'POST', body: JSON.stringify({ entryId, itemId }) });
+
+/* ---------- Tracés enregistrés ---------- */
+export interface SavedEnd { planId: string; eqId: string; label: string; floor: string }
+export interface SavedTarget extends SavedEnd { length: number; horizontal: number; vertical: number; descents: number }
+export interface SavedRoute {
+  id: string;
+  name: string;
+  ref: string;
+  from: SavedEnd;
+  targets: SavedTarget[];
+  options: { height: 'plafond' | 'sol'; margin: number; orthogonal: boolean; allowWalls: boolean; kinds: ('manuel' | 'gaine' | 'escalier' | 'ascenseur')[] };
+  floors: string[];
+  /** Longueur totale à prévoir, marge comprise. */
+  total: number;
+  planVersions: Record<string, number>;
+  ownerId: string;
+  createdAt: string; createdBy: string; updatedAt: string; updatedBy: string;
+}
+export type SavedRouteInput = Omit<SavedRoute, 'id' | 'ownerId' | 'createdAt' | 'createdBy' | 'updatedAt' | 'updatedBy'>;
+export const listRoutes = () => request<SavedRoute[]>('/routes');
+export const saveRoute = (r: SavedRouteInput) => request<SavedRoute>('/routes', { method: 'POST', body: JSON.stringify(r) });
+export const updateRoute = (id: string, r: Partial<SavedRouteInput>) => request<SavedRoute>(`/routes/${id}`, { method: 'PUT', body: JSON.stringify(r) });
+export const deleteRoute = (id: string) => request<{ ok: boolean }>(`/routes/${id}`, { method: 'DELETE' });

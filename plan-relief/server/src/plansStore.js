@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { dataPath, readJsonStrict, writeFileAtomic, bumpDataVersion } from './dataStore.js';
 import { CATEGORIES } from './categories.js';
+import { logChanges } from './journal.js';
 
 /**
  * Bibliothèque de plans.
@@ -219,6 +220,7 @@ export function createPlan({ buffer, fileName, meta, settings, equipment, user }
   // reste un dossier sans plan.json, ignoré au démarrage, plutôt qu'un plan sans fichier.
   writeFileAtomic(sourcePath(plan), buffer);
   persist(plan);
+  try { logChanges(null, plan, user); } catch (err) { console.error('Journal non mis à jour :', err.message); }
   return { plan, duplicateOf: duplicateOf ? { id: duplicateOf.id, name: duplicateOf.name } : null };
 }
 
@@ -244,6 +246,8 @@ export function updatePlan(id, patch, user) {
   };
   if (!next.name) next.name = plan.name;
   persist(next);
+  // Le journal ne doit jamais empêcher un enregistrement : une erreur y est seulement signalée.
+  try { logChanges(plan, next, user); } catch (err) { console.error('Journal non mis à jour :', err.message); }
   return next;
 }
 

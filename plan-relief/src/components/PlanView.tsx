@@ -10,6 +10,8 @@ import { CATEGORIES, DEFAULT_SETTINGS, KIND_LABELS, ROLE_LABELS, UNIT_NAMES, cat
 import { useIsAdmin } from './session';
 import { Highlight, Icon, Modal, downloadBlob, fmtDate, fmtNum, useConfirm, useToast, NavHint } from './ui';
 import { levelName, levelOf } from '../lib/building';
+import { downloadCsv, today } from '../lib/csv';
+import { JournalTab } from './JournalTab';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[-_./\\#]+/g, '');
 const eqHay = (e: Equipment) => {
@@ -60,7 +62,10 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState('Chargement du plan…');
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<'eq' | 'model'>('eq');
+  const [tab, setTab] = useState<'eq' | 'model' | 'journal'>('eq');
+  const [measuring, setMeasuring] = useState(false);
+  const [measureOrtho, setMeasureOrtho] = useState(false);
+  const [segments, setSegments] = useState<number[]>([]);
   const [selected, setSelected] = useState<string | null>(focusEq ?? null);
   const [query, setQuery] = useState('');
   const [kinds, setKinds] = useState<Record<EquipmentKind, boolean>>({ bloc: true, texte: true, manuel: true });
@@ -111,6 +116,7 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
     const v = new PlanViewer(containerRef.current);
     viewerRef.current = v;
     v.onLabelMove = setLabelPos;
+    v.onMeasure = setSegments;
     return () => { v.dispose(); viewerRef.current = null; };
   }, []);
 
@@ -174,7 +180,29 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
       setDraft({ id: newId(), kind: 'manuel', label: nextLabel(equipment, placeCat), type: cat && cat.id !== 'autre' ? cat.label : '', category: placeCat, layer: '', x, y });
     } : null;
   }, [placing, placeCat, equipment]);
-  const startPlacing = (cat: Category) => { setPlaceCat(cat); setPlacing(true); select(null); };
+  const startPlacing = (cat: Category) => { setMeasuring(false); setPlaceCat(cat); setPlacing(true); select(null); };
+
+  // --- Outil de mesure ---------------------------------------------------------------------
+  useEffect(() => { viewerRef.current?.setMeasuring(measuring, measureOrtho); }, [measuring, measureOrtho]);
+  useEffect(() => {
+    if (!measuring) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setMeasuring(false); return; }
+      // Retour arrière garde son rôle habituel dans un champ de saisie.
+      if (e.key === 'Backspace' && !(e.target as HTMLElement).closest('input[type=text], input[type=search], input:not([type]), textarea')) { e.preventDefault(); viewerRef.current?.undoMeasure(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [measuring]);
+  const measureTotal = segments.reduce((a, b) => a + b, 0);
+
+  /** Liste affichée (filtres compris) en tableur. */
+  const exportList = () => {
+    if (!plan) return;
+    downloadCsv(`equipements_${plan.name}_${today()}`, ['Repère', 'Type', 'Catégorie', 'Origine', 'Étage', 'Plan', 'Site', 'Bâtiment', 'Écrit à côté', 'Notes', 'Calque', 'X', 'Y'],
+      filtered.map((e) => [e.label, e.type, categoryOf(e.category)?.label ?? '', KIND_LABELS[e.kind], levelName(levelOf(plan)), plan.name, plan.site, plan.building, (e.indications ?? []).join(' · '), e.notes ?? '', e.layer, e.x, e.y]));
+    toast(`${filtered.length.toLocaleString('fr-FR')} équipements exportés.`);
+  };
 
   const focusOn = (e: Equipment) => {
     select(e.id);
@@ -365,12 +393,17 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
           <div className="side-tabs" role="tablist">
             <button type="button" role="tab" aria-selected={tab === 'eq'} onClick={() => setTab('eq')}>Équipements {plan ? `(${equipment.length.toLocaleString('fr-FR')})` : ''}</button>
             <button type="button" role="tab" aria-selected={tab === 'model'} onClick={() => setTab('model')}>Maquette 3D{dirty ? ' •' : ''}</button>
+            <button type="button" role="tab" aria-selected={tab === 'journal'} onClick={() => setTab('journal')}>Journal</button>
           </div>
           <div className="side-scroll">
             {tab === 'eq' && plan && (
               <>
                 <div className="sec">
                   <input id="eq-filter" className="input" type="search" placeholder="Chercher dans ce plan : repère, modèle, local…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Chercher un équipement dans ce plan" />
+                  <div className="list-tools">
+                    <span className="muted small num">{filtered.length.toLocaleString('fr-FR')} affiché{filtered.length > 1 ? 's' : ''} sur {equipment.length.toLocaleString('fr-FR')}</span>
+                    <button type="button" className="btn sm ghost" disabled={!filtered.length} onClick={exportList} title="Télécharger la liste affichée (filtres compris), à ouvrir dans Excel"><Icon name="sheet" /> Exporter (Excel)</button>
+                  </div>
                   <div className="filters" role="group" aria-label="Origine">
                     {(Object.keys(KIND_LABELS) as EquipmentKind[]).map((k) => (
                       <button key={k} type="button" aria-pressed={kinds[k]} onClick={() => setKinds({ ...kinds, [k]: !kinds[k] })}>
@@ -465,6 +498,10 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
               </>
             )}
 
+            {tab === 'journal' && plan && (
+              <JournalTab planId={plan.id} version={plan.version} onRestored={(next) => { setPlan(next); toast('Équipement restauré sur le plan.'); }} onShow={(eqId) => { const e = equipment.find((x) => x.id === eqId); if (e) { setTab('eq'); focusOn(e); } }} />
+            )}
+
             {tab === 'model' && drawing && plan && (
               <ModelSettings
                 drawing={drawing}
@@ -495,12 +532,28 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
             <div className="seg" role="group" aria-label="Point de vue">
               <button type="button" onClick={() => viewerRef.current?.fit('3d')}>3D</button>
               <button type="button" onClick={() => viewerRef.current?.fit('top')}>Dessus</button>
+              <button type="button" aria-pressed={measuring} onClick={() => { setPlacing(false); setMeasuring(!measuring); }} title="Mesurer une distance sur le plan"><Icon name="ruler" size={14} /> Mesurer</button>
             </div>
             <div className="seg">
               <label className="check" htmlFor="show-plan"><input id="show-plan" type="checkbox" checked={showPlan} onChange={(e) => setShowPlan(e.target.checked)} /> Plan au sol</label>
               <label className="check" htmlFor="show-markers"><input id="show-markers" type="checkbox" checked={showMarkers} onChange={(e) => setShowMarkers(e.target.checked)} /> Repères</label>
             </div>
           </div>
+          {measuring && (
+            <div className="measure-panel" role="status">
+              <div>
+                <div className="muted small">{segments.length ? `Mesure · ${segments.length} segment${segments.length > 1 ? 's' : ''}` : 'Mesure : cliquez des points sur le plan'}</div>
+                <div className="measure-total num">{fmtNum(measureTotal, 1)} m</div>
+              </div>
+              <label className="check" htmlFor="measure-ortho"><input id="measure-ortho" type="checkbox" checked={measureOrtho} onChange={(e) => setMeasureOrtho(e.target.checked)} /> Angles droits</label>
+              <div className="toolbar">
+                <button type="button" className="btn sm" disabled={!segments.length && !measureTotal} onClick={() => viewerRef.current?.undoMeasure()}>Annuler le dernier point</button>
+                <button type="button" className="btn sm" onClick={() => viewerRef.current?.clearMeasure()}>Effacer</button>
+                <button type="button" className="btn sm primary" onClick={() => setMeasuring(false)}>Terminer</button>
+              </div>
+              <div className="muted small">Retour arrière : annuler le dernier point · Échap : terminer</div>
+            </div>
+          )}
           {placing && (
             <div className="placing" role="status">
               Cliquez à l'emplacement : {categoryOf(placeCat)?.label.toLowerCase()} {nextLabel(equipment, placeCat)}

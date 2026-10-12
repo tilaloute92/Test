@@ -206,6 +206,56 @@ test('profils : un lecteur consulte, cherche et trace, mais ne modifie rien', as
   assert.deepEqual(adm.body.admins, ['jdupont', 'MARTIN@ex.fr']);
 });
 
+test('journal : ajout, modification et suppression inscrits ; un équipement supprimé se restaure', async () => {
+  const json = { 'content-type': 'application/json' };
+  const cur = (await api(`/api/plans/${planId}`)).body;
+  const r1 = await api(`/api/plans/${planId}`, { method: 'PATCH', headers: json, body: JSON.stringify({ version: cur.version, equipment: [...cur.equipment, { id: 'cam-7', kind: 'manuel', label: 'Caméra 7', category: 'camera', x: 40, y: 2 }] }) });
+  const withCam = r1.body;
+  const r2 = await api(`/api/plans/${planId}`, { method: 'PATCH', headers: json, body: JSON.stringify({ version: withCam.version, equipment: withCam.equipment.map((e) => (e.id === 'cam-7' ? { ...e, label: 'Caméra 7 bis', x: 41 } : e)) }) });
+  const r3 = await api(`/api/plans/${planId}`, { method: 'PATCH', headers: json, body: JSON.stringify({ version: r2.body.version, equipment: r2.body.equipment.filter((e) => e.id !== 'cam-7') }) });
+  assert.equal(r3.status, 200);
+  const journal = (await api(`/api/plans/${planId}/journal`)).body;
+  const [del, mod, add] = journal;
+  assert.deepEqual(del.changes, [{ type: 'suppression', id: 'cam-7', label: 'Caméra 7 bis' }]);
+  assert.deepEqual(del.restorable, ['cam-7']);
+  assert.equal(del.removed, undefined, 'les équipements gardés ne sont pas renvoyés en entier');
+  assert.deepEqual(mod.changes[0].fields.sort(), ['label', 'position']);
+  assert.equal(add.changes[0].type, 'ajout');
+  assert.equal(add.user, 'Admin Test');
+  const back = await api(`/api/plans/${planId}/restore`, { method: 'POST', headers: json, body: JSON.stringify({ entryId: del.id, itemId: 'cam-7' }) });
+  assert.equal(back.status, 200);
+  assert.equal(back.body.equipment.find((e) => e.id === 'cam-7').label, 'Caméra 7 bis');
+  assert.equal((await api(`/api/plans/${planId}/restore`, { method: 'POST', headers: json, body: JSON.stringify({ entryId: del.id, itemId: 'cam-7' }) })).status, 409);
+});
+
+test('tracés enregistrés : partagés, nettoyés ; seul l\'auteur ou un administrateur supprime', async () => {
+  const json = { 'content-type': 'application/json' };
+  const route = (name) => ({ name, ref: 'BT-1', from: { planId, eqId: 'a', label: 'Baie', floor: 'R+1' }, targets: [{ planId, eqId: 'b', label: 'Borne', floor: 'R+1', length: 12.345 }], options: { height: 'sol', margin: 300, kinds: ['ascenseur', 'pirate'] }, floors: ['R+1'], total: 12.3, planVersions: { [planId]: 3, '../x': 1 } });
+  const mine = await api('/api/routes', { method: 'POST', headers: json, body: JSON.stringify(route('Câble admin')) });
+  assert.equal(mine.status, 201);
+  assert.equal(mine.body.options.margin, 100, 'marge bornée');
+  assert.deepEqual(mine.body.options.kinds, ['ascenseur']);
+  assert.deepEqual(Object.keys(mine.body.planVersions), [planId]);
+  assert.equal(mine.body.targets[0].length, 12.35);
+  assert.equal((await api('/api/routes', { method: 'POST', headers: json, body: JSON.stringify({ name: 'vide' }) })).status, 400);
+  const adminCookie = cookie;
+  cookie = '';
+  await api('/api/auth/local', { method: 'POST', headers: json, body: JSON.stringify({ username: 'lecteur', password: 'MotDePasse123' }) });
+  try {
+    assert.equal((await api('/api/routes')).body.length, 1, 'visible par toute l\'équipe');
+    const own = await api('/api/routes', { method: 'POST', headers: json, body: JSON.stringify(route('Câble lecteur')) });
+    assert.equal(own.status, 201, 'un lecteur enregistre ses tracés');
+    assert.equal((await api(`/api/routes/${mine.body.id}`, { method: 'DELETE' })).status, 403);
+    assert.equal((await api(`/api/routes/${own.body.id}`, { method: 'PUT', headers: json, body: JSON.stringify({ name: 'Renommé' }) })).body.name, 'Renommé');
+    assert.equal((await api(`/api/routes/${own.body.id}`, { method: 'DELETE' })).status, 200);
+  } finally {
+    cookie = adminCookie;
+  }
+  assert.equal((await api(`/api/routes/${mine.body.id}`, { method: 'DELETE' })).status, 200);
+  assert.equal((await api('/api/routes')).body.length, 0);
+  assert.match((await api('/api/health')).body.version, /^\d+\.\d+\.\d+$/);
+});
+
 test('identifiant invalide : jamais de chemin construit à partir de la saisie', async () => {
   assert.equal((await api('/api/plans/..%2F..%2Fusers.json/file')).status, 404);
   assert.equal((await api('/api/plans/not-an-id')).status, 404);

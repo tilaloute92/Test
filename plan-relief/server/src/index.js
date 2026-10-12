@@ -1,9 +1,10 @@
+import fs from 'node:fs';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import { config } from './config.js';
 import { authRouter } from './routes/auth.js';
-import { plansRouter, searchRouter } from './routes/plans.js';
+import { plansRouter, routesRouter, searchRouter } from './routes/plans.js';
 import { loadPlans } from './plansStore.js';
 
 // Lecture stricte de la bibliothèque AVANT d'ouvrir le port : un plan.json illisible
@@ -29,10 +30,12 @@ app.use(cookieParser());
  * d'autre que l'existence du service : les plans passent par /api/plans, qui exige une
  * session.
  */
-app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'client-serveur', app: 'plan-relief' }));
+const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'client-serveur', app: 'plan-relief', version: VERSION }));
 app.use('/api/auth', authRouter);
 app.use('/api/plans', plansRouter);
 app.use('/api/search', searchRouter);
+app.use('/api/routes', routesRouter);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Adresse inconnue.' }));
 

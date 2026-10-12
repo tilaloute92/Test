@@ -71,6 +71,11 @@ export class PlanViewer {
   private route = new THREE.Group();
   private floorLabels = new THREE.Group();
   private runnerGroup = new THREE.Group();
+  /** Outil de mesure : points cliqués sur le sol (repère de la scène, en mètres). */
+  private measureGroup = new THREE.Group();
+  private measure: { pts: THREE.Vector3[]; ortho: boolean } | null = null;
+  /** Appelé à chaque point ajouté : longueur de chaque segment, en mètres. */
+  onMeasure: (segments: number[]) => void = () => {};
   /** Animation du trajet : boule verte qui parcourt le tracé du départ vers l'arrivée. */
   private runner: {
     mesh: THREE.Object3D; pts: THREE.Vector3[]; cum: number[]; total: number; duration: number;
@@ -142,7 +147,7 @@ export class PlanViewer {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0005;
-    this.scene.add(this.sun, this.sun.target, this.model, this.markers, this.route, this.landmarks, this.floorLabels, this.runnerGroup);
+    this.scene.add(this.sun, this.sun.target, this.model, this.markers, this.route, this.landmarks, this.floorLabels, this.runnerGroup, this.measureGroup);
 
     // Épingle de l'équipement sélectionné : tige + tête, dimensionnées à chaque sélection.
     this.pin = new THREE.Group();
@@ -393,7 +398,7 @@ export class PlanViewer {
   }
 
   /** Tracé : tube orange, sphère verte au départ, rouge à l'arrivée. Coordonnées de scène. */
-  setRoute(points: THREE.Vector3[] | null) {
+  setRoute(points: THREE.Vector3[] | null, others: { points: THREE.Vector3[]; color: number }[] = []) {
     this.dirty = true;
     this.stopRoute();
     this.routePts = points && points.length >= 2 ? points.map((p) => p.clone()) : [];
@@ -402,6 +407,24 @@ export class PlanViewer {
     if (!points || points.length < 2) return;
     const scale = Math.max(this.box.getSize(new THREE.Vector3()).length() / 400, 0.05);
     const r = Math.min(scale, 0.12);
+    // Tracé groupé : les autres câbles, plus fins, chacun dans sa couleur ; le tracé choisi
+    // reste en orange par-dessus.
+    for (const o of others) {
+      const mat = new THREE.MeshStandardMaterial({ color: o.color, roughness: 0.5 });
+      for (let i = 1; i < o.points.length; i++) {
+        const a = o.points[i - 1], b = o.points[i];
+        const len = a.distanceTo(b);
+        if (len < 1e-4) continue;
+        const cyl = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.6, r * 0.6, len, 8), mat);
+        cyl.position.copy(a).add(b).multiplyScalar(0.5);
+        cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+        cyl.name = 'Tracé';
+        this.route.add(cyl);
+      }
+      const end = new THREE.Mesh(new THREE.SphereGeometry(r * 2.4, 16, 12), new THREE.MeshStandardMaterial({ color: o.color, roughness: 0.4 }));
+      end.position.copy(o.points[o.points.length - 1]);
+      this.route.add(end);
+    }
     for (let i = 1; i < points.length; i++) {
       const a = points[i - 1], b = points[i];
       const len = a.distanceTo(b);
@@ -604,6 +627,15 @@ export class PlanViewer {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
+    if (this.measure) {
+      const hit = new THREE.Vector3();
+      if (this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit)) {
+        hit.y = 0.05;
+        this.measure.pts.push(hit);
+        this.drawMeasure();
+      }
+      return;
+    }
     if (this.onPlace) {
       const hit = new THREE.Vector3();
       if (this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit)) {
@@ -619,6 +651,83 @@ export class PlanViewer {
       if (hits.length && hits[0].index !== undefined) { this.onPick(this.pointIds[hits[0].index]); return; }
     }
     this.onPick(null);
+  }
+
+  /**
+   * Outil de mesure : chaque clic sur la vue ajoute un point au sol ; la distance de chaque
+   * segment s'affiche. `ortho` : distance en angles droits (le long des axes du plan), comme
+   * un chemin de câbles, au lieu de la ligne droite.
+   */
+  setMeasuring(on: boolean, ortho = false) {
+    this.measure = on ? { pts: this.measure?.pts ?? [], ortho } : null;
+    this.renderer.domElement.style.cursor = on ? 'crosshair' : '';
+    if (!on) { this.disposeChildren(this.measureGroup); this.dirty = true; } else this.drawMeasure();
+  }
+
+  clearMeasure() {
+    if (this.measure) this.measure.pts = [];
+    this.drawMeasure();
+  }
+
+  /** Retire le dernier point (touche Retour arrière). */
+  undoMeasure() {
+    this.measure?.pts.pop();
+    this.drawMeasure();
+  }
+
+  private drawMeasure() {
+    this.dirty = true;
+    this.disposeChildren(this.measureGroup);
+    const m = this.measure;
+    if (!m) return;
+    const span = Math.max(this.box.getSize(new THREE.Vector3()).length(), 5);
+    const r = Math.max(0.08, span / 600);
+    const color = 0x2b45c4;
+    const segments: number[] = [];
+    const path: THREE.Vector3[] = [];
+    m.pts.forEach((p, i) => {
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(r * 2.2, 14, 10), new THREE.MeshBasicMaterial({ color, depthTest: false }));
+      dot.position.copy(p);
+      dot.renderOrder = 12;
+      this.measureGroup.add(dot);
+      if (!i) { path.push(p.clone()); return; }
+      const a = m.pts[i - 1];
+      // En angles droits : d'abord le long de l'axe le plus long, puis l'autre.
+      const corner = Math.abs(p.x - a.x) >= Math.abs(p.z - a.z) ? new THREE.Vector3(p.x, p.y, a.z) : new THREE.Vector3(a.x, p.y, p.z);
+      if (m.ortho) path.push(corner);
+      path.push(p.clone());
+      const len = m.ortho ? Math.abs(p.x - a.x) + Math.abs(p.z - a.z) : a.distanceTo(p);
+      segments.push(len);
+      const mid = m.ortho ? corner.clone().lerp(Math.abs(p.x - a.x) >= Math.abs(p.z - a.z) ? a : p, 0.5) : a.clone().lerp(p, 0.5);
+      this.measureGroup.add(this.measureLabel(`${len.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m`, mid));
+    });
+    if (path.length >= 2) {
+      const geo = new THREE.BufferGeometry().setFromPoints(path);
+      const line = new THREE.Line(geo, new THREE.LineDashedMaterial({ color, dashSize: r * 6, gapSize: r * 4, depthTest: false }));
+      line.computeLineDistances();
+      line.renderOrder = 11;
+      this.measureGroup.add(line);
+    }
+    this.onMeasure(segments);
+  }
+
+  /** Étiquette de longueur, de taille constante à l'écran. */
+  private measureLabel(text: string, at: THREE.Vector3) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 80;
+    const c = canvas.getContext('2d')!;
+    c.fillStyle = '#ffffff'; c.strokeStyle = '#2b45c4'; c.lineWidth = 5;
+    c.beginPath(); c.roundRect(4, 4, 248, 72, 36); c.fill(); c.stroke();
+    c.fillStyle = '#111827'; c.font = '700 40px "Segoe UI", system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(text, 128, 42, 230);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, sizeAttenuation: false }));
+    sprite.scale.set(0.11, 0.034, 1);
+    sprite.center.set(0.5, -0.3);
+    sprite.position.copy(at);
+    sprite.renderOrder = 13;
+    return sprite;
   }
 
   setPlacing(on: boolean) {

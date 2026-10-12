@@ -4,7 +4,8 @@ import { hrefOf } from '../App';
 import { CATEGORIES, KIND_LABELS, categoryOf, cssColor, type Category, type EquipmentKind, type PlanSummary, type SearchHit } from '../lib/types';
 import { guessLevel, levelFromName, levelName } from '../lib/building';
 import { encodeEndpoint, readDraft } from '../lib/traceLink';
-import { Highlight, Icon } from './ui';
+import { Highlight, Icon, useToast } from './ui';
+import { downloadCsv, today } from '../lib/csv';
 
 const EXAMPLES = ['switch', 'baie', 'borne wifi', 'caméra', 'RJ45'];
 
@@ -18,6 +19,26 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const toast = useToast();
+
+  /** Tous les résultats (jusqu'à 500), avec l'étage, en tableur. */
+  const exportResults = async () => {
+    try {
+      const all = await api.searchEquipment({ q: q.trim(), site, kind, category, limit: '500' });
+      const byId = new Map(plans.map((p) => [p.id, p]));
+      downloadCsv(`recherche_${(q.trim() || category || 'equipements').replace(/[^\w-]+/g, '_')}_${today()}`,
+        ['Repère', 'Type', 'Catégorie', 'Origine', 'Étage', 'Plan', 'Site', 'Bâtiment', 'Écrit à côté', 'Notes', 'Lien'],
+        all.results.map((r) => {
+          const e = r.equipment, plan = byId.get(r.planId);
+          const l = plan?.level ?? guessLevel(r.floor) ?? levelFromName(r.planName);
+          return [e.label, e.type, categoryOf(e.category)?.label ?? '', KIND_LABELS[e.kind], l == null ? r.floor : levelName(l), r.planName, r.site, r.building, (e.indications ?? []).join(' · '), e.notes ?? '',
+            `${window.location.origin}${window.location.pathname}${hrefOf({ page: 'plan', id: r.planId, eq: e.id })}`];
+        }));
+      toast(`${all.results.length.toLocaleString('fr-FR')} résultats exportés${all.total > all.results.length ? ` (les 500 plus pertinents sur ${all.total.toLocaleString('fr-FR')})` : ''}.`);
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    }
+  };
 
   useEffect(() => { api.listPlans().then(setPlans).catch(() => {}); inputRef.current?.focus(); }, []);
   const sites = useMemo(() => [...new Set(plans.map((p) => p.site).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr')), [plans]);
@@ -95,9 +116,12 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
 
       {res && (q.trim() || category) && (
         <>
-          <p className="muted small num" role="status">
-            {busy ? 'Recherche…' : res.total === 0 ? 'Aucun équipement trouvé.' : `${res.total.toLocaleString('fr-FR')} résultat${res.total > 1 ? 's' : ''}${res.total > res.results.length ? ` (les ${res.results.length} plus pertinents affichés)` : ''}`}
-          </p>
+          <div className="list-tools">
+            <p className="muted small num" role="status" style={{ margin: 0 }}>
+              {busy ? 'Recherche…' : res.total === 0 ? 'Aucun équipement trouvé.' : `${res.total.toLocaleString('fr-FR')} résultat${res.total > 1 ? 's' : ''}${res.total > res.results.length ? ` (les ${res.results.length} plus pertinents affichés)` : ''}`}
+            </p>
+            {res.total > 0 && <button type="button" className="btn sm" onClick={exportResults}><Icon name="sheet" /> Exporter {res.total > 1 ? `les ${Math.min(res.total, 500).toLocaleString('fr-FR')} résultats` : 'le résultat'} (Excel)</button>}
+          </div>
           {res.results.length > 0 && (
             <div className="tablewrap">
               <table className="data">

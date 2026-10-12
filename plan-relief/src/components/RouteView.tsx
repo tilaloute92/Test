@@ -13,8 +13,12 @@ const PASSAGE_KINDS: [PassageKind, string, string][] = [
 ];
 const RISE_LABEL: Record<PassageKind, string> = { manuel: 'Passage', gaine: 'Gaine', escalier: 'Escalier', ascenseur: 'Monte-charge / ascenseur' };
 import { PlanViewer } from '../lib/viewer';
-import { DEFAULT_SETTINGS, KIND_LABELS, type Equipment, type PlanSummary, type SearchHit } from '../lib/types';
-import { fmtNum, Highlight, Icon, NavHint } from './ui';
+import { DEFAULT_SETTINGS, KIND_LABELS, categoryOf, type Equipment, type PlanSummary, type SearchHit } from '../lib/types';
+import { fmtNum, Highlight, Icon, NavHint, useToast } from './ui';
+import { useContext } from 'react';
+import { UserContext } from './session';
+import { openRouteSheet, routeLengths, type SheetCable } from '../lib/routeSheet';
+import { downloadCsv, today } from '../lib/csv';
 import { decodeEndpoint, encodeEndpoint, writeDraft, type EndpointRef } from '../lib/traceLink';
 
 interface Resolved extends EndpointRef { label: string; type: string; plan: PlanSummary; eq: Equipment }
@@ -38,22 +42,49 @@ function useStageColors() {
   return c;
 }
 
-export function RouteView({ de, a }: { de?: string; a?: string }) {
+/** Couleurs des câbles d'un tracé groupé (la même dans le tableau, la vue et la fiche). */
+const CABLE_COLORS = ['#e07b1a', '#2b6cb0', '#8e44ad', '#16a085', '#c0392b', '#7f8c8d', '#d4a017', '#2c3e50'];
+const PASSAGE_IDS: PassageKind[] = ['ascenseur', 'gaine', 'escalier', 'manuel'];
+const MAX_TARGETS = 50;
+
+interface RouteOpts { h?: string; m?: string; o?: string; w?: string; k?: string }
+interface Multi {
+  all: { target: Resolved; route: RouteResult | null; error?: string }[];
+  floors: LoadedFloor[];
+  height: Height;
+  margin: number;
+}
+
+export function RouteView({ de, a, plus, opts, savedId }: { de?: string; a?: string; plus?: string; opts?: RouteOpts; savedId?: string }) {
   const [plans, setPlans] = useState<PlanSummary[]>([]);
   const [from, setFrom] = useState<Resolved | null>(null);
   const [to, setTo] = useState<Resolved | null>(null);
-  const [allowWalls, setAllowWalls] = useState(false);
-  const [orthogonal, setOrthogonal] = useState(true);
+  // Tracé groupé : arrivées en plus de la première (un départ, plusieurs câbles).
+  const [extras, setExtras] = useState<Resolved[]>([]);
+  const [addingTarget, setAddingTarget] = useState(false);
+  const [allowWalls, setAllowWalls] = useState(opts?.w === '1');
+  const [orthogonal, setOrthogonal] = useState(opts?.o !== '0');
   // Changement d'étage par les monte-charges et ascenseurs (règle d'exploitation du site) ;
   // gaines, escaliers et passages nommés restent disponibles en option.
-  const [kinds, setKinds] = useState<PassageKind[]>(['ascenseur']);
-  const [height, setHeight] = useState<Height>('plafond');
-  const [margin, setMargin] = useState(15);
+  const [kinds, setKinds] = useState<PassageKind[]>(() => {
+    const k = (opts?.k ?? '').split(',').filter((x): x is PassageKind => PASSAGE_IDS.includes(x as PassageKind));
+    return k.length ? k : ['ascenseur'];
+  });
+  const [height, setHeight] = useState<Height>(opts?.h === 'sol' ? 'sol' : 'plafond');
+  const [margin, setMargin] = useState(() => { const v = Number(opts?.m); return Number.isFinite(v) && opts?.m ? Math.min(100, Math.max(0, v)) : 15; });
+  const [saved, setSaved] = useState<api.SavedRoute | null>(null);
+  const [saveForm, setSaveForm] = useState<{ name: string; ref: string } | null>(null);
+  const [savedCount, setSavedCount] = useState<number | null>(null);
+  const user = useContext(UserContext);
+  const toast = useToast();
   const [transparent, setTransparent] = useState(true);
   const [onlyRoute, setOnlyRoute] = useState(true);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const [result, setResult] = useState<{ route: RouteResult; floors: LoadedFloor[]; height: Height } | null>(null);
+  const [multi, setMulti] = useState<Multi | null>(null);
+  const [sel, setSel] = useState(0);
+  // Le tracé affiché : celui de la ligne choisie dans un tracé groupé, sinon l'unique tracé.
+  const result = useMemo(() => (multi && multi.all[sel]?.route ? { route: multi.all[sel].route!, floors: multi.floors, height: multi.height } : null), [multi, sel]);
   // Animation du trajet : arrêtée d'office si l'utilisateur a demandé moins d'animations.
   const [playing, setPlaying] = useState(() => !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
   const [follow, setFollow] = useState(false);
@@ -61,6 +92,7 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
   // Étages masqués dans la vue (identifiants de plan), pour ne garder que l'arrivée par exemple.
   const [hiddenFloors, setHiddenFloors] = useState<string[]>([]);
   const segStep = useRef<number[]>([]);
+  const fittedFor = useRef<Multi | null>(null);
   const playingRef = useRef(playing);
   playingRef.current = playing;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -91,19 +123,23 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
         const eq = plan?.equipment.find((e) => e.id === ref.eqId);
         return eq ? { ...ref, label: eq.label || eq.type, type: eq.type, plan: summary, eq } : null;
       };
-      const [f, t] = await Promise.all([resolve(decodeEndpoint(de)), resolve(decodeEndpoint(a))]);
+      const more = (plus ?? '').split(',').map((x) => decodeEndpoint(x)).filter((x): x is EndpointRef => !!x).slice(0, MAX_TARGETS - 1);
+      const [f, t, ...rest] = await Promise.all([resolve(decodeEndpoint(de)), resolve(decodeEndpoint(a)), ...more.map(resolve)]);
       if (!alive) return;
       setFrom(f);
       setTo(t);
+      setExtras(rest.filter((x): x is Resolved => !!x));
+      api.listRoutes().then((list) => { if (!alive) return; setSavedCount(list.length); setSaved(savedId ? list.find((r) => r.id === savedId) ?? null : null); }).catch(() => {});
     })();
     return () => { alive = false; };
-  }, [de, a]);
+  }, [de, a, plus, savedId]);
 
   useEffect(() => {
     const d = { de: from ? encodeEndpoint(from) : undefined, a: to ? encodeEndpoint(to) : undefined };
     writeDraft(d);
-    window.history.replaceState(null, '', hrefOf({ page: 'trace', ...d }));
-  }, [from, to]);
+    const more = extras.length ? extras.map(encodeEndpoint).join(',') : undefined;
+    window.history.replaceState(null, '', hrefOf({ page: 'trace', ...d, plus: more, r: savedId }));
+  }, [from, to, extras, savedId]);
 
   const sameBuilding = useMemo(() => {
     if (!from || !to) return true;
@@ -113,7 +149,8 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
   const run = async () => {
     if (!from || !to) return;
     setError('');
-    setResult(null);
+    setMulti(null);
+    setSaveForm(null);
     viewerRef.current?.setRoute(null);
     if (!sameBuilding) {
       setError("Le départ et l'arrivée ne sont pas dans le même bâtiment. Un bâtiment regroupe les plans qui ont le même site et le même bâtiment sur leur fiche.");
@@ -128,8 +165,22 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
         const eq = f.plan.equipment.find((e) => e.id === r.eqId) ?? r.eq;
         return { planId: r.planId, x: eq.x * f.factor, y: eq.y * f.factor, label: r.label };
       };
-      const route = await computeRoute(floors, pos(from), pos(to), { allowWalls, orthogonal, passageKinds: kinds }, setBusy);
-      setResult({ route, floors, height });
+      const targets = [to, ...extras.filter((x) => buildingMembers(from.plan, all).some((p) => p.id === x.planId))];
+      // Les grilles d'étage sont calculées une fois pour tous les câbles du tracé groupé.
+      const gridCache = new Map();
+      const results: Multi['all'] = [];
+      for (const [i, t] of targets.entries()) {
+        const step = (txt: string) => setBusy(targets.length > 1 ? `Câble ${i + 1} / ${targets.length} — ${txt}` : txt);
+        try {
+          const route = await computeRoute(floors, pos(from), pos(t), { allowWalls, orthogonal, passageKinds: kinds, gridCache }, step);
+          results.push({ target: t, route });
+        } catch (err) {
+          if (targets.length === 1) throw err;
+          results.push({ target: t, route: null, error: err instanceof RouteError ? err.message : (err as Error).message });
+        }
+      }
+      setMulti({ all: results, floors, height, margin });
+      setSel(Math.max(0, results.findIndex((r) => r.route)));
       setHiddenFloors([]);
     } catch (err) {
       setError(err instanceof RouteError ? err.message : `Calcul impossible : ${(err as Error).message}`);
@@ -169,10 +220,19 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
     });
     // Étape de chaque segment : celle du tronçon, ou la montée/descente entre deux tronçons.
     segStep.current = ptStep.slice(0, -1).map((st, i) => (ptStep[i + 1] === st ? st : st + 1));
-    v.setRoute(pts);
+    // Tracé groupé : les autres câbles, chacun dans sa couleur.
+    const others = (multi?.all ?? []).flatMap((x, i) => {
+      if (i === sel || !x.route) return [];
+      const p: THREE.Vector3[] = [];
+      for (const st of x.route.steps) if (st.type === 'leg') { const f = byId.get(st.leg.planId)!; for (const [px, py] of st.leg.points) p.push(world(f, px, py)); }
+      return p.length > 1 ? [{ points: p, color: new THREE.Color(CABLE_COLORS[i % CABLE_COLORS.length]).getHex() }] : [];
+    });
+    v.setRoute(pts, others);
     setCurStep(null);
     if (playingRef.current) v.playRoute();
-    v.fit('3d');
+    // Recadrage à chaque nouveau calcul seulement : choisir un autre câble garde le point de vue.
+    if (fittedFor.current !== multi) { v.fit('3d'); fittedFor.current = multi; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result, transparent, onlyRoute, colors]);
 
   // Étages masqués et numéros d'étage incrustés (sans recadrer la vue).
@@ -192,18 +252,82 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
     v.setFloorLabels([...labels.values()]);
   }, [result, transparent, onlyRoute, colors, hiddenFloors]);
 
-  const descents = result && result.height === 'plafond'
-    ? (() => {
-      const byId = new Map(result.floors.map((f) => [f.planId, f]));
-      const legs = result.route.steps.filter((s) => s.type === 'leg');
-      const first = legs[0]?.type === 'leg' ? byId.get(legs[0].leg.planId) : undefined;
-      const last = legs[legs.length - 1]?.type === 'leg' ? byId.get((legs[legs.length - 1] as { leg: { planId: string } }).leg.planId) : undefined;
-      // Du faux plafond jusqu'à un équipement posé vers 1 m du sol, à chaque extrémité.
-      const d = (f?: LoadedFloor) => (f ? Math.max(0, (f.plan.settings.hWall ?? 2.5) - 0.15 - 1) : 0);
-      return d(first) + d(last);
-    })()
-    : 0;
-  const total = result ? result.route.total + descents : 0;
+  const lengths = result ? routeLengths(result.route, result.floors, result.height, margin) : null;
+  const descents = lengths?.descents ?? 0;
+  const total = lengths?.total ?? 0;
+  // Longueurs de chaque câble du tracé groupé (marge en cours comprise).
+  const cables = multi ? multi.all.map((x) => ({ ...x, lengths: x.route ? routeLengths(x.route, multi.floors, multi.height, margin) : null })) : [];
+  const grandTotal = cables.reduce((n, c) => n + (c.lengths?.withMargin ?? 0), 0);
+  const floorTagOf = (planId: string) => { const f = multi?.floors.find((x) => x.planId === planId); return f ? levelName(f.level) : '?'; };
+  const optionsText = `${height === 'plafond' ? 'en faux plafond' : 'au sol / en plinthe'}, ${orthogonal ? 'angles droits' : 'lignes droites'}, marge ${margin} %, changement d'étage par ${kinds.map((k) => RISE_LABEL[k].toLowerCase()).join(', ') || '—'}${allowWalls ? ', traversée des murs autorisée' : ''}`;
+
+  const sheetCables = (): SheetCable[] => cables.flatMap((c) => (c.route && c.lengths ? [{ label: c.target.label, floor: floorTagOf(c.target.planId), planName: c.target.plan.name, route: c.route, lengths: c.lengths }] : []));
+  const printSheet = () => {
+    if (!multi || !from) return;
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    try {
+      openRouteSheet({
+        number: saved ? `T-${saved.id.slice(0, 8).toUpperCase()}` : `T-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`,
+        name: saved?.name, ref: saved?.ref,
+        site: from.plan.site, building: from.plan.building,
+        from: { label: from.label, floor: floorTagOf(from.planId), planName: from.plan.name },
+        cables: sheetCables(), floors: multi.floors, options: optionsText, margin,
+        user: user?.name || user?.username || '', version: __APP_VERSION__,
+      });
+    } catch (err) { toast((err as Error).message, 'error'); }
+  };
+  const exportCsv = () => {
+    if (!multi || !from) return;
+    downloadCsv(`trace_${from.label}_${today()}`, ['Départ', 'Étage départ', 'Arrivée', 'Étage arrivée', 'Horizontal (m)', 'Entre étages (m)', 'Descentes (m)', 'Tracé (m)', `À prévoir, marge ${margin} % (m)`, 'Étages', 'Passages', 'Remarque'],
+      cables.map((c) => {
+        const passes = c.route ? c.route.steps.flatMap((st) => (st.type === 'rise' ? [st.rise.label] : [])) : [];
+        const lv: string[] = [];
+        if (c.route) for (const st of c.route.steps) { const n = floorTagOf(st.type === 'leg' ? st.leg.planId : st.rise.toPlan); if (lv[lv.length - 1] !== n) lv.push(n); }
+        return [from.label, floorTagOf(from.planId), c.target.label, floorTagOf(c.target.planId), c.lengths?.horizontal, c.lengths?.vertical, c.lengths?.descents, c.lengths?.total, c.lengths?.withMargin, lv.join(' → '), passes.join(', '), c.error ?? (c.route?.warnings.join(' ') || '')];
+      }));
+  };
+  const saveInput = (name: string, ref: string): api.SavedRouteInput | null => {
+    if (!multi || !from) return null;
+    return {
+      name, ref,
+      from: { planId: from.planId, eqId: from.eqId, label: from.label, floor: floorTagOf(from.planId) },
+      targets: cables.flatMap((c) => (c.lengths ? [{ planId: c.target.planId, eqId: c.target.eqId, label: c.target.label, floor: floorTagOf(c.target.planId), length: c.lengths.withMargin, horizontal: c.lengths.horizontal, vertical: c.lengths.vertical, descents: c.lengths.descents }] : [])),
+      options: { height, margin, orthogonal, allowWalls, kinds },
+      floors: crossed.map((c) => levelName(c.level)),
+      total: grandTotal,
+      planVersions: Object.fromEntries(multi.floors.map((f) => [f.planId, f.plan.version])),
+    };
+  };
+  const doSave = async (asNew: boolean) => {
+    if (!saveForm) return;
+    const input = saveInput(saveForm.name.trim(), saveForm.ref.trim());
+    if (!input) return;
+    try {
+      const r = saved && !asNew ? await api.updateRoute(saved.id, input) : await api.saveRoute(input);
+      setSaved(r);
+      setSaveForm(null);
+      setSavedCount((n) => (n ?? 0) + (saved && !asNew ? 0 : 1));
+      window.history.replaceState(null, '', hrefOf({ page: 'trace', de: encodeEndpoint(from!), a: encodeEndpoint(to!), plus: extras.length ? extras.map(encodeEndpoint).join(',') : undefined, r: r.id }));
+      toast(saved && !asNew ? 'Tracé enregistré mis à jour.' : `Tracé « ${r.name} » enregistré : retrouvez-le dans « Tracés enregistrés ».`);
+    } catch (err) { toast((err as Error).message, 'error'); }
+  };
+
+  /** Ajoute en arrivées tous les équipements de même catégorie (ou de même type) que la première arrivée, sur son étage. */
+  const addSimilar = async () => {
+    if (!to) return;
+    try {
+      const plan = await api.getPlan(to.planId);
+      const same = plan.equipment.filter((e) => e.id !== to.eqId && e.kind !== 'texte'
+        && (to.eq.category ? e.category === to.eq.category : e.type && e.type === to.eq.type)
+        && !extras.some((x) => x.eqId === e.id && x.planId === to.planId));
+      const room = MAX_TARGETS - 1 - extras.length;
+      const add = same.slice(0, room).map((e) => ({ planId: to.planId, eqId: e.id, label: e.label || e.type, type: e.type, plan: to.plan, eq: e }));
+      setExtras((x) => [...x, ...add]);
+      toast(add.length ? `${add.length} arrivée${add.length > 1 ? 's' : ''} ajoutée${add.length > 1 ? 's' : ''}${same.length > room ? ` (limite de ${MAX_TARGETS} câbles atteinte)` : ''}.` : 'Aucun autre équipement de ce type sur cet étage.');
+    } catch (err) { toast((err as Error).message, 'error'); }
+  };
+  const similarLabel = to ? (categoryOf(to.eq.category)?.label ?? to.eq.type) : '';
   const floorName = (id: string) => result?.floors.find((f) => f.planId === id)?.name ?? '';
   const levelOfPlan = (id: string) => result?.floors.find((f) => f.planId === id)?.level ?? 0;
   const crossed = result ? floorsCrossed(result.route.steps, result.floors) : [];
@@ -235,27 +359,102 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
       <div className="planbody">
         <aside className="side" aria-label="Paramètres du tracé">
           <div className="side-scroll">
+            <div className="saved-link">
+              <a href={hrefOf({ page: 'traces' })}><Icon name="save" /> Tracés enregistrés{savedCount !== null ? ` (${savedCount})` : ''}</a>
+              {saved && <span className="muted small" title={saved.name}>Ouvert : <b>{saved.name}</b></span>}
+            </div>
             <div className="sec itinerary">
               <div className="iti-step">
                 <h3><span className="iti-dot start" /> Départ</h3>
                 <EndpointPicker id="de" value={from} onChange={setFrom} />
               </div>
               <div className="iti-step">
-                <h3><span className="iti-dot end" /> Arrivée</h3>
-                <EndpointPicker id="a" value={to} onChange={setTo} />
+                <h3><span className="iti-dot end" /> {extras.length ? `Arrivées (${extras.length + 1})` : 'Arrivée'}</h3>
+                <EndpointPicker id="a" value={to} onChange={(r) => { setTo(r); if (!r && extras.length) { setTo(extras[0]); setExtras(extras.slice(1)); } }} />
+                {to && extras.length > 0 && (
+                  <ul className="extras">
+                    {extras.map((x, i) => (
+                      <li key={`${x.planId}:${x.eqId}`}>
+                        <span className="sw" style={{ background: CABLE_COLORS[(i + 1) % CABLE_COLORS.length] }} />
+                        <span className="lvl">{floorTagOf(x.planId) !== '?' ? floorTagOf(x.planId) : (x.plan.floor || '?')}</span>
+                        <span className="extras-l" title={x.plan.name}>{x.label}</span>
+                        <button type="button" className="btn ghost sm icon-btn" aria-label={`Retirer ${x.label}`} onClick={() => setExtras(extras.filter((_, k) => k !== i))}><Icon name="close" size={14} /></button>
+                      </li>
+                    ))}
+                    <li><button type="button" className="btn ghost sm" onClick={() => setExtras([])}>Retirer les arrivées supplémentaires</button></li>
+                  </ul>
+                )}
+                {to && addingTarget && (
+                  <div className="add-target">
+                    <EndpointPicker id="a-plus" value={null} onChange={(r) => { if (r && !(r.planId === to.planId && r.eqId === to.eqId) && !extras.some((x) => x.planId === r.planId && x.eqId === r.eqId)) setExtras([...extras, r]); setAddingTarget(false); }} />
+                    <button type="button" className="btn ghost sm" onClick={() => setAddingTarget(false)}>Annuler</button>
+                  </div>
+                )}
+                {to && !addingTarget && extras.length < MAX_TARGETS - 1 && (
+                  <div className="toolbar">
+                    <button type="button" className="btn sm" onClick={() => setAddingTarget(true)}><Icon name="plus" /> Ajouter une arrivée</button>
+                    {similarLabel && <button type="button" className="btn sm" onClick={addSimilar} title="Tracé groupé : un câble vers chacun"><Icon name="plus" /> Toutes les « {similarLabel} » de cet étage</button>}
+                  </div>
+                )}
               </div>
-              {from && to && (
+              {from && to && !extras.length && (
                 <button type="button" className="btn ghost sm" style={{ alignSelf: 'flex-start' }} onClick={() => { setFrom(to); setTo(from); }}>⇅ Inverser départ et arrivée</button>
               )}
               {!sameBuilding && <div className="notice warn small">Départ et arrivée dans deux bâtiments différents : un tracé reste à l'intérieur d'un bâtiment (même site et même bâtiment sur la fiche des plans).</div>}
-              <button type="button" className="btn primary btn-lg" disabled={!from || !to || !!busy} onClick={run}><Icon name="route" size={18} /> {busy ? 'Calcul en cours…' : 'Tracer'}</button>
+              <button type="button" className="btn primary btn-lg" disabled={!from || !to || !!busy} onClick={run}><Icon name="route" size={18} /> {busy ? 'Calcul en cours…' : extras.length ? `Tracer les ${extras.length + 1} câbles` : 'Tracer'}</button>
             </div>
 
             {error && <div className="sec"><div className="notice error" role="alert">{error}</div></div>}
 
+            {multi && (
+              <div className="sec">
+                {cables.length > 1 && (
+                  <>
+                    <h3>Tracé groupé <span className="count">{cables.filter((c) => c.route).length} câbles sur {cables.length}</span></h3>
+                    <div className="tablewrap">
+                      <table className="data group-table">
+                        <thead><tr><th>Arrivée</th><th className="num">À prévoir</th></tr></thead>
+                        <tbody>
+                          {cables.map((c, i) => (
+                            <tr key={`${c.target.planId}:${c.target.eqId}`} className={`clickable${i === sel ? ' selected' : ''}`} onClick={() => c.route && setSel(i)} aria-selected={i === sel}>
+                              <td>
+                                <span className="sw" style={{ background: CABLE_COLORS[i % CABLE_COLORS.length] }} />
+                                <span className="lvl">{floorTagOf(c.target.planId)}</span> {c.target.label}
+                                {c.error && <div className="cell-sub err">{c.error.split('.')[0]}.</div>}
+                              </td>
+                              <td className="num">{c.lengths ? <b>{fmtNum(c.lengths.withMargin, 1)} m</b> : '—'}</td>
+                            </tr>
+                          ))}
+                          <tr className="total-row"><td><b>Total à commander</b><div className="cell-sub">marge de {margin} % comprise</div></td><td className="num"><b>{fmtNum(grandTotal, 1)} m</b></td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="muted small">Cliquez un câble pour voir son tracé et ses étapes ; les autres restent affichés en couleur.</div>
+                  </>
+                )}
+                <div className="result-actions">
+                  <button type="button" className="btn sm primary" onClick={printSheet} disabled={!cables.some((c) => c.route)}><Icon name="print" /> Fiche PDF</button>
+                  <button type="button" className="btn sm" onClick={exportCsv}><Icon name="sheet" /> Exporter (Excel)</button>
+                  <button type="button" className="btn sm" onClick={() => setSaveForm(saveForm ? null : { name: saved?.name ?? (cables.length > 1 ? `${from?.label} → ${cables.length} arrivées` : `${from?.label} → ${to?.label}`), ref: saved?.ref ?? '' })} disabled={!cables.some((c) => c.route)}><Icon name="save" /> {saved ? 'Enregistrer…' : 'Enregistrer le tracé'}</button>
+                </div>
+                {saveForm && (
+                  <form className="save-form" onSubmit={(e) => { e.preventDefault(); doSave(false); }}>
+                    <label className="field"><span>Nom du tracé</span><input id="save-name" className="input" value={saveForm.name} maxLength={160} required onChange={(e) => setSaveForm({ ...saveForm, name: e.target.value })} /></label>
+                    <label className="field"><span>Référence chantier (facultatif)</span><input id="save-ref" className="input" value={saveForm.ref} maxLength={80} placeholder="ex. BT-2026-118" onChange={(e) => setSaveForm({ ...saveForm, ref: e.target.value })} /></label>
+                    <div className="toolbar">
+                      <button type="submit" className="btn sm primary">{saved ? `Mettre à jour « ${saved.name.slice(0, 30)}${saved.name.length > 30 ? '…' : ''} »` : 'Enregistrer'}</button>
+                      {saved && <button type="button" className="btn sm" onClick={() => doSave(true)}>Enregistrer comme nouveau tracé</button>}
+                      <button type="button" className="btn sm ghost" onClick={() => setSaveForm(null)}>Annuler</button>
+                    </div>
+                    <div className="muted small">Visible par toute l'équipe dans « Tracés enregistrés ».</div>
+                  </form>
+                )}
+              </div>
+            )}
+
             {result && (
               <div className="sec" role="status">
-                <h3>Résultat</h3>
+                <h3>{cables.length > 1 ? `Câble vers ${multi?.all[sel]?.target.label ?? ''}` : 'Résultat'}</h3>
                 <div className="detail">
                   <div className="muted small">Longueur à prévoir, marge de {margin} % comprise</div>
                   <div style={{ font: '700 28px/1.1 var(--font-display)' }} className="num">{fmtNum(total * (1 + margin / 100), 1)} m</div>

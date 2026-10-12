@@ -49,6 +49,11 @@ export interface RouteOptions {
   orthogonal?: boolean;
   /** Types de passages entre étages autorisés (tous si absent). */
   passageKinds?: PassageKind[];
+  /**
+   * Grilles d'étage déjà calculées, réutilisées d'un tracé à l'autre (tracé groupé : un
+   * départ, plusieurs arrivées). La grille ne dépend que de l'étage, pas des options.
+   */
+  gridCache?: Map<string, FloorGrid>;
 }
 
 export interface Leg {
@@ -627,7 +632,7 @@ export async function computeRoute(
     keyFloors.get(p.key)!.add(f.planId);
   }
 
-  const grids = new Map<string, FloorGrid>();
+  const grids = options.gridCache ?? new Map<string, FloorGrid>();
   const gridOf = async (f: FloorInput) => {
     let g = grids.get(f.planId);
     if (!g) {

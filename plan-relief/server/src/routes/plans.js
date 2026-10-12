@@ -3,6 +3,9 @@ import { Router } from 'express';
 import multer from 'multer';
 import { config } from '../config.js';
 import { requireAuth, requireAdmin } from '../auth/session.js';
+import { roleOf } from '../auth/roles.js';
+import { readJournal, removedItem } from '../journal.js';
+import { listRoutes, getRoute, createRoute, updateRoute, deleteRoute } from '../routesStore.js';
 import {
   listPlans, getPlan, createPlan, updatePlan, trashPlan, sourcePath, summary, isPlanId, VersionConflict,
 } from '../plansStore.js';
@@ -89,6 +92,24 @@ plansRouter.patch('/:id', requireAdmin, (req, res) => {
   }
 });
 
+plansRouter.get('/:id/journal', (req, res) => {
+  const plan = isPlanId(req.params.id) && getPlan(req.params.id);
+  if (!plan) return res.status(404).json({ error: 'Plan introuvable.' });
+  // Les équipements supprimés gardés pour restauration ne sont pas renvoyés en entier.
+  res.json(readJournal(plan.id).map(({ removed, ...e }) => ({ ...e, restorable: (removed ?? []).map((r) => r.id) })));
+});
+
+/** Remet dans le plan un équipement supprimé, tel qu'il était au moment de la suppression. */
+plansRouter.post('/:id/restore', requireAdmin, (req, res) => {
+  const plan = isPlanId(req.params.id) && getPlan(req.params.id);
+  if (!plan) return res.status(404).json({ error: 'Plan introuvable.' });
+  const item = removedItem(plan.id, String(req.body?.entryId || ''), String(req.body?.itemId || ''));
+  if (!item) return res.status(404).json({ error: "Cet équipement n'est plus dans le journal." });
+  if (plan.equipment.some((e) => e.id === item.id)) return res.status(409).json({ error: 'Cet équipement est déjà sur le plan.' });
+  const next = updatePlan(plan.id, { version: plan.version, equipment: [...plan.equipment, item] }, who(req));
+  res.json(next);
+});
+
 plansRouter.delete('/:id', requireAdmin, (req, res) => {
   if (!isPlanId(req.params.id) || !trashPlan(req.params.id)) return res.status(404).json({ error: 'Plan introuvable.' });
   res.json({ ok: true });
@@ -100,4 +121,35 @@ searchRouter.get('/', (req, res) => {
   const { q = '', site = '', kind = '', category = '', plan = '' } = req.query;
   const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200));
   res.json(search({ q: String(q).slice(0, 200), site: String(site), kind: String(kind), category: String(category), planId: String(plan), limit }));
+});
+
+/**
+ * Tracés enregistrés : tout utilisateur connecté peut enregistrer ses tracés (le tracé fait
+ * partie de la consultation) ; seul son auteur ou un administrateur peut le modifier ou le
+ * supprimer.
+ */
+export const routesRouter = Router();
+routesRouter.use(requireAuth);
+const canEdit = (req, route) => roleOf(req.user) === 'admin' || (route.ownerId && route.ownerId === String(req.user?.sub || ''));
+
+routesRouter.get('/', (_req, res) => res.json(listRoutes()));
+routesRouter.post('/', (req, res) => {
+  const route = createRoute(req.body, who(req), req.user?.sub);
+  if (!route) return res.status(400).json({ error: 'Tracé incomplet : départ et arrivée requis.' });
+  res.status(201).json(route);
+});
+routesRouter.put('/:id', (req, res) => {
+  const route = getRoute(req.params.id);
+  if (!route) return res.status(404).json({ error: 'Tracé introuvable.' });
+  if (!canEdit(req, route)) return res.status(403).json({ error: "Seul l'auteur du tracé ou un administrateur peut le modifier." });
+  const next = updateRoute(route.id, req.body, who(req));
+  if (!next) return res.status(400).json({ error: 'Tracé incomplet.' });
+  res.json(next);
+});
+routesRouter.delete('/:id', (req, res) => {
+  const route = getRoute(req.params.id);
+  if (!route) return res.status(404).json({ error: 'Tracé introuvable.' });
+  if (!canEdit(req, route)) return res.status(403).json({ error: "Seul l'auteur du tracé ou un administrateur peut le supprimer." });
+  deleteRoute(route.id);
+  res.json({ ok: true });
 });

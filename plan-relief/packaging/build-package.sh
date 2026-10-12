@@ -73,7 +73,7 @@ mkdir -p "$STAGE/service/data"
 
 # 3. Scripts d'installation et documentation.
 cp packaging/scripts/*.ps1 "$STAGE/"
-cp packaging/INSTALL.md "$STAGE/"
+cp packaging/INSTALL.md packaging/NOUVEAUTES.md "$STAGE/"
 cp DEPLOYMENT.md "$STAGE/DEPLOYMENT-reference.md"
 cp README.md "$STAGE/README-application.md"
 

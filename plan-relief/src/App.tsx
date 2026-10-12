@@ -9,6 +9,7 @@ import { SearchView } from './components/SearchView';
 import { SettingsView } from './components/SettingsView';
 import { UserContext } from './components/session';
 import { RouteView } from './components/RouteView';
+import { SavedRoutesView } from './components/SavedRoutesView';
 
 /**
  * Navigation par l'ancre de l'adresse (#/plans, #/plan/<id>?eq=<id>, #/recherche…) :
@@ -19,7 +20,8 @@ export type Route =
   | { page: 'plans' }
   | { page: 'plan'; id: string; eq?: string }
   | { page: 'recherche'; q?: string }
-  | { page: 'trace'; de?: string; a?: string }
+  | { page: 'trace'; de?: string; a?: string; plus?: string; h?: string; m?: string; o?: string; w?: string; k?: string; r?: string }
+  | { page: 'traces' }
   | { page: 'parametres' };
 
 function parseHash(): Route {
@@ -29,7 +31,11 @@ function parseHash(): Route {
   if (a === 'plan' && b) return { page: 'plan', id: b, eq: params.get('eq') || undefined };
   if (a === 'recherche') return { page: 'recherche', q: params.get('q') || undefined };
   if (a === 'parametres') return { page: 'parametres' };
-  if (a === 'trace') return { page: 'trace', de: params.get('de') || undefined, a: params.get('a') || undefined };
+  if (a === 'traces') return { page: 'traces' };
+  if (a === 'trace') {
+    const g = (k: string) => params.get(k) || undefined;
+    return { page: 'trace', de: g('de'), a: g('a'), plus: g('plus'), h: g('h'), m: g('m'), o: g('o'), w: g('w'), k: g('k'), r: g('r') };
+  }
   return { page: 'plans' };
 }
 
@@ -38,8 +44,10 @@ export function hrefOf(r: Route): string {
     case 'plan': return `#/plan/${r.id}${r.eq ? `?eq=${encodeURIComponent(r.eq)}` : ''}`;
     case 'recherche': return `#/recherche${r.q ? `?q=${encodeURIComponent(r.q)}` : ''}`;
     case 'parametres': return '#/parametres';
+    case 'traces': return '#/traces';
     case 'trace': {
-      const qs = new URLSearchParams(Object.entries({ de: r.de, a: r.a }).filter(([, v]) => v) as [string, string][]).toString();
+      const { page: _p, ...rest } = r;
+      const qs = new URLSearchParams(Object.entries(rest).filter(([, v]) => v) as [string, string][]).toString();
       return `#/trace${qs ? `?${qs}` : ''}`;
     }
     default: return '#/plans';
@@ -61,6 +69,9 @@ function useTheme() {
   return { theme, cycle: () => setTheme((t) => (t === 'system' ? 'dark' : t === 'dark' ? 'light' : 'system')) };
 }
 
+/** Numéro de version seul (1.1.0), sans la date de construction. */
+const APP_SEMVER = __APP_VERSION__.split(' ')[0];
+
 const METHOD_LABELS = { local: 'compte local', ldap: 'Active Directory', sso: 'Microsoft' } as const;
 
 export default function App() {
@@ -80,6 +91,12 @@ export default function App() {
   }, []);
 
   useEffect(() => { check(); }, [check]);
+  // Poste qui affiche encore une ancienne version gardée en cache après une mise à jour du serveur.
+  useEffect(() => {
+    if (status === 'ready' && api.serverVersion && api.serverVersion !== APP_SEMVER) {
+      toast(`Le serveur est en version ${api.serverVersion}, cette page en ${APP_SEMVER} : actualisez la page (Ctrl+F5).`, 'warn');
+    }
+  }, [status, toast]);
   useEffect(() => {
     // Chaque navigation compte, même vers une adresse identique : un lien de tracé rouvert
     // après des changements faits sur la page doit recalculer le tracé du lien.
@@ -123,7 +140,7 @@ export default function App() {
     setStatus('login');
   };
   const nav = (page: Route['page'], label: string, icon: IconName) => (
-    <a href={hrefOf({ page } as Route)} aria-current={route.page === page || (page === 'plans' && route.page === 'plan') ? 'page' : undefined}><Icon name={icon} /> {label}</a>
+    <a href={hrefOf({ page } as Route)} aria-current={route.page === page || (page === 'plans' && route.page === 'plan') || (page === 'trace' && route.page === 'traces') ? 'page' : undefined}><Icon name={icon} /> {label}</a>
   );
   const display = user.name || user.username;
   const initials = display.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
@@ -132,7 +149,10 @@ export default function App() {
     <UserContext.Provider value={user}>
     <div className="shell">
       <header className="topbar">
-        <Brand />
+        <div className="brand-v">
+          <Brand />
+          <span className="version" title={`Plan Relief ${__APP_VERSION__}${api.serverVersion ? ` · service ${api.serverVersion}` : ''}`}>v{APP_SEMVER}</span>
+        </div>
         <nav className="nav" aria-label="Navigation principale">
           {nav('plans', 'Plans', 'plans')}
           {nav('recherche', 'Recherche', 'search')}
@@ -161,7 +181,8 @@ export default function App() {
         {route.page === 'parametres' && (user.role === 'admin' ? <SettingsView /> : (
           <div className="page"><div className="notice">Les paramètres sont réservés aux administrateurs.</div></div>
         ))}
-        {route.page === 'trace' && <RouteView key={navCount} de={route.de} a={route.a} />}
+        {route.page === 'trace' && <RouteView key={navCount} de={route.de} a={route.a} plus={route.plus} opts={route} savedId={route.r} />}
+        {route.page === 'traces' && <SavedRoutesView />}
       </main>
     </div>
     </UserContext.Provider>

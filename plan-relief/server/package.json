@@ -1,7 +1,7 @@
 {
   "name": "plan-relief-server",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Service Plan Relief : authentification (local, LDAP, SSO), stockage des plans et recherche d'équipements — voir README.md",
   "type": "module",
   "main": "src/index.js",
