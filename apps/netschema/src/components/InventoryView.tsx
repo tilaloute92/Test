@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { Btn } from './ui'
 import { deviceMeta } from '../lib/catalog'
 import { downloadBlob, slugify } from '../lib/exportImage'
@@ -12,7 +12,7 @@ import {
 import { ModelPicker } from './ModelPicker'
 import { vendors } from '../lib/vendors'
 import { useDiagram } from '../store/useDiagram'
-import type { AssetStatus, NetNode } from '../types'
+import type { AssetStatus, Diagram, NetNode } from '../types'
 
 const STATUS_OPTIONS = Object.keys(STATUS_LABELS) as AssetStatus[]
 
@@ -28,6 +28,11 @@ function normalize(value: string): string {
  * d'actifs — constructeur, modèle, numéro de série, immobilisation, garantie,
  * responsable, implantation en baie, consommation.
  */
+/** Hauteur de repli, le temps qu'une première ligne soit peinte et mesurée. */
+const HAUTEUR_LIGNE_DEFAUT = 33
+/** Lignes montées de part et d'autre de la fenêtre, pour que le défilement reste plein. */
+const MARGE_LIGNES = 8
+
 export function InventoryView() {
   const diagram = useDiagram((s) => s.diagram)
   const updateNode = useDiagram((s) => s.updateNode)
@@ -36,6 +41,7 @@ export function InventoryView() {
   const notify = useDiagram((s) => s.notify)
   const updateNodes = useDiagram((s) => s.updateNodes)
   const fileRef = useRef<HTMLInputElement>(null)
+  const cadreRef = useRef<HTMLDivElement>(null)
   /** Dernière ligne cliquée, pour que Maj sélectionne la plage comme dans un tableur. */
   const ancre = useRef<string | null>(null)
 
@@ -61,8 +67,14 @@ export function InventoryView() {
    * ligne, Maj pour prendre toute la plage depuis la dernière cliquée. C'est ce geste qui
    * rend le remplissage en lot utilisable — sans lui, il faudrait cocher trente cases.
    */
+  /*
+    Le filtre travaille sur une valeur différée : la frappe reste fluide pendant que React
+    recalcule les lignes. Sur 205 équipements, filtrer coûtait entre 550 et 1 100 ms par
+    touche, et chaque caractère bloquait le champ.
+  */
+  const recherche = useDeferredValue(query)
   const rows = useMemo(() => {
-    const q = normalize(query.trim())
+    const q = normalize(recherche.trim())
     return diagram.nodes
       .filter((node) => {
         if (site && node.site !== site) return false
@@ -86,7 +98,47 @@ export function InventoryView() {
         return normalize(haystack).includes(q)
       })
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [diagram.nodes, query, site, status, rack, vendor])
+  }, [diagram.nodes, recherche, site, status, rack, vendor])
+
+  /*
+    Rendu par fenêtre.
+
+    Monter deux cent cinq lignes de dix-sept cellules coûtait près d'une seconde à chaque
+    ouverture de l'onglet, alors qu'une vingtaine tient à l'écran. On ne monte donc que ce
+    qui est visible, plus une marge de part et d'autre pour que le défilement ne laisse
+    jamais de vide le temps d'un rendu.
+
+    La hauteur de ligne est fixe et connue : toutes les cellules ont la même mise en forme.
+    C'est ce qui permet de se passer d'une mesure et de calculer la fenêtre d'une soustraction.
+  */
+  const [defilement, setDefilement] = useState(0)
+  const [hauteurVue, setHauteurVue] = useState(800)
+  /*
+    La hauteur d'une ligne n'est pas devinée mais relevée sur une ligne réelle, après le
+    premier rendu. Une valeur approchée paraît marcher en haut du tableau et rend les
+    dernières lignes inatteignables en bas, l'écart s'accumulant à chaque ligne.
+  */
+  const [hauteurLigne, setHauteurLigne] = useState(HAUTEUR_LIGNE_DEFAUT)
+  useEffect(() => {
+    const cadre = cadreRef.current
+    if (!cadre) return
+    const mesurer = () => {
+      setHauteurVue(cadre.clientHeight)
+      const ligne = cadre.querySelector('tbody tr:not([aria-hidden])')
+      const haut = ligne?.getBoundingClientRect().height
+      if (haut && haut > 4) setHauteurLigne((precedent) => (Math.abs(precedent - haut) > 0.5 ? haut : precedent))
+    }
+    mesurer()
+    const observateur = new ResizeObserver(mesurer)
+    observateur.observe(cadre)
+    return () => observateur.disconnect()
+  })
+
+  const premiere = Math.max(0, Math.floor(defilement / hauteurLigne) - MARGE_LIGNES)
+  const derniere = Math.min(rows.length, Math.ceil((defilement + hauteurVue) / hauteurLigne) + MARGE_LIGNES)
+  const visibles = rows.slice(premiere, derniere)
+  const avant = premiere
+  const apres = rows.length - derniere
 
   const choisirLigne = (event: React.MouseEvent, id: string) => {
     if (event.shiftKey && ancre.current) {
@@ -202,7 +254,7 @@ export function InventoryView() {
         }}
       />
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div ref={cadreRef} onScroll={(event) => setDefilement(event.currentTarget.scrollTop)} className="min-h-0 flex-1 overflow-auto">
         <table className="w-max border-separate border-spacing-0 text-[12px]">
           <thead className="sticky top-0 z-10">
             <tr>
@@ -218,15 +270,22 @@ export function InventoryView() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((node) => (
+            {/*
+              Deux lignes creuses tiennent la hauteur de ce qui n'est pas monté : la barre de
+              défilement reste juste, et le tableau se parcourt comme s'il était entier.
+            */}
+            {avant > 0 && <tr style={{ height: avant * hauteurLigne }} aria-hidden />}
+            {visibles.map((node) => (
               <Row
                 key={node.id}
                 node={node}
+                diagram={diagram}
                 selected={selectedNodes.includes(node.id)}
                 onSelect={(event) => choisirLigne(event, node.id)}
                 onChange={(patch) => updateNode(node.id, patch)}
               />
             ))}
+            {apres > 0 && <tr style={{ height: apres * hauteurLigne }} aria-hidden />}
           </tbody>
         </table>
         {rows.length === 0 && (
@@ -318,24 +377,197 @@ function BarreRemplissage({
   )
 }
 
-function Row({
+/**
+ * Cellule éditable : du texte au repos, un champ quand on y entre.
+ *
+ * L'inventaire posait un champ de saisie par cellule, en permanence. Sur un parc de 205
+ * équipements cela faisait 3 491 champs contrôlés et 10 301 éléments dans la page : deux
+ * secondes pour afficher l'onglet, une demi-seconde par modification. Or on ne modifie
+ * qu'une cellule à la fois.
+ *
+ * Le champ n'existe donc que là où se trouve le curseur. Le reste est du texte.
+ *
+ * Deux précautions pour ne rien perdre au passage. Le texte au repos est atteignable au
+ * clavier et passe en édition dès qu'il reçoit le focus : la tabulation parcourt toujours le
+ * tableau de cellule en cellule, comme dans un tableur. Et la saisie n'est répercutée qu'à la
+ * sortie du champ ou sur Entrée — Échap rend la valeur d'origine —, ce qui évite d'écrire
+ * dans le document à chaque touche.
+ */
+function Cellule({
+  valeur,
+  onValider,
+  aligne,
+}: {
+  valeur: string
+  onValider: (valeur: string) => void
+  aligne?: 'droite'
+}) {
+  const [edition, setEdition] = useState(false)
+  const [brouillon, setBrouillon] = useState(valeur)
+
+  const ouvrir = () => {
+    setBrouillon(valeur)
+    setEdition(true)
+  }
+  const fermer = (garder: boolean) => {
+    setEdition(false)
+    if (garder && brouillon !== valeur) onValider(brouillon)
+  }
+
+  if (!edition) {
+    return (
+      <span
+        tabIndex={0}
+        role="textbox"
+        onClick={ouvrir}
+        onFocus={ouvrir}
+        className={`block w-full cursor-text rounded border border-transparent px-1 py-0.5 hover:border-slate-200 ${
+          aligne === 'droite' ? 'text-right' : ''
+        } ${valeur ? '' : 'text-slate-300'}`}
+      >
+        {valeur || '—'}
+      </span>
+    )
+  }
+  return (
+    <input
+      autoFocus
+      value={brouillon}
+      onChange={(event) => setBrouillon(event.target.value)}
+      onBlur={() => fermer(true)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          fermer(true)
+        } else if (event.key === 'Escape') {
+          event.preventDefault()
+          fermer(false)
+        }
+      }}
+      className={`w-full rounded border border-blue-500 bg-white px-1 py-0.5 outline-none ${
+        aligne === 'droite' ? 'text-right' : ''
+      }`}
+    />
+  )
+}
+
+/** Même principe pour les cellules à liste : l'énumération n'est montée qu'à l'ouverture. */
+function CelluleChoix({
+  valeur,
+  libelle,
+  couleur,
+  options,
+  onValider,
+}: {
+  valeur: string
+  libelle: string
+  couleur?: string
+  options: { valeur: string; libelle: string }[]
+  onValider: (valeur: string) => void
+}) {
+  const [edition, setEdition] = useState(false)
+  if (!edition) {
+    return (
+      <span
+        tabIndex={0}
+        role="button"
+        onClick={() => setEdition(true)}
+        onFocus={() => setEdition(true)}
+        className="block w-full cursor-pointer rounded border border-transparent px-1 py-0.5 hover:border-slate-200"
+        style={{ color: couleur }}
+      >
+        {libelle || '—'}
+      </span>
+    )
+  }
+  return (
+    <select
+      autoFocus
+      value={valeur}
+      onChange={(event) => {
+        onValider(event.target.value)
+        setEdition(false)
+      }}
+      onBlur={() => setEdition(false)}
+      className="w-full rounded border border-blue-500 bg-white px-1 py-0.5 text-[12px]"
+    >
+      <option value="">—</option>
+      {options.map((item) => (
+        <option key={item.valeur} value={item.valeur}>
+          {item.libelle}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+/**
+ * Cellule « modèle » : le choix dans la base constructeurs n'est monté qu'à l'entrée.
+ *
+ * Le sélecteur ne cherche dans les 347 matériels qu'une fois ouvert, mais il posait tout de
+ * même un champ par ligne. Au repos, le modèle n'est que du texte.
+ */
+function CelluleModele({ node, onChange }: { node: NetNode; onChange: (patch: Partial<NetNode>) => void }) {
+  const [edition, setEdition] = useState(false)
+  if (!edition) {
+    return (
+      <span
+        tabIndex={0}
+        role="button"
+        onClick={() => setEdition(true)}
+        onFocus={() => setEdition(true)}
+        className={`block w-full cursor-text rounded border border-transparent px-1 py-0.5 hover:border-slate-200 ${
+          node.model ? '' : 'text-slate-300'
+        }`}
+      >
+        {node.model || '—'}
+      </span>
+    )
+  }
+  return (
+    <div onBlur={(event) => {
+      // On ne referme que lorsque le focus quitte vraiment le bloc : la liste de résultats
+      // est un enfant, et la fermer au premier passage empêcherait d'y cliquer.
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setEdition(false)
+    }}>
+      <ModelPicker node={node} onPick={onChange} compact />
+    </div>
+  )
+}
+
+/*
+  La ligne ne s'abonne plus au magasin.
+
+  Chacune lisait le document entier par `useDiagram` : deux cent cinq abonnements pour une
+  seule table, et autant de rendus à la moindre modification. Le document descend désormais en
+  propriété, et les actions passent par `getState()`, qui ne crée pas d'abonnement.
+*/
+const Row = memo(function Row({
   node,
+  diagram,
   selected,
   onSelect,
   onChange,
 }: {
   node: NetNode
+  diagram: Diagram
   selected: boolean
   onSelect: (event: React.MouseEvent) => void
   onChange: (patch: Partial<NetNode>) => void
 }) {
-  const diagram = useDiagram((s) => s.diagram)
-  const setAppView = useDiagram((s) => s.setAppView)
   const meta = deviceMeta(node.kind)
+  /*
+    La sélection est posée sur « mousedown » et non sur « click ».
+
+    Entrer dans une cellule remplace le texte par un champ : l'élément sous le pointeur
+    disparaît avant la fin du clic, et l'événement « click » n'atteignait plus la ligne. Le
+    « mousedown » part de l'élément d'origine et remonte avant tout rendu ; il porte les mêmes
+    touches de modification, Maj et Ctrl comprises.
+  */
 
   return (
     <tr
-      onClick={onSelect}
+      onMouseDown={onSelect}
       className={`${selected ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'} `}
     >
       {INVENTORY_COLUMNS.map((column) => {
@@ -348,7 +580,7 @@ function Row({
                 title="Voir dans le schéma"
                 onClick={() => {
                   useDiagram.getState().focusNode(node.id)
-                  setAppView('diagram')
+                  useDiagram.getState().setAppView('diagram')
                 }}
                 className="flex items-center gap-1.5 text-slate-600 hover:text-blue-700"
               >
@@ -363,38 +595,30 @@ function Row({
         if (column.key === 'model') {
           return (
             <td key={column.key} className="border-b border-slate-100 px-2 py-1">
-              <ModelPicker node={node} onPick={onChange} compact />
+              <CelluleModele node={node} onChange={onChange} />
             </td>
           )
         }
         if (column.key === 'status') {
           return (
             <td key={column.key} className="border-b border-slate-100 px-2 py-1">
-              <select
-                value={node.status ?? ''}
-                onChange={(event) =>
-                  onChange({ status: event.target.value ? (event.target.value as AssetStatus) : undefined })
-                }
-                className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-[12px] hover:border-slate-200"
-                style={{ color: node.status ? STATUS_COLORS[node.status] : undefined }}
-              >
-                <option value="">—</option>
-                {STATUS_OPTIONS.map((item) => (
-                  <option key={item} value={item}>
-                    {STATUS_LABELS[item]}
-                  </option>
-                ))}
-              </select>
+              <CelluleChoix
+                valeur={node.status ?? ''}
+                libelle={node.status ? STATUS_LABELS[node.status] : ''}
+                couleur={node.status ? STATUS_COLORS[node.status] : undefined}
+                options={STATUS_OPTIONS.map((item) => ({ valeur: item, libelle: STATUS_LABELS[item] }))}
+                onValider={(valeur) => onChange({ status: valeur ? (valeur as AssetStatus) : undefined })}
+              />
             </td>
           )
         }
         return (
           <td key={column.key} className="border-b border-slate-100 px-2 py-1">
             {column.set ? (
-              <input
-                value={value}
-                onChange={(event) => onChange(column.set!(event.target.value))}
-                className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 outline-none hover:border-slate-200 focus:border-blue-500 focus:bg-white"
+              <Cellule
+                valeur={value}
+                onValider={(saisie) => onChange(column.set!(saisie))}
+                aligne={['rackUnit', 'heightU', 'powerW'].includes(column.key) ? 'droite' : undefined}
               />
             ) : (
               <span className="text-slate-500">{value || '—'}</span>
@@ -404,4 +628,4 @@ function Row({
       })}
     </tr>
   )
-}
+})
