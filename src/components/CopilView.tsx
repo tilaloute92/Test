@@ -108,7 +108,7 @@ export function CopilView() {
             l'autre — à distinguer de la FDR (le quoi sur l'année) et du planning (le qui fait quoi sur la semaine).
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ModeSwitcher
             value={mode}
             onChange={setMode}

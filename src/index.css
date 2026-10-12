@@ -48,3 +48,13 @@ body {
     @apply rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800;
   }
 }
+
+/* Un chemin de fichier ou une URL dans <code> ne contient ni espace ni césure : le
+   navigateur ne sait pas où le couper et le laisse dépasser de son conteneur. Sur un
+   téléphone, « https://suivi-infra.monentreprise.local » poussait à lui seul toute la page
+   hors de l'écran. `anywhere` autorise la coupure à n'importe quel caractère, ce qui est
+   acceptable pour du texte technique et ne l'est pas pour de la prose — d'où la règle
+   limitée aux <code>. */
+code {
+  overflow-wrap: anywhere;
+}

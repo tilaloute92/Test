@@ -2,14 +2,31 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { addDays, formatDateLong, formatWeekRange, getWorkingDaysOfWeek, isWeekend, startOfWeek, toISODate } from '../lib/date';
 import { getTaskById } from '../lib/selectors';
-import { Avatar, Card, PrintButton, PrintHeader } from './ui';
+import { Avatar, Card, ModeSwitcher, PrintButton, PrintHeader } from './ui';
 import { useConfirm } from './ConfirmProvider';
+import { rollupByProject, rollupByType, totalPasse, type GroupRollup } from '../lib/timeRollup';
+import type { TeamMember } from '../types';
+
+const TIME_MODES = ['personne', 'projet', 'type'] as const;
+type TimeMode = (typeof TIME_MODES)[number];
+
+/** Fenêtres proposées pour les vues agrégées. Une semaine ne dit rien d'un projet qui
+ *  court sur trois mois : c'est la raison pour laquelle ces vues ne reprennent pas la
+ *  navigation hebdomadaire de la vue par personne. */
+const FENETRES = [
+  { cle: '4', label: '4 semaines', jours: 28 },
+  { cle: '12', label: '3 mois', jours: 84 },
+  { cle: '52', label: '12 mois', jours: 365 },
+  { cle: 'tout', label: 'Tout', jours: 0 },
+] as const;
 
 export function TimeTrackingView() {
   const { members, tasks, timeEntries, absences, removeTimeEntry } = useStore();
   const confirm = useConfirm();
   const [weekOffset, setWeekOffset] = useState(0);
   const [memberFilter, setMemberFilter] = useState('Tous');
+  const [mode, setMode] = useState<TimeMode>('personne');
+  const [fenetre, setFenetre] = useState<(typeof FENETRES)[number]['cle']>('4');
 
   const weekStart = startOfWeek(addDays(new Date(), weekOffset * 7));
   const days = getWorkingDaysOfWeek(weekStart);
@@ -31,6 +48,19 @@ export function TimeTrackingView() {
     .filter((e) => memberFilter === 'Tous' || e.memberId === memberFilter)
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 
+  /** Saisies de la fenêtre choisie, pour les vues agrégées. */
+  const saisiesFenetre = useMemo(() => {
+    const def = FENETRES.find((f) => f.cle === fenetre) ?? FENETRES[0];
+    if (def.jours === 0) return timeEntries;
+    const depuis = toISODate(addDays(new Date(), -def.jours));
+    return timeEntries.filter((e) => e.date >= depuis);
+  }, [timeEntries, fenetre]);
+
+  const groupes = useMemo(
+    () => (mode === 'projet' ? rollupByProject(saisiesFenetre, tasks) : mode === 'type' ? rollupByType(saisiesFenetre, tasks) : []),
+    [mode, saisiesFenetre, tasks]
+  );
+
   const exportCsv = () => {
     const header = ['Date', 'Période', 'Membre', 'Tâche', 'Type', 'Heures', 'Note'];
     const rows = weekEntries.map((e) => {
@@ -50,16 +80,52 @@ export function TimeTrackingView() {
 
   return (
     <div className="space-y-4">
-      <PrintHeader title="Suivi du temps" subtitle={`Semaine du ${formatWeekRange(days)}`} />
+      {/* Le sous-titre suit le mode : il annonçait la semaine en cours alors que les vues
+          agrégées couvrent quatre semaines ou plus, ce qui faisait lire les totaux pour
+          ceux d'une seule semaine. */}
+      <PrintHeader
+        title="Suivi du temps"
+        subtitle={mode === 'personne' ? `Semaine du ${formatWeekRange(days)}` : FENETRES.find((f) => f.cle === fenetre)?.label ?? ''}
+      />
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Suivi du temps</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Semaine du {formatWeekRange(days)}</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {mode === 'personne'
+              ? `Semaine du ${formatWeekRange(days)}`
+              : `${FENETRES.find((f) => f.cle === fenetre)?.label ?? ''} — toutes les saisies de la période`}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setWeekOffset((w) => w - 1)} className="btn-ghost">◀ Semaine préc.</button>
-          <button onClick={() => setWeekOffset(0)} className="btn-ghost">Semaine en cours</button>
-          <button onClick={() => setWeekOffset((w) => w + 1)} className="btn-ghost">Semaine suiv. ▶</button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ModeSwitcher
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'personne', label: 'Par personne', title: 'Qui a saisi combien, jour par jour, sur une semaine' },
+              { value: 'projet', label: 'Par projet', title: 'Temps passé par projet et par tâche, face à la charge estimée' },
+              { value: 'type', label: 'Par type', title: 'Répartition entre MCO, incidents et projets' },
+            ]}
+          />
+          {mode === 'personne' ? (
+            <>
+              <button onClick={() => setWeekOffset((w) => w - 1)} className="btn-ghost">◀ Semaine préc.</button>
+              <button onClick={() => setWeekOffset(0)} className="btn-ghost">Semaine en cours</button>
+              <button onClick={() => setWeekOffset((w) => w + 1)} className="btn-ghost">Semaine suiv. ▶</button>
+            </>
+          ) : (
+            <select
+              value={fenetre}
+              onChange={(e) => setFenetre(e.target.value as typeof fenetre)}
+              aria-label="Période couverte"
+              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            >
+              {FENETRES.map((f) => (
+                <option key={f.cle} value={f.cle}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          )}
           <PrintButton />
           <button onClick={exportCsv} className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700">
             Exporter CSV
@@ -67,6 +133,11 @@ export function TimeTrackingView() {
         </div>
       </div>
 
+      {mode !== 'personne' && (
+        <GroupesCard groupes={groupes} members={members} mode={mode} fenetre={FENETRES.find((f) => f.cle === fenetre)?.label ?? ''} />
+      )}
+
+      {mode === 'personne' && (
       <Card className="overflow-x-auto p-3 print:overflow-visible">
         <table className="w-full min-w-[700px] text-sm print:min-w-0">
           <thead>
@@ -117,9 +188,11 @@ export function TimeTrackingView() {
           </tbody>
         </table>
       </Card>
+      )}
 
+      {mode === 'personne' && (
       <Card className="p-3">
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Détail des saisies</h2>
           <select
             value={memberFilter}
@@ -162,7 +235,120 @@ export function TimeTrackingView() {
           })}
         </div>
       </Card>
+      )}
     </div>
+  );
+}
+
+/**
+ * Le temps passé regroupé — par projet ou par type — avec le réalisé face à l'estimé.
+ *
+ * Le dépassement est la seule information qui mérite d'être criante : un nombre d'heures
+ * seul ne dit rien, 31h sur une tâche est excellent ou catastrophique selon qu'on en avait
+ * prévu 40 ou 12.
+ */
+function GroupesCard({
+  groupes,
+  members,
+  mode,
+  fenetre,
+}: {
+  groupes: GroupRollup[];
+  members: TeamMember[];
+  mode: 'projet' | 'type';
+  fenetre: string;
+}) {
+  const [ouverts, setOuverts] = useState<string[]>([]);
+  const total = totalPasse(groupes);
+
+  if (groupes.length === 0) {
+    return <Card className="p-6 text-center text-sm text-slate-400">Aucune saisie de temps sur « {fenetre} ».</Card>;
+  }
+
+  const bascule = (cle: string) => setOuverts((o) => (o.includes(cle) ? o.filter((x) => x !== cle) : [...o, cle]));
+
+  return (
+    <Card className="p-3">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+          Temps passé par {mode === 'projet' ? 'projet' : 'type'} — {fenetre.toLowerCase()}
+        </h2>
+        <span className="text-xs tabular-nums text-slate-400">{total}h au total</span>
+      </div>
+
+      <div className="space-y-1.5">
+        {groupes.map((g) => {
+          const ouvert = ouverts.includes(g.cle);
+          const depasse = g.estime > 0 && g.passe > g.estime;
+          const part = total > 0 ? Math.round((g.passe / total) * 100) : 0;
+          return (
+            <div key={g.cle} className="rounded-lg border border-slate-100 dark:border-slate-800">
+              <button
+                onClick={() => bascule(g.cle)}
+                aria-expanded={ouvert}
+                className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50"
+              >
+                <span className="w-3 shrink-0 text-xs text-slate-400" aria-hidden="true">
+                  {ouvert ? '▾' : '▸'}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+                  {g.label}
+                  <span className="ml-1.5 text-xs font-normal text-slate-400">
+                    {g.taches.length} tâche(s){g.tachesSansTemps > 0 ? ` · ${g.tachesSansTemps} sans temps saisi` : ''}
+                  </span>
+                </span>
+                <span className="hidden h-1.5 w-28 shrink-0 overflow-hidden rounded-full bg-slate-100 sm:block dark:bg-slate-800">
+                  <span
+                    className={`block h-full rounded-full ${depasse ? 'bg-red-500' : 'bg-violet-500'}`}
+                    style={{ width: `${g.estime > 0 ? Math.min(100, (g.passe / g.estime) * 100) : 100}%` }}
+                  />
+                </span>
+                <span className="w-10 shrink-0 text-right text-xs tabular-nums text-slate-400">{part}%</span>
+                <span
+                  className={`w-24 shrink-0 text-right text-sm tabular-nums ${
+                    depasse ? 'font-semibold text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'
+                  }`}
+                  title={depasse ? `Dépassement de ${Math.round((g.passe - g.estime) * 10) / 10}h` : undefined}
+                >
+                  {g.passe}h{g.estime > 0 ? ` / ${g.estime}h` : ''}
+                </span>
+              </button>
+
+              {ouvert && (
+                <div className="divide-y divide-slate-50 border-t border-slate-100 dark:divide-slate-800/60 dark:border-slate-800">
+                  {g.taches.map((t) => {
+                    const depasseT = t.estime > 0 && t.passe > t.estime;
+                    return (
+                      <div key={t.taskId} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 pl-9">
+                        <span className="min-w-0 flex-1 truncate text-sm text-slate-600 dark:text-slate-300">{t.titre}</span>
+                        <span className="flex shrink-0 -space-x-1.5">
+                          {t.memberIds.slice(0, 4).map((id) => {
+                            const m = members.find((x) => x.id === id);
+                            return m ? <Avatar key={id} name={m.name} color={m.color} initials={m.initials} size={18} /> : null;
+                          })}
+                        </span>
+                        <span
+                          className={`w-24 shrink-0 text-right text-xs tabular-nums ${
+                            depasseT ? 'font-medium text-red-600 dark:text-red-400' : 'text-slate-400'
+                          }`}
+                        >
+                          {t.passe}h{t.estime > 0 ? ` / ${t.estime}h` : ''}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="mt-2 text-xs text-slate-400">
+        En rouge, le réalisé qui dépasse la charge estimée. L'estimé d'un projet compte toutes ses tâches, y compris celles sur
+        lesquelles rien n'a encore été saisi&nbsp;: c'est son budget, pas son avancement.
+      </p>
+    </Card>
   );
 }
 

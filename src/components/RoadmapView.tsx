@@ -136,7 +136,7 @@ export function RoadmapView() {
             opérationnel (3 semaines).
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ModeSwitcher
             value={mode}
             onChange={setMode}

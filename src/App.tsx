@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { DailyView } from './components/DailyView';
 import { PlanningView } from './components/PlanningView';
@@ -10,6 +10,9 @@ import { SettingsView } from './components/SettingsView';
 import { WeeklyReportView } from './components/WeeklyReportView';
 import { RoadmapView } from './components/RoadmapView';
 import { CopilView } from './components/CopilView';
+import { MyDayView } from './components/MyDayView';
+import { CompactNav, DesktopNav, MobileTabBar } from './components/AppNav';
+import { SearchPalette } from './components/SearchPalette';
 import { clearLastRepairReport, getLastRepairReport } from './lib/repairIds';
 import { useStore } from './store/useStore';
 import { isAuthConfigured, signIn as msalLoginOnly, signInWithIdToken, trySilentAccount, signOut as msalSignOut } from './auth/msalClient';
@@ -24,26 +27,23 @@ import { useConfirm } from './components/ConfirmProvider';
 import { countArchived, readLocalArchive } from './lib/localArchive';
 import type { AccountInfo } from '@azure/msal-browser';
 
-export type Tab = 'dashboard' | 'daily' | 'planning' | 'tasks' | 'time' | 'team' | 'api' | 'report' | 'roadmap' | 'copils' | 'settings';
+export type Tab =
+  | 'myday'
+  | 'dashboard'
+  | 'daily'
+  | 'planning'
+  | 'tasks'
+  | 'time'
+  | 'team'
+  | 'api'
+  | 'report'
+  | 'roadmap'
+  | 'copils'
+  | 'settings';
 
-type TabGroup = 'quotidien' | 'pilotage' | 'admin';
-
-// Regroupement purement visuel (un séparateur entre groupes dans la barre de navigation) —
-// pensé pour distinguer l'usage au jour le jour du pilotage et de l'administration, sans
-// complexifier le routage : chaque onglet reste indépendant, seul l'affichage groupe.
-const TABS: { id: Tab; label: string; group: TabGroup }[] = [
-  { id: 'dashboard', label: "Vue d'ensemble", group: 'quotidien' },
-  { id: 'daily', label: 'Activité du jour', group: 'quotidien' },
-  { id: 'planning', label: 'Planning', group: 'quotidien' },
-  { id: 'tasks', label: 'Tâches', group: 'quotidien' },
-  { id: 'time', label: 'Temps', group: 'quotidien' },
-  { id: 'report', label: 'Rapport', group: 'pilotage' },
-  { id: 'roadmap', label: 'FDR', group: 'pilotage' },
-  { id: 'copils', label: 'COPIL', group: 'pilotage' },
-  { id: 'team', label: 'Équipe', group: 'admin' },
-  { id: 'api', label: 'API', group: 'admin' },
-  { id: 'settings', label: 'Paramètres', group: 'admin' },
-];
+// La structure de la navigation (groupes, libellés, repères) vit dans src/lib/navigation.ts :
+// la barre large, la barre du téléphone et la recherche globale la lisent toutes, pour qu'un
+// onglet ajouté apparaisse partout sans qu'on ait à y penser.
 
 function useTheme() {
   const [dark, setDark] = useState(() => {
@@ -450,7 +450,10 @@ function FirstRunScreen({ onInitialized }: { onInitialized: () => void }) {
 }
 
 function App() {
-  const [tab, setTab] = useState<Tab>('dashboard');
+  // « Ma journée » plutôt que le tableau de bord d'équipe : quatre personnes sur cinq
+  // ouvrent l'application pour leur propre travail, pas pour piloter l'équipe.
+  const [tab, setTab] = useState<Tab>('myday');
+  const [searchOpen, setSearchOpen] = useState(false);
   const { dark, setDark } = useTheme();
   const authGate = useAuthGate();
   const sync = useServerSync();
@@ -489,6 +492,29 @@ function App() {
     const timer = setInterval(() => purgeExpiredRecords(), 60 * 60 * 1000);
     return () => clearInterval(timer);
   }, [mode, purgeExpiredRecords]);
+
+  // Ctrl+K / Cmd+K depuis n'importe quel écran. On n'intercepte pas la frappe quand elle
+  // vise un champ de saisie : Ctrl+K y est une combinaison d'édition courante, et la voler
+  // rendrait la recherche agaçante au lieu d'utile.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'k' || !(e.ctrlKey || e.metaKey)) return;
+      const cible = e.target as HTMLElement | null;
+      if (cible && /^(INPUT|TEXTAREA|SELECT)$/.test(cible.tagName)) return;
+      e.preventDefault();
+      setSearchOpen(true);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Qui est connecté, à la portée de « Ma journée » sans traverser trois composants.
+  // Un seul endroit décide — voir src/lib/identity.ts.
+  useEffect(() => {
+    (window as unknown as { __suiviSession?: unknown }).__suiviSession = authGate.session
+      ? { username: authGate.session.username, name: authGate.session.name }
+      : null;
+  }, [authGate.session]);
 
   const goToMember = () => setTab('planning');
 
@@ -554,23 +580,8 @@ function App() {
               </div>
             </div>
           </div>
-          <nav className="ml-4 hidden flex-1 items-center gap-0.5 overflow-x-auto md:flex">
-            {TABS.map((t, i) => (
-              <Fragment key={t.id}>
-                {i > 0 && TABS[i - 1].group !== t.group && <span className="mx-1.5 h-5 w-px shrink-0 bg-slate-200 dark:bg-slate-700" aria-hidden="true" />}
-                <button
-                  onClick={() => setTab(t.id)}
-                  className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors ${
-                    tab === t.id
-                      ? 'bg-violet-600 text-white'
-                      : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              </Fragment>
-            ))}
-          </nav>
+          <DesktopNav tab={tab} onSelect={setTab} onSearch={() => setSearchOpen(true)} />
+          <CompactNav tab={tab} onSelect={setTab} />
           {authGate.displayName && (
             <div className="ml-auto hidden max-w-[220px] items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 md:flex">
               {/* Le mode n'est jamais implicite : un point vert = les données viennent du
@@ -590,29 +601,24 @@ function App() {
               </button>
             </div>
           )}
+          {/* Sur petit écran la barre groupée est masquée : la recherche doit rester
+              atteignable, c'est le seul moyen d'atteindre un élément précis sans parcourir. */}
+          <button
+            onClick={() => setSearchOpen(true)}
+            className={`${authGate.displayName ? '' : 'ml-auto'} rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-700 lg:hidden`}
+            title="Rechercher (Ctrl+K)"
+            aria-label="Rechercher"
+          >
+            ⌕
+          </button>
           <button
             onClick={() => setDark((d) => !d)}
-            className={`${authGate.displayName ? '' : 'ml-auto'} rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-700`}
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-700"
             title="Basculer le thème"
           >
             {dark ? '☀️' : '🌙'}
           </button>
         </div>
-        <nav className="flex items-center gap-1 overflow-x-auto border-t border-slate-100 px-4 py-2 md:hidden dark:border-slate-800">
-          {TABS.map((t, i) => (
-            <Fragment key={t.id}>
-              {i > 0 && TABS[i - 1].group !== t.group && <span className="mx-1 h-5 w-px shrink-0 bg-slate-200 dark:bg-slate-700" aria-hidden="true" />}
-              <button
-                onClick={() => setTab(t.id)}
-                className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium ${
-                  tab === t.id ? 'bg-violet-600 text-white' : 'text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                {t.label}
-              </button>
-            </Fragment>
-          ))}
-        </nav>
       </header>
 
       {repairReport && (
@@ -647,7 +653,10 @@ function App() {
         </div>
       )}
 
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      {/* pb-20 sur petit écran : la barre fixe du bas recouvrirait sinon le dernier bloc,
+          et rien n'indiquerait qu'il reste du contenu dessous. */}
+      <main className="mx-auto max-w-7xl px-4 py-6 pb-20 lg:pb-6">
+        {tab === 'myday' && <MyDayView onNavigate={setTab} />}
         {tab === 'dashboard' && <Dashboard onSelectMember={goToMember} onNavigate={setTab} />}
         {tab === 'daily' && <DailyView />}
         {tab === 'planning' && <PlanningView />}
@@ -660,6 +669,9 @@ function App() {
         {tab === 'copils' && <CopilView />}
         {tab === 'settings' && <SettingsView canEdit={authGate.isAdmin} />}
       </main>
+
+      <MobileTabBar tab={tab} onSelect={setTab} />
+      {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} onNavigate={setTab} />}
     </div>
   );
 }

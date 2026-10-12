@@ -161,17 +161,21 @@ export function WeeklyReportView() {
         <h2 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Charge par personne</h2>
         <div className="space-y-3">
           {report.perMember.map((p) => (
-            <div key={p.member.id} className="flex items-center gap-3">
+            /* Cinq colonnes de largeur fixe se suivaient sans jamais se replier : 36 px
+               d'avatar + 144 + 48 + 96 + 112, soit plus que la largeur d'un téléphone avant
+               même la barre de charge. Le nom devient élastique et la barre passe à la ligne
+               en dessous de 640 px, plutôt que de pousser le reste hors de l'écran. */
+            <div key={p.member.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <Avatar name={p.member.name} color={p.member.color} initials={p.member.initials} size={26} />
-              <span className="w-36 shrink-0 truncate text-sm text-slate-700 dark:text-slate-200">{p.member.name}</span>
-              <div className="flex-1">
+              <span className="min-w-0 flex-1 truncate text-sm text-slate-700 sm:w-36 sm:flex-none dark:text-slate-200">{p.member.name}</span>
+              <div className="order-last w-full sm:order-none sm:w-auto sm:flex-1">
                 <WorkloadBar ratio={p.workloadRatio} level={p.workloadLevel} />
               </div>
               <span className="w-12 shrink-0 text-right text-xs tabular-nums text-slate-500 dark:text-slate-400">{Math.round(p.workloadRatio * 100)}%</span>
-              <div className="w-24 shrink-0 text-right">
+              <div className="shrink-0 text-right sm:w-24">
                 <WorkloadPill level={p.workloadLevel} />
               </div>
-              <span className="w-28 shrink-0 text-right text-xs text-slate-400">{p.tasksCompleted.length} terminée(s)</span>
+              <span className="shrink-0 text-right text-xs text-slate-400 sm:w-28">{p.tasksCompleted.length} terminée(s)</span>
             </div>
           ))}
         </div>
@@ -455,13 +459,13 @@ function ReportPresentation({ report, members, weekDays }: { report: WeeklyRepor
         <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">Charge par personne</h2>
         <div className="space-y-4">
           {report.perMember.map((p) => (
-            <div key={p.member.id} className="flex items-center gap-4">
+            <div key={p.member.id} className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
               <Avatar name={p.member.name} color={p.member.color} initials={p.member.initials} size={36} />
-              <span className="w-40 shrink-0 truncate text-base font-medium text-slate-700 dark:text-slate-200">{p.member.name}</span>
-              <div className="flex-1">
+              <span className="min-w-0 flex-1 truncate text-base font-medium text-slate-700 sm:w-40 sm:flex-none dark:text-slate-200">{p.member.name}</span>
+              <div className="order-last w-full sm:order-none sm:w-auto sm:flex-1">
                 <WorkloadBar ratio={p.workloadRatio} level={p.workloadLevel} />
               </div>
-              <div className="w-28 shrink-0 text-right">
+              <div className="shrink-0 text-right sm:w-28">
                 <WorkloadPill level={p.workloadLevel} />
               </div>
             </div>

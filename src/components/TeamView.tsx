@@ -33,7 +33,7 @@ export function TeamView() {
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Équipe</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">{members.length} personnes · 35h/semaine, matin MCO/incidents, après-midi projets</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <PrintButton />
           <button onClick={() => setShowMemberForm(true)} className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700">
             + Ajouter un membre
@@ -97,11 +97,14 @@ export function TeamView() {
             const m = members.find((mm) => mm.id === a.memberId);
             if (!m) return null;
             return (
-              <div key={a.id} className="flex items-center gap-3 p-2.5 text-sm">
+              /* Quatre colonnes fixes se suivaient : 22 + 144 + 96 + 80 px, plus la pastille
+                 et le bouton de suppression — soit plus qu'un écran de téléphone. Le nom
+                 devient élastique et la ligne se replie. */
+              <div key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 p-2.5 text-sm">
                 <Avatar name={m.name} color={m.color} initials={m.initials} size={22} />
-                <span className="w-36 shrink-0 truncate text-slate-700 dark:text-slate-200">{m.name}</span>
-                <span className="w-24 shrink-0 text-xs text-slate-400">{a.date}</span>
-                <span className="w-20 shrink-0 text-xs text-slate-400">{a.period === 'jour' ? 'Journée' : a.period === 'matin' ? 'Matin' : 'Après-midi'}</span>
+                <span className="min-w-0 flex-1 truncate text-slate-700 sm:w-36 sm:flex-none dark:text-slate-200">{m.name}</span>
+                <span className="shrink-0 text-xs tabular-nums text-slate-400 sm:w-24">{a.date}</span>
+                <span className="shrink-0 text-xs text-slate-400 sm:w-20">{a.period === 'jour' ? 'Journée' : a.period === 'matin' ? 'Matin' : 'Après-midi'}</span>
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                   {absenceLabels[a.type]}
                 </span>

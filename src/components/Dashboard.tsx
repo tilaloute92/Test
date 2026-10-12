@@ -190,7 +190,7 @@ export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id:
             Aujourd'hui, {formatDateLong(today)} — vue d'ensemble de la charge et de l'activité de l'équipe
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ModeSwitcher
             value={mode}
             onChange={setMode}
@@ -225,17 +225,21 @@ export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id:
                   <button
                     key={m.id}
                     onClick={() => onSelectMember(m.id)}
-                    className="flex w-full items-center gap-3 rounded-lg p-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                    /* Quatre colonnes de largeur fixe — 28 + 144 + 56 + 112 px — ne
+                       laissaient plus rien à la barre de charge sous 400 px, et la pastille
+                       « Sous-chargé » sortait de l'écran. Le nom devient élastique et la
+                       barre passe en dessous sur téléphone. */
+                    className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg p-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60"
                   >
                     <Avatar name={m.name} color={m.color} initials={m.initials} size={28} />
-                    <span className="w-36 shrink-0 truncate text-sm text-slate-700 dark:text-slate-200">{m.name}</span>
-                    <div className="flex-1">
+                    <span className="min-w-0 flex-1 truncate text-sm text-slate-700 sm:w-36 sm:flex-none dark:text-slate-200">{m.name}</span>
+                    <div className="order-last w-full sm:order-none sm:w-auto sm:flex-1">
                       <WorkloadBar ratio={load.ratio} level={level} />
                     </div>
                     <span className="w-14 shrink-0 text-right text-xs tabular-nums text-slate-500 dark:text-slate-400">
                       {Math.round(load.ratio * 100)}%
                     </span>
-                    <div className="w-28 shrink-0 text-right">
+                    <div className="shrink-0 text-right sm:w-28">
                       <WorkloadPill level={level} />
                     </div>
                   </button>
