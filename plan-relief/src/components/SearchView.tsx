@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../api';
 import { hrefOf } from '../App';
 import { CATEGORIES, KIND_LABELS, categoryOf, cssColor, type Category, type EquipmentKind, type PlanSummary, type SearchHit } from '../lib/types';
-import { Highlight } from './ui';
+import { guessLevel, levelFromName, levelName } from '../lib/building';
+import { encodeEndpoint, readDraft } from '../lib/traceLink';
+import { Highlight, Icon } from './ui';
 
 const EXAMPLES = ['switch', 'baie', 'borne wifi', 'caméra', 'RJ45'];
 
@@ -100,7 +102,7 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
             <div className="tablewrap">
               <table className="data">
                 <thead>
-                  <tr><th>Équipement</th><th>Détails</th><th>Plan</th><th>Emplacement</th><th /></tr>
+                  <tr><th>Équipement</th><th style={{ width: 70 }}>Étage</th><th>Plan</th><th>Détails</th><th /></tr>
                 </thead>
                 <tbody>
                   {res.results.map((r) => {
@@ -111,6 +113,11 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
                         <td>
                           <div className="cell-title"><Highlight text={e.label || e.type} query={q} /></div>
                           <div className="cell-sub">{categoryOf(e.category) ? <><span className="dot" style={{ background: cssColor(categoryOf(e.category)!.color) }} /> {categoryOf(e.category)!.label}</> : <><span className={`dot kind-${e.kind}`} /> {KIND_LABELS[e.kind]}</>}{e.type && e.type !== e.label && e.type !== categoryOf(e.category)?.label ? <> · <Highlight text={e.type} query={q} /></> : null}</div>
+                        </td>
+                        <td>{(() => { const plan = plans.find((p) => p.id === r.planId); const l = plan?.level ?? guessLevel(r.floor) ?? levelFromName(r.planName); return <span className="lvl lvl-lg" title={r.floor || undefined}>{l == null ? (r.floor || '?') : levelName(l)}</span>; })()}</td>
+                        <td>
+                          <div><Highlight text={r.planName} query={q} /></div>
+                          <div className="cell-sub">{[r.site, r.building && `Bât. ${r.building}`].filter(Boolean).join(' · ') || '—'}</div>
                         </td>
                         <td>
                           {e.attributes && (
@@ -124,9 +131,10 @@ export function SearchView({ initialQuery }: { initialQuery?: string }) {
                           {e.notes && <div className="cell-sub"><Highlight text={e.notes.slice(0, 120)} query={q} /></div>}
                           {e.layer && <div className="cell-sub mono">{e.layer}</div>}
                         </td>
-                        <td><Highlight text={r.planName} query={q} /></td>
-                        <td className="cell-sub">{[r.site, r.building && `Bât. ${r.building}`, r.floor].filter(Boolean).join(' · ') || '—'}</td>
-                        <td><a className="btn sm" href={href} onClick={(ev) => ev.stopPropagation()}>Voir sur le plan</a></td>
+                        <td className="actions-cell">
+                          <a className="btn sm" href={href} onClick={(ev) => ev.stopPropagation()}><Icon name="target" /> Voir sur le plan</a>
+                          <a className="btn sm ghost" title="Tracé depuis cet équipement" href={hrefOf({ page: 'trace', de: encodeEndpoint({ planId: r.planId, eqId: e.id }), a: readDraft().a })} onClick={(ev) => ev.stopPropagation()}><Icon name="route" /> Tracé</a>
+                        </td>
                       </tr>
                     );
                   })}

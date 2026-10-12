@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import * as api from './api';
 import type { User } from './api';
-import { Brand, useToast } from './components/ui';
+import { Brand, Icon, useToast, type IconName } from './components/ui';
 import { LoginScreen } from './components/LoginScreen';
 import { PlansLibrary } from './components/PlansLibrary';
 import { PlanView } from './components/PlanView';
@@ -122,9 +122,11 @@ export default function App() {
     setUser(null);
     setStatus('login');
   };
-  const nav = (page: Route['page'], label: string) => (
-    <a href={hrefOf({ page } as Route)} aria-current={route.page === page || (page === 'plans' && route.page === 'plan') ? 'page' : undefined}>{label}</a>
+  const nav = (page: Route['page'], label: string, icon: IconName) => (
+    <a href={hrefOf({ page } as Route)} aria-current={route.page === page || (page === 'plans' && route.page === 'plan') ? 'page' : undefined}><Icon name={icon} /> {label}</a>
   );
+  const display = user.name || user.username;
+  const initials = display.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
 
   return (
     <UserContext.Provider value={user}>
@@ -132,21 +134,24 @@ export default function App() {
       <header className="topbar">
         <Brand />
         <nav className="nav" aria-label="Navigation principale">
-          {nav('plans', 'Plans')}
-          {nav('recherche', 'Recherche')}
-          {nav('trace', 'Tracés')}
-          {user.role === 'admin' && nav('parametres', 'Paramètres')}
+          {nav('plans', 'Plans', 'plans')}
+          {nav('recherche', 'Recherche', 'search')}
+          {nav('trace', 'Tracés', 'route')}
+          {user.role === 'admin' && nav('parametres', 'Paramètres', 'settings')}
         </nav>
         <div className="spacer" />
         <div className="userbox">
-          <button type="button" className="btn ghost sm" onClick={cycle} title="Changer de thème">
-            {theme === 'system' ? 'Thème : système' : theme === 'dark' ? 'Thème : sombre' : 'Thème : clair'}
+          <button type="button" className="btn ghost icon-btn" onClick={cycle} title={theme === 'system' ? 'Thème : système (cliquer pour sombre)' : theme === 'dark' ? 'Thème : sombre (cliquer pour clair)' : 'Thème : clair (cliquer pour système)'} aria-label="Changer de thème">
+            <Icon name={theme === 'system' ? 'auto' : theme === 'dark' ? 'moon' : 'sun'} size={18} />
           </button>
           <div className="who">
-            <span>{user.name || user.username}</span>
-            <span className="method">{[user.method && METHOD_LABELS[user.method], user.role === 'admin' ? 'administrateur' : 'lecteur'].filter(Boolean).join(' · ')}</span>
+            <span className="avatar" aria-hidden="true">{initials}</span>
+            <span className="who-t">
+              <span className="who-name">{display}</span>
+              <span className="method">{[user.method && METHOD_LABELS[user.method], user.role === 'admin' ? 'administrateur' : 'lecteur'].filter(Boolean).join(' · ')}</span>
+            </span>
           </div>
-          <button type="button" className="btn sm" onClick={doLogout}>Se déconnecter</button>
+          <button type="button" className="btn ghost icon-btn" onClick={doLogout} title="Se déconnecter" aria-label="Se déconnecter"><Icon name="logout" size={18} /></button>
         </div>
       </header>
       <main className={`content${route.page === 'plan' || route.page === 'trace' ? ' full' : ''}`}>

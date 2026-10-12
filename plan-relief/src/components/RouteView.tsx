@@ -14,7 +14,7 @@ const PASSAGE_KINDS: [PassageKind, string, string][] = [
 const RISE_LABEL: Record<PassageKind, string> = { manuel: 'Passage', gaine: 'Gaine', escalier: 'Escalier', ascenseur: 'Monte-charge / ascenseur' };
 import { PlanViewer } from '../lib/viewer';
 import { DEFAULT_SETTINGS, KIND_LABELS, type Equipment, type PlanSummary, type SearchHit } from '../lib/types';
-import { fmtNum, Highlight, NavHint } from './ui';
+import { fmtNum, Highlight, Icon, NavHint } from './ui';
 import { decodeEndpoint, encodeEndpoint, writeDraft, type EndpointRef } from '../lib/traceLink';
 
 interface Resolved extends EndpointRef { label: string; type: string; plan: PlanSummary; eq: Equipment }
@@ -235,49 +235,20 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
       <div className="planbody">
         <aside className="side" aria-label="Paramètres du tracé">
           <div className="side-scroll">
-            <div className="sec">
-              <h3><span className="dot" style={{ background: '#2e9e5b' }} /> Départ</h3>
-              <EndpointPicker id="de" value={from} onChange={setFrom} />
-            </div>
-            <div className="sec">
-              <h3><span className="dot" style={{ background: '#d23c32' }} /> Arrivée</h3>
-              <EndpointPicker id="a" value={to} onChange={setTo} />
+            <div className="sec itinerary">
+              <div className="iti-step">
+                <h3><span className="iti-dot start" /> Départ</h3>
+                <EndpointPicker id="de" value={from} onChange={setFrom} />
+              </div>
+              <div className="iti-step">
+                <h3><span className="iti-dot end" /> Arrivée</h3>
+                <EndpointPicker id="a" value={to} onChange={setTo} />
+              </div>
               {from && to && (
-                <button type="button" className="btn ghost sm" onClick={() => { setFrom(to); setTo(from); }}>Inverser départ et arrivée</button>
+                <button type="button" className="btn ghost sm" style={{ alignSelf: 'flex-start' }} onClick={() => { setFrom(to); setTo(from); }}>⇅ Inverser départ et arrivée</button>
               )}
-            </div>
-            <div className="sec">
-              <h3>Options</h3>
-              <label className="field">
-                <span>Cheminement</span>
-                <select id="trace-height" className="select" value={height} onChange={(e) => setHeight(e.target.value as Height)}>
-                  <option value="plafond">En faux plafond (descentes comptées aux extrémités)</option>
-                  <option value="sol">Au sol / en plinthe</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Marge de longueur</span>
-                <span className="inputwrap"><input id="trace-margin" type="number" min="0" max="100" step="5" value={margin} onChange={(e) => setMargin(Math.max(0, Number(e.target.value) || 0))} /><span className="unit">%</span></span>
-              </label>
-              <label className="check" htmlFor="trace-ortho" style={{ alignItems: 'flex-start' }}>
-                <input id="trace-ortho" type="checkbox" checked={orthogonal} onChange={(e) => setOrthogonal(e.target.checked)} />
-                <span>Angles droits<span className="muted small" style={{ display: 'block' }}>Le tracé suit les axes du bâtiment avec le moins de coudes possible, comme un chemin de câbles. Décoché : le plus court en lignes droites.</span></span>
-              </label>
-              <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
-                <span>Changement d'étage par</span>
-                {PASSAGE_KINDS.map(([k, label, hint]) => (
-                  <label key={k} className="check" htmlFor={`trace-kind-${k}`} style={{ alignItems: 'flex-start' }}>
-                    <input id={`trace-kind-${k}`} type="checkbox" checked={kinds.includes(k)} onChange={(e) => setKinds(e.target.checked ? [...kinds, k] : kinds.filter((x) => x !== k))} />
-                    <span>{label}{hint && <span className="muted small" style={{ display: 'block' }}>{hint}</span>}</span>
-                  </label>
-                ))}
-              </fieldset>
-              <label className="check" htmlFor="trace-walls" style={{ alignItems: 'flex-start' }}>
-                <input id="trace-walls" type="checkbox" checked={allowWalls} onChange={(e) => setAllowWalls(e.target.checked)} />
-                <span>Autoriser la traversée des murs (carottage)<span className="muted small" style={{ display: 'block' }}>Sinon le tracé passe par les portes, et ne traverse un mur qu'en dernier recours, avec un avertissement.</span></span>
-              </label>
               {!sameBuilding && <div className="notice warn small">Départ et arrivée dans deux bâtiments différents : un tracé reste à l'intérieur d'un bâtiment (même site et même bâtiment sur la fiche des plans).</div>}
-              <button type="button" className="btn primary" disabled={!from || !to || !!busy} onClick={run}>{busy ? 'Calcul en cours…' : 'Tracer'}</button>
+              <button type="button" className="btn primary btn-lg" disabled={!from || !to || !!busy} onClick={run}><Icon name="route" size={18} /> {busy ? 'Calcul en cours…' : 'Tracer'}</button>
             </div>
 
             {error && <div className="sec"><div className="notice error" role="alert">{error}</div></div>}
@@ -325,6 +296,41 @@ export function RouteView({ de, a }: { de?: string; a?: string }) {
                 <FloorsNote floors={result.floors} />
               </div>
             )}
+            <div className="sec">
+              <details className="fold" open={!result || undefined}>
+                <summary><Icon name="settings" /> Options du tracé <span className="muted small fold-sum">{height === 'plafond' ? 'faux plafond' : 'au sol'} · {orthogonal ? 'angles droits' : 'lignes droites'} · marge {margin} %</span><Icon name="chevron" /></summary>
+                <div className="fold-b">
+                  <label className="field">
+                    <span>Cheminement</span>
+                    <select id="trace-height" className="select" value={height} onChange={(e) => setHeight(e.target.value as Height)}>
+                      <option value="plafond">En faux plafond (descentes comptées aux extrémités)</option>
+                      <option value="sol">Au sol / en plinthe</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Marge de longueur</span>
+                    <span className="inputwrap"><input id="trace-margin" type="number" min="0" max="100" step="5" value={margin} onChange={(e) => setMargin(Math.max(0, Number(e.target.value) || 0))} /><span className="unit">%</span></span>
+                  </label>
+                  <label className="check" htmlFor="trace-ortho" style={{ alignItems: 'flex-start' }}>
+                    <input id="trace-ortho" type="checkbox" checked={orthogonal} onChange={(e) => setOrthogonal(e.target.checked)} />
+                    <span>Angles droits<span className="muted small" style={{ display: 'block' }}>Le tracé suit les axes du bâtiment avec le moins de coudes possible, comme un chemin de câbles. Décoché : le plus court en lignes droites.</span></span>
+                  </label>
+                  <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
+                    <span>Changement d'étage par</span>
+                    {PASSAGE_KINDS.map(([k, label, hint]) => (
+                      <label key={k} className="check" htmlFor={`trace-kind-${k}`} style={{ alignItems: 'flex-start' }}>
+                        <input id={`trace-kind-${k}`} type="checkbox" checked={kinds.includes(k)} onChange={(e) => setKinds(e.target.checked ? [...kinds, k] : kinds.filter((x) => x !== k))} />
+                        <span>{label}{hint && <span className="muted small" style={{ display: 'block' }}>{hint}</span>}</span>
+                      </label>
+                    ))}
+                  </fieldset>
+                  <label className="check" htmlFor="trace-walls" style={{ alignItems: 'flex-start' }}>
+                    <input id="trace-walls" type="checkbox" checked={allowWalls} onChange={(e) => setAllowWalls(e.target.checked)} />
+                    <span>Autoriser la traversée des murs (carottage)<span className="muted small" style={{ display: 'block' }}>Sinon le tracé passe par les portes, et ne traverse un mur qu'en dernier recours, avec un avertissement.</span></span>
+                  </label>
+                </div>
+              </details>
+            </div>
             {!result && !error && (
               <div className="sec muted small">
                 <p style={{ margin: 0 }}>Tracé entre étages : chaque plan du bâtiment doit avoir le même site et le même bâtiment sur sa fiche, et un niveau (déduit de l'étage : RDC, R+1, SS1…). Le tracé change d'étage par les monte-charges et ascenseurs repérés sur les plans (bouton « Repérer escaliers, ascenseurs et gaines ») : chaque cabine est reliée automatiquement à celle qui se trouve au-dessus ou en dessous, et le tracé monte ou descend selon l'étage d'arrivée. Gaines, escaliers et passages nommés peuvent être autorisés dans les options.</p>

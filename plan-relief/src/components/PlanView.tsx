@@ -8,7 +8,8 @@ import { encodeEndpoint, readDraft } from '../lib/traceLink';
 import { PlanViewer, type BuildStats } from '../lib/viewer';
 import { CATEGORIES, DEFAULT_SETTINGS, KIND_LABELS, ROLE_LABELS, UNIT_NAMES, categoryOf, cssColor, type Category, type Drawing, type Equipment, type EquipmentKind, type PlanRecord, type PlanSettings, type Role, type Unit } from '../lib/types';
 import { useIsAdmin } from './session';
-import { Highlight, Modal, downloadBlob, fmtDate, fmtNum, useConfirm, useToast, NavHint } from './ui';
+import { Highlight, Icon, Modal, downloadBlob, fmtDate, fmtNum, useConfirm, useToast, NavHint } from './ui';
+import { levelName, levelOf } from '../lib/building';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[-_./\\#]+/g, '');
 const eqHay = (e: Equipment) => {
@@ -340,20 +341,21 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
     <div className="planview">
       <div className="planhead">
         <a className="btn ghost sm" href={hrefOf({ page: 'plans' })}>← Plans</a>
-        <h1>{plan?.name ?? 'Plan'}</h1>
-        {plan && (
-          <div className="meta">
-            {plan.site && <span className="chip">{plan.site}</span>}
-            {plan.building && <span className="chip">Bât. {plan.building}</span>}
-            {plan.floor && <span className="chip">{plan.floor}</span>}
-            <span className="chip"><span className="tag">{plan.file.format}</span> {plan.file.name}</span>
-          </div>
-        )}
+        {plan && <span className="lvl lvl-lg" title={plan.floor || undefined}>{levelName(levelOf(plan))}</span>}
+        <div className="planhead-t">
+          <h1>{plan?.name ?? 'Plan'}</h1>
+          {plan && (
+            <div className="crumbs">
+              {[plan.site, plan.building && `Bâtiment ${plan.building}`, plan.floor].filter(Boolean).join(' · ')}
+              <span className="tag">{plan.file.format}</span> <span className="mono">{plan.file.name}</span>
+            </div>
+          )}
+        </div>
         {plan && (
           <div className="actions">
-            {isAdmin && <button type="button" className="btn sm" onClick={() => setEditMeta(true)}>Modifier la fiche</button>}
-            <button type="button" className="btn sm" onClick={() => bufRef.current && downloadBlob(new Blob([bufRef.current]), plan.file.name)}>Télécharger l'original</button>
-            {isAdmin && <button type="button" className="btn sm danger" onClick={deletePlan}>Retirer du stock</button>}
+            {isAdmin && <button type="button" className="btn sm" onClick={() => setEditMeta(true)}><Icon name="edit" /> Modifier la fiche</button>}
+            <button type="button" className="btn sm" onClick={() => bufRef.current && downloadBlob(new Blob([bufRef.current]), plan.file.name)}><Icon name="download" /> Télécharger l'original</button>
+            {isAdmin && <button type="button" className="btn sm ghost danger" onClick={deletePlan}><Icon name="trash" /> Retirer du stock</button>}
           </div>
         )}
       </div>
@@ -385,9 +387,11 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                       ))}
                     </div>
                   )}
-                  {isAdmin && <>
+                  {isAdmin && <details className="fold" open={placing || undefined}>
+                  <summary><Icon name="plus" /> Ajouter un équipement, relire le plan <Icon name="chevron" /></summary>
+                  <div className="fold-b">
                   <div className="addbox">
-                    <span className="muted small">Ajouter sur le plan :</span>
+                    <span className="muted small">Cliquez une catégorie, puis l'emplacement sur la vue :</span>
                     <div className="addcats" role="group" aria-label="Ajouter un équipement">
                       {CATEGORIES.map((c) => (
                         <button key={c.id} type="button" className="btn sm" title={c.hint} disabled={placing || saving} aria-pressed={placing && placeCat === c.id} onClick={() => startPlacing(c.id)}>
@@ -396,9 +400,12 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                       ))}
                     </div>
                   </div>
-                  <button type="button" className="btn ghost sm" onClick={() => setRereadOpen(true)} disabled={saving || !!loading}>Relire les indications du plan</button>
-                  <button type="button" className="btn ghost sm" onClick={findLandmarks} disabled={saving || !!loading || !drawing}>Repérer escaliers, ascenseurs et gaines</button>
-                  </>}
+                  <div className="fold-tools">
+                    <button type="button" className="btn sm" onClick={() => setRereadOpen(true)} disabled={saving || !!loading}><Icon name="refresh" /> Relire les indications du plan</button>
+                    <button type="button" className="btn sm" onClick={findLandmarks} disabled={saving || !!loading || !drawing}><Icon name="wand" /> Repérer escaliers, ascenseurs et gaines</button>
+                  </div>
+                  </div>
+                  </details>}
                 </div>
 
                 {selectedEq && (
@@ -417,13 +424,15 @@ export function PlanView({ id, focusEq }: { id: string; focusEq?: string }) {
                         {selectedEq.notes && <><dt>Notes</dt><dd>{selectedEq.notes}</dd></>}
                         {selectedEq.indications?.length ? <><dt>Écrit à côté</dt><dd>{selectedEq.indications.map((t, i) => <div key={i}><Highlight text={t} query={query} /></div>)}</dd></> : null}
                       </dl>
-                      <div className="toolbar">
-                        <button type="button" className="btn sm" onClick={() => focusOn(selectedEq)}>Centrer la vue</button>
-                        {isAdmin && <button type="button" className="btn sm" onClick={() => setDraft(selectedEq)}>Modifier</button>}
-                        <button type="button" className="btn sm" onClick={copyLink}>Copier le lien</button>
-                        <a className="btn sm" href={hrefOf({ page: 'trace', de: encodeEndpoint({ planId: id, eqId: selectedEq.id }), a: readDraft().a })}>Tracé depuis ici</a>
-                        <a className="btn sm" href={hrefOf({ page: 'trace', de: readDraft().de, a: encodeEndpoint({ planId: id, eqId: selectedEq.id }) })}>Tracé jusqu'ici</a>
-                        {isAdmin && <button type="button" className="btn sm danger" onClick={() => removeEq(selectedEq)}>Supprimer</button>}
+                      <div className="detail-actions">
+                        <a className="btn sm primary" href={hrefOf({ page: 'trace', de: encodeEndpoint({ planId: id, eqId: selectedEq.id }), a: readDraft().a })}><Icon name="from" /> Tracé depuis ici</a>
+                        <a className="btn sm" href={hrefOf({ page: 'trace', de: readDraft().de, a: encodeEndpoint({ planId: id, eqId: selectedEq.id }) })}><Icon name="to" /> Tracé jusqu'ici</a>
+                      </div>
+                      <div className="toolbar detail-tools">
+                        <button type="button" className="btn sm ghost" onClick={() => focusOn(selectedEq)}><Icon name="target" /> Centrer la vue</button>
+                        <button type="button" className="btn sm ghost" onClick={copyLink}><Icon name="link" /> Copier le lien</button>
+                        {isAdmin && <button type="button" className="btn sm ghost" onClick={() => setDraft(selectedEq)}><Icon name="edit" /> Modifier</button>}
+                        {isAdmin && <button type="button" className="btn sm ghost danger" onClick={() => removeEq(selectedEq)}><Icon name="trash" /> Supprimer</button>}
                       </div>
                     </div>
                   </div>

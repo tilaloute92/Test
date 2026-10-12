@@ -45,10 +45,22 @@ export function LoginScreen({ onLogin }: { onLogin: (u: api.User) => void }) {
   };
 
   return (
-    <div className="center-screen">
+    <div className="center-screen login-screen">
+      <div className="login-wrap">
+      <aside className="login-hero" aria-hidden="true">
+        <HeroArt />
+        <div className="login-hero-t">
+          <h2>Vos bâtiments, étage par étage.</h2>
+          <ul>
+            <li>Les plans DXF et PDF en maquette 3D</li>
+            <li>Chaque équipement retrouvé en quelques lettres</li>
+            <li>Le tracé de câble d'un point à l'autre, ascenseurs compris</li>
+          </ul>
+        </div>
+      </aside>
       <div className="login">
         <Brand />
-        <h1>Plans et équipements de vos bâtiments</h1>
+        <h1>Connexion</h1>
         {methods?.ldap && (
           <div className="seg" role="group" aria-label="Type de compte" style={{ alignSelf: 'center' }}>
             <button type="button" aria-pressed={mode === 'local'} onClick={() => setMode('local')}>Compte local</button>
@@ -75,6 +87,27 @@ export function LoginScreen({ onLogin }: { onLogin: (u: api.User) => void }) {
         )}
         <p className="muted small mono" style={{ textAlign: 'center', margin: 0 }}>Version {__APP_VERSION__}</p>
       </div>
+      </div>
     </div>
+  );
+}
+
+/** Illustration de l'écran de connexion : trois étages empilés et un tracé qui les relie. */
+function HeroArt() {
+  const floor = (y: number, o: number) => (
+    <g transform={`translate(0 ${y})`} opacity={o}>
+      <path d="M40 80 L160 20 L280 80 L160 140 Z" fill="rgba(255,255,255,.10)" stroke="rgba(255,255,255,.55)" strokeWidth="1.5" />
+      <path d="M90 80 L160 45 L230 80 M125 98 L195 62 M160 116 L230 80" fill="none" stroke="rgba(255,255,255,.35)" strokeWidth="1.2" />
+    </g>
+  );
+  return (
+    <svg className="login-art" viewBox="0 0 320 300">
+      {floor(150, 0.55)}
+      {floor(80, 0.75)}
+      {floor(10, 1)}
+      <path d="M110 245 L110 200 L160 175 L160 105 L200 85 L200 60" fill="none" stroke="#ffb547" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="110" cy="245" r="7" fill="#34d27b" stroke="#fff" strokeWidth="2" />
+      <circle cx="200" cy="60" r="7" fill="#ff6b5e" stroke="#fff" strokeWidth="2" />
+    </svg>
   );
 }
