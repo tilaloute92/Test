@@ -18,12 +18,19 @@
 
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
+import { readdirSync, existsSync } from 'node:fs'
+import { lireEquipement, verserDansSchema } from './snmp-topologie.mjs'
 
 const HELP = `Collecteur NetSchema
 
   --subnet <CIDR>          Balaye un réseau avec nmap (peut être répété)
   --snmp-community <nom>   Interroge chaque hôte trouvé en SNMP v2c (sysName, voisins LLDP)
+  --topologie              Avec --snmp-community : lit aussi les interfaces, les agrégats
+                           (ifStackTable) et le vPC — donne les ports des deux côtés
+  --walk <dossier>         Relit des captures snmpwalk déjà prises : un sous-dossier par
+                           équipement, contenant interfaces.txt, lldp.txt, lldp-local.txt,
+                           pile.txt et vpc.txt (tous facultatifs)
   --from <fichier...>      Relit des relevés déjà pris (nmap XML, LLDP/CDP, ARP)
   --title <texte>          Titre du schéma produit
   --out <fichier>          Fichier de sortie (défaut : netschema-decouverte.json)
@@ -34,12 +41,17 @@ Le fichier produit s'ouvre dans NetSchema avec « Ouvrir… ».`
 // ─── Arguments ───────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const options = { subnets: [], from: [], out: 'netschema-decouverte.json', title: 'Découverte réseau', community: null }
+  const options = {
+    subnets: [], from: [], out: 'netschema-decouverte.json', title: 'Découverte réseau',
+    community: null, topologie: false, walk: null,
+  }
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === '--help' || arg === '-h') return { help: true, ...options }
     else if (arg === '--subnet') options.subnets.push(argv[++i])
     else if (arg === '--snmp-community') options.community = argv[++i]
+    else if (arg === '--topologie') options.topologie = true
+    else if (arg === '--walk') options.walk = argv[++i]
     else if (arg === '--title') options.title = argv[++i]
     else if (arg === '--out') options.out = argv[++i]
     else if (arg === '--from') {
@@ -96,8 +108,17 @@ class Diagram {
 
   link(from, to, extra = {}) {
     if (from.id === to.id) return
-    const signature = [from.id, to.id].sort().join('~')
-    if (this.links.some((item) => [item.from, item.to].sort().join('~') === signature)) return
+    const paire = [from.id, to.id].sort().join('~')
+    const ports = [extra.portA ?? '', extra.portB ?? ''].join('~')
+    const signature = `${paire}|${ports}`
+    const anonyme = ports === '~'
+    const deja = this.links.some((item) => {
+      const p = [item.from, item.to].sort().join('~')
+      if (p !== paire) return false
+      if (anonyme) return true
+      return `${p}|${[item.portA ?? '', item.portB ?? ''].join('~')}` === signature
+    })
+    if (deja) return
     this.links.push({ id: uid('l'), from: from.id, to: to.id, kind: 'ethernet', layers: ['l1', 'l2'], ...extra })
   }
 
@@ -270,6 +291,91 @@ function snmpDetails(diagram, community) {
   }
 }
 
+/**
+ * Relecture de captures `snmpwalk` déjà prises.
+ *
+ * Un sous-dossier par équipement, son nom valant nom d'équipement à défaut de mieux. C'est
+ * la forme la plus commode pour travailler : on prend les captures une fois sur le réseau,
+ * et l'on rejoue le décodage autant de fois qu'il le faut sans retourner interroger quoi que
+ * ce soit. C'est aussi ce qui permet de corriger un décodage à distance, sur la foi d'une
+ * capture envoyée, plutôt qu'à l'aveugle.
+ */
+function lireCaptures(diagram, dossier) {
+  if (!existsSync(dossier)) throw new Error(`Dossier de captures introuvable : ${dossier}`)
+  const equipements = readdirSync(dossier, { withFileTypes: true }).filter((e) => e.isDirectory())
+  if (equipements.length === 0) {
+    console.warn(`  Aucun sous-dossier dans ${dossier} : un dossier par équipement est attendu.`)
+    return 0
+  }
+  let liaisons = 0
+  for (const entree of equipements) {
+    const base = join(dossier, entree.name)
+    const fichier = (nom) => {
+      for (const candidat of [`${nom}.txt`, `${nom}.log`, nom]) {
+        const chemin = join(base, candidat)
+        if (existsSync(chemin)) return readFileSync(chemin, 'utf8')
+      }
+      return undefined
+    }
+    const releve = lireEquipement({
+      interfaces: fichier('interfaces'),
+      lldpDistant: fichier('lldp'),
+      lldpLocal: fichier('lldp-local'),
+      pile: fichier('pile'),
+      vpc: fichier('vpc'),
+    })
+    const nom = nomSysteme(fichier('systeme')) ?? entree.name
+    liaisons += verserDansSchema(diagram, nom, releve)
+    console.log(`  ${nom} : ${releve.voisins.length} voisin(s), ${releve.agregats.length} agrégat(s)`)
+    for (const reserve of releve.reserves) console.warn(`    réserve — ${reserve}`)
+  }
+  return liaisons
+}
+
+/** Nom annoncé par l'équipement lui-même, s'il figure dans la capture. */
+function nomSysteme(texte) {
+  if (!texte) return undefined
+  const m = texte.match(/1\.3\.6\.1\.2\.1\.1\.5\.0\s*=\s*\w*:?\s*"?([^"\n]+)"?/)
+  return m?.[1]?.trim() || undefined
+}
+
+/**
+ * Interrogation en direct des tables de topologie.
+ *
+ * Trois sous-arbres par équipement, en lecture seule. C'est volontairement peu : un
+ * superviseur interroge déjà ces machines, et demander davantage rendrait l'autorisation
+ * plus difficile à obtenir qu'elle n'en vaut la peine.
+ */
+function snmpTopologie(diagram, community) {
+  if (!hasTool('snmpwalk')) {
+    console.warn('  snmpwalk absent : lecture de topologie ignorée.')
+    return 0
+  }
+  const walk = (ip, oid) => {
+    try {
+      return run('snmpwalk', ['-v2c', '-c', community, '-On', '-t', '2', '-r', '1', ip, oid])
+    } catch {
+      return ''
+    }
+  }
+  let liaisons = 0
+  for (const node of [...diagram.nodes]) {
+    if (!node.ip) continue
+    const releve = lireEquipement({
+      interfaces: walk(node.ip, '1.3.6.1.2.1.31.1.1.1'),
+      lldpDistant: walk(node.ip, '1.0.8802.1.1.2.1.4'),
+      lldpLocal: walk(node.ip, '1.0.8802.1.1.2.1.3.7.1.3'),
+      pile: walk(node.ip, '1.3.6.1.2.1.31.1.2.1.3'),
+      vpc: walk(node.ip, '1.3.6.1.4.1.9.9.807.1.1.1.1'),
+    })
+    if (releve.voisins.length === 0 && releve.agregats.length === 0) continue
+    liaisons += verserDansSchema(diagram, node.name, releve, { kindLocal: node.kind })
+    console.log(`  ${node.name} : ${releve.voisins.length} voisin(s), ${releve.agregats.length} agrégat(s)`)
+    for (const reserve of releve.reserves) console.warn(`    réserve — ${reserve}`)
+  }
+  return liaisons
+}
+
 // ─── Programme ───────────────────────────────────────────────────────────────
 
 function main() {
@@ -280,7 +386,7 @@ function main() {
     console.error(error.message)
     process.exit(2)
   }
-  if (options.help || (options.subnets.length === 0 && options.from.length === 0)) {
+  if (options.help || (options.subnets.length === 0 && options.from.length === 0 && !options.walk)) {
     console.log(HELP)
     process.exit(options.help ? 0 : 1)
   }
@@ -302,7 +408,14 @@ function main() {
   }
 
   for (const subnet of options.subnets) sweep(subnet, diagram)
-  if (options.community) snmpDetails(diagram, options.community)
+  if (options.walk) {
+    console.log('→ Relecture des captures snmpwalk')
+    lireCaptures(diagram, options.walk)
+  }
+  if (options.community && options.topologie) {
+    console.log('→ Lecture des tables de topologie')
+    snmpTopologie(diagram, options.community)
+  } else if (options.community) snmpDetails(diagram, options.community)
 
   writeFileSync(options.out, diagram.toFile(), 'utf8')
   console.log(`\n${diagram.nodes.length} équipement(s) et ${diagram.links.length} liaison(s) → ${options.out}`)
