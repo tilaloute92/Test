@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useStore } from '../store/useStore';
+import { LIBELLE_NATURE } from '../lib/journal';
 import { Avatar, Card, PrintButton, PrintHeader, RagBadge } from './ui';
 import { buildFlashReportMarkdown, computeFlashReport, ragLabels, type RagStatus } from '../lib/flashReport';
 import { exportFlashReportPptx } from '../lib/flashReportPptx';
@@ -130,8 +132,82 @@ export function FlashReportModal({
           <ListCard title="En retard" tasks={report.overdueTasks} members={members} empty="Aucune tâche en retard." showDue tone="danger" />
           <ListCard title="En attente / bloquées" tasks={report.waitingTasks} members={members} empty="Aucune tâche bloquée." tone="warning" />
         </div>
+
+        <JournalProjet project={project} tasks={tasks} />
       </div>
     </div>
+  );
+}
+
+/**
+ * Le fil du projet : la fusion chronologique des journaux de ses tâches.
+ *
+ * En lecture seule, et c'est délibéré. Un projet n'est pas un objet dans cette
+ * application, c'est un champ texte qui regroupe des tâches : il n'y a donc rien à quoi
+ * rattacher une note « de projet ». Fusionner les fils existants donne tout de même ce
+ * qu'on vient chercher — l'histoire du projet, d'un seul tenant — sans inventer un objet
+ * dont il faudrait ensuite gérer la vie, la suppression et les droits.
+ */
+function JournalProjet({ project, tasks }: { project: string; tasks: ProjectTask[] }) {
+  const journalEntries = useStore((s) => s.journalEntries);
+  const [tout, setTout] = useState(false);
+
+  const entrees = useMemo(() => {
+    const titres = new Map(tasks.filter((t) => t.project === project).map((t) => [t.id, t.title]));
+    return journalEntries
+      .filter((e) => titres.has(e.taskId))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((e) => ({ ...e, tache: titres.get(e.taskId) ?? '' }));
+  }, [journalEntries, tasks, project]);
+
+  const notes = entrees.filter((e) => e.nature === 'note');
+  // Par défaut, les notes seules : sur un projet de vingt tâches, les changements
+  // automatiques noieraient ce que les gens ont écrit, qui est ce qu'on vient lire ici.
+  const visibles = tout ? entrees : notes;
+
+  return (
+    <Card className="mt-4 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Journal du projet — {notes.length} note(s) sur {entrees.length} entrée(s)
+        </h3>
+        {entrees.length > notes.length && (
+          <button
+            onClick={() => setTout((t) => !t)}
+            className="text-xs text-slate-500 hover:text-violet-600 hover:underline print:hidden dark:text-slate-400 dark:hover:text-violet-400"
+          >
+            {tout ? 'Notes seules' : 'Afficher aussi les changements'}
+          </button>
+        )}
+      </div>
+      {visibles.length === 0 ? (
+        <p className="text-xs text-slate-400">
+          Rien d'écrit sur les tâches de ce projet. Les notes se saisissent dans la fenêtre de chaque tâche.
+        </p>
+      ) : (
+        <ol className="space-y-2">
+          {visibles.slice(0, 20).map((e) => (
+            <li key={e.id} className="border-l-2 border-slate-100 pl-2.5 dark:border-slate-800">
+              <div className="flex flex-wrap items-baseline gap-x-2 text-xs">
+                <span className="font-medium text-slate-700 dark:text-slate-200">{e.auteur || 'Inconnu'}</span>
+                <span className="text-slate-400">{new Date(e.createdAt).toLocaleDateString('fr-FR')}</span>
+                <span className="min-w-0 truncate text-slate-400">· {e.tache}</span>
+              </div>
+              {e.nature === 'note' ? (
+                <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">{e.texte}</p>
+              ) : (
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  {LIBELLE_NATURE[e.nature]} : <span className="text-slate-400 line-through">{e.de}</span> → {e.vers}
+                </p>
+              )}
+            </li>
+          ))}
+          {visibles.length > 20 && (
+            <li className="text-xs text-slate-400">+ {visibles.length - 20} entrée(s) plus anciennes, dans le fil de chaque tâche.</li>
+          )}
+        </ol>
+      )}
+    </Card>
   );
 }
 
