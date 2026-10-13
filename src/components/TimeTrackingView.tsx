@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
+import { ChargeHistoryCard } from './ChargeHistoryCard';
 import { addDays, formatDateLong, formatWeekRange, getWorkingDaysOfWeek, isWeekend, startOfWeek, toISODate } from '../lib/date';
 import { getTaskById } from '../lib/selectors';
 import { Avatar, Card, ModeSwitcher, PrintButton, PrintHeader } from './ui';
@@ -132,6 +133,11 @@ export function TimeTrackingView() {
           </button>
         </div>
       </div>
+
+      {/* L'historique est hors du sélecteur de fenêtre : il a le sien (3/6/12 mois), et il
+          répond à une autre question que le reste de l'onglet — non pas « qu'avons-nous
+          fait cette semaine », mais « la part de MCO augmente-t-elle depuis six mois ». */}
+      <ChargeHistoryCard timeEntries={timeEntries} tasks={tasks} members={members} absences={absences} />
 
       {mode !== 'personne' && (
         <GroupesCard groupes={groupes} members={members} mode={mode} fenetre={FENETRES.find((f) => f.cle === fenetre)?.label ?? ''} />
