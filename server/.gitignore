@@ -3,4 +3,6 @@ node_modules
 data/users.json
 data/config.json
 data/business-*.json
+# État d'exécution du planificateur d'envoi : propre à l'installation, pas au dépôt.
+data/mail-state.json
 *.log

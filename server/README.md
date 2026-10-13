@@ -40,6 +40,45 @@ destinataire). Pour un envoi automatique quotidien, renseignez `DAILY_MAIL_AT` (
 `HH:MM`, heure du serveur). Si le service est arrêté à l'heure dite, l'envoi part au
 redémarrage le même jour plutôt que d'être sauté, et jamais deux fois dans la journée.
 
+## Rapport de réunion par mail
+
+Le même relais SMTP sert à envoyer le **rapport de réunion** préparé dans l'onglet Rapport
+(bouton « Envoyer par mail… »). Un seul message, à tous les destinataires en copie visible :
+contrairement au programme du jour, qui est personnel et part donc en autant de messages que
+de personnes, le rapport est le même pour tout le monde et les destinataires ont intérêt à
+savoir qui d'autre l'a reçu.
+
+Le corps du message est la **synthèse** (lisible sur un téléphone) ; le **document complet**
+est joint en fichier `.html` autonome, qui s'ouvre d'un double-clic et s'imprime en PDF. Pas
+de PDF généré côté serveur : cela imposerait d'embarquer un navigateur sans interface
+(≈ 300 Mo à installer et à maintenir) pour un résultat que l'impression du fichier joint
+donne déjà.
+
+Le navigateur envoie au serveur des **chiffres et des libellés déjà calculés**, jamais du
+HTML (voir `src/lib/reunionPayload.ts` côté application et `src/mail/reunionReport.js` ici) :
+c'est le serveur qui met en page et qui échappe le contenu. Refaire le calcul côté serveur
+imposerait de maintenir deux fois la même logique métier, et un rapport envoyé qui ne dit pas
+la même chose que l'écran serait pire que pas de rapport du tout.
+
+Routes (toutes derrière une session, voir `src/routes/mail.js`) :
+
+| Route | Rôle |
+|---|---|
+| `GET /api/mail/rapport-reunion/config` | destinataires extérieurs enregistrés, trace du dernier envoi |
+| `PUT /api/mail/rapport-reunion/config` | modifie cette liste — **administrateur uniquement** : ajouter une adresse, c'est décider qui reçoit l'activité de l'équipe |
+| `POST /api/mail/rapport-reunion/apercu` | qui serait joignable, sans rien envoyer |
+| `POST /api/mail/rapport-reunion/document` | le document complet en HTML (bouton « Télécharger ») |
+| `POST /api/mail/rapport-reunion` | l'envoi |
+| `GET /api/mail/rapport-reunion/envois` | historique (30 derniers) |
+| `GET /api/mail/rapport-reunion/envois/:id` | le document **tel qu'il est parti** |
+
+Les envois sont conservés dans `data/config.json`, document compris : un rapport se
+recalcule, un envoi non — c'est la seule trace de ce qu'on avait annoncé en octobre quand on
+le relit en novembre. Les trente derniers sont gardés, au-delà les plus anciens sont oubliés.
+
+Déclenchement **à la demande uniquement** : il n'y a pas d'équivalent de `DAILY_MAIL_AT` pour
+le rapport de réunion. Rien ne part sans un clic, après relecture et choix des destinataires.
+
 ## Déploiement en production
 
 Voir [`../DEPLOYMENT.md`](../DEPLOYMENT.md), section "Service Windows + authentification" : ce service tourne en tâche de fond (Windows Service via NSSM) et IIS lui relaie les appels `/api/*`, tout en continuant de servir le reste de l'application en HTTPS.

@@ -7,6 +7,9 @@ import { sendDailyProgrammes } from '../mail/send.js';
 import { getMailState } from '../mail/scheduler.js';
 import { buildProgramme, renderSubject, renderText, toISODate } from '../mail/dailyProgramme.js';
 import { getSnapshot } from '../businessData.js';
+import { envoyerRapportReunion, resoudreDestinataires, verifierPayload } from '../mail/sendReunion.js';
+import { getReunionConfig, lireEnvoi, listerEnvois, setDestinatairesExternes } from '../mail/reunionConfig.js';
+import { renderDocument } from '../mail/reunionReport.js';
 
 export const mailRouter = Router();
 
@@ -117,4 +120,70 @@ mailRouter.post('/daily-programme', async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
+});
+
+// ------------------------------------------------------- Rapport de réunion
+//
+// Le navigateur envoie le rapport MIS À PLAT (chiffres et libellés, jamais du HTML) :
+// c'est le serveur qui met en page et qui échappe. Voir src/lib/reunionPayload.ts côté
+// application et src/mail/reunionReport.js ici.
+
+/** Liste des destinataires extérieurs enregistrés, et trace du dernier envoi. */
+mailRouter.get('/rapport-reunion/config', (_req, res) => {
+  res.json(getReunionConfig());
+});
+
+/**
+ * Modifier la liste des adresses extérieures est réservé à l'administrateur : ajouter une
+ * adresse, c'est décider qui reçoit l'activité de l'équipe. Déclencher un envoi vers la
+ * liste existante reste ouvert à tous — c'est l'usage normal.
+ */
+mailRouter.put('/rapport-reunion/config', requireAdmin, (req, res) => {
+  const adresses = Array.isArray(req.body?.destinatairesExternes) ? req.body.destinatairesExternes : [];
+  if (adresses.length > 50) return res.status(400).json({ error: 'Cinquante adresses extérieures au maximum.' });
+  const invalide = adresses.find((a) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(a).trim()));
+  if (invalide) return res.status(400).json({ error: `Adresse invalide : ${invalide}` });
+  res.json({ destinatairesExternes: setDestinatairesExternes(adresses) });
+});
+
+/** Le document complet en HTML, sans rien envoyer : sert au bouton « Télécharger ». */
+mailRouter.post('/rapport-reunion/document', (req, res) => {
+  const souci = verifierPayload(req.body?.payload);
+  if (souci) return res.status(400).json({ error: souci });
+  res.type('html').send(renderDocument(req.body.payload));
+});
+
+/** Qui recevrait quoi, sans envoyer : la fenêtre d'envoi s'en sert pour annoncer les
+ *  personnes sans adresse AVANT le clic, et non par un échec après. */
+mailRouter.post('/rapport-reunion/apercu', (req, res) => {
+  res.json({ destinataires: resoudreDestinataires(req.body?.destinataires ?? {}) });
+});
+
+mailRouter.post('/rapport-reunion', async (req, res) => {
+  try {
+    const { payload, destinataires, objet, joindreDocument } = req.body || {};
+    res.json(
+      await envoyerRapportReunion({
+        payload,
+        destinataires,
+        objet,
+        joindreDocument: joindreDocument !== false,
+        par: req.user?.name || req.user?.sub || '',
+      })
+    );
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+/** Historique : ce qui est RÉELLEMENT parti, document compris. Un rapport se recalcule,
+ *  un envoi non — c'est la seule trace de ce qu'on avait annoncé. */
+mailRouter.get('/rapport-reunion/envois', (_req, res) => {
+  res.json({ envois: listerEnvois() });
+});
+
+mailRouter.get('/rapport-reunion/envois/:id', (req, res) => {
+  const envoi = lireEnvoi(req.params.id);
+  if (!envoi) return res.status(404).json({ error: 'Envoi inconnu.' });
+  res.type('html').send(envoi.document || '<p>Document non conservé.</p>');
 });

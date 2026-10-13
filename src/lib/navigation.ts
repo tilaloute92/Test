@@ -49,7 +49,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Pilotage',
     entries: [
-      { id: 'report', label: 'Rapport hebdomadaire', short: 'Rapport', icon: '▤', description: 'Synthèse de la semaine' },
+      { id: 'report', label: 'Rapport de réunion', short: 'Rapport', icon: '▤', description: 'Réunion d’équipe : météo, incidents, projets, deux semaines à venir' },
       { id: 'roadmap', label: 'Feuille de route', short: 'FDR', icon: '◈', description: 'Initiatives par trimestre' },
       { id: 'copils', label: 'COPIL', short: 'COPIL', icon: '◎', description: 'Séances, ordres du jour, actions' },
     ],

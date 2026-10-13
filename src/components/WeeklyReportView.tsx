@@ -1,518 +1,230 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { addDays, formatDateLong, formatWeekRange, getWorkingDaysOfWeek, isToday, startOfWeek } from '../lib/date';
-import { buildMarkdownReport, computeWeeklyReport, weatherMeta, type WeeklyReport } from '../lib/weeklyReport';
+import { addDays, formatWeekRange, startOfWeek } from '../lib/date';
+import { computeMeetingReport } from '../lib/meetingReport';
+import { buildMarkdownReport } from '../lib/weeklyReport';
+import { buildReunionPayload } from '../lib/reunionPayload';
 import { exportWeeklyReportPptx } from '../lib/weeklyReportPptx';
-import { Avatar, Card, ModeSwitcher, RoadmapDomainBadge, WorkloadBar, WorkloadPill } from './ui';
+import { fetchDocumentReunion } from '../lib/mailApi';
+import { isServerMode } from '../lib/serverMode';
+import { getStoredMemberId } from '../lib/identity';
+import { ModeSwitcher } from './ui';
+import { ReunionDocument } from './ReunionDocument';
+import { ReunionProjection } from './ReunionProjection';
+import { ReunionSynthese } from './ReunionSynthese';
+import { SendReunionModal } from './SendReunionModal';
 import { useViewMode } from '../hooks/useViewMode';
-import { workloadColors, type WorkloadLevel } from '../lib/workload';
-import type { ProjectTask, TeamMember } from '../types';
 
 const TEAM_LABEL = 'Équipe Infrastructure & Réseau';
 
-const REPORT_VIEW_MODES = ['detaille', 'resume', 'presentation'] as const;
-type ReportViewMode = (typeof REPORT_VIEW_MODES)[number];
+/**
+ * Rapport de réunion d'équipe.
+ *
+ * Trois vues des mêmes chiffres, selon ce qu'on en fait : le relire et l'imprimer
+ * (Réunion), le projeter dans la salle (Projection), l'envoyer à qui n'y était pas
+ * (Synthèse). Un seul calcul derrière — basculer d'une vue à l'autre ne change jamais
+ * un nombre, sans quoi personne ne saurait laquelle croire.
+ *
+ * Il n'y a rien à « générer » : le rapport est recalculé à l'ouverture. Un rapport
+ * enregistré serait un rapport périmé, et personne ne saurait dire de quand datent ses
+ * chiffres. Seul un ENVOI laisse une trace, parce que lui ne doit plus bouger.
+ */
 
-const roadmapStatusLabels: Record<string, string> = {
-  idee: 'Idée',
-  planifie: 'Planifié',
-  en_cours: 'En cours',
-  termine: 'Terminé',
-  reporte: 'Reporté',
-  abandonne: 'Abandonné',
-};
-
-function assigneeNames(task: ProjectTask, members: TeamMember[]): string {
-  const names = task.assigneeIds.map((id) => members.find((m) => m.id === id)?.name).filter((n): n is string => Boolean(n));
-  return names.length > 0 ? names.join(', ') : 'Non assigné';
-}
+const VUES = ['reunion', 'projection', 'synthese'] as const;
+type Vue = (typeof VUES)[number];
 
 export function WeeklyReportView() {
   const { members, tasks, timeEntries, absences, planningSlots, roadmapItems } = useStore();
   const [weekOffset, setWeekOffset] = useState(0);
-  const [mode, setMode] = useViewMode<ReportViewMode>('rapport', REPORT_VIEW_MODES, 'detaille');
+  const [vue, setVue] = useViewMode<Vue>('rapport-reunion', VUES, 'reunion');
   const [copied, setCopied] = useState(false);
-  const [pptxBusy, setPptxBusy] = useState(false);
-  const [pptxError, setPptxError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<'' | 'pptx' | 'html'>('');
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [envoiOuvert, setEnvoiOuvert] = useState(false);
 
-  const weekStart = startOfWeek(addDays(new Date(), weekOffset * 7));
-  const weekDays = getWorkingDaysOfWeek(weekStart);
-  const nextWeekDays = getWorkingDaysOfWeek(addDays(weekStart, 7));
+  // La date est réduite à un nombre : un objet Date recréé à chaque rendu relancerait le
+  // calcul en boucle à travers useMemo.
+  const debutMs = startOfWeek(addDays(new Date(), weekOffset * 7)).getTime();
 
   const report = useMemo(
-    () => computeWeeklyReport({ weekDays, nextWeekDays, members, tasks, timeEntries, absences, planningSlots, roadmapItems }),
-    [weekDays, nextWeekDays, members, tasks, timeEntries, absences, planningSlots, roadmapItems]
+    () =>
+      computeMeetingReport({
+        debutSemaine: new Date(debutMs),
+        members,
+        tasks,
+        timeEntries,
+        absences,
+        planningSlots,
+        roadmapItems,
+      }),
+    [debutMs, members, tasks, timeEntries, absences, planningSlots, roadmapItems]
   );
 
-  const weather = weatherMeta[report.weather];
+  // Qui signe le document. Le choix mémorisé dans « Ma journée » sert de source : il a
+  // déjà été confirmé par la personne, contrairement à un rapprochement automatique.
+  const auteur = useMemo(() => {
+    const id = getStoredMemberId();
+    return members.find((m) => m.id === id)?.name ?? '';
+  }, [members]);
 
-  const copyMarkdown = async () => {
-    const md = buildMarkdownReport(report, TEAM_LABEL, members);
+  const construirePayload = ({ mot, pointsRetires }: { mot: string; pointsRetires: string[] }) =>
+    buildReunionPayload({ report, members, teamLabel: TEAM_LABEL, auteur, mot, pointsRetires });
+
+  const copierMarkdown = async () => {
     try {
-      await navigator.clipboard.writeText(md);
+      await navigator.clipboard.writeText(buildMarkdownReport(report.hebdo, TEAM_LABEL, members));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Le presse-papiers peut être refusé par le navigateur (contexte non sécurisé, permission) —
-      // dans ce cas on n'affiche simplement pas la confirmation, plutôt que de faire planter la page.
+      // Presse-papiers refusé (contexte non sécurisé, permission) : pas de confirmation,
+      // plutôt qu'un plantage.
     }
   };
 
-  const exportPptx = async () => {
-    setPptxError(null);
-    setPptxBusy(true);
+  const exporterPptx = async () => {
+    setErreur(null);
+    setBusy('pptx');
     try {
-      await exportWeeklyReportPptx({ report, members, teamLabel: TEAM_LABEL });
-    } catch (err) {
-      setPptxError(err instanceof Error ? err.message : String(err));
+      await exportWeeklyReportPptx({ report: report.hebdo, members, teamLabel: TEAM_LABEL });
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
     } finally {
-      setPptxBusy(false);
+      setBusy('');
+    }
+  };
+
+  /**
+   * Le document en un fichier autonome, qui s'ouvre d'un double-clic et s'imprime en PDF.
+   *
+   * En mode client/serveur il est rendu par le SERVEUR, exactement comme la pièce jointe
+   * du message : ce qu'on télécharge est alors ce que les destinataires recevront. Sans
+   * serveur, on sérialise ce qui est à l'écran — c'est possible parce que le document
+   * n'utilise que des styles en ligne, sans la moindre classe ni feuille de style.
+   */
+  const telecharger = async () => {
+    setErreur(null);
+    setBusy('html');
+    try {
+      let html: string;
+      if (isServerMode()) {
+        html = await fetchDocumentReunion(construirePayload({ mot: '', pointsRetires: [] }));
+      } else {
+        const noeud = document.getElementById('document-reunion');
+        if (!noeud) throw new Error('Passez sur la vue Réunion ou Synthèse avant de télécharger le document.');
+        html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Réunion d'équipe — ${TEAM_LABEL}</title><style>@page{size:A4;margin:12mm}body{margin:0;padding:16px;background:#f1f5f9}</style></head><body>${noeud.outerHTML}</body></html>`;
+      }
+      const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reunion-${formatWeekRange(report.semaineEcoulee).replace(/[^0-9a-zA-Z]+/g, '-')}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy('');
     }
   };
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+      <div className="flex flex-wrap items-start justify-between gap-3 print:hidden">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Rapport hebdomadaire</h1>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Rapport de réunion</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            {TEAM_LABEL} · semaine du {formatWeekRange(weekDays)}
+            {TEAM_LABEL} · semaine écoulée du {formatWeekRange(report.semaineEcoulee)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5 text-sm dark:bg-slate-800">
+            <button onClick={() => setWeekOffset((w) => w - 1)} className="rounded-md px-2 py-1 text-slate-500" title="Semaine précédente">
+              ◀
+            </button>
+            <button onClick={() => setWeekOffset(0)} className="rounded-md px-2.5 py-1 text-slate-600 dark:text-slate-300">
+              {weekOffset === 0 ? 'Semaine en cours' : 'Revenir à la semaine en cours'}
+            </button>
+            <button onClick={() => setWeekOffset((w) => w + 1)} className="rounded-md px-2 py-1 text-slate-500" title="Semaine suivante">
+              ▶
+            </button>
+          </div>
           <ModeSwitcher
-            value={mode}
-            onChange={setMode}
+            value={vue}
+            onChange={setVue}
             options={[
-              { value: 'detaille', label: 'Détaillé', title: 'Toutes les sections (vue par défaut)' },
-              { value: 'resume', label: 'Résumé', title: "Condensé sur un écran : l'essentiel seulement" },
-              { value: 'presentation', label: 'Présentation', title: 'Grand format, pensé pour être projeté en réunion' },
+              { value: 'reunion', label: 'Réunion', title: 'Document complet, imprimable et joint au message' },
+              { value: 'projection', label: 'Projection', title: "Grand format, une section par écran, pour l'écran de la salle" },
+              { value: 'synthese', label: 'Synthèse', title: "Une page, pour qui n'était pas dans la salle" },
             ]}
           />
-          <button onClick={() => setWeekOffset((w) => w - 1)} className="btn-ghost">◀ Semaine préc.</button>
-          <button onClick={() => setWeekOffset(0)} className="btn-ghost">Semaine en cours</button>
-          <button onClick={() => setWeekOffset((w) => w + 1)} className="btn-ghost">Semaine suiv. ▶</button>
-          <button onClick={copyMarkdown} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
-            {copied ? 'Copié ✓' : 'Copier en Markdown'}
-          </button>
-          <button onClick={() => window.print()} className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700">
-            Imprimer / Enregistrer en PDF
-          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 print:hidden">
+        {isServerMode() ? (
           <button
-            onClick={exportPptx}
-            disabled={pptxBusy}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            onClick={() => setEnvoiOuvert(true)}
+            className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700"
           >
-            {pptxBusy ? 'Génération…' : 'Exporter PowerPoint'}
+            ✉ Envoyer par mail…
           </button>
-        </div>
+        ) : (
+          /* Sans serveur, aucun relais SMTP n'est joignable : plutôt qu'un bouton sans
+             effet, on dit ce qui reste possible. */
+          <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+            Envoi par mail indisponible en mode autonome — téléchargez le document et joignez-le à votre message.
+          </span>
+        )}
+        <button onClick={() => window.print()} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+          Imprimer / PDF
+        </button>
+        <button
+          onClick={() => void telecharger()}
+          disabled={busy === 'html'}
+          className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          {busy === 'html' ? 'Préparation…' : 'Télécharger (.html)'}
+        </button>
+        <button onClick={() => void copierMarkdown()} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+          {copied ? 'Copié ✓' : 'Copier en Markdown'}
+        </button>
+        <button
+          onClick={() => void exporterPptx()}
+          disabled={busy === 'pptx'}
+          className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          {busy === 'pptx' ? 'Génération…' : 'Exporter PowerPoint'}
+        </button>
+        <span className="text-xs text-slate-400">Chiffres arrêtés à l'instant — le rapport se recalcule à chaque ouverture.</span>
       </div>
 
-      <p className="text-xs text-slate-400 print:hidden">
-        Pensé pour être généré le vendredi, en fin de semaine. L'application n'ayant pas de serveur, l'envoi n'est pas automatique :
-        générez le rapport ici puis partagez-le via "Copier en Markdown" (e-mail, Teams...), "Imprimer / Enregistrer en PDF" ou "Exporter
-        PowerPoint" (fichier .pptx généré dans votre navigateur, sans macro ni image intégrée — voir la section Sécurité du README).
-      </p>
-      {pptxError && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 print:hidden dark:bg-red-500/10 dark:text-red-300">
-          Échec de la génération du PowerPoint : {pptxError}
-        </p>
+      {erreur && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 print:hidden dark:bg-red-500/10 dark:text-red-300">{erreur}</p>
       )}
 
-      {/* En-tête imprimable, masqué à l'écran */}
-      <div className="hidden print:block">
-        <h1 className="text-xl font-bold">Rapport hebdomadaire — {TEAM_LABEL}</h1>
-        <p className="text-sm text-slate-500">
-          Semaine du {formatWeekRange(weekDays)} · généré le {formatDateLong(new Date())}
-        </p>
-      </div>
-
-      {mode === 'resume' && <ReportSummary report={report} members={members} />}
-      {mode === 'presentation' && <ReportPresentation report={report} members={members} weekDays={weekDays} />}
-
-      {mode === 'detaille' && (
-      <>
-      {/* Météo de la semaine */}
-      <Card className="p-5">
-        <div className="flex items-center gap-4">
-          <span className="text-5xl leading-none">{weather.emoji}</span>
-          <div>
-            <div className="text-lg font-semibold text-slate-900 dark:text-white">Météo de la semaine : {weather.label}</div>
-            <ul className="mt-1 space-y-0.5 text-xs text-slate-500 dark:text-slate-400">
-              {report.weatherFactors.map((f) => (
-                <li key={f}>• {f}</li>
-              ))}
-            </ul>
-          </div>
+      {vue === 'reunion' && (
+        <div className="overflow-x-auto rounded-xl bg-slate-200/60 p-4 print:overflow-visible print:bg-white print:p-0 dark:bg-slate-800">
+          <ReunionDocument report={report} members={members} teamLabel={TEAM_LABEL} auteur={auteur} />
         </div>
-      </Card>
-
-      {/* KPIs */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <Kpi label="Charge moyenne équipe" value={`${Math.round(report.avgWorkloadRatio * 100)}%`} accent="text-violet-600 dark:text-violet-400" />
-        <Kpi label="Heures saisies" value={`${report.totalHoursLogged}h / ${report.totalHoursTarget}h`} accent="text-slate-700 dark:text-slate-200" />
-        <Kpi label="Tâches terminées" value={report.tasksCompleted.length} accent="text-emerald-600 dark:text-emerald-400" />
-        <Kpi label="Incidents critiques ouverts" value={report.openCriticalIncidents.length} accent="text-red-600 dark:text-red-400" />
-        <Kpi label="Tâches en retard" value={report.overdueTasks.length} accent="text-amber-600 dark:text-amber-400" />
-      </div>
-
-      {/* Charge par personne */}
-      <Card className="p-4">
-        <h2 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Charge par personne</h2>
-        <div className="space-y-3">
-          {report.perMember.map((p) => (
-            /* Cinq colonnes de largeur fixe se suivaient sans jamais se replier : 36 px
-               d'avatar + 144 + 48 + 96 + 112, soit plus que la largeur d'un téléphone avant
-               même la barre de charge. Le nom devient élastique et la barre passe à la ligne
-               en dessous de 640 px, plutôt que de pousser le reste hors de l'écran. */
-            <div key={p.member.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <Avatar name={p.member.name} color={p.member.color} initials={p.member.initials} size={26} />
-              <span className="min-w-0 flex-1 truncate text-sm text-slate-700 sm:w-36 sm:flex-none dark:text-slate-200">{p.member.name}</span>
-              <div className="order-last w-full sm:order-none sm:w-auto sm:flex-1">
-                <WorkloadBar ratio={p.workloadRatio} level={p.workloadLevel} />
-              </div>
-              <span className="w-12 shrink-0 text-right text-xs tabular-nums text-slate-500 dark:text-slate-400">{Math.round(p.workloadRatio * 100)}%</span>
-              <div className="shrink-0 text-right sm:w-24">
-                <WorkloadPill level={p.workloadLevel} />
-              </div>
-              <span className="shrink-0 text-right text-xs text-slate-400 sm:w-28">{p.tasksCompleted.length} terminée(s)</span>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* État de la feuille de route (FDR) */}
-      {report.roadmap.total > 0 && (
-        <Card className="p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Feuille de route (FDR) — {report.roadmap.year}</h2>
-            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-              {(['idee', 'planifie', 'en_cours', 'termine', 'reporte', 'abandonne'] as const)
-                .filter((s) => report.roadmap.byStatus[s] > 0)
-                .map((s) => (
-                  <span key={s}>
-                    {roadmapStatusLabels[s]} : <strong className="text-slate-700 dark:text-slate-200">{report.roadmap.byStatus[s]}</strong>
-                  </span>
-                ))}
-            </div>
-          </div>
-
-          {report.roadmap.inProgress.length === 0 ? (
-            <p className="text-xs text-slate-400">Aucune initiative "En cours" pour {report.roadmap.year}.</p>
-          ) : (
-            <div className="space-y-2">
-              {report.roadmap.inProgress.map((r) => (
-                <div key={r.id} className="flex items-center gap-3">
-                  <RoadmapDomainBadge domain={r.domain} />
-                  <span className="min-w-0 flex-1 truncate text-sm text-slate-700 dark:text-slate-200">{r.title}</span>
-                  <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                    <div className="h-full rounded-full bg-violet-500" style={{ width: `${Math.max(0, Math.min(r.progress, 100))}%` }} />
-                  </div>
-                  <span className="w-10 shrink-0 text-right text-xs tabular-nums text-slate-500 dark:text-slate-400">{r.progress}%</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {report.roadmap.notStartedButDue.length > 0 && (
-            <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-500/10">
-              <p className="mb-1 text-xs font-medium text-amber-700 dark:text-amber-300">
-                Pas encore démarrée(s) alors que le trimestre cible est atteint :
-              </p>
-              <ul className="space-y-0.5 text-xs text-amber-700 dark:text-amber-300">
-                {report.roadmap.notStartedButDue.map((r) => (
-                  <li key={r.id}>
-                    {r.title} ({r.domain}, {r.quarter})
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </Card>
       )}
+      {vue === 'projection' && <ReunionProjection report={report} members={members} teamLabel={TEAM_LABEL} />}
+      {vue === 'synthese' && <ReunionSynthese report={report} members={members} teamLabel={TEAM_LABEL} auteur={auteur} />}
 
-      {/* Faits marquants */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <Card className="p-4">
-          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-white">Incidents critiques/hauts encore ouverts</h2>
-          {report.openCriticalIncidents.length === 0 ? (
-            <p className="text-xs text-slate-400">Aucun — rien de bloquant en attente.</p>
-          ) : (
-            <ul className="space-y-1.5 text-sm">
-              {report.openCriticalIncidents.map((t) => (
-                <li key={t.id} className="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-200">
-                  <span className="truncate">{t.title}</span>
-                  <span className="shrink-0 text-xs text-slate-400">{assigneeNames(t, members)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        <Card className="p-4">
-          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-white">Terminé cette semaine ({report.tasksCompleted.length})</h2>
-          {report.tasksCompleted.length === 0 ? (
-            <p className="text-xs text-slate-400">Aucune tâche clôturée cette semaine.</p>
-          ) : (
-            <ul className="space-y-1.5 text-sm">
-              {report.tasksCompleted.map((t) => (
-                <li key={t.id} className="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-200">
-                  <span className="truncate">{t.title}</span>
-                  <span className="shrink-0 text-xs text-slate-400">{assigneeNames(t, members)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        <Card className="p-4">
-          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-white">Tâches en retard</h2>
-          {report.overdueTasks.length === 0 ? (
-            <p className="text-xs text-slate-400">Aucune — tout est dans les temps.</p>
-          ) : (
-            <ul className="space-y-1.5 text-sm">
-              {report.overdueTasks.map((t) => (
-                <li key={t.id} className="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-200">
-                  <span className="truncate">{t.title}</span>
-                  <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">échéance {t.dueDate}</span>
-                  <span className="shrink-0 text-xs text-slate-400">{assigneeNames(t, members)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        <Card className="p-4">
-          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-white">Semaine prochaine</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Planning déjà rempli à <strong>{Math.round(report.nextWeekFillRatio * 100)}%</strong>
-          </p>
-          {report.nextWeekAbsences.length === 0 ? (
-            <p className="mt-1 text-xs text-slate-400">Aucune absence prévue.</p>
-          ) : (
-            <ul className="mt-1 space-y-1 text-xs text-slate-500 dark:text-slate-400">
-              {report.nextWeekAbsences.map((a) => {
-                const m = members.find((mm) => mm.id === a.memberId);
-                return (
-                  <li key={a.id}>
-                    {m?.name ?? '—'} — {a.label ?? a.type} ({a.date})
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Card>
-      </div>
-
-      <p className="text-center text-[11px] text-slate-300 dark:text-slate-600">
-        Rapport généré par Suivi Infra & Réseau · {isToday(new Date()) ? "aujourd'hui" : ''} {formatDateLong(new Date())}
-      </p>
-      </>
+      {envoiOuvert && (
+        <SendReunionModal
+          report={report}
+          members={members}
+          construirePayload={construirePayload}
+          isAdmin={estAdmin()}
+          onClose={() => setEnvoiOuvert(false)}
+        />
       )}
     </div>
   );
 }
 
-function Kpi({ label, value, accent }: { label: string; value: string | number; accent: string }) {
-  return (
-    <Card className="p-4">
-      <div className={`text-2xl font-semibold tabular-nums ${accent}`}>{value}</div>
-      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{label}</div>
-    </Card>
-  );
-}
-
-/** Ligne "N autres" quand une liste condensée est tronquée — jamais un simple "..." muet sur le nombre restant. */
-function Overflow({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return <li className="text-slate-400">+ {count} autre{count > 1 ? 's' : ''}</li>;
-}
-
-/**
- * Vue Résumé : pensée pour être lue en moins d'une minute — météo, indicateurs clés et
- * seulement les 3 points les plus urgents de chaque catégorie (le détail complet reste
- * dans la vue Détaillé, à un clic).
- */
-function ReportSummary({ report, members }: { report: WeeklyReport; members: TeamMember[] }) {
-  const weather = weatherMeta[report.weather];
-  const workloadCounts = report.perMember.reduce(
-    (acc, p) => {
-      acc[p.workloadLevel] = (acc[p.workloadLevel] ?? 0) + 1;
-      return acc;
-    },
-    {} as Record<WorkloadLevel, number>
-  );
-
-  return (
-    <div className="space-y-3">
-      <div className="hidden print:block">
-        <h1 className="text-xl font-bold">Rapport hebdomadaire (résumé) — {TEAM_LABEL}</h1>
-      </div>
-
-      <Card className="flex flex-wrap items-center gap-4 p-4">
-        <span className="text-4xl leading-none">{weather.emoji}</span>
-        <div className="min-w-0 flex-1">
-          <div className="text-base font-semibold text-slate-900 dark:text-white">{weather.label}</div>
-          <p className="truncate text-xs text-slate-500 dark:text-slate-400">{report.weatherFactors[0] ?? 'Rien à signaler de particulier.'}</p>
-        </div>
-      </Card>
-
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Kpi label="Charge moyenne" value={`${Math.round(report.avgWorkloadRatio * 100)}%`} accent="text-violet-600 dark:text-violet-400" />
-        <Kpi label="Incidents critiques" value={report.openCriticalIncidents.length} accent="text-red-600 dark:text-red-400" />
-        <Kpi label="Tâches en retard" value={report.overdueTasks.length} accent="text-amber-600 dark:text-amber-400" />
-        <Kpi label="Terminées" value={report.tasksCompleted.length} accent="text-emerald-600 dark:text-emerald-400" />
-      </div>
-
-      <Card className="p-4">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Charge d'équipe</h2>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600 dark:text-slate-300">
-          {(Object.entries(workloadCounts) as [WorkloadLevel, number][]).map(([level, count]) => (
-            <span key={level}>
-              <strong className="text-slate-900 dark:text-white">{count}</strong> {workloadColors[level].label.toLowerCase()}
-              {count > 1 ? 's' : ''}
-            </span>
-          ))}
-        </div>
-      </Card>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Card className="p-4">
-          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-white">À traiter en priorité</h2>
-          {report.openCriticalIncidents.length === 0 ? (
-            <p className="text-xs text-slate-400">Aucun incident critique ouvert.</p>
-          ) : (
-            <ul className="space-y-1 text-sm text-slate-700 dark:text-slate-200">
-              {report.openCriticalIncidents.slice(0, 3).map((t) => (
-                <li key={t.id} className="truncate">
-                  {t.title} — <span className="text-xs text-slate-400">{assigneeNames(t, members)}</span>
-                </li>
-              ))}
-              <Overflow count={report.openCriticalIncidents.length - 3} />
-            </ul>
-          )}
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-white">Échéances dépassées</h2>
-          {report.overdueTasks.length === 0 ? (
-            <p className="text-xs text-slate-400">Aucune — tout est dans les temps.</p>
-          ) : (
-            <ul className="space-y-1 text-sm text-slate-700 dark:text-slate-200">
-              {report.overdueTasks.slice(0, 3).map((t) => (
-                <li key={t.id} className="truncate">
-                  {t.title} — <span className="text-xs text-amber-600 dark:text-amber-400">échéance {t.dueDate}</span>
-                </li>
-              ))}
-              <Overflow count={report.overdueTasks.length - 3} />
-            </ul>
-          )}
-        </Card>
-      </div>
-
-      {report.roadmap.notStartedButDue.length > 0 && (
-        <Card className="border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
-          <h2 className="mb-1 text-sm font-semibold text-amber-800 dark:text-amber-200">FDR — trimestre atteint sans démarrage</h2>
-          <ul className="space-y-0.5 text-xs text-amber-700 dark:text-amber-300">
-            {report.roadmap.notStartedButDue.slice(0, 3).map((r) => (
-              <li key={r.id}>{r.title}</li>
-            ))}
-            <Overflow count={report.roadmap.notStartedButDue.length - 3} />
-          </ul>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-/**
- * Vue Présentation : mêmes données que le rapport détaillé, mais en grand format — pensée
- * pour être projetée en réunion (typographie large, sections aérées, moins de texte dense).
- */
-function ReportPresentation({ report, members, weekDays }: { report: WeeklyReport; members: TeamMember[]; weekDays: Date[] }) {
-  const weather = weatherMeta[report.weather];
-
-  return (
-    <div className="space-y-5">
-      <div className="hidden print:block">
-        <h1 className="text-xl font-bold">Rapport hebdomadaire (présentation) — {TEAM_LABEL}</h1>
-        <p className="text-sm text-slate-500">Semaine du {formatWeekRange(weekDays)}</p>
-      </div>
-
-      <Card className="p-8 text-center">
-        <div className="text-7xl leading-none">{weather.emoji}</div>
-        <div className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{weather.label}</div>
-        <ul className="mt-3 space-y-1 text-base text-slate-500 dark:text-slate-400">
-          {report.weatherFactors.map((f) => (
-            <li key={f}>{f}</li>
-          ))}
-        </ul>
-      </Card>
-
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <BigKpi label="Charge moyenne" value={`${Math.round(report.avgWorkloadRatio * 100)}%`} accent="text-violet-600 dark:text-violet-400" />
-        <BigKpi label="Incidents critiques ouverts" value={report.openCriticalIncidents.length} accent="text-red-600 dark:text-red-400" />
-        <BigKpi label="Tâches en retard" value={report.overdueTasks.length} accent="text-amber-600 dark:text-amber-400" />
-        <BigKpi label="Terminées cette semaine" value={report.tasksCompleted.length} accent="text-emerald-600 dark:text-emerald-400" />
-      </div>
-
-      <Card className="p-6">
-        <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">Charge par personne</h2>
-        <div className="space-y-4">
-          {report.perMember.map((p) => (
-            <div key={p.member.id} className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-              <Avatar name={p.member.name} color={p.member.color} initials={p.member.initials} size={36} />
-              <span className="min-w-0 flex-1 truncate text-base font-medium text-slate-700 sm:w-40 sm:flex-none dark:text-slate-200">{p.member.name}</span>
-              <div className="order-last w-full sm:order-none sm:w-auto sm:flex-1">
-                <WorkloadBar ratio={p.workloadRatio} level={p.workloadLevel} />
-              </div>
-              <div className="shrink-0 text-right sm:w-28">
-                <WorkloadPill level={p.workloadLevel} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {report.openCriticalIncidents.length > 0 && (
-        <Card className="p-6">
-          <h2 className="mb-3 text-lg font-semibold text-red-700 dark:text-red-300">Incidents critiques/hauts ouverts</h2>
-          <ul className="space-y-2 text-base text-slate-700 dark:text-slate-200">
-            {report.openCriticalIncidents.map((t) => (
-              <li key={t.id} className="flex items-center justify-between gap-3">
-                <span className="truncate">{t.title}</span>
-                <span className="shrink-0 text-sm text-slate-400">{assigneeNames(t, members)}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
-
-      {report.roadmap.total > 0 && report.roadmap.inProgress.length > 0 && (
-        <Card className="p-6">
-          <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">Feuille de route en cours</h2>
-          <div className="space-y-3">
-            {report.roadmap.inProgress.map((r) => (
-              <div key={r.id} className="flex items-center gap-3">
-                <RoadmapDomainBadge domain={r.domain} />
-                <span className="min-w-0 flex-1 truncate text-base text-slate-700 dark:text-slate-200">{r.title}</span>
-                <div className="h-2 w-32 shrink-0 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                  <div className="h-full rounded-full bg-violet-500" style={{ width: `${Math.max(0, Math.min(r.progress, 100))}%` }} />
-                </div>
-                <span className="w-12 shrink-0 text-right text-sm tabular-nums text-slate-500 dark:text-slate-400">{r.progress}%</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function BigKpi({ label, value, accent }: { label: string; value: string | number; accent: string }) {
-  return (
-    <Card className="p-6 text-center">
-      <div className={`text-4xl font-bold tabular-nums ${accent}`}>{value}</div>
-      <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">{label}</div>
-    </Card>
-  );
+/** Le droit réel est vérifié par le serveur ; ici il ne sert qu'à choisir le message
+ *  affiché quand on ajoute une adresse qui ne sera pas mémorisée. */
+function estAdmin(): boolean {
+  const w = window as unknown as { __suiviSession?: { isAdmin?: boolean } | null };
+  return Boolean(w.__suiviSession?.isAdmin);
 }

@@ -512,7 +512,7 @@ function App() {
   // Un seul endroit décide — voir src/lib/identity.ts.
   useEffect(() => {
     (window as unknown as { __suiviSession?: unknown }).__suiviSession = authGate.session
-      ? { username: authGate.session.username, name: authGate.session.name }
+      ? { username: authGate.session.username, name: authGate.session.name, isAdmin: authGate.session.isAdmin }
       : null;
   }, [authGate.session]);
 

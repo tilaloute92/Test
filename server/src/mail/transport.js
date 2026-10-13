@@ -51,8 +51,13 @@ export async function verifyMail() {
   await transport().verify();
 }
 
-export async function sendMail({ to, subject, text, html }) {
+/**
+ * @param attachments  Pièces jointes au format nodemailer ({ filename, content,
+ *   contentType }). Utilisé par le rapport de réunion, qui joint le document complet :
+ *   la grille de planning ne se lit pas dans le corps d'un message sur téléphone.
+ */
+export async function sendMail({ to, subject, text, html, attachments }) {
   const cfg = getMailConfig();
   if (!cfg.host || !cfg.from) throw new Error(NON_CONFIGURE);
-  return transport(cfg).sendMail({ from: cfg.from, to, subject, text, html });
+  return transport(cfg).sendMail({ from: cfg.from, to, subject, text, html, attachments });
 }

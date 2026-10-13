@@ -65,6 +65,10 @@ export interface WeeklyReport {
   incidentsOpened: ProjectTask[];
   tasksCompleted: ProjectTask[];
   overdueTasks: ProjectTask[];
+  /** Date à laquelle le retard est mesuré (AAAA-MM-JJ) — aujourd'hui, ou la fin de la
+   *  semaine relue quand elle est passée. Affichée nulle part, mais indispensable pour que
+   *  le nombre de jours de retard soit compté depuis la même référence que le filtre. */
+  referenceRetard: string;
   totalHoursLogged: number;
   totalHoursTarget: number;
   perMember: MemberWeekStats[];
@@ -113,7 +117,19 @@ export function computeWeeklyReport(opts: {
   const openCriticalIncidents = tasks.filter(
     (t) => t.type === 'Incident' && t.status !== 'termine' && (t.priority === 'critique' || t.priority === 'haute')
   );
-  const overdueTasks = tasks.filter((t) => t.dueDate && t.dueDate < weekEndIso && t.status !== 'termine');
+  /**
+   * « En retard » = échéance dépassée, jamais une échéance à venir.
+   *
+   * La comparaison se faisait avec la FIN de la semaine affichée : sur la semaine en
+   * cours, une tâche due vendredi était donc annoncée en retard dès le lundi, avec un
+   * retard calculé à « +0 j » — et elle pesait pour 8 points dans la météo. On compare
+   * donc à aujourd'hui, sauf lorsqu'on relit une semaine passée : là, c'est bien la fin
+   * de cette semaine-là qui fait foi, sinon le rapport de la semaine 12 montrerait les
+   * retards de la semaine 20.
+   */
+  const todayIso = toISODate(new Date());
+  const referenceRetard = weekEndIso < todayIso ? weekEndIso : todayIso;
+  const overdueTasks = tasks.filter((t) => t.dueDate && t.dueDate < referenceRetard && t.status !== 'termine');
 
   const totalHoursLogged = perMember.reduce((s, p) => s + p.hoursLogged, 0);
   const totalHoursTarget = perMember.reduce((s, p) => s + p.hoursTarget, 0);
@@ -162,6 +178,7 @@ export function computeWeeklyReport(opts: {
     incidentsOpened,
     tasksCompleted,
     overdueTasks,
+    referenceRetard,
     totalHoursLogged,
     totalHoursTarget,
     perMember,
