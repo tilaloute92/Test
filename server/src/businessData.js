@@ -2,7 +2,7 @@ import { readJson, writeJson } from './dataStore.js';
 
 /**
  * Données métier de l'équipe : membres, tâches, planning, temps saisi, absences, feuille de
- * route, COPIL.
+ * route, COPIL, journal d'avancement.
  *
  * En mode client/serveur, ce module est la SOURCE DE VÉRITÉ de l'application. Les
  * navigateurs n'en détiennent qu'un affichage : ils lisent ici au démarrage, écrivent ici à
@@ -22,7 +22,7 @@ import { readJson, writeJson } from './dataStore.js';
  * prévu ici, et le compteur de version ci-dessous suppose explicitement un seul processus.
  */
 
-const COLLECTIONS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils'];
+const COLLECTIONS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils', 'journalEntries'];
 
 const cache = {};
 for (const name of COLLECTIONS) {
@@ -71,6 +71,7 @@ export function getSnapshot() {
     absences: cache.absences,
     roadmapItems: cache.roadmapItems,
     copils: cache.copils,
+    journalEntries: cache.journalEntries,
     ...getStatus(),
   };
 }
@@ -198,7 +199,9 @@ export function removeTask(id) {
   cache.roadmapItems = cache.roadmapItems.map((r) =>
     Array.isArray(r.linkedTaskIds) && r.linkedTaskIds.includes(id) ? { ...r, linkedTaskIds: r.linkedTaskIds.filter((t) => t !== id) } : r
   );
-  persist('tasks', 'planningSlots', 'roadmapItems');
+  // Le fil part avec sa tâche : des commentaires orphelins ne se rattachent plus à rien.
+  cache.journalEntries = cache.journalEntries.filter((e) => e.taskId !== id);
+  persist('tasks', 'planningSlots', 'roadmapItems', 'journalEntries');
 }
 
 /**
@@ -223,11 +226,65 @@ export function purgeRecords({ taskIds = [], absenceIds = [], timeEntryIds = [] 
         ? { ...r, linkedTaskIds: r.linkedTaskIds.filter((t) => !tasks.has(t)) }
         : r
     );
+    cache.journalEntries = cache.journalEntries.filter((e) => !tasks.has(e.taskId));
   }
   if (absences.size > 0) cache.absences = cache.absences.filter((a) => !absences.has(a.id));
   if (entries.size > 0) cache.timeEntries = cache.timeEntries.filter((e) => !entries.has(e.id));
 
-  persist('tasks', 'planningSlots', 'roadmapItems', 'absences', 'timeEntries');
+  persist('tasks', 'planningSlots', 'roadmapItems', 'absences', 'timeEntries', 'journalEntries');
+}
+
+// --- Journal d'avancement ---
+//
+// Le serveur enregistre ce qu'on lui donne, y compris les entrées écrites automatiquement
+// par le navigateur à partir d'un changement de tâche. Les recalculer ici imposerait de
+// dupliquer la logique de comparaison, et surtout l'entrée porterait un autre identifiant
+// que celui que le navigateur affiche déjà — il faudrait alors réconcilier.
+
+const NATURES_JOURNAL = ['note', 'statut', 'priorite', 'echeance', 'assignation', 'creation'];
+const LONGUEUR_NOTE_MAX = 4000;
+
+function assainitEntree(payload) {
+  const nature = NATURES_JOURNAL.includes(payload?.nature) ? payload.nature : 'note';
+  const texte = typeof payload?.texte === 'string' ? payload.texte.slice(0, LONGUEUR_NOTE_MAX) : undefined;
+  return {
+    id: idOrNext(payload ?? {}, 'j'),
+    taskId: String(payload?.taskId ?? ''),
+    nature,
+    auteur: String(payload?.auteur ?? '').slice(0, 120),
+    createdAt: payload?.createdAt || new Date().toISOString(),
+    ...(texte ? { texte } : {}),
+    ...(payload?.de !== undefined ? { de: String(payload.de).slice(0, 300) } : {}),
+    ...(payload?.vers !== undefined ? { vers: String(payload.vers).slice(0, 300) } : {}),
+  };
+}
+
+export function addJournalEntries(items) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  // Une entrée rattachée à une tâche inconnue ne serait jamais lue : on la refuse plutôt
+  // que de la garder pour rien.
+  const retenues = items.map(assainitEntree).filter((e) => e.taskId && cache.tasks.some((t) => t.id === e.taskId));
+  if (retenues.length === 0) return [];
+  cache.journalEntries.push(...retenues);
+  persist('journalEntries');
+  return retenues;
+}
+
+/** Seules les notes sont modifiables : une entrée automatique est un fait, pas un avis. */
+export function updateJournalNote(id, texte) {
+  const e = cache.journalEntries.find((x) => x.id === id);
+  if (!e) return null;
+  if (e.nature !== 'note') return { error: 'Une entrée automatique ne se modifie pas.' };
+  e.texte = String(texte ?? '').slice(0, LONGUEUR_NOTE_MAX);
+  e.editedAt = new Date().toISOString();
+  persist('journalEntries');
+  return e;
+}
+
+export function removeJournalEntry(id) {
+  const avant = cache.journalEntries.length;
+  cache.journalEntries = cache.journalEntries.filter((e) => e.id !== id);
+  if (cache.journalEntries.length !== avant) persist('journalEntries');
 }
 
 // --- Planning (upsert par memberId+date+period, comme setPlanningSlot côté client) ---

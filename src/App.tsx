@@ -399,7 +399,11 @@ function FirstRunScreen({ onInitialized }: { onInitialized: () => void }) {
     setBusy(kind);
     setError(null);
     try {
-      await initializeServer(kind === 'reprise' && archive ? archive.data : undefined);
+      await initializeServer(
+        // Une archive faite avant l'arrivée du journal n'en contient pas : on complète
+        // plutôt que de refuser la reprise, qui ferait perdre tout le reste.
+        kind === 'reprise' && archive ? { journalEntries: [], ...archive.data } : undefined
+      );
       onInitialized();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

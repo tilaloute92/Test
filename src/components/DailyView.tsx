@@ -10,6 +10,7 @@ import type { Absence, Period, PlanningSlot, ProjectTask, TaskStatus, TeamMember
 import { useModalDismiss } from './Modal';
 import { placeEntries } from '../lib/dayAllocation';
 import { PERIOD_RANGES } from '../lib/hours';
+import { useAuteur } from '../hooks/useAuteur';
 
 const PERIOD_LABEL: Record<Period, string> = { matin: 'Matin — MCO & incidents', apres_midi: 'Après-midi — Projets' };
 const PERIOD_SHORT: Record<Period, string> = { matin: 'Matin', apres_midi: 'Après-midi' };
@@ -353,13 +354,14 @@ function SlotEditor({
   planningSlots: PlanningSlot[];
   confirm: ConfirmFn;
   setPlanningSlot: (memberId: string, date: string, period: Period, taskId: string | null) => void;
-  updateTask: (id: string, patch: Partial<ProjectTask>) => void;
+  updateTask: (id: string, patch: Partial<ProjectTask>, auteur?: string) => void;
   onLogTime: (target: LoggingTarget) => void;
   onValidateHour: (memberId: string, period: Period, taskId: string, hour: number) => void;
   recentEntriesFor: (memberId: string, period: Period) => TimeEntry[];
   onRemoveEntry: (id: string) => void;
   compact?: boolean;
 }) {
+  const auteur = useAuteur();
   const isAbsentPeriod = absence && (absence.period === 'jour' || absence.period === period);
   const slot = planningSlots.find((s) => s.memberId === member.id && s.date === iso && s.period === period);
   const task = getTaskById(tasks, slot?.taskId);
@@ -435,7 +437,7 @@ function SlotEditor({
               onChange={async (e) => {
                 const value = e.target.value as TaskStatus;
                 if (await confirm({ title: 'Confirmer la modification', message: `Changer le statut de "${task.title}" ?` })) {
-                  updateTask(task.id, { status: value });
+                  updateTask(task.id, { status: value }, auteur);
                 }
               }}
             >

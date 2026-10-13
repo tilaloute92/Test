@@ -68,21 +68,41 @@ function normalise(v: string): string {
 }
 
 export function useSearchIndex(): SearchHit[] {
-  const { tasks, roadmapItems, copils, members } = useStore();
+  const { tasks, roadmapItems, copils, members, journalEntries } = useStore();
 
   return useMemo(() => {
     const nom = (id: string) => members.find((m) => m.id === id)?.name ?? '';
     const hits: SearchHit[] = [];
 
+    // Les notes du journal sont indexées avec leur tâche sans être affichées : on retrouve
+    // souvent un sujet par un mot de son fil — « jarretière », « bon de commande » — plutôt
+    // que par son titre, qui ne dit rien de ce qui s'y est passé.
+    const notesParTache = new Map<string, string[]>();
+    for (const e of journalEntries) {
+      if (e.nature !== 'note' || !e.texte) continue;
+      const liste = notesParTache.get(e.taskId);
+      if (liste) liste.push(e.texte);
+      else notesParTache.set(e.taskId, [e.texte]);
+    }
+
     for (const t of tasks) {
       const gens = t.assigneeIds.map(nom).filter(Boolean);
+      const notes = notesParTache.get(t.id) ?? [];
       hits.push({
         id: `t:${t.id}`,
         kind: 'tache',
         titre: t.title,
-        detail: [t.type, STATUT[t.status] ?? t.status, t.project, gens.join(', ') || 'Non assigné'].filter(Boolean).join(' · '),
+        detail: [
+          t.type,
+          STATUT[t.status] ?? t.status,
+          t.project,
+          gens.join(', ') || 'Non assigné',
+          notes.length > 0 ? `${notes.length} note(s)` : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
         tab: 'tasks',
-        index: [t.title, t.project, t.description, t.type, gens.join(' ')].filter(Boolean).join(' '),
+        index: [t.title, t.project, t.description, t.type, gens.join(' '), ...notes].filter(Boolean).join(' '),
       });
     }
 
@@ -129,7 +149,7 @@ export function useSearchIndex(): SearchHit[] {
     }
 
     return hits;
-  }, [tasks, roadmapItems, copils, members]);
+  }, [tasks, roadmapItems, copils, members, journalEntries]);
 }
 
 /**

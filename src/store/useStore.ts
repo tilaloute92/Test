@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Absence, ApiConnection, ApiRequestLog, AuthSettings, Copil, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
+import type { Absence, ApiConnection, ApiRequestLog, AuthSettings, Copil, JournalEntry, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
 import {
   absences as seedAbsences,
   apiConnections as seedApiConnections,
   copils as seedCopils,
+  journalEntries as seedJournalEntries,
   members as seedMembers,
   planningSlots as seedPlanningSlots,
   roadmapItems as seedRoadmapItems,
@@ -15,6 +16,7 @@ import { addDays, toISODate } from '../lib/date';
 import { makeId } from '../lib/ids';
 import { archiveLocalCollections, archivePersistedCollections } from '../lib/localArchive';
 import { repairDuplicateIds } from '../lib/repairIds';
+import { entreeCreation, entreeNote, entreesDeChangement, LONGUEUR_NOTE_MAX } from '../lib/journal';
 import { findExpired } from '../lib/retention';
 import { isServerMode, onModeChange } from '../lib/serverMode';
 import { isSyncActive, reportSyncError, requestResync } from '../lib/syncState';
@@ -23,18 +25,21 @@ import {
   syncAddAbsence,
   syncAddAbsencesBulk,
   syncAddCopil,
+  syncAddJournalEntries,
   syncAddMember,
   syncAddRoadmapItem,
   syncAddTask,
   syncAddTimeEntry,
   syncRemoveAbsence,
   syncRemoveCopil,
+  syncRemoveJournalEntry,
   syncRemoveMember,
   syncRemoveRoadmapItem,
   syncRemoveTask,
   syncRemoveTimeEntry,
   syncSetPlanningSlot,
   syncUpdateCopil,
+  syncUpdateJournalNote,
   syncUpdateMember,
   syncUpdateRoadmapItem,
   syncUpdateTask,
@@ -50,7 +55,7 @@ const defaultAuthSettings: AuthSettings = {
   redirectUri: typeof window !== 'undefined' ? window.location.origin : '',
 };
 
-// Type des 7 collections partagées en mode client/serveur (voir src/lib/serverSync.ts et
+// Type des 8 collections partagées en mode client/serveur (voir src/lib/serverSync.ts et
 // server/src/businessData.js) — tout le reste (connexions API, historique de requêtes,
 // paramètres de connexion) reste volontairement local à chaque navigateur.
 export interface SharedSnapshot {
@@ -61,6 +66,7 @@ export interface SharedSnapshot {
   absences: Absence[];
   roadmapItems: RoadmapItem[];
   copils: Copil[];
+  journalEntries: JournalEntry[];
 }
 
 export interface StoreState extends SharedSnapshot {
@@ -72,9 +78,21 @@ export interface StoreState extends SharedSnapshot {
   updateMember: (id: string, patch: Partial<TeamMember>) => void;
   removeMember: (id: string) => void;
 
-  addTask: (task: Omit<ProjectTask, 'id' | 'createdAt'>) => string;
-  updateTask: (id: string, patch: Partial<ProjectTask>) => void;
+  addTask: (task: Omit<ProjectTask, 'id' | 'createdAt'>, auteur?: string) => string;
+  /** `auteur` sert à signer les entrées de journal écrites automatiquement (statut,
+   *  priorité, échéance, assignation). Vide = aucune entrée n'est écrite : mieux vaut pas
+   *  d'historique qu'un historique signé « — ». */
+  updateTask: (id: string, patch: Partial<ProjectTask>, auteur?: string) => void;
   removeTask: (id: string) => void;
+
+  /** Usage interne : applique un lot d'entrées localement et les envoie au serveur. */
+  journaliser: (entrees: JournalEntry[]) => void;
+  /** Note libre dans le fil d'une tâche. */
+  addJournalNote: (taskId: string, texte: string, auteur: string) => void;
+  /** Retouche d'une note. Les entrées automatiques ne sont jamais modifiables : ce sont
+   *  des faits, pas des avis. */
+  updateJournalNote: (id: string, texte: string) => void;
+  removeJournalEntry: (id: string) => void;
 
   setPlanningSlot: (memberId: string, date: string, period: 'matin' | 'apres_midi', taskId: string | null) => void;
 
@@ -118,8 +136,8 @@ export interface StoreState extends SharedSnapshot {
 // d'une session à l'autre (et d'un navigateur à l'autre en mode client/serveur).
 const nextId = (prefix: string) => makeId(prefix);
 
-/** Les 7 collections partagées, dans l'ordre de SharedSnapshot — utilisé par la persistance. */
-const SHARED_KEYS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils'] as const;
+/** Les 8 collections partagées, dans l'ordre de SharedSnapshot — utilisé par la persistance. */
+const SHARED_KEYS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils', 'journalEntries'] as const;
 
 const emptyCollections = (): SharedSnapshot => ({
   members: [],
@@ -129,6 +147,7 @@ const emptyCollections = (): SharedSnapshot => ({
   absences: [],
   roadmapItems: [],
   copils: [],
+  journalEntries: [],
 });
 
 const seedCollections = (): SharedSnapshot => ({
@@ -139,6 +158,7 @@ const seedCollections = (): SharedSnapshot => ({
   absences: seedAbsences,
   roadmapItems: seedRoadmapItems,
   copils: seedCopils,
+  journalEntries: seedJournalEntries,
 });
 
 /**
@@ -251,14 +271,19 @@ export const useStore = create<StoreState>()(
         syncWrite('suppression membre', syncRemoveMember(id));
       },
 
-      addTask: (task) => {
+      addTask: (task, auteur = '') => {
         const id = nextId('t');
         const item: ProjectTask = { ...task, id, createdAt: new Date().toISOString() };
         set((s) => ({ tasks: [...s.tasks, item] }));
         syncWrite('ajout tâche', syncAddTask(item));
+        if (auteur) get().journaliser([entreeCreation(id, auteur)]);
         return id;
       },
-      updateTask: (id, patch) => {
+      updateTask: (id, patch, auteur = '') => {
+        // Les entrées de journal se déduisent de l'ÉTAT D'AVANT : une fois la modification
+        // appliquée, la valeur précédente n'existe plus nulle part.
+        const avant = get().tasks.find((t) => t.id === id);
+        const entrees = avant && auteur ? entreesDeChangement(avant, patch, auteur, get().members) : [];
         // Relevé AVANT la modification locale : c'est la version sur laquelle l'utilisateur
         // s'est basé, celle que le serveur compare pour détecter qu'un collègue est passé
         // entre-temps (voir `conflicts()` dans server/src/businessData.js).
@@ -278,16 +303,54 @@ export const useStore = create<StoreState>()(
           }),
         }));
         syncWriteRecord('modification tâche', 'tasks', syncUpdateTask(id, patch, base), set);
+        if (entrees.length > 0) get().journaliser(entrees);
       },
       removeTask: (id) => {
         set((s) => ({
           tasks: s.tasks.filter((t) => t.id !== id),
+          // Le fil part avec sa tâche : des commentaires orphelins ne se rattachent plus à
+          // rien et ne seraient plus jamais lus. Le serveur fait de même de son côté.
+          journalEntries: s.journalEntries.filter((e) => e.taskId !== id),
           planningSlots: s.planningSlots.map((p) => (p.taskId === id ? { ...p, taskId: null } : p)),
           roadmapItems: s.roadmapItems.map((r) =>
             r.linkedTaskIds.includes(id) ? { ...r, linkedTaskIds: r.linkedTaskIds.filter((t) => t !== id) } : r
           ),
         }));
         syncWrite('suppression tâche', syncRemoveTask(id));
+      },
+
+      /**
+       * Enregistre des entrées de journal. Appliquées localement d'abord pour que le fil
+       * réponde tout de suite ; en cas de refus du serveur, `syncWrite` redemande l'état
+       * réel et les entrées fantômes disparaissent d'elles-mêmes.
+       */
+      journaliser: (entrees) => {
+        if (entrees.length === 0) return;
+        set((s) => ({ journalEntries: [...s.journalEntries, ...entrees] }));
+        syncWrite('journal', syncAddJournalEntries(entrees));
+      },
+
+      addJournalNote: (taskId, texte, auteur) => {
+        const propre = texte.trim();
+        if (!propre) return;
+        get().journaliser([entreeNote(taskId, propre, auteur)]);
+      },
+
+      updateJournalNote: (id, texte) => {
+        const propre = texte.trim().slice(0, LONGUEUR_NOTE_MAX);
+        if (!propre) return;
+        const editedAt = new Date().toISOString();
+        set((s) => ({
+          journalEntries: s.journalEntries.map((e) =>
+            e.id === id && e.nature === 'note' ? { ...e, texte: propre, editedAt } : e
+          ),
+        }));
+        syncWrite('modification de note', syncUpdateJournalNote(id, propre));
+      },
+
+      removeJournalEntry: (id) => {
+        set((s) => ({ journalEntries: s.journalEntries.filter((e) => e.id !== id) }));
+        syncWrite('suppression de note', syncRemoveJournalEntry(id));
       },
 
       setPlanningSlot: (memberId, date, period, taskId) => {
@@ -417,7 +480,10 @@ export const useStore = create<StoreState>()(
         const vide = { tasks: 0, absences: 0, timeEntries: 0 };
         if (isServerMode()) return vide;
         const s = get();
-        const expired = findExpired({ tasks: s.tasks, absences: s.absences, timeEntries: s.timeEntries }, now);
+        const expired = findExpired(
+          { tasks: s.tasks, absences: s.absences, timeEntries: s.timeEntries, journalEntries: s.journalEntries },
+          now
+        );
         if (expired.total === 0) return vide;
 
         const taskIds = new Set(expired.tasks.map((t) => t.id));
@@ -425,6 +491,7 @@ export const useStore = create<StoreState>()(
         const entryIds = new Set(expired.timeEntries.map((e) => e.id));
         set((st) => ({
           tasks: st.tasks.filter((t) => !taskIds.has(t.id)),
+          journalEntries: st.journalEntries.filter((e) => !taskIds.has(e.taskId)),
           absences: st.absences.filter((a) => !absenceIds.has(a.id)),
           timeEntries: st.timeEntries.filter((e) => !entryIds.has(e.id)),
           planningSlots: st.planningSlots.map((p) => (p.taskId && taskIds.has(p.taskId) ? { ...p, taskId: null } : p)),

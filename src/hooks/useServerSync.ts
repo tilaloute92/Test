@@ -82,6 +82,7 @@ export function useServerSync(): ServerSyncState {
             absences: res.absences,
             roadmapItems: res.roadmapItems,
             copils: res.copils,
+            journalEntries: res.journalEntries,
           });
         }
         setHydrated(true);

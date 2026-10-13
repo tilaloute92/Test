@@ -1,4 +1,4 @@
-import type { Absence, ApiConnection, Copil, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
+import type { Absence, ApiConnection, Copil, JournalEntry, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
 import { addDays, isWeekend, startOfWeek, toISODate } from '../lib/date';
 
 // Deterministic PRNG so the seeded planning looks the same on every load.
@@ -420,3 +420,10 @@ export const copils: Copil[] = [
     updatedAt: iso,
   },
 ];
+
+/**
+ * Le journal démarre vide, même dans le jeu d'exemple : des commentaires inventés feraient
+ * croire à une histoire qui n'a pas eu lieu, et on les confondrait avec de vraies notes
+ * dès la première semaine d'utilisation.
+ */
+export const journalEntries: JournalEntry[] = [];

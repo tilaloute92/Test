@@ -36,8 +36,15 @@ export function cutoffDate(now, days = RETENTION_DAYS) {
 export function findExpired(snapshot, now, days = RETENTION_DAYS) {
   const limite = cutoffDate(now, days);
 
+  const notees = new Set((snapshot.journalEntries ?? []).filter((e) => e.nature === 'note').map((e) => e.taskId));
+
   const taches = snapshot.tasks.filter((t) => {
     if (t.status !== 'termine') return false;
+    // Une tâche que quelqu'un a pris la peine de commenter n'est pas purgée : le journal
+    // sert justement à répondre six mois plus tard, et dix jours après la clôture est
+    // exactement le moment où l'on cesse d'y penser. Seules les notes écrites à la main
+    // comptent — les entrées automatiques, toute tâche en a, et plus rien ne serait purgé.
+    if (notees.has(t.id)) return false;
     // Pas de date d'achèvement : on ne purge PAS. Une tâche marquée terminée avant que ce
     // champ n'existe, ou importée sans lui, n'a aucune date fiable — se rabattre sur
     // createdAt supprimerait une tâche créée il y a un an et terminée ce matin.

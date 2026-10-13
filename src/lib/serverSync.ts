@@ -10,9 +10,9 @@
  * (voir `syncWrite` dans src/store/useStore.ts).
  */
 
-import type { Absence, Copil, Period, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
+import type { Absence, Copil, JournalEntry, Period, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
 
-/** Les 7 collections partagées. */
+/** Les 8 collections partagées. */
 export interface SharedCollections {
   members: TeamMember[];
   tasks: ProjectTask[];
@@ -21,6 +21,7 @@ export interface SharedCollections {
   absences: Absence[];
   roadmapItems: RoadmapItem[];
   copils: Copil[];
+  journalEntries: JournalEntry[];
 }
 
 /** État du serveur, sans les données — renvoyé aussi par les réponses complètes. */
@@ -116,6 +117,23 @@ export const syncUpdateRoadmapItem = (id: string, patch: Partial<RoadmapItem>, b
     headers: baseHeader(baseUpdatedAt),
   });
 export const syncRemoveRoadmapItem = (id: string) => request<{ ok: boolean }>(`/roadmap-items/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+/**
+ * Journal : les entrées sont envoyées par lot.
+ *
+ * Une modification de tâche peut en produire plusieurs d'un coup (passage en cours ET
+ * réaffectation), et les envoyer une par une donnerait autant d'allers-retours, avec le
+ * risque qu'une partie seulement arrive — un fil où le changement de statut est enregistré
+ * mais pas la réaffectation raconterait une histoire fausse.
+ */
+export const syncAddJournalEntries = (items: JournalEntry[]) =>
+  request<JournalEntry[]>('/journal-entries', { method: 'POST', body: JSON.stringify({ items }) });
+
+export const syncUpdateJournalNote = (id: string, texte: string) =>
+  request<JournalEntry>(`/journal-entries/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ texte }) });
+
+export const syncRemoveJournalEntry = (id: string) =>
+  request<{ ok: boolean }>(`/journal-entries/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 export const syncAddCopil = (item: Copil) => request<Copil>('/copils', { method: 'POST', body: JSON.stringify(item) });
 export const syncUpdateCopil = (id: string, patch: Partial<Copil>, baseUpdatedAt?: string) =>

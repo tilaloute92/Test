@@ -40,6 +40,29 @@ destinataire). Pour un envoi automatique quotidien, renseignez `DAILY_MAIL_AT` (
 `HH:MM`, heure du serveur). Si le service est arrêté à l'heure dite, l'envoi part au
 redémarrage le même jour plutôt que d'être sauté, et jamais deux fois dans la journée.
 
+## Journal d'avancement
+
+Une huitième collection partagée, `journalEntries` (fichier `data/business-journalEntries.json`),
+porte le fil de chaque tâche : les notes écrites à la main et les changements enregistrés
+automatiquement par le navigateur (statut, priorité, échéance, assignation).
+
+Le serveur **enregistre ce qu'on lui donne** plutôt que de recalculer les entrées
+automatiques à partir du `PATCH` de la tâche : les recalculer imposerait de dupliquer la
+logique de comparaison, et l'entrée porterait un autre identifiant que celui que le
+navigateur affiche déjà — il faudrait alors réconcilier. Une entrée rattachée à une tâche
+inconnue est refusée : elle ne serait jamais lue.
+
+Pas de contrôle de concurrence sur cette collection : une entrée s'ajoute, elle n'est jamais
+réécrite par quelqu'un d'autre. Deux personnes qui commentent en même temps produisent deux
+entrées — exactement ce qu'on veut, contrairement à une tâche où la seconde écriture
+écraserait la première. Seules les notes sont modifiables (`PATCH /api/data/journal-entries/:id`) ;
+une entrée automatique est un fait, pas un avis.
+
+Le fil part avec sa tâche, à la suppression comme à la purge. En revanche, **une tâche
+terminée qui porte au moins une note n'est pas purgée** au bout de dix jours : quelqu'un a
+pris la peine de l'expliquer, et c'est six mois plus tard qu'on y revient. Les entrées
+automatiques ne comptent pas — toute tâche en a, et plus rien ne serait jamais purgé.
+
 ## Rapport de réunion par mail
 
 Le même relais SMTP sert à envoyer le **rapport de réunion** préparé dans l'onglet Rapport

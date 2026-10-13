@@ -244,3 +244,37 @@ export interface AuthSettings {
   clientId: string;
   redirectUri: string;
 }
+
+/**
+ * Nature d'une entrée de journal.
+ *
+ * « note » est ce que quelqu'un a écrit ; les autres sont des changements enregistrés tout
+ * seuls. Les deux vivent dans le MÊME fil, dans le même ordre chronologique : séparer les
+ * deux obligerait à lire deux listes en parallèle pour reconstituer une histoire, alors que
+ * c'est précisément l'enchaînement « on a constaté ça, donc on est passé en critique » qui
+ * a de la valeur six mois plus tard.
+ */
+export type JournalNature = 'note' | 'statut' | 'priorite' | 'echeance' | 'assignation' | 'creation';
+
+/**
+ * Entrée du journal d'une tâche, d'un incident ou d'un projet.
+ *
+ * `auteur` est un NOM AFFICHÉ figé au moment de l'écriture, pas une référence vers une
+ * fiche d'équipe : une personne qui quitte l'équipe voit sa fiche supprimée, et son nom
+ * doit rester lisible dans l'historique — sans quoi le journal deviendrait une suite de
+ * « — » le jour où quelqu'un part.
+ */
+export interface JournalEntry {
+  id: string;
+  taskId: string;
+  nature: JournalNature;
+  auteur: string;
+  createdAt: string;
+  /** Texte libre. Renseigné pour une note, absent pour un changement. */
+  texte?: string;
+  /** Valeur avant / après, déjà en clair (« À faire » et non « a_faire »). */
+  de?: string;
+  vers?: string;
+  /** Dernière retouche d'une note par son auteur. Un changement n'est jamais modifiable. */
+  editedAt?: string;
+}

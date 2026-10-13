@@ -131,3 +131,28 @@ dataRouter.delete('/copils/:id', (req, res) => {
   store.removeCopil(req.params.id);
   res.json({ ok: true });
 });
+
+// --- Journal d'avancement ---
+//
+// Pas de contrôle de concurrence ici : une entrée de journal est ajoutée, jamais réécrite
+// par quelqu'un d'autre. Deux personnes qui commentent en même temps produisent deux
+// entrées, et c'est exactement ce qu'on veut — contrairement à une tâche, où la seconde
+// écriture écraserait la première.
+dataRouter.post('/journal-entries', (req, res) => {
+  const items = req.body?.items;
+  if (!Array.isArray(items)) return res.status(400).json({ error: 'items attendu.' });
+  if (items.length > 50) return res.status(400).json({ error: 'Cinquante entrées au maximum par envoi.' });
+  res.json(store.addJournalEntries(items));
+});
+
+dataRouter.patch('/journal-entries/:id', (req, res) => {
+  const result = store.updateJournalNote(req.params.id, req.body?.texte);
+  if (!result) return res.status(404).json({ error: 'Entrée introuvable.' });
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json(result);
+});
+
+dataRouter.delete('/journal-entries/:id', (req, res) => {
+  store.removeJournalEntry(req.params.id);
+  res.json({ ok: true });
+});

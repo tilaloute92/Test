@@ -101,3 +101,24 @@ export function resolveMember(
 
   return { member: undefined, source: 'aucun' };
 }
+
+/** Ce que le serveur sait de la personne connectée, posé par App.tsx. */
+export function getSessionLike(): { username?: string; name?: string } | null {
+  const w = window as unknown as { __suiviSession?: { username?: string; name?: string } | null };
+  return w.__suiviSession ?? null;
+}
+
+/**
+ * Le nom à faire figurer sur ce qu'on écrit : une note de journal, la signature d'un
+ * rapport.
+ *
+ * Trois sources, de la plus sûre à la moins sûre : la fiche d'équipe que la personne a
+ * elle-même désignée, le nom affiché de sa session, son identifiant. Chaîne vide si rien
+ * n'est connu — et dans ce cas l'application ne doit PAS écrire d'entrée automatique :
+ * mieux vaut pas d'historique qu'un historique signé « — », qu'on ne saura plus attribuer.
+ */
+export function auteurCourant(members: TeamMember[]): string {
+  const session = getSessionLike();
+  const { member } = resolveMember(members, session);
+  return member?.name ?? session?.name ?? session?.username ?? '';
+}

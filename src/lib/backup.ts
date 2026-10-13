@@ -39,9 +39,32 @@ export interface BackupPayload {
   authSettings: StoreState['authSettings'];
   roadmapItems: StoreState['roadmapItems'];
   copils: StoreState['copils'];
+  /** Absent des sauvegardes faites avant l'arrivée du journal. Optionnel pour cette seule
+   *  raison : refuser un fichier de l'an dernier parce qu'il manque un champ apparu
+   *  depuis reviendrait à perdre la sauvegarde au moment précis où l'on en a besoin. */
+  journalEntries?: StoreState['journalEntries'];
 }
 
 const DATA_KEYS = [
+  'members',
+  'tasks',
+  'planningSlots',
+  'timeEntries',
+  'absences',
+  'apiConnections',
+  'requestHistory',
+  'authSettings',
+  'roadmapItems',
+  'copils',
+  'journalEntries',
+] as const;
+
+/**
+ * Les champs exigés pour reconnaître une sauvegarde. Volontairement figés : chaque
+ * collection ajoutée par la suite est facultative, sinon toute sauvegarde antérieure
+ * deviendrait irrecevable à la mise à jour suivante.
+ */
+const CLES_OBLIGATOIRES = [
   'members',
   'tasks',
   'planningSlots',
@@ -64,7 +87,7 @@ function extractPayload(state: StoreState): BackupPayload {
 
 function isBackupPayload(value: unknown): value is BackupPayload {
   if (!value || typeof value !== 'object') return false;
-  return DATA_KEYS.every((key) => key in (value as Record<string, unknown>));
+  return CLES_OBLIGATOIRES.every((key) => key in (value as Record<string, unknown>));
 }
 
 export interface Snapshot {
@@ -111,7 +134,18 @@ export const useBackupStore = create<BackupHistoryState>()(
 
 function summarize(data: BackupPayload): string {
   const planned = data.planningSlots.filter((s) => s.taskId).length;
-  return `${data.members.length} membres · ${data.tasks.length} tâches · ${planned} créneaux planifiés · ${data.absences.length} absences · ${data.roadmapItems.length} initiative(s) FDR · ${data.copils.length} COPIL`;
+  const notes = (data.journalEntries ?? []).filter((e) => e.nature === 'note').length;
+  return [
+    `${data.members.length} membres`,
+    `${data.tasks.length} tâches`,
+    `${planned} créneaux planifiés`,
+    `${data.absences.length} absences`,
+    `${data.roadmapItems.length} initiative(s) FDR`,
+    `${data.copils.length} COPIL`,
+    notes > 0 ? `${notes} note(s) de journal` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 function pushSnapshotFromCurrentState(label: string) {
@@ -213,6 +247,9 @@ export function parseBackupFile(text: string): BackupPayload {
 export function importBackupPayload(data: BackupPayload): boolean {
   if (isServerMode()) return false;
   pushSnapshotFromCurrentState(`Avant import du ${formatTimestamp(new Date().toISOString())}`);
-  useStore.setState(data);
+  // Une sauvegarde antérieure au journal n'en contient pas : on le vide explicitement
+  // plutôt que de laisser en place les entrées de l'état courant, qui se rattacheraient
+  // alors à des tâches venues d'un autre instantané.
+  useStore.setState({ journalEntries: [], ...data });
   return true;
 }

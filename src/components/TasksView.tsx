@@ -10,6 +10,9 @@ import { bucketTasksByDueDate, KANBAN_STATUSES } from '../lib/taskViews';
 import { nextSort, sortTasks, type TaskSort, type TaskSortKey } from '../lib/taskSort';
 import type { Priority, ProjectTask, TaskStatus, TaskType, TeamMember } from '../types';
 import { useModalDismiss } from './Modal';
+import { TaskJournal } from './TaskJournal';
+import { useAuteur } from '../hooks/useAuteur';
+import { activiteParTache, type ActiviteTache } from '../lib/journal';
 
 type ConfirmFn = ReturnType<typeof useConfirm>;
 
@@ -24,7 +27,10 @@ const statusColumnLabels: Record<TaskStatus, string> = {
 };
 
 export function TasksView() {
-  const { members, tasks, timeEntries, addTask, updateTask, removeTask } = useStore();
+  const { members, tasks, timeEntries, journalEntries, addTask, updateTask, removeTask } = useStore();
+  // Qui signe ce qui sera écrit dans les journaux.
+  const auteur = useAuteur();
+  const activite = useMemo(() => activiteParTache(journalEntries, tasks), [journalEntries, tasks]);
   const confirm = useConfirm();
   const [typeFilter, setTypeFilter] = useState<TaskType | 'Tous'>('Tous');
   const [assigneeFilter, setAssigneeFilter] = useState<string>('Tous');
@@ -70,7 +76,7 @@ export function TasksView() {
     const message = has ? `Retirer ${m.name} de "${t.title}" ?` : `Ajouter ${m.name} à "${t.title}" ?`;
     if (await confirm({ title: 'Confirmer la modification', message })) {
       const next = has ? t.assigneeIds.filter((id) => id !== m.id) : [...t.assigneeIds, m.id];
-      updateTask(t.id, { assigneeIds: next });
+      updateTask(t.id, { assigneeIds: next }, auteur);
     }
   };
 
@@ -164,6 +170,7 @@ export function TasksView() {
           tasks={filtered}
           members={members}
           spentByTask={spentByTask}
+          activite={activite}
           sort={sort}
           onSort={(key) => setSort((c) => nextSort(c, key))}
           confirm={confirm}
@@ -177,28 +184,29 @@ export function TasksView() {
       )}
 
       {mode === 'kanban' && (
-        <TaskKanban tasks={filtered} members={members} spentByTask={spentByTask} confirm={confirm} updateTask={updateTask} setEditingTask={setEditingTask} />
+        <TaskKanban tasks={filtered} members={members} spentByTask={spentByTask} activite={activite} confirm={confirm} updateTask={updateTask} setEditingTask={setEditingTask} />
       )}
 
       {mode === 'echeancier' && (
-        <TaskEcheancier tasks={filtered} members={members} spentByTask={spentByTask} setEditingTask={setEditingTask} />
+        <TaskEcheancier tasks={filtered} members={members} spentByTask={spentByTask} activite={activite} setEditingTask={setEditingTask} />
       )}
 
       {(showForm || editingTask) && (
         <TaskForm
           members={members}
           initial={editingTask}
+          auteur={auteur}
           confirm={confirm}
           onCancel={() => {
             setShowForm(false);
             setEditingTask(null);
           }}
           onCreate={(payload) => {
-            addTask(payload);
+            addTask(payload, auteur);
             setShowForm(false);
           }}
           onUpdate={(id, patch) => {
-            updateTask(id, patch);
+            updateTask(id, patch, auteur);
             setEditingTask(null);
           }}
         />
@@ -223,6 +231,8 @@ interface TaskListProps {
   tasks: ProjectTask[];
   members: TeamMember[];
   spentByTask: Record<string, number>;
+  /** Dernière activité du journal, par tâche — voir src/lib/journal.ts. */
+  activite: Map<string, ActiviteTache>;
   setEditingTask: (t: ProjectTask) => void;
 }
 
@@ -279,6 +289,7 @@ function TaskTable({
   tasks,
   members,
   spentByTask,
+  activite,
   sort,
   onSort,
   confirm,
@@ -295,9 +306,10 @@ function TaskTable({
   openAssigneeMenu: string | null;
   setOpenAssigneeMenu: (id: string | null) => void;
   toggleAssignee: (t: ProjectTask, m: TeamMember) => void;
-  updateTask: (id: string, patch: Partial<ProjectTask>) => void;
+  updateTask: (id: string, patch: Partial<ProjectTask>, auteur?: string) => void;
   removeTask: (id: string) => void;
 }) {
+  const auteur = useAuteur();
   return (
     <Card className="overflow-x-auto print:overflow-visible">
       <table className="w-full min-w-[900px] text-sm print:min-w-0">
@@ -310,6 +322,7 @@ function TaskTable({
             <SortableHeader label="Statut" sortKey="statut" sort={sort} onSort={onSort} />
             <SortableHeader label="Temps" sortKey="temps" sort={sort} onSort={onSort} />
             <SortableHeader label="Échéance" sortKey="echeance" sort={sort} onSort={onSort} />
+            <th className="px-3 py-2 font-medium">Dernière activité</th>
             <th className="px-3 py-2 print:hidden" />
           </tr>
         </thead>
@@ -374,7 +387,7 @@ function TaskTable({
                     onChange={async (e) => {
                       const value = e.target.value as Priority;
                       if (await confirm({ title: 'Confirmer la modification', message: `Changer la priorité de "${t.title}" ?` })) {
-                        updateTask(t.id, { priority: value });
+                        updateTask(t.id, { priority: value }, auteur);
                       }
                     }}
                     className="rounded-md border border-transparent bg-transparent px-1 py-1 text-xs hover:border-slate-200 dark:hover:border-slate-700"
@@ -391,7 +404,7 @@ function TaskTable({
                     onChange={async (e) => {
                       const value = e.target.value as TaskStatus;
                       if (await confirm({ title: 'Confirmer la modification', message: `Changer le statut de "${t.title}" ?` })) {
-                        updateTask(t.id, { status: value });
+                        updateTask(t.id, { status: value }, auteur);
                       }
                     }}
                     className="rounded-md border border-transparent bg-transparent px-1 py-1 text-xs hover:border-slate-200 dark:hover:border-slate-700"
@@ -406,6 +419,9 @@ function TaskTable({
                   {spent}h / {t.estimatedHours}h
                 </td>
                 <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{t.dueDate ?? '—'}</td>
+                <td className="px-3 py-2">
+                  <DerniereActivite a={activite.get(t.id)} />
+                </td>
                 <td className="px-3 py-2 text-right print:hidden">
                   <button
                     onClick={() => setEditingTask(t)}
@@ -433,22 +449,54 @@ function TaskTable({
   );
 }
 
+/**
+ * Âge de la dernière entrée du journal.
+ *
+ * Une tâche qui avance et une tâche à l'arrêt se ressemblaient exactement dans la liste :
+ * même titre, même statut « En cours », même échéance. C'est cette colonne qui les
+ * distingue, et le badge signale celles dont plus rien ne bouge — ce n'est pas un
+ * reproche, c'est en général le signe qu'elles attendent quelque chose que personne n'a
+ * noté.
+ */
+function DerniereActivite({ a }: { a?: ActiviteTache }) {
+  if (!a || a.jours === null) return <span className="text-xs text-slate-300 dark:text-slate-600">—</span>;
+  return (
+    <span className="flex flex-wrap items-center gap-1.5 text-xs">
+      <span className={a.endormie ? 'text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}>
+        {a.jours === 0 ? "aujourd'hui" : a.jours === 1 ? 'hier' : `il y a ${a.jours} j`}
+      </span>
+      {a.notes > 0 && (
+        <span className="text-slate-400">
+          · {a.notes} note{a.notes > 1 ? 's' : ''}
+        </span>
+      )}
+      {a.endormie && (
+        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+          sans activité
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** Vue Kanban : une colonne par statut, glisser-déposer une carte pour changer le statut (confirmation demandée, comme tout changement). */
 function TaskKanban({
   tasks,
   members,
   spentByTask,
+  activite,
   confirm,
   updateTask,
   setEditingTask,
-}: TaskListProps & { confirm: ConfirmFn; updateTask: (id: string, patch: Partial<ProjectTask>) => void }) {
+}: TaskListProps & { confirm: ConfirmFn; updateTask: (id: string, patch: Partial<ProjectTask>, auteur?: string) => void }) {
   const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
+  const auteur = useAuteur();
 
   const handleDrop = async (t: ProjectTask, status: TaskStatus) => {
     setDragOverColumn(null);
     if (t.status === status) return;
     if (await confirm({ title: 'Confirmer la modification', message: `Changer le statut de "${t.title}" en "${statusColumnLabels[status]}" ?` })) {
-      updateTask(t.id, { status });
+      updateTask(t.id, { status }, auteur);
     }
   };
 
@@ -518,6 +566,11 @@ function TaskKanban({
                       </span>
                       {t.dueDate && <span>{t.dueDate}</span>}
                     </div>
+                    {activite.get(t.id)?.endormie && (
+                      <div className="text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                        sans activité depuis {activite.get(t.id)?.jours} j
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -531,7 +584,7 @@ function TaskKanban({
 }
 
 /** Vue Échéancier : regroupée par proximité d'échéance plutôt que par statut — pour voir d'un coup d'œil ce qui presse. */
-function TaskEcheancier({ tasks, members, spentByTask, setEditingTask }: TaskListProps) {
+function TaskEcheancier({ tasks, members, spentByTask, activite, setEditingTask }: TaskListProps) {
   const groups = useMemo(() => bucketTasksByDueDate(tasks), [tasks]);
 
   if (groups.length === 0) {
@@ -577,6 +630,7 @@ function TaskEcheancier({ tasks, members, spentByTask, setEditingTask }: TaskLis
                     {spent}h / {t.estimatedHours}h
                   </span>
                   <span className="text-xs text-slate-400">{t.dueDate ?? '—'}</span>
+                  <DerniereActivite a={activite.get(t.id)} />
                 </button>
               );
             })}
@@ -626,6 +680,7 @@ interface TaskFormPayload {
 function TaskForm({
   members,
   initial,
+  auteur,
   confirm,
   onCancel,
   onCreate,
@@ -633,6 +688,7 @@ function TaskForm({
 }: {
   members: TeamMember[];
   initial: ProjectTask | null;
+  auteur: string;
   confirm: ConfirmFn;
   onCancel: () => void;
   onCreate: (payload: TaskFormPayload) => void;
@@ -676,7 +732,14 @@ function TaskForm({
 
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" {...dismiss.backdrop}>
-      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" {...dismiss.content}>
+      {/* Plus large en modification : le fil d'avancement ne se lit pas dans 28 rem, et
+          replier le journal derrière un bouton reviendrait à ne jamais l'ouvrir. */}
+      <div
+        className={`max-h-[90vh] w-full overflow-y-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900 ${
+          initial ? 'max-w-2xl' : 'max-w-md'
+        }`}
+        {...dismiss.content}
+      >
         <div className="mb-3">
           <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{initial ? 'Modifier la tâche' : 'Nouvelle tâche'}</h3>
           {initial?.updatedBy && initial?.updatedAt && (
@@ -756,6 +819,14 @@ function TaskForm({
             {initial ? 'Enregistrer' : 'Créer'}
           </button>
         </div>
+
+        {/* Le journal vit en dehors du formulaire : une note part tout de suite, elle n'a
+            pas à attendre « Enregistrer » ni à être perdue si on annule la modification. */}
+        {initial && (
+          <div className="mt-4">
+            <TaskJournal taskId={initial.id} auteur={auteur} />
+          </div>
+        )}
       </div>
     </div>
   );

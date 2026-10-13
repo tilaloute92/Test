@@ -1079,9 +1079,9 @@ function MailConfigCard({ confirm }: { confirm: ConfirmFn }) {
  * VA DISPARAÎTRE, avant que cela ne disparaisse. D'où le décompte en direct.
  */
 function RetentionCard({ confirm }: { confirm: ConfirmFn }) {
-  const { tasks, absences, timeEntries, purgeExpiredRecords } = useStore();
+  const { tasks, absences, timeEntries, journalEntries, purgeExpiredRecords } = useStore();
   const mode = useAppMode();
-  const expired = findExpired({ tasks, absences, timeEntries }, new Date());
+  const expired = findExpired({ tasks, absences, timeEntries, journalEntries }, new Date());
 
   const purgeNow = async () => {
     if (
@@ -1102,7 +1102,9 @@ function RetentionCard({ confirm }: { confirm: ConfirmFn }) {
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Purge automatique ({RETENTION_DAYS} jours)</h2>
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
           Sont supprimés automatiquement les <strong>tâches terminées</strong> depuis plus de {RETENTION_DAYS} jours et les{' '}
-          <strong>absences</strong> dont la date est passée de plus de {RETENTION_DAYS} jours.
+          <strong>absences</strong> dont la date est passée de plus de {RETENTION_DAYS} jours. Une tâche dont le{' '}
+          <strong>journal contient au moins une note</strong> est conservée : quelqu'un a pris la peine de l'expliquer, et
+          c'est six mois plus tard qu'on y revient.
         </p>
       </div>
 
