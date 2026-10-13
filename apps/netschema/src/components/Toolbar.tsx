@@ -1,6 +1,6 @@
 import { VUES_LOGIQUES, type VueLogique } from '../lib/vlanViews'
 import { useMemo, useRef } from 'react'
-import { Btn } from './ui'
+import { Btn, Menu, MenuItem, MenuSeparator } from './ui'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
 import { pageInteractive, type PageExportee } from '../lib/exportHtml'
 import { capturerPages } from '../lib/capture'
@@ -349,7 +349,7 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
           value={vlanFocus ?? ''}
           onChange={(event) => store().setVlanFocus(event.target.value || null)}
           title="Mettre un VLAN en avant : ce qui le porte ressort, le reste s’estompe"
-          className={`rounded-lg border px-2 py-1.5 text-[13px] outline-none ${
+          className={`max-w-[210px] truncate rounded-lg border px-2 py-1.5 text-[13px] outline-none ${
             vlanFocus ? 'border-blue-300 bg-blue-50 font-medium text-blue-800' : 'border-slate-200 bg-white text-slate-700'
           }`}
         >
@@ -422,15 +422,54 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
 
         <Separator />
 
-        <Btn onClick={() => store().loadSample()} title="Charger le schéma d'exemple">Exemple</Btn>
-        <Btn onClick={() => store().newDiagram()} title="Repartir d'un schéma vide">Nouveau</Btn>
+        {/*
+          Fichier et Exporter sont repliés.
 
-        <Separator />
-
-        <Btn onClick={saveProject} title="Enregistrer le projet (.json)">Enregistrer</Btn>
-        <Btn onClick={() => fileRef.current?.click()} title="Ouvrir un projet .json ou un schéma draw.io (.drawio, .xml)">
-          Ouvrir…
-        </Btn>
+          Sept boutons de bout de ligne — exemple, nouveau, enregistrer, ouvrir, trois formats
+          — faisaient passer la barre à la ligne, et le plan commençait cent soixante-dix-huit
+          pixels plus bas. Ce sont des commandes de début ou de fin de séance ; l'assistant,
+          l'import rapide et la haute disponibilité restent sous la main parce qu'on s'en sert
+          en travaillant.
+        */}
+        <Menu label="Fichier" title="Ouvrir, enregistrer, repartir à neuf">
+          {(fermer) => (
+            <>
+              <MenuItem
+                label="Enregistrer…"
+                hint="Le projet au format .json"
+                onClick={() => {
+                  fermer()
+                  saveProject()
+                }}
+              />
+              <MenuItem
+                label="Ouvrir…"
+                hint="Un projet .json, ou un schéma draw.io"
+                onClick={() => {
+                  fermer()
+                  fileRef.current?.click()
+                }}
+              />
+              <MenuSeparator />
+              <MenuItem
+                label="Nouveau"
+                hint="Repartir d’un schéma vide"
+                onClick={() => {
+                  fermer()
+                  store().newDiagram()
+                }}
+              />
+              <MenuItem
+                label="Charger l’exemple"
+                hint="L’architecture de démonstration"
+                onClick={() => {
+                  fermer()
+                  store().loadSample()
+                }}
+              />
+            </>
+          )}
+        </Menu>
         <input
           ref={fileRef}
           type="file"
@@ -442,16 +481,45 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
           }}
         />
 
-        <Separator />
-
-        <Btn onClick={() => void exportImage('svg')} title="Exporter en SVG vectoriel">SVG</Btn>
-        <Btn onClick={() => void exportImage('png')} title="Exporter en PNG (×2)">PNG</Btn>
-        <Btn
-          onClick={() => void exportPage()}
-          title="Page HTML autonome : les quatre vues, toutes les informations, navigation et options d’affichage"
-        >
-          HTML
-        </Btn>
+        <Menu label="Exporter" title="Image, page autonome, dossier technique">
+          {(fermer) => (
+            <>
+              <MenuItem
+                label="SVG"
+                hint="Vectoriel, pour un traitement de texte ou Visio"
+                onClick={() => {
+                  fermer()
+                  void exportImage('svg')
+                }}
+              />
+              <MenuItem
+                label="PNG"
+                hint="Image en double résolution"
+                onClick={() => {
+                  fermer()
+                  void exportImage('png')
+                }}
+              />
+              <MenuItem
+                label="Page HTML"
+                hint="Autonome : les quatre vues, la navigation, les options"
+                onClick={() => {
+                  fermer()
+                  void exportPage()
+                }}
+              />
+              <MenuSeparator />
+              <MenuItem
+                label="Dossier technique…"
+                hint="L’onglet Dossier : page de garde, inventaire, réserves"
+                onClick={() => {
+                  fermer()
+                  store().setAppView('dossier')
+                }}
+              />
+            </>
+          )}
+        </Menu>
       </div>
     </header>
   )
