@@ -30,6 +30,8 @@ import { getSyncUser, isSyncActive, onSyncActiveChange, type SyncUser } from '..
 import { useAppMode, useLinkState } from '../hooks/useAppStatus';
 import { clearLocalArchive, countArchived, readLocalArchive } from '../lib/localArchive';
 import { findExpired, RETENTION_DAYS } from '../lib/retention';
+import { SEUIL_PRESENCE_DEFAUT } from '../lib/presence';
+import { fetchServiceConfig, saveServiceConfig } from '../lib/serverSync';
 import { fetchMailConfig, saveMailConfig, sendTestMail, verifyMailRelay, type MailConfig } from '../lib/mailApi';
 
 const NOT_LOGGED_IN_HINT =
@@ -369,6 +371,7 @@ export function SettingsView({ canEdit = true }: { canEdit?: boolean }) {
       {/* ------------------------------------------------------------------ */}
       <BackupCard confirm={confirm} />
       <MailConfigCard confirm={confirm} />
+      <PresenceCard />
       <RetentionCard confirm={confirm} />
       <ArchivedDataCard confirm={confirm} />
       </fieldset>
@@ -1078,6 +1081,99 @@ function MailConfigCard({ confirm }: { confirm: ConfirmFn }) {
  * manquerait le plus à un administrateur n'est pas un réglage de plus mais de savoir CE QUI
  * VA DISPARAÎTRE, avant que cela ne disparaisse. D'où le décompte en direct.
  */
+/**
+ * Seuil de présence du service.
+ *
+ * Réglage d'équipe et non d'affichage : il vit sur le serveur, et l'abaisser ferait taire
+ * l'alerte pour tout le monde — d'où la réserve à l'administrateur, appliquée côté serveur
+ * et pas seulement en masquant le bouton ici.
+ */
+function PresenceCard() {
+  const mode = useAppMode();
+  const [seuil, setSeuil] = useState<number | null>(null);
+  const [saisie, setSaisie] = useState('50');
+  const [parDefaut, setParDefaut] = useState(true);
+  const [etat, setEtat] = useState<'' | 'enregistrement' | 'ok'>('');
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (mode !== 'serveur') return;
+    let vivant = true;
+    fetchServiceConfig()
+      .then((c) => {
+        if (!vivant) return;
+        setSeuil(c.seuilPresence);
+        setSaisie(String(Math.round(c.seuilPresence * 100)));
+        setParDefaut(c.parDefaut);
+      })
+      .catch((e) => vivant && setErreur(e instanceof Error ? e.message : String(e)));
+    return () => {
+      vivant = false;
+    };
+  }, [mode]);
+
+  if (mode !== 'serveur') {
+    return (
+      <Card className="p-4">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Seuil de présence du service</h2>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Réglage d'équipe, conservé par le serveur. En mode autonome, le seuil reste à{' '}
+          {Math.round(SEUIL_PRESENCE_DEFAUT * 100)} % et n'est pas modifiable.
+        </p>
+      </Card>
+    );
+  }
+
+  const enregistrer = async () => {
+    setErreur(null);
+    setEtat('enregistrement');
+    try {
+      const c = await saveServiceConfig(Number(saisie) / 100);
+      setSeuil(c.seuilPresence);
+      setParDefaut(c.parDefaut);
+      setEtat('ok');
+      setTimeout(() => setEtat(''), 2000);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+      setEtat('');
+    }
+  };
+
+  return (
+    <Card className="p-4">
+      <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Seuil de présence du service</h2>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+        En dessous de ce taux, l'application signale que le service n'est plus tenu : un chiffre rouge dans le planning, un
+        bandeau dans la Vue d'ensemble et un point dans le rapport de réunion. Le télétravail et l'astreinte comptent comme
+        présents ; les congés, les formations et les autres absences non.
+        {parDefaut && seuil !== null && ' Rien n\'a encore été enregistré : la valeur affichée est celle d\'origine.'}
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input
+          type="number"
+          min={1}
+          max={100}
+          value={saisie}
+          onChange={(e) => setSaisie(e.target.value)}
+          className="input w-24 text-sm"
+        />
+        <span className="text-sm text-slate-500 dark:text-slate-400">% de l'effectif</span>
+        <button
+          onClick={() => void enregistrer()}
+          disabled={etat === 'enregistrement' || !saisie}
+          className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
+        >
+          {etat === 'enregistrement' ? 'Enregistrement…' : etat === 'ok' ? 'Enregistré ✓' : 'Enregistrer'}
+        </button>
+        <span className="text-xs text-slate-400">Réservé au compte administrateur.</span>
+      </div>
+      {erreur && (
+        <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300">{erreur}</p>
+      )}
+    </Card>
+  );
+}
+
 function RetentionCard({ confirm }: { confirm: ConfirmFn }) {
   const { tasks, absences, timeEntries, journalEntries, purgeExpiredRecords } = useStore();
   const mode = useAppMode();

@@ -115,13 +115,30 @@ export function DailyView() {
             ]}
           />
           <NavButton onClick={() => setDate((d) => addDays(d, -1))}>◀</NavButton>
+          {/* Champ date plutôt que flèches seules : atteindre le 3 du mois prochain
+              demandait une vingtaine de clics. Le calendrier qui s'ouvre est celui de
+              Windows — rien à apprendre, et il fonctionne au clavier.
+              `value` doit être du AAAA-MM-JJ LOCAL : toISOString() décalerait d'un jour
+              tous les soirs à l'heure d'été. */}
+          <input
+            type="date"
+            value={toISODate(date)}
+            onChange={(e) => {
+              // Un champ vidé (croix du navigateur) ne doit pas produire une date invalide.
+              if (!e.target.value) return;
+              setDate(new Date(`${e.target.value}T00:00:00`));
+            }}
+            aria-label="Aller à une date"
+            className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+          />
+          <NavButton onClick={() => setDate((d) => addDays(d, 1))}>▶</NavButton>
           <button
             onClick={() => setDate(new Date())}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            disabled={isToday(date)}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
           >
             Aujourd'hui
           </button>
-          <NavButton onClick={() => setDate((d) => addDays(d, 1))}>▶</NavButton>
           <button
             onClick={() => setShowMail(true)}
             title="Envoyer à chacun son programme du jour par mail"

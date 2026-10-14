@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { formatDateLong, formatWeekRange, getWeeks } from '../lib/date';
+import { addDays, formatDateLong, formatWeekRange, getWeeks } from '../lib/date';
+import { jourCourt, pourcent, presenceJours, type PresenceJour } from '../lib/presence';
+import { useSeuilPresence } from '../hooks/useSeuilPresence';
 import { computeWorkload, workloadLevel, workloadColors } from '../lib/workload';
 import { computeRoadmapWeekStats } from '../lib/weeklyReport';
 import { computeFlashReport, listProjects, type FlashReport } from '../lib/flashReport';
@@ -48,8 +50,57 @@ function memberNames(task: ProjectTask, members: TeamMember[]): string {
   return names.length > 0 ? names.join(', ') : 'Non assigné';
 }
 
+/** Trois semaines : l'horizon du planning, et le délai au-delà duquel on ne décale plus
+ *  grand-chose de toute façon. */
+const JOURS_HORIZON_PRESENCE = 21;
+
+/**
+ * Le bandeau de présence insuffisante.
+ *
+ * À part du panneau « Points d'attention », et au-dessus de lui : ce n'est pas un travail
+ * à faire, c'est une condition de fonctionnement du service qui n'est plus tenue. Il
+ * disparaît complètement dès que les jours signalés sont réglés — un bandeau permanent
+ * cesse d'être lu au bout d'une semaine.
+ */
+function BandeauPresence({
+  creux,
+  seuil,
+  onNavigate,
+}: {
+  creux: PresenceJour[];
+  seuil: number;
+  onNavigate: (tab: Tab) => void;
+}) {
+  if (creux.length === 0) return null;
+  // Au-delà de cinq jours cités, la phrase devient illisible : on compte le reste.
+  const cites = creux.slice(0, 5);
+  return (
+    <div className="rounded-xl border-l-4 border-red-500 bg-red-50 p-4 dark:bg-red-500/10">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-red-800 dark:text-red-300">
+            Présence du service sous {pourcent(seuil)} sur {creux.length} jour{creux.length > 1 ? 's' : ''} à venir
+          </div>
+          <p className="mt-0.5 text-xs text-red-700 dark:text-red-400">
+            {cites.map((p) => `${jourCourt(p.date)} (${pourcent(p.taux)})`).join(', ')}
+            {creux.length > cites.length ? `, et ${creux.length - cites.length} autre(s)` : ''}.{' '}
+            {cites[0].indisponibles.length > 0 && <>Le {jourCourt(cites[0].date)} : {cites[0].indisponibles.join(', ')}.</>}
+          </p>
+        </div>
+        <button
+          onClick={() => onNavigate('planning')}
+          className="shrink-0 rounded-lg border border-red-300 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-100 print:hidden dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-500/20"
+        >
+          Voir le planning
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id: string) => void; onNavigate: (tab: Tab) => void }) {
   const { members, tasks, timeEntries, planningSlots, absences, roadmapItems, copils } = useStore();
+  const seuilPresence = useSeuilPresence();
   const today = new Date();
   const weeks = useMemo(() => getWeeks(today, 3), []); // eslint-disable-line react-hooks/exhaustive-deps
   const [mode, setMode] = useViewMode<DashboardViewMode>('vue-ensemble', DASHBOARD_VIEW_MODES, 'complet');
@@ -89,6 +140,22 @@ export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id:
   const projectSummaries = listProjects(tasks).map((p) => computeFlashReport(p, tasks, timeEntries, members, today));
   const redProjects = projectSummaries.filter((r) => r.rag === 'rouge');
   const orangeProjects = projectSummaries.filter((r) => r.rag === 'orange');
+
+  // Présence du service sur l'horizon du planning : c'est là que les congés sont posés,
+  // et c'est à cette échéance qu'on peut encore décaler quelque chose.
+  const creuxPresence = useMemo(
+    () =>
+      presenceJours({
+        jours: Array.from({ length: JOURS_HORIZON_PRESENCE }, (_, i) => addDays(today, i)),
+        members,
+        absences,
+        seuil: seuilPresence,
+      }).filter((p) => p.aSignaler),
+    // todayIso et non l'objet Date, recréé à chaque rendu : la liste ne doit se recalculer
+    // qu'au changement de jour, pas à chaque frappe ailleurs dans l'écran.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [todayIso, members, absences, seuilPresence]
+  );
 
   const attentionItems: AttentionItem[] = [];
   if (criticalIncidents.length > 0) {
@@ -203,6 +270,8 @@ export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id:
           <PrintButton />
         </div>
       </div>
+
+      <BandeauPresence creux={creuxPresence} seuil={seuilPresence} onNavigate={onNavigate} />
 
       <AttentionPanel items={attentionItems} expanded={expanded} onToggle={toggleExpanded} onNavigate={onNavigate} />
 

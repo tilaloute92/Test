@@ -139,3 +139,19 @@ export const syncAddCopil = (item: Copil) => request<Copil>('/copils', { method:
 export const syncUpdateCopil = (id: string, patch: Partial<Copil>, baseUpdatedAt?: string) =>
   request<Copil>(`/copils/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch), headers: baseHeader(baseUpdatedAt) });
 export const syncRemoveCopil = (id: string) => request<{ ok: boolean }>(`/copils/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+/**
+ * Règles de service valables pour toute l'équipe (voir server/src/serviceConfig.js).
+ * Lecture ouverte à toute session, écriture réservée à l'administrateur côté serveur.
+ */
+export interface ServiceConfig {
+  /** 0 → 1. En dessous, l'application signale que le service n'est plus tenu. */
+  seuilPresence: number;
+  /** Vrai tant que rien n'a été enregistré : la valeur affichée est celle d'origine. */
+  parDefaut: boolean;
+}
+
+export const fetchServiceConfig = () => request<ServiceConfig>('/service-config');
+
+export const saveServiceConfig = (seuilPresence: number) =>
+  request<ServiceConfig>('/service-config', { method: 'PUT', body: JSON.stringify({ seuilPresence }) });

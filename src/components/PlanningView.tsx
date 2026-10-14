@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { formatDateLong, formatDayLabel, formatWeekRange, getWeeks, isToday, isWeekend, toISODate } from '../lib/date';
 import { accepteNature, PERIOD_LABELS, PERIOD_RANGES, getHourSlots, periodNatureLabel, periodRangeLabel } from '../lib/hours';
+import { jourCourt, pourcent, presenceJours, tauxSemaine } from '../lib/presence';
+import { useSeuilPresence } from '../hooks/useSeuilPresence';
 import { assignHours, entriesFor } from '../lib/dayAllocation';
 import { isAbsent } from '../lib/workload';
 import { getTaskById } from '../lib/selectors';
@@ -48,6 +50,7 @@ export function PlanningView() {
   const confirm = useConfirm();
   const weeks = useMemo(() => getWeeks(new Date(), 3), []);
   const [weekIndex, setWeekIndex] = useState(0);
+  const seuil = useSeuilPresence();
   const [selected, setSelected] = useState<SelectedCell | null>(null);
   const [mode, setMode] = useViewMode<PlanningViewMode>('planning', PLANNING_VIEW_MODES, 'grille');
   const [personId, setPersonId] = useState<string>(members[0]?.id ?? '');
@@ -162,6 +165,7 @@ export function PlanningView() {
         planningSlots={planningSlots}
         timeEntries={timeEntries}
         absences={absences}
+        seuil={seuil}
         selected={selected}
         onSelect={setSelected}
       />
@@ -501,6 +505,67 @@ function slotTask(planningSlots: PlanningSlot[], tasks: ProjectTask[], memberId:
  * comme un bloc d'agenda de 4 heures. Cliquer sur n'importe quelle tranche ouvre l'affectation
  * de sa demi-journée.
  */
+/**
+ * Taux de présence du service, un chiffre par jour, juste sous les dates.
+ *
+ * Posé ICI et pas dans un écran de synthèse : c'est dans cette grille qu'on arbitre les
+ * congés, et un creux de présence se voit au moment où on le crée, pas une semaine plus
+ * tard. Le week-end est grisé plutôt que masqué — l'équipe peut y travailler, mais elle
+ * n'est pas censée y être au complet, et une alerte qui se déclenche tous les samedis
+ * n'est plus lue le lundi.
+ */
+function LignePresence({
+  members,
+  absences,
+  jours,
+  seuil,
+  template,
+}: {
+  members: TeamMember[];
+  absences: Absence[];
+  jours: Date[];
+  seuil: number;
+  template: string;
+}) {
+  const presence = useMemo(() => presenceJours({ jours, members, absences, seuil }), [jours, members, absences, seuil]);
+  const semaine = tauxSemaine(presence);
+  const creux = presence.filter((p) => p.aSignaler);
+
+  return (
+    <div className="mb-1 border-b border-slate-100 pb-2 dark:border-slate-800">
+      <div className="grid items-center gap-1" style={{ gridTemplateColumns: template }}>
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Présence</div>
+        {presence.map((p) => (
+          <div
+            key={p.iso}
+            title={
+              p.indisponibles.length > 0
+                ? `Indisponible(s) : ${p.indisponibles.join(', ')}`
+                : "Toute l'équipe est disponible"
+            }
+            className={`rounded-md px-1 py-0.5 text-center text-xs font-semibold tabular-nums ${
+              p.weekend
+                ? 'text-slate-300 dark:text-slate-600'
+                : p.aSignaler
+                  ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300'
+                  : p.taux < seuil + 0.2
+                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'
+                    : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            {pourcent(p.taux)}
+          </div>
+        ))}
+      </div>
+      <p className={`mt-1 text-xs ${creux.length > 0 ? 'text-red-700 dark:text-red-400' : 'text-slate-400'}`}>
+        {creux.length === 0
+          ? `Semaine à ${pourcent(semaine)} de présence — seuil de ${pourcent(seuil)} tenu tous les jours ouvrés.`
+          : `Semaine à ${pourcent(semaine)} · ${creux.map((p) => jourCourt(p.date)).join(', ')} sous le seuil de ${pourcent(seuil)}.`}
+      </p>
+    </div>
+  );
+}
+
 function GrilleHoraire({
   members,
   currentWeek,
@@ -508,6 +573,7 @@ function GrilleHoraire({
   planningSlots,
   timeEntries,
   absences,
+  seuil,
   selected,
   onSelect,
 }: {
@@ -517,6 +583,7 @@ function GrilleHoraire({
   planningSlots: PlanningSlot[];
   timeEntries: TimeEntry[];
   absences: Absence[];
+  seuil: number;
   selected: SelectedCell | null;
   onSelect: (cell: SelectedCell) => void;
 }) {
@@ -543,6 +610,8 @@ function GrilleHoraire({
             </div>
           ))}
         </div>
+
+        <LignePresence members={members} absences={absences} jours={currentWeek} seuil={seuil} template={template} />
 
         {members.map((m) => (
           <div key={m.id} className="mt-2 border-t border-slate-100 pt-2 dark:border-slate-800">

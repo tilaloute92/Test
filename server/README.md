@@ -40,6 +40,17 @@ destinataire). Pour un envoi automatique quotidien, renseignez `DAILY_MAIL_AT` (
 `HH:MM`, heure du serveur). Si le service est arrêté à l'heure dite, l'envoi part au
 redémarrage le même jour plutôt que d'être sauté, et jamais deux fois dans la journée.
 
+## Seuil de présence du service
+
+`config.json`, clé `service.seuilPresence` (0 → 1, 0,5 par défaut). Lu par
+`GET /api/data/service-config`, ouvert à toute session parce que l'alerte doit s'afficher
+pour tout le monde ; écrit par `PUT /api/data/service-config`, **réservé à
+l'administrateur** — abaisser le seuil ferait taire l'alerte pour toute l'équipe.
+
+Côté serveur et non dans le navigateur : rangé dans le stockage local, chacun aurait le
+sien, et deux personnes regardant le même planning n'y verraient pas la même alerte. En
+mode autonome la valeur d'origine s'applique et le réglage est annoncé indisponible.
+
 ## Journal d'avancement
 
 Une huitième collection partagée, `journalEntries` (fichier `data/business-journalEntries.json`),

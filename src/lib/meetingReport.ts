@@ -1,6 +1,7 @@
 import { addDays, formatDayLabel, formatWeekRange, getWorkingDaysOfWeek, startOfWeek, toISODate } from './date';
 import { computeWeeklyReport, type WeeklyReport } from './weeklyReport';
 import { isAbsent } from './workload';
+import { jourCourt, pourcent, presenceJours, SEUIL_PRESENCE_DEFAUT } from './presence';
 import type { Absence, AbsenceType, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
 
 /**
@@ -398,9 +399,10 @@ export function construirePoints(opts: {
   tasks: ProjectTask[];
   members: TeamMember[];
   absences: Absence[];
+  seuilPresence: number;
   aujourdhui: Date;
 }): PointAborder[] {
-  const { rapport, projets, semaines, tasks, members, absences, aujourdhui } = opts;
+  const { rapport, projets, semaines, tasks, members, absences, seuilPresence, aujourdhui } = opts;
   const points: PointAborder[] = [];
 
   // 1. Incidents qui attendent quelqu'un d'extérieur depuis trop longtemps.
@@ -443,16 +445,18 @@ export function construirePoints(opts: {
     });
   }
 
-  // 4. Semaine en sous-effectif alors que des incidents graves tournent.
+  // 4. Présence du service sous le seuil : la condition de fonctionnement, pas la charge.
+  //    Un jour à 40 % de présence est un problème même sans incident en cours — c'est
+  //    justement celui qui tombera ce jour-là qui ne trouvera personne.
   for (const s of semaines) {
-    const isoJours = new Set(s.jours.map(toISODate));
-    const absents = new Set(absences.filter((a) => isoJours.has(a.date)).map((a) => a.memberId));
-    if (absents.size === 0 || rapport.openCriticalIncidents.length === 0) continue;
-    if (absents.size * 2 < members.length) continue;
+    const creux = presenceJours({ jours: s.jours, members, absences, seuil: seuilPresence }).filter((p) => p.aSignaler);
+    if (creux.length === 0) continue;
     points.push({
-      id: `effectif-${s.label}`,
-      texte: `${s.label} : ${absents.size} personne(s) sur ${members.length} absente(s) alors que ${rapport.openCriticalIncidents.length} incident(s) critique(s) tournent.`,
-      source: 'effectif',
+      id: `presence-${s.label}`,
+      texte: `${s.label} : présence à ${creux.map((p) => `${pourcent(p.taux)} le ${jourCourt(p.date)}`).join(', ')} — sous le seuil de ${pourcent(
+        seuilPresence
+      )}. Qui reste joignable ?`,
+      source: 'présence du service',
     });
   }
 
@@ -508,10 +512,13 @@ export function computeMeetingReport(opts: {
   absences: Absence[];
   planningSlots: PlanningSlot[];
   roadmapItems: Parameters<typeof computeWeeklyReport>[0]['roadmapItems'];
+  /** Seuil en vigueur pour le service (voir src/lib/presence.ts). */
+  seuilPresence?: number;
   /** Injectable pour les tests ; par défaut l'instant présent. */
   maintenant?: Date;
 }): MeetingReport {
   const { debutSemaine, members, tasks, timeEntries, absences, planningSlots, roadmapItems } = opts;
+  const seuilPresence = opts.seuilPresence ?? SEUIL_PRESENCE_DEFAUT;
   const maintenant = opts.maintenant ?? new Date();
 
   const lundi = startOfWeek(debutSemaine);
@@ -534,7 +541,16 @@ export function computeMeetingReport(opts: {
   const semaines = construireSujets({ semaines: [s1, s2], tasks, members, planningSlots, absences, aujourdhui: maintenant });
   const joursAVenir = [...s1, ...s2];
   const grille = construireGrille({ jours: joursAVenir, members, tasks, planningSlots, absences });
-  const points = construirePoints({ rapport: hebdo, projets, semaines, tasks, members, absences, aujourdhui: maintenant });
+  const points = construirePoints({
+    rapport: hebdo,
+    projets,
+    semaines,
+    tasks,
+    members,
+    absences,
+    seuilPresence,
+    aujourdhui: maintenant,
+  });
 
   // getWorkingDaysOfWeek renvoie lundi → dimanche : l'index 0 est donc lundi.
   const dateReunion = semaineEcoulee[(JOUR_REUNION + 6) % 7];

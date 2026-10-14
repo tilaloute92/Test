@@ -14,6 +14,7 @@ import { ReunionProjection } from './ReunionProjection';
 import { ReunionSynthese } from './ReunionSynthese';
 import { SendReunionModal } from './SendReunionModal';
 import { useViewMode } from '../hooks/useViewMode';
+import { useSeuilPresence } from '../hooks/useSeuilPresence';
 
 const TEAM_LABEL = 'Équipe Infrastructure & Réseau';
 
@@ -41,6 +42,7 @@ export function WeeklyReportView() {
   const [busy, setBusy] = useState<'' | 'pptx' | 'html'>('');
   const [erreur, setErreur] = useState<string | null>(null);
   const [envoiOuvert, setEnvoiOuvert] = useState(false);
+  const seuilPresence = useSeuilPresence();
 
   // La date est réduite à un nombre : un objet Date recréé à chaque rendu relancerait le
   // calcul en boucle à travers useMemo.
@@ -56,8 +58,9 @@ export function WeeklyReportView() {
         absences,
         planningSlots,
         roadmapItems,
+        seuilPresence,
       }),
-    [debutMs, members, tasks, timeEntries, absences, planningSlots, roadmapItems]
+    [debutMs, members, tasks, timeEntries, absences, planningSlots, roadmapItems, seuilPresence]
   );
 
   // Qui signe le document. Le choix mémorisé dans « Ma journée » sert de source : il a

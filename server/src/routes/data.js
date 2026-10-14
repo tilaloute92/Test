@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { requireAuth } from '../auth/session.js';
+import { requireAdmin } from '../auth/admin.js';
 import * as store from '../businessData.js';
+import { getServiceConfig, setServiceConfig } from '../serviceConfig.js';
 
 export const dataRouter = Router();
 
@@ -155,4 +157,19 @@ dataRouter.patch('/journal-entries/:id', (req, res) => {
 dataRouter.delete('/journal-entries/:id', (req, res) => {
   store.removeJournalEntry(req.params.id);
   res.json({ ok: true });
+});
+
+// --- Règles de service (seuil de présence) ---
+//
+// Lecture ouverte à toute session : l'alerte doit s'afficher pour tout le monde. Écriture
+// réservée à l'administrateur, comme le reste de la configuration — abaisser le seuil
+// ferait taire une alerte pour toute l'équipe.
+dataRouter.get('/service-config', (_req, res) => res.json(getServiceConfig()));
+
+dataRouter.put('/service-config', requireAdmin, (req, res) => {
+  try {
+    res.json(setServiceConfig({ seuilPresence: req.body?.seuilPresence }));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
