@@ -118,7 +118,7 @@ export function ReunionDocument({ report, members, teamLabel, auteur, pointsReti
 // ------------------------------------------------------------------- En-tête
 
 function EnTete({ report, teamLabel, auteur }: { report: MeetingReport; teamLabel: string; auteur?: string }) {
-  const reunion = report.semaines[0]?.jours[0];
+  const reunion = report.dateReunion;
   return (
     <div style={{ background: '#1e1b4b', color: '#fff', padding: '20px 28px' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>

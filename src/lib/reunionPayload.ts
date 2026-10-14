@@ -233,7 +233,7 @@ export function buildReunionPayload(opts: {
     teamLabel,
     auteur,
     semaineLabel: formatWeekRange(report.semaineEcoulee),
-    dateReunion: s1 ? formatDateLong(s1.jours[0]) : '',
+    dateReunion: formatDateLong(report.dateReunion),
     genereLe: `${formatDateLong(report.genereLe)}, ${heureCourte(report.genereLe)}`,
 
     meteo: { emoji: m.emoji, label: m.label, score: h.weatherScore, facteurs: h.weatherFactors },

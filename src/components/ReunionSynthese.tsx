@@ -54,7 +54,7 @@ export function ReunionSynthese({
               {teamLabel} — semaine du {formatWeekRange(report.semaineEcoulee)}
             </div>
             <div style={{ fontSize: 12, color: ENCRE3 }}>
-              Synthèse pour la réunion{s1 ? ` du ${s1.jours[0].getDate()}/${s1.jours[0].getMonth() + 1}` : ''}
+              Synthèse pour la réunion du {report.dateReunion.getDate()}/{report.dateReunion.getMonth() + 1}
               {auteur ? ` · ${auteur}` : ''}
             </div>
           </div>

@@ -12,7 +12,7 @@ import {
   tasks as seedTasks,
   timeEntries as seedTimeEntries,
 } from '../data/seed';
-import { addDays, toISODate } from '../lib/date';
+import { addDays, isWeekend, toISODate } from '../lib/date';
 import { makeId } from '../lib/ids';
 import { archiveLocalCollections, archivePersistedCollections } from '../lib/localArchive';
 import { repairDuplicateIds } from '../lib/repairIds';
@@ -100,7 +100,11 @@ export interface StoreState extends SharedSnapshot {
   removeTimeEntry: (id: string) => void;
 
   addAbsence: (absence: Omit<Absence, 'id'>) => void;
-  addAbsenceRange: (absence: Omit<Absence, 'id' | 'date'> & { startDate: string; endDate: string }) => void;
+  /** `inclureWeekend` : les samedis et dimanches de la plage sont créés comme les autres
+   *  jours. Faux par défaut — voir l'implémentation. */
+  addAbsenceRange: (
+    absence: Omit<Absence, 'id' | 'date'> & { startDate: string; endDate: string; inclureWeekend?: boolean }
+  ) => void;
   removeAbsence: (id: string) => void;
 
   addApiConnection: (connection: Omit<ApiConnection, 'id'>) => void;
@@ -385,15 +389,28 @@ export const useStore = create<StoreState>()(
         set((s) => ({ absences: [...s.absences, item] }));
         syncWrite('ajout absence', syncAddAbsence(item));
       },
-      addAbsenceRange: ({ startDate, endDate, ...rest }) => {
+      addAbsenceRange: ({ startDate, endDate, inclureWeekend = false, ...rest }) => {
         const start = new Date(startDate);
         const end = new Date(endDate);
         const created: Absence[] = [];
-        // L'équipe travaillant aussi le week-end (horaires décalés), une absence sur une
-        // plage de dates couvre désormais tous les jours de la plage, samedi/dimanche inclus.
+        /**
+         * Les samedis et dimanches sont EXCLUS par défaut.
+         *
+         * Une semaine de congés posée du lundi au dimanche créait deux jours d'absence que
+         * personne n'aurait travaillés de toute façon. Ils ne coûtaient rien en capacité —
+         * elle est déjà tombée à zéro — mais ils remplissaient la grille de planning de
+         * pastilles « congés » le week-end et gonflaient le décompte d'absences du rapport,
+         * qui annonçait 14 demi-journées là où la personne en avait posé 10.
+         *
+         * La case reste ouverte parce que l'équipe travaille aussi le week-end : une
+         * astreinte ou un télétravail du samedi sont de vraies occupations, et les refuser
+         * d'office serait un autre mensonge.
+         */
         for (let d = start; d <= end; d = addDays(d, 1)) {
+          if (!inclureWeekend && isWeekend(d)) continue;
           created.push({ ...rest, date: toISODate(d), id: nextId('a') });
         }
+        if (created.length === 0) return;
         set((s) => ({ absences: [...s.absences, ...created] }));
         syncWrite('ajout absences', syncAddAbsencesBulk(created));
       },

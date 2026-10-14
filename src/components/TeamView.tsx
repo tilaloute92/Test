@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { toISODate } from '../lib/date';
+import { addDays, isWeekend, toISODate } from '../lib/date';
 import { Avatar, Card, PrintButton, PrintHeader } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import type { AbsenceType, TeamMember } from '../types';
@@ -251,7 +251,15 @@ function AbsenceForm({
 }: {
   members: { id: string; name: string }[];
   onCancel: () => void;
-  onCreate: (p: { memberId: string; startDate: string; endDate: string; period: 'jour' | 'matin' | 'apres_midi'; type: AbsenceType; label?: string }) => void;
+  onCreate: (p: {
+    memberId: string;
+    startDate: string;
+    endDate: string;
+    period: 'jour' | 'matin' | 'apres_midi';
+    type: AbsenceType;
+    label?: string;
+    inclureWeekend: boolean;
+  }) => void;
 }) {
   const dismiss = useModalDismiss(onCancel, 'cette absence');
   const [memberId, setMemberId] = useState(members[0]?.id ?? '');
@@ -261,8 +269,22 @@ function AbsenceForm({
   const [period, setPeriod] = useState<'jour' | 'matin' | 'apres_midi'>('jour');
   const [type, setType] = useState<AbsenceType>('conge');
   const [label, setLabel] = useState('');
+  const [inclureWeekend, setInclureWeekend] = useState(false);
 
   const rangeInvalid = endDate < startDate;
+
+  // Le nombre de jours réellement créés, annoncé avant d'enregistrer : c'est la seule
+  // façon de voir d'un coup d'œil que le week-end a bien été écarté — ou qu'il ne l'a pas
+  // été, ce qui se découvrait jusqu'ici dans la grille de planning, une fois posé.
+  const joursCrees = useMemo(() => {
+    if (rangeInvalid) return 0;
+    let n = 0;
+    for (let d = new Date(startDate); d <= new Date(endDate); d = addDays(d, 1)) {
+      if (!inclureWeekend && isWeekend(d)) continue;
+      n += 1;
+    }
+    return n;
+  }, [startDate, endDate, inclureWeekend, rangeInvalid]);
 
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" {...dismiss.backdrop}>
@@ -307,9 +329,29 @@ function AbsenceForm({
             ))}
           </select>
           <input placeholder="Précision (optionnel)" value={label} onChange={(e) => setLabel(e.target.value)} className="input" />
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
+            <input
+              type="checkbox"
+              checked={inclureWeekend}
+              onChange={(e) => setInclureWeekend(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 rounded"
+            />
+            <span>
+              Inclure les samedis et dimanches
+              <span className="block text-xs text-slate-400">
+                À cocher pour une astreinte ou un télétravail de week-end. Des congés posés du lundi au dimanche créeraient sinon
+                deux jours d'absence que personne n'aurait travaillés, qui gonflent le décompte du rapport.
+              </span>
+            </span>
+          </label>
           <p className="text-xs text-slate-400">
-            L'équipe travaillant aussi le week-end, les samedis et dimanches de la période sont inclus — choisissez "Matin uniquement" ou
-            "Après-midi uniquement" ci-dessus si l'absence ne couvre qu'une demi-journée par jour.
+            {rangeInvalid
+              ? 'La date de fin précède la date de début.'
+              : joursCrees === 0
+                ? 'Aucun jour à créer : la période ne contient que des samedis et dimanches, et ils sont exclus.'
+                : `${joursCrees} jour(s) seront créés${inclureWeekend ? '' : ', week-end exclu'}.`}
+            {' '}Choisissez « Matin uniquement » ou « Après-midi uniquement » ci-dessus si l'absence ne couvre qu'une demi-journée
+            par jour.
           </p>
         </div>
         <div className="mt-4 flex justify-end gap-2">
@@ -317,8 +359,8 @@ function AbsenceForm({
             Annuler
           </button>
           <button
-            disabled={!memberId || rangeInvalid}
-            onClick={() => onCreate({ memberId, startDate, endDate, period, type, label: label || undefined })}
+            disabled={!memberId || rangeInvalid || joursCrees === 0}
+            onClick={() => onCreate({ memberId, startDate, endDate, period, type, label: label || undefined, inclureWeekend })}
             className="rounded-md bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
           >
             Enregistrer

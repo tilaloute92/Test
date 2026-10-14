@@ -15,6 +15,16 @@ import type { Absence, AbsenceType, PlanningSlot, ProjectTask, TeamMember, TimeE
  * rapport périmé, et personne ne saurait dire de quand datent ses chiffres.
  */
 
+/**
+ * Jour de la réunion d'équipe, au sens de Date.getDay() — 5 = vendredi.
+ *
+ * Le rapport porte sur la semaine qui s'achève et sur les deux suivantes : la réunion a
+ * donc lieu À LA FIN de la semaine rapportée, pas au début de la suivante. L'annoncer un
+ * lundi, comme c'était le cas, datait le document du mauvais jour et faisait lire « les
+ * deux semaines à venir » à partir d'une semaine déjà entamée.
+ */
+export const JOUR_REUNION = 5;
+
 /** Nombre de jours sans aucune heure saisie à partir duquel un projet est dit à l'arrêt. */
 const JOURS_SANS_ACTIVITE_ALERTE = 14;
 const JOURS_SANS_ACTIVITE_GRAVE = 21;
@@ -476,6 +486,8 @@ export function construirePoints(opts: {
 export interface MeetingReport {
   /** La semaine écoulée, celle dont on rend compte. */
   semaineEcoulee: Date[];
+  /** Le jour de la réunion : le vendredi de la semaine rapportée (voir JOUR_REUNION). */
+  dateReunion: Date;
   /** Les deux semaines à venir. */
   semaines: SemainePrevue[];
   /** Les 14 jours des deux semaines, bout à bout — l'axe de la grille. */
@@ -524,5 +536,8 @@ export function computeMeetingReport(opts: {
   const grille = construireGrille({ jours: joursAVenir, members, tasks, planningSlots, absences });
   const points = construirePoints({ rapport: hebdo, projets, semaines, tasks, members, absences, aujourdhui: maintenant });
 
-  return { semaineEcoulee, semaines, joursAVenir, grille, hebdo, projets, points, genereLe: maintenant };
+  // getWorkingDaysOfWeek renvoie lundi → dimanche : l'index 0 est donc lundi.
+  const dateReunion = semaineEcoulee[(JOUR_REUNION + 6) % 7];
+
+  return { semaineEcoulee, dateReunion, semaines, joursAVenir, grille, hebdo, projets, points, genereLe: maintenant };
 }

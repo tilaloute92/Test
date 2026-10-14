@@ -73,7 +73,7 @@ export function ReunionProjection({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 28px', borderBottom: `1px solid ${TRAIT}` }}>
             <span style={{ fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', color: ENCRE3 }}>
               {teamLabel}
-              {report.semaines[0] ? ` · ${formatDateLong(report.semaines[0].jours[0])}` : ''}
+              {report.dateReunion ? ` · ${formatDateLong(report.dateReunion)}` : ''}
             </span>
             <span style={{ fontSize: 13, color: ENCRE2, whiteSpace: 'nowrap' }}>
               {meteo.emoji} {meteo.label} · {Math.round(report.hebdo.avgWorkloadRatio * 100)} % de charge
