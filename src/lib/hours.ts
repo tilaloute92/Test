@@ -1,4 +1,4 @@
-import type { Period } from '../types';
+import type { Period, TaskType } from '../types';
 
 /**
  * Découpage horaire de la journée, utilisé par l'onglet Planning pour afficher le matin et
@@ -72,4 +72,49 @@ export function periodRangeLabel(period: Period): string {
 export function periodHours(period: Period): number {
   const { start, end } = PERIOD_RANGES[period];
   return end - start;
+}
+
+/**
+ * Quelles natures de travail peut-on affecter à quelle demi-journée.
+ *
+ * La règle d'équipe est « le matin le courant, l'après-midi les projets ». Les INCIDENTS
+ * échappent aux deux : un incident ne s'arrête pas à midi. Il doit donc pouvoir être
+ * affecté, et pointé heure par heure, l'après-midi comme le matin — sans quoi une panne
+ * qui dure toute la journée disparaît du planning de 13 h, et les heures de l'après-midi
+ * se retrouvent imputées à un projet auquel personne n'a touché.
+ *
+ * La règle vivait en double, écrite en dur dans l'onglet Activité du jour et dans
+ * l'onglet Planning. Elle est ici, à un seul endroit : deux copies finissent toujours par
+ * diverger, et on pouvait alors planifier une chose sur un écran et pas sur l'autre.
+ */
+export const NATURES_PAR_PERIODE: Record<Period, TaskType[]> = {
+  matin: ['MCO', 'Incident'],
+  apres_midi: ['Projet', 'Incident'],
+};
+
+/** « MCO » est un sigle : il ne prend pas la marque du pluriel. */
+const PLURIEL: Record<TaskType, string> = { MCO: 'MCO', Incident: 'incidents', Projet: 'projets' };
+
+/**
+ * Libellé du créneau, DÉDUIT des natures qu'il accepte, pour qu'il ne puisse pas mentir.
+ * Il était écrit en dur à côté de la règle : l'un des deux finit toujours par changer sans
+ * l'autre, et un créneau intitulé « Projets » qui accepte les incidents fait douter de tout
+ * le reste de l'écran.
+ *
+ * En minuscules, sauf le sigle MCO — pour s'insérer au fil d'une phrase. Voir
+ * `periodNatureTitle` pour un titre.
+ */
+export function periodNatureLabel(period: Period): string {
+  const mots = NATURES_PAR_PERIODE[period].map((t) => PLURIEL[t]);
+  return mots.length === 1 ? mots[0] : `${mots.slice(0, -1).join(', ')} & ${mots[mots.length - 1]}`;
+}
+
+/** Le même, en tête de titre. Première lettre capitalisée, sigles préservés. */
+export function periodNatureTitle(period: Period): string {
+  const phrase = periodNatureLabel(period);
+  return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
+
+export function accepteNature(period: Period, type: TaskType): boolean {
+  return NATURES_PAR_PERIODE[period].includes(type);
 }

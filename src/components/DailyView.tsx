@@ -9,15 +9,14 @@ import { DailyMailModal } from './DailyMailModal';
 import type { Absence, Period, PlanningSlot, ProjectTask, TaskStatus, TeamMember, TimeEntry } from '../types';
 import { useModalDismiss } from './Modal';
 import { placeEntries } from '../lib/dayAllocation';
-import { PERIOD_RANGES } from '../lib/hours';
+import { accepteNature, periodNatureTitle, PERIOD_RANGES } from '../lib/hours';
 import { useAuteur } from '../hooks/useAuteur';
 
-const PERIOD_LABEL: Record<Period, string> = { matin: 'Matin — MCO & incidents', apres_midi: 'Après-midi — Projets' };
-const PERIOD_SHORT: Record<Period, string> = { matin: 'Matin', apres_midi: 'Après-midi' };
-const eligibleTypes: Record<Period, ('MCO' | 'Incident' | 'Projet')[]> = {
-  matin: ['MCO', 'Incident'],
-  apres_midi: ['Projet'],
+const PERIOD_LABEL: Record<Period, string> = {
+  matin: `Matin — ${periodNatureTitle('matin')}`,
+  apres_midi: `Après-midi — ${periodNatureTitle('apres_midi')}`,
 };
+const PERIOD_SHORT: Record<Period, string> = { matin: 'Matin', apres_midi: 'Après-midi' };
 
 /** Profondeur de l'historique "Dernières saisies" : les 10 derniers temps saisis PAR PERSONNE
  *  et par créneau, affichés sous le bouton de saisie du créneau concerné. Chacun voit donc ses
@@ -366,7 +365,7 @@ function SlotEditor({
   const slot = planningSlots.find((s) => s.memberId === member.id && s.date === iso && s.period === period);
   const task = getTaskById(tasks, slot?.taskId);
   const memberTasks = tasks.filter(
-    (t) => t.assigneeIds.includes(member.id) && eligibleTypes[period].includes(t.type) && t.status !== 'termine'
+    (t) => t.assigneeIds.includes(member.id) && accepteNature(period, t.type) && t.status !== 'termine'
   );
   const entries = recentEntriesFor(member.id, period);
 

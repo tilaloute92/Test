@@ -8,9 +8,12 @@ import { getSnapshot } from '../businessData.js';
  * l'absence volontaire de tout compteur d'heures réalisées ici.
  */
 
+// Les natures acceptées par créneau doivent rester celles de l'application (voir
+// src/lib/hours.ts, NATURES_PAR_PERIODE) : un message qui annonce « Projets » l'après-midi
+// alors que l'écran y accepte aussi les incidents ferait douter de tout le reste.
 const PERIODS = [
   { key: 'matin', label: 'Matin', hours: '08:00 → 12:00', nature: 'MCO & incidents' },
-  { key: 'apres_midi', label: 'Après-midi', hours: '14:00 → 18:00', nature: 'Projets' },
+  { key: 'apres_midi', label: 'Après-midi', hours: '14:00 → 18:00', nature: 'Projets & incidents' },
 ];
 
 const WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];

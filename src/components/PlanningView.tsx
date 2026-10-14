@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { formatDateLong, formatDayLabel, formatWeekRange, getWeeks, isToday, isWeekend, toISODate } from '../lib/date';
-import { PERIOD_LABELS, PERIOD_RANGES, getHourSlots, periodRangeLabel } from '../lib/hours';
+import { accepteNature, PERIOD_LABELS, PERIOD_RANGES, getHourSlots, periodNatureLabel, periodRangeLabel } from '../lib/hours';
 import { assignHours, entriesFor } from '../lib/dayAllocation';
 import { isAbsent } from '../lib/workload';
 import { getTaskById } from '../lib/selectors';
@@ -58,9 +58,10 @@ export function PlanningView() {
     ? planningSlots.find((s) => s.memberId === selected.memberId && s.date === selected.date && s.period === selected.period)
     : null;
   const selectedTask = getTaskById(tasks, selectedSlot?.taskId);
-  const eligibleTypes: TaskType[] = selected?.period === 'matin' ? ['MCO', 'Incident'] : ['Projet'];
+  // Même règle que l'onglet Activité du jour — elle vit dans src/lib/hours.ts, et pas en
+  // double ici : on pouvait auparavant planifier une chose sur un écran et pas sur l'autre.
   const eligibleTasks = selected
-    ? tasks.filter((t) => t.assigneeIds.includes(selected.memberId) && eligibleTypes.includes(t.type) && t.status !== 'termine')
+    ? tasks.filter((t) => t.assigneeIds.includes(selected.memberId) && accepteNature(selected.period, t.type) && t.status !== 'termine')
     : [];
 
   return (
@@ -70,8 +71,11 @@ export function PlanningView() {
         <div>
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Planning prévisionnel — 3 semaines</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Matin = MCO / incidents · Après-midi = projets, du lundi au dimanche (équipe en horaires décalés). Cliquez sur un créneau pour
-            l'affecter — le week-end est repéré par un fond légèrement teinté.
+            {/* Déduit de la règle, jamais écrit en dur : un sous-titre qui annonce autre
+                chose que ce que le créneau accepte fait douter de tout l'écran. */}
+            Matin = {periodNatureLabel('matin')} · Après-midi = {periodNatureLabel('apres_midi')}, du lundi au
+            dimanche (équipe en horaires décalés). Cliquez sur un créneau pour l'affecter — le week-end est repéré par un fond
+            légèrement teinté.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
