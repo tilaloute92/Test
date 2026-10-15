@@ -8,7 +8,11 @@ import { PlannerImportModal } from './PlannerImportModal';
 import { useViewMode } from '../hooks/useViewMode';
 import { bucketTasksByDueDate, KANBAN_STATUSES } from '../lib/taskViews';
 import { nextSort, sortTasks, type TaskSort, type TaskSortKey } from '../lib/taskSort';
-import type { Priority, ProjectTask, TaskStatus, TaskType, TeamMember } from '../types';
+import type { Priority, ProjectTask, TaskCreneau, TaskStatus, TaskType, TeamMember } from '../types';
+import { conflitCreneau, formatDuree, formatPlage, periodeDuCreneau } from '../lib/creneaux';
+import { formatHeure } from '../lib/hours';
+import { useRecurrences } from '../hooks/useRecurrences';
+import { makeId } from '../lib/ids';
 import { useModalDismiss } from './Modal';
 import { TaskJournal } from './TaskJournal';
 import { useAuteur } from '../hooks/useAuteur';
@@ -27,9 +31,23 @@ const statusColumnLabels: Record<TaskStatus, string> = {
 };
 
 export function TasksView() {
-  const { members, tasks, timeEntries, journalEntries, addTask, updateTask, removeTask } = useStore();
+  const { members, tasks, timeEntries, journalEntries, planningSlots, addTask, updateTask, removeTask, setPlanningSlot } = useStore();
   // Qui signe ce qui sera écrit dans les journaux.
   const auteur = useAuteur();
+
+  /**
+   * Un créneau réserve la demi-journée dans le planning — mais seulement si elle est
+   * LIBRE. Écraser une affectation existante parce qu'on a posé une heure d'intervention
+   * reviendrait à décider à la place de celui qui l'avait planifiée ; la charge gagnerait
+   * en exactitude ce que la confiance perdrait.
+   */
+  const reserverDemiJournees = (creneaux: TaskCreneau[] | undefined, taskId: string) => {
+    for (const c of creneaux ?? []) {
+      const periode = periodeDuCreneau(c);
+      const occupe = planningSlots.some((s) => s.memberId === c.memberId && s.date === c.date && s.period === periode && s.taskId);
+      if (!occupe) setPlanningSlot(c.memberId, c.date, periode, taskId);
+    }
+  };
   const activite = useMemo(() => activiteParTache(journalEntries, tasks), [journalEntries, tasks]);
   const confirm = useConfirm();
   const [typeFilter, setTypeFilter] = useState<TaskType | 'Tous'>('Tous');
@@ -82,10 +100,10 @@ export function TasksView() {
 
   return (
     <div className="space-y-4">
-      <PrintHeader title="Tâches, incidents & projets" subtitle={`${filtered.length} élément(s)`} />
+      <PrintHeader title="Tâches, demandes, incidents & projets" subtitle={`${filtered.length} élément(s)`} />
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Tâches, incidents & projets</h1>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Tâches, demandes, incidents & projets</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">{filtered.length} élément(s) · plusieurs personnes peuvent être assignées à une même tâche</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -149,7 +167,7 @@ export function TasksView() {
           onChange={(e) => setSearch(e.target.value)}
           className="min-w-40 flex-1 rounded-md border border-slate-200 px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
         />
-        <Select value={typeFilter} onChange={setTypeFilter} options={['Tous', 'MCO', 'Incident', 'Projet']} />
+        <Select value={typeFilter} onChange={setTypeFilter} options={['Tous', 'MCO', 'Demande', 'Incident', 'Projet']} />
         <Select value={statusFilter} onChange={setStatusFilter} options={['Tous', 'a_faire', 'en_cours', 'en_attente', 'termine']} labels={statusLabelMap} />
         <select
           value={assigneeFilter}
@@ -202,11 +220,13 @@ export function TasksView() {
             setEditingTask(null);
           }}
           onCreate={(payload) => {
-            addTask(payload, auteur);
+            const id = addTask(payload, auteur);
+            reserverDemiJournees(payload.creneaux, id);
             setShowForm(false);
           }}
           onUpdate={(id, patch) => {
             updateTask(id, patch, auteur);
+            reserverDemiJournees(patch.creneaux, id);
             setEditingTask(null);
           }}
         />
@@ -675,6 +695,8 @@ interface TaskFormPayload {
   estimatedHours: number;
   dueDate?: string;
   description?: string;
+  demandeur?: string;
+  creneaux?: TaskCreneau[];
 }
 
 function TaskForm({
@@ -704,6 +726,11 @@ function TaskForm({
   const [estimatedHours, setEstimatedHours] = useState(String(initial?.estimatedHours ?? '3.5'));
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
+  const [demandeur, setDemandeur] = useState(initial?.demandeur ?? '');
+  const [creneaux, setCreneaux] = useState<TaskCreneau[]>(initial?.creneaux ?? []);
+  const [erreurCreneau, setErreurCreneau] = useState<string | null>(null);
+  const recurrences = useRecurrences();
+  const { tasks: toutesLesTaches, timeEntries } = useStore();
 
   const toggleAssignee = (id: string) => {
     setAssigneeIds((prev) => (prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]));
@@ -720,7 +747,27 @@ function TaskForm({
       estimatedHours: parseFloat(estimatedHours) || 0,
       dueDate: dueDate || undefined,
       description: description.trim() || undefined,
+      demandeur: type === 'Demande' ? demandeur.trim() || undefined : undefined,
+      creneaux: creneaux.length > 0 ? creneaux : undefined,
     };
+
+    // Les conflits sont vérifiés à l'enregistrement et non à la saisie : on laisse poser
+    // trois créneaux puis corriger, plutôt que d'interdire la frappe au deuxième champ.
+    for (const c of creneaux) {
+      const conflit = conflitCreneau({
+        creneau: c,
+        taskId: initial?.id ?? '',
+        tasks: toutesLesTaches,
+        recurrences,
+        timeEntries,
+        nomDe: (id) => members.find((m) => m.id === id)?.name ?? 'Cette personne',
+      });
+      if (conflit) {
+        setErreurCreneau(`${new Date(`${c.date}T00:00:00`).toLocaleDateString('fr-FR')} ${formatPlage(c)} — ${conflit}`);
+        return;
+      }
+    }
+    setErreurCreneau(null);
     if (initial) {
       if (await confirm({ title: 'Confirmer la modification', message: `Enregistrer les modifications apportées à "${initial.title}" ?` })) {
         onUpdate(initial.id, payload);
@@ -756,6 +803,7 @@ function TaskForm({
             <Field label="Type">
               <select value={type} onChange={(e) => setType(e.target.value as TaskType)} className="input">
                 <option value="MCO">MCO</option>
+                <option value="Demande">Demande</option>
                 <option value="Incident">Incident</option>
                 <option value="Projet">Projet</option>
               </select>
@@ -772,6 +820,16 @@ function TaskForm({
           {type === 'Projet' && (
             <Field label="Projet">
               <input value={project} onChange={(e) => setProject(e.target.value)} className="input" placeholder="Ex : Migration Datacenter Nord" />
+            </Field>
+          )}
+          {type === 'Demande' && (
+            <Field label="Demandé par">
+              <input
+                value={demandeur}
+                onChange={(e) => setDemandeur(e.target.value)}
+                className="input"
+                placeholder="Ex : Service RH, Dr Martin, le standard"
+              />
             </Field>
           )}
           {initial && (
@@ -803,6 +861,13 @@ function TaskForm({
               <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="input" />
             </Field>
           </div>
+          <CreneauxEditor
+            creneaux={creneaux}
+            setCreneaux={setCreneaux}
+            members={members}
+            assigneeIds={assigneeIds}
+            erreur={erreurCreneau}
+          />
           <Field label="Description (optionnel)">
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="input" />
           </Field>
@@ -830,6 +895,127 @@ function TaskForm({
       </div>
     </div>
   );
+}
+
+
+/**
+ * Les créneaux horaires posés sur la tâche.
+ *
+ * Volontairement sobre : une date, une heure, une durée, une personne. Ce n'est pas un
+ * agenda — l'application n'en est pas un et ne cherche pas à le devenir ; c'est le moyen
+ * de dire « cette demande, c'est mardi de 9 h à 11 h, par untel », pour que l'activité du
+ * jour le sache sans qu'on le ressaisisse.
+ */
+function CreneauxEditor({
+  creneaux,
+  setCreneaux,
+  members,
+  assigneeIds,
+  erreur,
+}: {
+  creneaux: TaskCreneau[];
+  setCreneaux: (c: TaskCreneau[]) => void;
+  members: TeamMember[];
+  assigneeIds: string[];
+  erreur: string | null;
+}) {
+  const modifier = (id: string, patch: Partial<TaskCreneau>) =>
+    setCreneaux(creneaux.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+
+  const ajouter = () =>
+    setCreneaux([
+      ...creneaux,
+      {
+        id: makeId('crn'),
+        // L'intervenant par défaut est le premier assigné : dans la très grande majorité
+        // des cas, c'est lui qui fera le travail, et le choix reste modifiable.
+        memberId: assigneeIds[0] ?? members[0]?.id ?? '',
+        date: new Date().toISOString().slice(0, 10),
+        debut: 9,
+        duree: 1,
+      },
+    ]);
+
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <span className="text-xs text-slate-500 dark:text-slate-400">Créneaux horaires (optionnel)</span>
+        <button onClick={ajouter} className="text-xs text-violet-600 hover:underline dark:text-violet-400">
+          + Ajouter
+        </button>
+      </div>
+      {creneaux.length === 0 ? (
+        <p className="text-[11px] text-slate-400">
+          Un créneau fait apparaître la tâche dans Activité du jour à la date et à l'heure dites, prête à valider d'un clic.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {creneaux.map((c) => (
+            <div key={c.id} className="flex flex-wrap items-center gap-1.5 rounded-md border border-slate-200 p-1.5 dark:border-slate-700">
+              <input
+                type="date"
+                value={c.date}
+                onChange={(e) => modifier(c.id, { date: e.target.value })}
+                className="input w-[8.5rem] text-xs"
+              />
+              <select value={formatHeure(c.debut)} onChange={(e) => modifier(c.id, { debut: enHeures(e.target.value) })} className="input w-20 text-xs">
+                {DEBUTS.map((h) => (
+                  <option key={h} value={h}>
+                    {h}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={c.duree}
+                onChange={(e) => modifier(c.id, { duree: Number(e.target.value) })}
+                className="input w-24 text-xs"
+              >
+                {DUREES.map((d) => (
+                  <option key={d} value={d}>
+                    {formatDuree(d)}
+                  </option>
+                ))}
+              </select>
+              <select value={c.memberId} onChange={(e) => modifier(c.id, { memberId: e.target.value })} className="input min-w-[7rem] flex-1 text-xs">
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[11px] tabular-nums text-slate-400">{formatPlage(c)}</span>
+              <button
+                onClick={() => setCreneaux(creneaux.filter((x) => x.id !== c.id))}
+                className="rounded px-1 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
+                title="Retirer ce créneau"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <p className="text-[11px] text-slate-400">
+            Le créneau réserve la demi-journée dans le planning si elle est libre. Il reste prévisionnel : il ne compte comme
+            temps passé qu'une fois validé dans Activité du jour.
+          </p>
+        </div>
+      )}
+      {erreur && (
+        <p className="mt-1.5 rounded-md bg-red-50 px-2 py-1.5 text-[11px] text-red-700 dark:bg-red-500/10 dark:text-red-300">{erreur}</p>
+      )}
+    </div>
+  );
+}
+
+/** Débuts proposés : tous les quarts d'heure des deux demi-journées ouvrées. */
+const DEBUTS = [
+  ...Array.from({ length: 16 }, (_, i) => formatHeure(8 + i / 4)),
+  ...Array.from({ length: 16 }, (_, i) => formatHeure(14 + i / 4)),
+];
+const DUREES = [0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 3.5, 4];
+
+function enHeures(valeur: string): number {
+  const [h, m] = valeur.split(':').map(Number);
+  return Number.isFinite(h) && Number.isFinite(m) ? h + m / 60 : 9;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

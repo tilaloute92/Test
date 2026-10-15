@@ -37,6 +37,12 @@ export const tasks: ProjectTask[] = [
   { id: 't6', title: 'Revue quotidienne alertes cloud', type: 'MCO', assigneeIds: ['m5'], status: 'en_cours', priority: 'normale', estimatedHours: 3.5, createdAt: iso },
   { id: 't7', title: 'Astreinte réseau - vérification liens WAN', type: 'MCO', assigneeIds: ['m2'], status: 'a_faire', priority: 'normale', estimatedHours: 3.5, createdAt: iso },
 
+  // --- Demandes : le travail qui vient de quelqu'un et attend une réponse. Elles tombent
+  //     le matin comme l'après-midi, et portent le nom du demandeur.
+  { id: 'd1', title: 'Création de 4 comptes AD - nouveaux arrivants', type: 'Demande', demandeur: 'Service RH', assigneeIds: ['m3'], status: 'a_faire', priority: 'haute', estimatedHours: 1, dueDate: iso, createdAt: iso },
+  { id: 'd2', title: 'Accès dossier partagé Qualité', type: 'Demande', demandeur: 'Mme Leroy (Qualité)', assigneeIds: ['m4'], status: 'en_cours', priority: 'normale', estimatedHours: 0.5, createdAt: iso },
+  { id: 'd3', title: 'Devis renouvellement licences antivirus', type: 'Demande', demandeur: 'Direction', assigneeIds: ['m1'], status: 'a_faire', priority: 'normale', estimatedHours: 2, createdAt: iso },
+
   // --- Incidents ---
   { id: 'i1', title: 'INC-1042 Panne switch salle serveur B12', type: 'Incident', assigneeIds: ['m2', 'm6'], status: 'en_cours', priority: 'critique', estimatedHours: 4, dueDate: iso, createdAt: iso },
   { id: 'i2', title: 'INC-1043 Lenteur VPN agence Lyon', type: 'Incident', assigneeIds: ['m6'], status: 'en_attente', priority: 'haute', estimatedHours: 3, dueDate: iso, createdAt: iso },

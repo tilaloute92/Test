@@ -23,7 +23,9 @@ export interface TaskSort {
 // Ordres métier, pas alphabétiques.
 const PRIORITY_RANK: Record<Priority, number> = { basse: 0, normale: 1, haute: 2, critique: 3 };
 const STATUS_RANK: Record<TaskStatus, number> = { a_faire: 0, en_cours: 1, en_attente: 2, termine: 3 };
-const TYPE_RANK: Record<TaskType, number> = { Incident: 0, MCO: 1, Projet: 2 };
+// Les demandes juste après les incidents : elles ont quelqu'un qui attend en face, ce que
+// n'ont ni le MCO ni les projets.
+const TYPE_RANK: Record<TaskType, number> = { Incident: 0, Demande: 1, MCO: 2, Projet: 3 };
 
 const collator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
 

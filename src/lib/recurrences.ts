@@ -1,5 +1,5 @@
 import { toISODate } from './date';
-import { PERIOD_RANGES, periodForHour } from './hours';
+import { formatDuree, formatHeure, PERIOD_RANGES, periodForHour } from './hours';
 import type { Absence, Period, TimeEntry } from '../types';
 
 /**
@@ -46,24 +46,13 @@ export const RECURRENCES_DEFAUT: Recurrence[] = [
 
 export const JOURS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
 
-/** « 14:30 » */
-export function formatHeure(h: number): string {
-  const heures = Math.floor(h);
-  const minutes = Math.round((h - heures) * 60);
-  return `${String(heures).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-}
+// Les deux mises en forme vivent dans hours.ts, avec le reste du découpage horaire ; on
+// les re-expose ici parce que l'essentiel de leurs appels vient des créneaux.
+export { formatDuree, formatHeure };
 
 /** « 14:30 → 16:00 » */
 export function formatPlage(r: Recurrence): string {
   return `${formatHeure(r.debut)} → ${formatHeure(r.debut + r.duree)}`;
-}
-
-/** « 1 h 30 » */
-export function formatDuree(h: number): string {
-  const heures = Math.floor(h);
-  const minutes = Math.round((h - heures) * 60);
-  if (heures === 0) return `${minutes} min`;
-  return minutes === 0 ? `${heures} h` : `${heures} h ${String(minutes).padStart(2, '0')}`;
 }
 
 export function concerne(r: Recurrence, memberId: string): boolean {

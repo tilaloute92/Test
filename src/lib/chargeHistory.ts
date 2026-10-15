@@ -86,7 +86,7 @@ export function historiqueCharge(opts: {
     const m: MoisCharge = {
       debut,
       label: `${MOIS_COURTS[debut.getMonth()]} ${String(debut.getFullYear()).slice(2)}`,
-      heures: { Projet: 0, Incident: 0, MCO: 0 },
+      heures: { Projet: 0, Incident: 0, MCO: 0, Demande: 0 },
       heuresSansTache: 0,
       total: 0,
       capacite: capaciteDuMois(debut.getFullYear(), debut.getMonth(), members, absences),

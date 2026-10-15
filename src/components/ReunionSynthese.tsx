@@ -1,5 +1,5 @@
 import { formatWeekRange, toISODate } from '../lib/date';
-import { COULEUR_ABSENCE, COULEUR_NATURE, ETIQUETTES_ABSENCE, type MeetingReport } from '../lib/meetingReport';
+import { COULEUR_ABSENCE, COULEUR_NATURE, estNature, ETIQUETTES_ABSENCE, type MeetingReport } from '../lib/meetingReport';
 import { weatherMeta } from '../lib/weeklyReport';
 import { resultatMeteo, type ResultatMeteo } from '../lib/meteoVote';
 import type { TeamMember } from '../types';
@@ -187,7 +187,7 @@ function Absences({ report }: { report: MeetingReport }) {
   const lignes = new Map<string, { nom: string; type: string; jours: string[] }>();
   report.grille.forEach((ligne) => {
     ligne.creneaux.forEach((code, i) => {
-      if (code === 'MCO' || code === 'Incident' || code === 'Projet' || code === 'libre') return;
+      if (estNature(code) || code === 'libre') return;
       const iso = toISODate(report.joursAVenir[Math.floor(i / 2)]);
       const cle = `${ligne.member.id}|${code}`;
       const e = lignes.get(cle) ?? { nom: ligne.member.name, type: code, jours: [] };

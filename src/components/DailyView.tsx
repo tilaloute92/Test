@@ -21,6 +21,13 @@ import {
   type Recurrence,
 } from '../lib/recurrences';
 import { useRecurrences } from '../hooks/useRecurrences';
+import {
+  creneauxDeLaDemiJournee,
+  formatPlage as formatPlageCreneau,
+  periodeDuCreneau,
+  tranchesDuCreneau,
+  type CreneauPose,
+} from '../lib/creneaux';
 import { useAuteur } from '../hooks/useAuteur';
 
 const PERIOD_LABEL: Record<Period, string> = {
@@ -42,9 +49,10 @@ type ConfirmFn = ReturnType<typeof useConfirm>;
  *  `hour` renseignée = la saisie sera ancrée sur cette tranche. */
 type LoggingTarget = { memberId: string; period: Period; taskId: string; hour?: number };
 
-/** Les créneaux saisis heure par heure. Seul l'après-midi pour l'instant : le matin garde
- *  la saisie à la demi-journée, faute d'avoir été demandé. */
-const HOURLY_PERIODS: Period[] = ['apres_midi'];
+/** Les créneaux saisis heure par heure — les deux, désormais. Le matin s'en passait tant
+ *  qu'il n'y avait rien à y placer ; depuis qu'une demande ou un créneau récurrent peut
+ *  tomber à 9 h, le garder à la demi-journée reviendrait à ne pas les montrer du tout. */
+const HOURLY_PERIODS: Period[] = ['matin', 'apres_midi'];
 /** Entrée de menu qui ouvre la saisie complète. Un identifiant de tâche ne peut pas la
  *  heurter : les identifiants sont préfixés par une lettre (voir src/lib/ids.ts). */
 const AUTRE = '__autre__';
@@ -96,6 +104,21 @@ export function DailyView() {
     addTimeEntry({ taskId, memberId, date: iso, period, hours: 1, hour });
   };
 
+  /** Valider un créneau posé sur une tâche : une seule saisie, de la durée prévue, ancrée
+   *  à l'heure prévue. Pas quatre saisies d'une heure — on enregistre ce qui a été fait,
+   *  pas la façon dont la grille le découpe. */
+  const validateCreneau = (pose: CreneauPose) => {
+    const { creneau, task } = pose;
+    addTimeEntry({
+      taskId: task.id,
+      memberId: creneau.memberId,
+      date: creneau.date,
+      period: periodeDuCreneau(creneau),
+      hours: creneau.duree,
+      hour: creneau.debut,
+    });
+  };
+
   /** Tout ce dont un créneau a besoin pour être affiché *et* modifié, quel que soit le mode. */
   const slotContext = {
     iso,
@@ -110,6 +133,7 @@ export function DailyView() {
     updateTask,
     onLogTime: openLogging,
     onValidateHour: validateHour,
+    onValidateCreneau: validateCreneau,
     recentEntriesFor,
     onRemoveEntry: removeTimeEntry,
   };
@@ -391,6 +415,7 @@ function SlotEditor({
   updateTask,
   onLogTime,
   onValidateHour,
+  onValidateCreneau,
   recentEntriesFor,
   onRemoveEntry,
   compact = false,
@@ -410,6 +435,7 @@ function SlotEditor({
   updateTask: (id: string, patch: Partial<ProjectTask>, auteur?: string) => void;
   onLogTime: (target: LoggingTarget) => void;
   onValidateHour: (memberId: string, period: Period, taskId: string, hour: number) => void;
+  onValidateCreneau: (pose: CreneauPose) => void;
   recentEntriesFor: (memberId: string, period: Period) => TimeEntry[];
   onRemoveEntry: (id: string) => void;
   compact?: boolean;
@@ -430,6 +456,18 @@ function SlotEditor({
   );
   const prises = new Map<number, Recurrence>();
   for (const r of creneaux) for (const h of tranchesCouvertes(r)) prises.set(h, r);
+
+  // Les créneaux posés sur une tâche, encore à valider. Ceux qui tombent sur une heure
+  // déjà prise (récurrence ou saisie) ne sont pas affichés dans la grille : la règle de
+  // non-chevauchement est vérifiée à la pose, mais un horaire de réunion déplacé depuis
+  // peut recouvrir un créneau pris avant — la grille ne peut pas montrer deux choses sur
+  // la même ligne, alors elle montre ce qui est certain.
+  const poses = creneauxDeLaDemiJournee({ tasks, date, memberId: member.id, period, timeEntries });
+  const prevus = new Map<number, { pose: CreneauPose; premier: boolean }>();
+  for (const pose of poses) {
+    const tranches = tranchesDuCreneau(pose.creneau).filter((h) => !prises.has(h) && !prevus.has(h));
+    tranches.forEach((h, i) => prevus.set(h, { pose, premier: i === 0 }));
+  }
 
   // Saisie heure par heure : seulement là où elle est prévue, et seulement en affichage
   // large. Le mode Tableau est une grille dense d'une ligne par personne ; y empiler
@@ -472,6 +510,13 @@ function SlotEditor({
       {creneaux.map((r) => (
         <BandeauRecurrence key={r.id} recurrence={r} compact={compact} />
       ))}
+
+      {/* Sans grille horaire (mode Tableau), les créneaux posés sur une tâche n'auraient
+          nulle part où s'afficher : on les rappelle ici, validables de la même façon. */}
+      {!parHeure &&
+        poses.map((pose) => (
+          <BandeauCreneau key={pose.creneau.id} pose={pose} onValider={() => onValidateCreneau(pose)} />
+        ))}
 
       <select
         className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
@@ -535,6 +580,8 @@ function SlotEditor({
           plannedTask={task}
           occupants={occupants!}
           recurrentes={prises}
+          prevus={prevus}
+          onValidateCreneau={onValidateCreneau}
           tasks={tasks}
           memberName={member.name}
           confirm={confirm}
@@ -572,6 +619,20 @@ function BandeauRecurrence({ recurrence, compact }: { recurrence: Recurrence; co
   );
 }
 
+/** Le rappel d'un créneau posé sur une tâche, là où la grille horaire n'est pas affichée. */
+function BandeauCreneau({ pose, onValider }: { pose: CreneauPose; onValider: () => void }) {
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border border-dashed border-cyan-300 bg-cyan-50/60 px-2 py-1.5 text-xs dark:border-cyan-500/40 dark:bg-cyan-500/10">
+      <span className="text-cyan-700 dark:text-cyan-300">◷</span>
+      <span className="min-w-0 truncate font-medium text-slate-700 dark:text-slate-200">{pose.task.title}</span>
+      <span className="tabular-nums text-slate-500 dark:text-slate-400">{formatPlageCreneau(pose.creneau)}</span>
+      <button onClick={onValider} className="ml-auto rounded bg-cyan-600 px-2 py-0.5 font-medium text-white hover:bg-cyan-700 print:hidden">
+        Valider
+      </button>
+    </div>
+  );
+}
+
 /**
  * Grille horaire d'un créneau : une ligne par tranche d'une heure, chacune avec un menu
  * déroulant et un bouton Valider.
@@ -597,6 +658,8 @@ function HourGrid({
   plannedTask,
   occupants,
   recurrentes,
+  prevus,
+  onValidateCreneau,
   tasks,
   memberName,
   confirm,
@@ -610,6 +673,9 @@ function HourGrid({
   occupants: Map<number, TimeEntry>;
   /** Tranches tenues par un créneau récurrent : ni à remplir, ni à proposer. */
   recurrentes: Map<number, Recurrence>;
+  /** Tranches réservées par un créneau posé sur une tâche, à valider d'un clic. */
+  prevus: Map<number, { pose: CreneauPose; premier: boolean }>;
+  onValidateCreneau: (pose: CreneauPose) => void;
   tasks: ProjectTask[];
   memberName: string;
   confirm: ConfirmFn;
@@ -645,6 +711,7 @@ function HourGrid({
       <div className="space-y-1.5">
         {heures.map((h) => {
           const occupant = occupants.get(h);
+          const prevu = prevus.get(h);
           const tache = occupant ? getTaskById(tasks, occupant.taskId) : undefined;
           return (
             <div key={h} className="flex items-start gap-2">
@@ -652,7 +719,42 @@ function HourGrid({
                 {hourLabel(h)} – {hourLabel(h + 1)}
               </span>
 
-              {recurrentes.get(h) ? (
+              {prevu && !recurrentes.get(h) && !occupant ? (
+                /* Un créneau posé sur la tâche : prévu, pas encore fait. Le bouton n'ajoute
+                   pas une heure mais la durée entière du créneau — on enregistre ce qui a
+                   été fait, pas la façon dont la grille le découpe. Les tranches suivantes
+                   ne répètent ni le titre ni le bouton : une seule intervention, une seule
+                   validation. */
+                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-dashed border-cyan-300 bg-cyan-50/60 px-2 py-1 dark:border-cyan-500/40 dark:bg-cyan-500/10">
+                  {prevu.premier ? (
+                    <>
+                      <span className="shrink-0 text-cyan-700 dark:text-cyan-300">◷</span>
+                      <span className="min-w-0 flex-1 truncate text-sm text-slate-700 dark:text-slate-200">{prevu.pose.task.title}</span>
+                      <span className="shrink-0 text-[10px] tabular-nums text-cyan-700 dark:text-cyan-300">
+                        {formatPlageCreneau(prevu.pose.creneau)}
+                      </span>
+                      <button
+                        onClick={async () => {
+                          if (
+                            await confirm({
+                              title: 'Valider ce créneau',
+                              message: `Enregistrer ${formatDuree(prevu.pose.creneau.duree)} sur « ${prevu.pose.task.title} » pour ${memberName}, à partir de ${formatPlageCreneau(prevu.pose.creneau).split(' → ')[0]} ?`,
+                              confirmLabel: 'Valider',
+                            })
+                          ) {
+                            onValidateCreneau(prevu.pose);
+                          }
+                        }}
+                        className="shrink-0 rounded bg-cyan-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-cyan-700 print:hidden"
+                      >
+                        Valider
+                      </button>
+                    </>
+                  ) : (
+                    <span className="truncate text-xs text-cyan-700/80 dark:text-cyan-300/80">↳ suite — {prevu.pose.task.title}</span>
+                  )}
+                </div>
+              ) : recurrentes.get(h) ? (
                 /* Une tranche tenue par un créneau récurrent : rien à valider, et surtout
                    rien à proposer d'autre — y saisir une tâche compterait deux fois la
                    même heure. Qui n'était pas à la réunion saisit son travail depuis

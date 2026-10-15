@@ -104,7 +104,7 @@ export function TimeTrackingView() {
             options={[
               { value: 'personne', label: 'Par personne', title: 'Qui a saisi combien, jour par jour, sur une semaine' },
               { value: 'projet', label: 'Par projet', title: 'Temps passé par projet et par tâche, face à la charge estimée' },
-              { value: 'type', label: 'Par type', title: 'Répartition entre MCO, incidents et projets' },
+              { value: 'type', label: 'Par type', title: 'Répartition entre MCO, demandes, incidents et projets' },
             ]}
           />
           {mode === 'personne' ? (

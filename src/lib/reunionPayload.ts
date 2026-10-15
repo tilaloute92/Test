@@ -2,6 +2,7 @@ import { formatDateLong, formatWeekRange, isWeekend, toISODate } from './date';
 import {
   COULEUR_ABSENCE,
   COULEUR_NATURE,
+  estNature,
   ETIQUETTES_ABSENCE,
   type CodeCreneau,
   type MeetingReport,
@@ -87,6 +88,8 @@ export interface PayloadProjet {
 
 export interface PayloadRetard {
   titre: string;
+  /** Pour une demande : qui attend. Absent pour les autres natures. */
+  demandeur?: string;
   nature: string;
   couleurNature: string;
   qui: string;
@@ -194,13 +197,13 @@ function nomsDe(t: ProjectTask, members: TeamMember[]): string {
 
 function couleurCode(code: CodeCreneau): string | null {
   if (code === 'libre') return null;
-  if (code === 'MCO' || code === 'Incident' || code === 'Projet') return COULEUR_NATURE[code];
+  if (estNature(code)) return COULEUR_NATURE[code];
   return COULEUR_ABSENCE[code] ?? '#d9f99d';
 }
 
 function libelleCode(code: CodeCreneau): string {
   if (code === 'libre') return 'Non planifié';
-  if (code === 'MCO' || code === 'Incident' || code === 'Projet') return code;
+  if (estNature(code)) return code;
   return ETIQUETTES_ABSENCE[code] ?? code;
 }
 
@@ -239,7 +242,7 @@ export function buildReunionPayload(opts: {
   const groupes = new Map<string, { qui: string; type: CodeCreneau; jours: string[] }>();
   report.grille.forEach((ligne) => {
     ligne.creneaux.forEach((code, i) => {
-      if (code === 'MCO' || code === 'Incident' || code === 'Projet' || code === 'libre') return;
+      if (estNature(code) || code === 'libre') return;
       const iso = toISODate(report.joursAVenir[Math.floor(i / 2)]);
       const cle = `${ligne.member.id}|${code}`;
       const e = groupes.get(cle) ?? { qui: ligne.member.name, type: code, jours: [] };
@@ -250,7 +253,7 @@ export function buildReunionPayload(opts: {
 
   const presents = new Set<CodeCreneau>();
   for (const l of report.grille) for (const c of l.creneaux) presents.add(c);
-  const ordreLegende: CodeCreneau[] = ['Projet', 'Incident', 'MCO', 'conge', 'formation', 'teletravail', 'astreinte', 'autre', 'libre'];
+  const ordreLegende: CodeCreneau[] = ['Projet', 'Incident', 'Demande', 'MCO', 'conge', 'formation', 'teletravail', 'astreinte', 'autre', 'libre'];
 
   return {
     teamLabel,
@@ -319,6 +322,7 @@ export function buildReunionPayload(opts: {
 
     retards: h.overdueTasks.map((t) => ({
       titre: t.title,
+      demandeur: t.demandeur,
       nature: t.type,
       couleurNature: COULEUR_NATURE[t.type],
       qui: nomsDe(t, members),

@@ -82,6 +82,18 @@ la raison écrite noir sur blanc. Les voix de plus de 53 semaines sont effacées
 Ces voix ne sont volontairement **pas** une collection partagée : l'instantané
 `GET /api/data/` part à tout le monde et se retrouve dans les sauvegardes du navigateur.
 
+## Demandes et créneaux horaires des tâches
+
+Deux champs facultatifs de plus sur une tâche, stockés tels quels dans
+`data/business-tasks.json` : `demandeur` (texte libre, pour les tâches de nature
+`Demande`) et `creneaux`, une liste de `{ id, memberId, date, debut (décimal), duree }`.
+
+Le serveur ne les interprète pas : ce sont des créneaux PRÉVISIONNELS, et c'est le
+navigateur qui propose de les valider — une validation produit une saisie de temps
+ordinaire (`POST /api/data/time-entries`), avec la durée du créneau et son heure de début.
+Rien n'est généré automatiquement, ici non plus : une intervention prévue n'est pas une
+intervention faite.
+
 ## Créneaux récurrents
 
 `config.json`, clé `service.recurrences` — une liste de `{ id, libelle, jour (1–5), debut

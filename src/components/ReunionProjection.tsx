@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatDateLong, toISODate } from '../lib/date';
-import { COULEUR_ABSENCE, COULEUR_NATURE, ETIQUETTES_ABSENCE, type MeetingReport } from '../lib/meetingReport';
+import { COULEUR_ABSENCE, COULEUR_NATURE, estNature, ETIQUETTES_ABSENCE, type MeetingReport } from '../lib/meetingReport';
 import { weatherMeta } from '../lib/weeklyReport';
 import { NIVEAUX, resultatMeteo, type ResultatMeteo } from '../lib/meteoVote';
 import type { ProjectTask, TeamMember } from '../types';
@@ -322,7 +322,7 @@ function EcranAbsences({ report }: { report: MeetingReport }) {
   const lignes = new Map<string, { nom: string; type: string; jours: string[] }>();
   report.grille.forEach((ligne) => {
     ligne.creneaux.forEach((code, i) => {
-      if (code === 'MCO' || code === 'Incident' || code === 'Projet' || code === 'libre') return;
+      if (estNature(code) || code === 'libre') return;
       const jour = report.joursAVenir[Math.floor(i / 2)];
       const cle = `${ligne.member.id}|${code}`;
       const entree = lignes.get(cle) ?? { nom: ligne.member.name, type: code, jours: [] };

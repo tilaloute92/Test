@@ -1,4 +1,13 @@
-export type TaskType = 'MCO' | 'Incident' | 'Projet';
+/**
+ * Nature d'une tâche.
+ *
+ * « Demande » est à part des trois autres : c'est le travail qui vient de QUELQU'UN —
+ * un service, un collègue — et qui attend une réponse. Elle tombe quand elle tombe, donc
+ * elle est acceptée le matin comme l'après-midi (voir NATURES_PAR_PERIODE dans hours.ts),
+ * et elle porte le nom du demandeur, sans quoi « qui attend depuis quand » reste dans la
+ * tête de celui qui a pris l'appel.
+ */
+export type TaskType = 'MCO' | 'Incident' | 'Projet' | 'Demande';
 
 export type TaskStatus = 'a_faire' | 'en_cours' | 'en_attente' | 'termine';
 
@@ -35,6 +44,16 @@ export interface ProjectTask {
   createdAt: string;
   completedAt?: string;
   description?: string;
+  /** Qui a formulé la demande (service, personne) — pour les tâches de nature Demande.
+   *  Texte libre : l'annuaire n'est pas dans l'application, et un demandeur peut être
+   *  « la direction » ou « le standard » autant qu'une personne nommée. */
+  demandeur?: string;
+  /**
+   * Créneaux horaires posés sur la tâche : ils alimentent Activité du jour à la date et à
+   * l'heure dites (voir src/lib/creneaux.ts). Prévisionnels — ils se valident d'un clic,
+   * ils ne comptent jamais tout seuls comme du temps passé.
+   */
+  creneaux?: TaskCreneau[];
   /** Identifiant de la tâche Microsoft Planner d'origine, si la tâche a été importée depuis
    *  Teams (voir src/lib/msPlanner.ts). Sert à ne pas ré-importer deux fois la même tâche. */
   plannerTaskId?: string;
@@ -45,6 +64,20 @@ export interface ProjectTask {
    *  absents si la donnée n'a jamais transité par le serveur partagé. */
   updatedAt?: string;
   updatedBy?: string;
+}
+
+/** Un rendez-vous pris sur une tâche : telle personne, tel jour, de telle heure à telle heure. */
+export interface TaskCreneau {
+  id: string;
+  /** Qui intervient. Un créneau ne vaut que pour une personne : une demande traitée à deux
+   *  se pose en deux créneaux, ce qui dit aussi qui fait quoi. */
+  memberId: string;
+  /** AAAA-MM-JJ */
+  date: string;
+  /** Heure de début en décimal : 9,5 pour 09:30. */
+  debut: number;
+  /** Durée en heures : 1,5 pour une heure et demie. */
+  duree: number;
 }
 
 export interface TimeEntry {

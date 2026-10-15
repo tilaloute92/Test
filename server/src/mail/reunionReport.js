@@ -334,7 +334,9 @@ function retards(p) {
     ${p.retards
       .map(
         (t) => `<tr>
-          <td style="${TD_FORT}">${e(t.titre)}</td>
+          <td style="${TD_FORT}">${e(t.titre)}${
+            t.demandeur ? `<div style="font-size:11px;color:${ENCRE3};font-weight:400">demandé par ${e(t.demandeur)}</div>` : ''
+          }</td>
           <td style="${TD}">${pastille(t.couleurNature, t.nature)}</td>
           <td style="${TD}">${e(t.qui)}</td>
           <td style="${TD}">${e(t.echeance)}</td>

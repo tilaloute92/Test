@@ -2,6 +2,7 @@ import { formatDateLong, formatWeekRange, isWeekend, toISODate } from '../lib/da
 import {
   COULEUR_ABSENCE,
   COULEUR_NATURE,
+  estNature,
   ETIQUETTES_ABSENCE,
   type CodeCreneau,
   type MeetingReport,
@@ -481,7 +482,12 @@ function TableRetard({ taches, members, referenceIso }: { taches: ProjectTask[];
           const retard = t.dueDate ? Math.max(0, Math.round((Date.parse(`${iso}T00:00:00`) - Date.parse(`${t.dueDate}T00:00:00`)) / 86_400_000)) : 0;
           return (
             <tr key={t.id} style={{ breakInside: 'avoid' }}>
-              <td style={{ ...td, color: ENCRE, fontWeight: 500 }}>{t.title}</td>
+              <td style={{ ...td, color: ENCRE, fontWeight: 500 }}>
+                {t.title}
+                {/* Une demande en retard, ce n'est pas seulement du travail en retard :
+                    c'est quelqu'un qui attend. Le nom du demandeur change la discussion. */}
+                {t.demandeur && <div style={{ fontSize: 11, color: ENCRE3, fontWeight: 400 }}>demandé par {t.demandeur}</div>}
+              </td>
               <td style={td}>
                 <Pastille couleur={COULEUR_NATURE[t.type]} texte={t.type} />
               </td>
@@ -572,7 +578,7 @@ const LARGEUR_JOUR = 44;
 
 function couleurCode(code: CodeCreneau): string | null {
   if (code === 'libre') return null;
-  if (code === 'MCO' || code === 'Incident' || code === 'Projet') return COULEUR_NATURE[code];
+  if (estNature(code)) return COULEUR_NATURE[code];
   return COULEUR_ABSENCE[code] ?? '#d9f99d';
 }
 
@@ -584,7 +590,7 @@ function Grille({ report }: { report: MeetingReport }) {
   // entrées dont six inutilisées fait chercher des couleurs qui ne sont pas là.
   const presents = new Set<CodeCreneau>();
   for (const l of report.grille) for (const c of l.creneaux) presents.add(c);
-  const ordre: CodeCreneau[] = ['Projet', 'Incident', 'MCO', 'conge', 'formation', 'teletravail', 'astreinte', 'autre', 'libre'];
+  const ordre: CodeCreneau[] = ['Projet', 'Incident', 'Demande', 'MCO', 'conge', 'formation', 'teletravail', 'astreinte', 'autre', 'libre'];
 
   const colonne = (i: number): React.CSSProperties => ({
     width: LARGEUR_JOUR,
@@ -657,7 +663,7 @@ function Grille({ report }: { report: MeetingReport }) {
 
 function libelleCode(c: CodeCreneau): string {
   if (c === 'libre') return 'Non planifié';
-  if (c === 'MCO' || c === 'Incident' || c === 'Projet') return c;
+  if (estNature(c)) return c;
   return ETIQUETTES_ABSENCE[c] ?? c;
 }
 
@@ -721,7 +727,7 @@ function toutesLesAbsences(report: MeetingReport): Absence[] {
   const out: Absence[] = [];
   report.grille.forEach((ligne) => {
     ligne.creneaux.forEach((code, index) => {
-      if (code === 'MCO' || code === 'Incident' || code === 'Projet' || code === 'libre') return;
+      if (estNature(code) || code === 'libre') return;
       const jour = report.joursAVenir[Math.floor(index / 2)];
       const iso = toISODate(jour);
       // Une absence couvrant la journée produit deux créneaux : on ne la compte qu'une fois.

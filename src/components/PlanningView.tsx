@@ -37,6 +37,13 @@ const typeMeta: Record<TaskType, { icon: string; bg: string; border: string; tex
     text: 'text-violet-700 dark:text-violet-300',
     dot: 'bg-violet-500',
   },
+  Demande: {
+    icon: '📨',
+    bg: 'bg-cyan-50 dark:bg-cyan-500/10',
+    border: 'border-cyan-200 dark:border-cyan-500/40',
+    text: 'text-cyan-700 dark:text-cyan-300',
+    dot: 'bg-cyan-500',
+  },
 };
 
 interface SelectedCell {

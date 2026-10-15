@@ -37,6 +37,11 @@ const typeStyles: Record<TaskType, string> = {
   // d'alerte, pour qu'une tâche Incident de priorité Basse ne s'affiche pas comme urgente.
   Incident: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/20 dark:text-fuchsia-300',
   Projet: 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300',
+  // Cyan et non bleu : le bleu est pris par « en cours » dans les statuts, et une demande
+  // n'est pas un état d'avancement. Volontairement différent du rose des graphiques (voir
+  // COULEUR_NATURE) — les pastilles et les graphiques n'ont jamais partagé leurs teintes,
+  // le MCO est gris ici et vert sarcelle là-bas, pour les mêmes raisons de lisibilité.
+  Demande: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300',
 };
 
 export function TaskTypeBadge({ type }: { type: TaskType }) {

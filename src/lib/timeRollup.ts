@@ -14,7 +14,7 @@ import type { ProjectTask, TaskType, TimeEntry } from '../types';
  * 12, et c'est le dépassement qui doit sauter aux yeux.
  */
 
-export const HORS_PROJET = 'Hors projet — MCO & incidents';
+export const HORS_PROJET = 'Hors projet — MCO, demandes & incidents';
 export const TACHE_SUPPRIMEE = 'Tâches supprimées';
 
 export interface TaskRollup {

@@ -45,6 +45,14 @@ export const COULEUR_NATURE: Record<ProjectTask['type'], string> = {
   Projet: '#7c3aed',
   Incident: '#ea580c',
   MCO: '#0d9488',
+  // Demande : seule teinte à passer tous les contrôles sur les DEUX fonds une fois les
+  // trois autres posées (les bleus et indigos se confondent avec le violet du projet, les
+  // verts avec le sarcelle du MCO, les ambres avec l'orange de l'incident). Sa séparation
+  // en vision deutan face au MCO tombe à 7,4 — dans la bande basse tolérée uniquement
+  // parce que la couleur n'est jamais seule : la grille sépare ses cases d'un filet, le
+  // document écrit la nature à côté de la pastille et l'historique de charge a sa légende
+  // et sa vue tableau.
+  Demande: '#c41e5a',
 };
 
 /** Les absences sont en pastel : ce n'est pas du travail sur une tâche, et la grille doit
@@ -340,7 +348,14 @@ function reserveDe(t: ProjectTask, isoAujourdhui: string): string | undefined {
 
 /** Un code par demi-journée. Les absences l'emportent : une personne en congés n'est pas
  *  « non planifiée », elle est absente, et la nuance change la lecture de la grille. */
-export type CodeCreneau = 'MCO' | 'Incident' | 'Projet' | AbsenceType | 'libre';
+export type CodeCreneau = 'MCO' | 'Incident' | 'Projet' | 'Demande' | AbsenceType | 'libre';
+
+/** Le code d'une case de la grille désigne-t-il du travail plutôt qu'une absence ?
+ *  Écrit une fois ici : l'ajout d'une quatrième nature a montré que la liste était
+ *  recopiée dans cinq fichiers, dont trois l'auraient oubliée. */
+export function estNature(code: CodeCreneau): code is ProjectTask['type'] {
+  return code === 'MCO' || code === 'Incident' || code === 'Projet' || code === 'Demande';
+}
 
 export interface LigneGrille {
   member: TeamMember;

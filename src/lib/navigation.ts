@@ -42,7 +42,7 @@ export const NAV_GROUPS: NavGroup[] = [
     entries: [
       { id: 'daily', label: 'Activité du jour', short: 'Jour', icon: '☀', description: 'Saisir le temps et les créneaux du jour' },
       { id: 'planning', label: 'Planning', short: 'Planning', icon: '▦', description: 'Prévisionnel sur trois semaines' },
-      { id: 'tasks', label: 'Tâches', short: 'Tâches', icon: '☑', description: 'Tâches, incidents et projets' },
+      { id: 'tasks', label: 'Tâches', short: 'Tâches', icon: '☑', description: 'Tâches, demandes, incidents et projets' },
       { id: 'time', label: 'Temps', short: 'Temps', icon: '◴', description: 'Temps passé par personne, par projet, par type' },
     ],
   },
