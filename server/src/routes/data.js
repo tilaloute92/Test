@@ -3,6 +3,7 @@ import { requireAuth } from '../auth/session.js';
 import { requireAdmin } from '../auth/admin.js';
 import * as store from '../businessData.js';
 import { getServiceConfig, setServiceConfig } from '../serviceConfig.js';
+import { agregat as meteoAgregat, deposer as meteoDeposer, estLundiIso, modifier as meteoModifier } from '../meteoVotes.js';
 
 export const dataRouter = Router();
 
@@ -168,8 +169,57 @@ dataRouter.get('/service-config', (_req, res) => res.json(getServiceConfig()));
 
 dataRouter.put('/service-config', requireAdmin, (req, res) => {
   try {
-    res.json(setServiceConfig({ seuilPresence: req.body?.seuilPresence }));
+    res.json(setServiceConfig({ seuilPresence: req.body?.seuilPresence, meteoCloture: req.body?.meteoCloture }));
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+});
+
+/**
+ * Météo de la semaine votée par l'équipe — voir server/src/meteoVotes.js, qui explique
+ * pourquoi ces voix ne sont PAS une collection partagée de plus : l'instantané `GET /`
+ * est renvoyé à tout le monde, et une voix ne doit jamais voyager avec son contexte.
+ *
+ * L'identité ne vient jamais du corps de la requête mais de la session (`req.user.sub`) :
+ * sinon n'importe qui voterait au nom de n'importe qui, et l'anonymat servirait surtout à
+ * masquer le bourrage d'urne.
+ */
+function semaineDe(req, res) {
+  const semaine = req.params.semaine;
+  if (!estLundiIso(semaine)) {
+    res.status(400).json({ error: 'La semaine doit être une date de lundi au format AAAA-MM-JJ.' });
+    return null;
+  }
+  return semaine;
+}
+
+function repondreVote(res, action) {
+  try {
+    res.json(action());
+  } catch (error) {
+    res.status(error.statut ?? 400).json({ error: error.message });
+  }
+}
+
+dataRouter.get('/meteo/:semaine', (req, res) => {
+  const semaine = semaineDe(req, res);
+  if (semaine) res.json(meteoAgregat(semaine, req.user.sub));
+});
+
+dataRouter.post('/meteo/:semaine', (req, res) => {
+  const semaine = semaineDe(req, res);
+  if (semaine) {
+    repondreVote(res, () =>
+      meteoDeposer({ semaine, username: req.user.sub, niveau: req.body?.niveau, mot: req.body?.mot })
+    );
+  }
+});
+
+dataRouter.patch('/meteo/:semaine', (req, res) => {
+  const semaine = semaineDe(req, res);
+  if (semaine) {
+    repondreVote(res, () =>
+      meteoModifier({ semaine, username: req.user.sub, id: req.body?.id, niveau: req.body?.niveau, mot: req.body?.mot })
+    );
   }
 });

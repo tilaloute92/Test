@@ -7,6 +7,7 @@ import {
   type MeetingReport,
 } from './meetingReport';
 import { weatherMeta } from './weeklyReport';
+import { NIVEAUX, resultatMeteo, type ResultatMeteo } from './meteoVote';
 import { workloadColors } from './workload';
 import type { ProjectTask, TeamMember } from '../types';
 
@@ -26,10 +27,27 @@ import type { ProjectTask, TeamMember } from '../types';
  */
 
 export interface PayloadMeteo {
+  /** La météo AFFICHÉE : celle votée par l'équipe quand le vote a abouti, sinon celle calculée. */
   emoji: string;
   label: string;
+  /** Le score composite et ses facteurs restent envoyés dans tous les cas : ils disent ce
+   *  que montrent les chiffres, que l'équipe les rejoigne ou non. */
   score: number;
   facteurs: string[];
+  /** D'où vient la météo affichée, en une phrase — jamais sous-entendu. */
+  mention: string;
+  /** Le dépouillement, absent tant qu'aucun vote n'a abouti. */
+  vote?: {
+    repartition: { emoji: string; label: string; n: number }[];
+    total: number;
+    effectif: number;
+    mots: string[];
+    /** Ce que disait le calcul, pour l'afficher face au vote. */
+    calculEmoji: string;
+    calculLabel: string;
+    /** Vrai quand le ressenti et les chiffres ne disent pas la même chose. */
+    ecart: boolean;
+  };
 }
 
 export interface PayloadChiffre {
@@ -203,10 +221,15 @@ export function buildReunionPayload(opts: {
   /** Points décochés dans la fenêtre d'envoi : ils ne partent pas. */
   pointsRetires?: string[];
   mot?: string;
+  /** Météo retenue, votée ou calculée (voir meteoVote.ts). */
+  meteo?: ResultatMeteo;
 }): ReunionPayload {
-  const { report, members, teamLabel, auteur = '', pointsRetires = [], mot } = opts;
+  const { report, members, teamLabel, auteur = '', pointsRetires = [], mot, meteo } = opts;
   const h = report.hebdo;
-  const m = weatherMeta[h.weather];
+  const resultat: ResultatMeteo = meteo ?? resultatMeteo(null, h.weather);
+  const m = weatherMeta[resultat.niveau];
+  const calcul = weatherMeta[h.weather];
+  const a = resultat.agregat;
   const s1 = report.semaines[0];
   // Le retard se compte depuis la référence qui a servi à le détecter (voir weeklyReport).
   const isoReference = h.referenceRetard;
@@ -236,7 +259,25 @@ export function buildReunionPayload(opts: {
     dateReunion: formatDateLong(report.dateReunion),
     genereLe: `${formatDateLong(report.genereLe)}, ${heureCourte(report.genereLe)}`,
 
-    meteo: { emoji: m.emoji, label: m.label, score: h.weatherScore, facteurs: h.weatherFactors },
+    meteo: {
+      emoji: m.emoji,
+      label: m.label,
+      score: h.weatherScore,
+      facteurs: h.weatherFactors,
+      mention: resultat.mention,
+      vote:
+        resultat.vote && a
+          ? {
+              repartition: NIVEAUX.map((n) => ({ emoji: weatherMeta[n].emoji, label: weatherMeta[n].label, n: a.voix[n] ?? 0 })),
+              total: a.total,
+              effectif: a.effectif,
+              mots: a.mots,
+              calculEmoji: calcul.emoji,
+              calculLabel: calcul.label,
+              ecart: h.weather !== resultat.niveau,
+            }
+          : undefined,
+    },
 
     chiffres: [
       {

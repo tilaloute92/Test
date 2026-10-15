@@ -14,6 +14,8 @@ import { ReunionProjection } from './ReunionProjection';
 import { ReunionSynthese } from './ReunionSynthese';
 import { SendReunionModal } from './SendReunionModal';
 import { useViewMode } from '../hooks/useViewMode';
+import { useMeteoVote } from '../hooks/useMeteoVote';
+import { cleSemaine, resultatMeteo } from '../lib/meteoVote';
 import { useSeuilPresence } from '../hooks/useSeuilPresence';
 
 const TEAM_LABEL = 'Équipe Infrastructure & Réseau';
@@ -65,17 +67,23 @@ export function WeeklyReportView() {
 
   // Qui signe le document. Le choix mémorisé dans « Ma journée » sert de source : il a
   // déjà été confirmé par la personne, contrairement à un rapprochement automatique.
+  // La météo votée par l'équipe pour la semaine affichée (voir src/lib/meteoVote.ts).
+  // Chargée à part des données d'équipe, et à défaut de vote abouti, c'est le score
+  // calculé qui reste affiché — le rapport n'est jamais privé de météo.
+  const { agregat: voteMeteo } = useMeteoVote(cleSemaine(new Date(debutMs)));
+  const meteo = useMemo(() => resultatMeteo(voteMeteo, report.hebdo.weather), [voteMeteo, report.hebdo.weather]);
+
   const auteur = useMemo(() => {
     const id = getStoredMemberId();
     return members.find((m) => m.id === id)?.name ?? '';
   }, [members]);
 
   const construirePayload = ({ mot, pointsRetires }: { mot: string; pointsRetires: string[] }) =>
-    buildReunionPayload({ report, members, teamLabel: TEAM_LABEL, auteur, mot, pointsRetires });
+    buildReunionPayload({ report, members, teamLabel: TEAM_LABEL, auteur, mot, pointsRetires, meteo });
 
   const copierMarkdown = async () => {
     try {
-      await navigator.clipboard.writeText(buildMarkdownReport(report.hebdo, TEAM_LABEL, members));
+      await navigator.clipboard.writeText(buildMarkdownReport(report.hebdo, TEAM_LABEL, members, meteo));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -88,7 +96,7 @@ export function WeeklyReportView() {
     setErreur(null);
     setBusy('pptx');
     try {
-      await exportWeeklyReportPptx({ report: report.hebdo, members, teamLabel: TEAM_LABEL });
+      await exportWeeklyReportPptx({ report: report.hebdo, members, teamLabel: TEAM_LABEL, meteo });
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     } finally {
@@ -206,11 +214,11 @@ export function WeeklyReportView() {
 
       {vue === 'reunion' && (
         <div className="overflow-x-auto rounded-xl bg-slate-200/60 p-4 print:overflow-visible print:bg-white print:p-0 dark:bg-slate-800">
-          <ReunionDocument report={report} members={members} teamLabel={TEAM_LABEL} auteur={auteur} />
+          <ReunionDocument report={report} members={members} teamLabel={TEAM_LABEL} auteur={auteur} meteo={meteo} />
         </div>
       )}
-      {vue === 'projection' && <ReunionProjection report={report} members={members} teamLabel={TEAM_LABEL} />}
-      {vue === 'synthese' && <ReunionSynthese report={report} members={members} teamLabel={TEAM_LABEL} auteur={auteur} />}
+      {vue === 'projection' && <ReunionProjection report={report} members={members} teamLabel={TEAM_LABEL} meteo={meteo} />}
+      {vue === 'synthese' && <ReunionSynthese report={report} members={members} teamLabel={TEAM_LABEL} auteur={auteur} meteo={meteo} />}
 
       {envoiOuvert && (
         <SendReunionModal

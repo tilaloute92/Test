@@ -5,4 +5,9 @@ data/config.json
 data/business-*.json
 # État d'exécution du planificateur d'envoi : propre à l'installation, pas au dépôt.
 data/mail-state.json
+# Voix de la météo hebdomadaire : données d'une installation, et surtout des voix
+# anonymes — elles n'ont rien à faire dans un dépôt, où un historique les conserverait
+# indéfiniment et permettrait de les recouper d'une semaine sur l'autre.
+data/meteo-votes.json
+data/meteo-jetons.json
 *.log

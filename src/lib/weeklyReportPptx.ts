@@ -7,6 +7,7 @@
 import { addSectionTitle, addTitleSlide, loadPptxGenJS, tableHeaderCells, PPTX_FONT } from './pptxCommon';
 import { formatWeekRange, formatDateLong, toISODate } from './date';
 import { weatherMeta, type WeeklyReport } from './weeklyReport';
+import { resultatMeteo, type ResultatMeteo } from './meteoVote';
 import { workloadColors } from './workload';
 import type { RoadmapStatus, TeamMember } from '../types';
 
@@ -20,15 +21,21 @@ const roadmapStatusLabels: Record<RoadmapStatus, string> = {
   abandonne: 'Abandonné',
 };
 
-export async function exportWeeklyReportPptx(params: { report: WeeklyReport; members: TeamMember[]; teamLabel: string }): Promise<void> {
-  const { report, members, teamLabel } = params;
+export async function exportWeeklyReportPptx(params: {
+  report: WeeklyReport;
+  members: TeamMember[];
+  teamLabel: string;
+  meteo?: ResultatMeteo;
+}): Promise<void> {
+  const { report, members, teamLabel, meteo } = params;
+  const resultat = meteo ?? resultatMeteo(null, report.weather);
   const PptxGenJS = await loadPptxGenJS();
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = teamLabel;
   pptx.title = `Rapport hebdomadaire — ${formatWeekRange(report.weekDays)}`;
 
-  const w = weatherMeta[report.weather];
+  const w = weatherMeta[resultat.niveau];
 
   addTitleSlide(pptx, {
     title: 'Rapport hebdomadaire',
@@ -39,7 +46,7 @@ export async function exportWeeklyReportPptx(params: { report: WeeklyReport; mem
   // --- Météo & indicateurs clés ---
   const overview = pptx.addSlide();
   addSectionTitle(overview, `Météo de la semaine : ${w.label} ${w.emoji}`);
-  overview.addText(report.weatherFactors.map((f) => `•  ${f}`).join('\n'), {
+  overview.addText([resultat.mention, ...report.weatherFactors.map((f) => `•  ${f}`)].join('\n'), {
     x: 0.4,
     y: 1.0,
     w: 6.2,

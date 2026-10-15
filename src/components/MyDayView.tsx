@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
+import { MeteoVoteCard } from './MeteoVoteCard';
 import { Avatar, Card, PriorityBadge, TaskTypeBadge } from './ui';
 import { formatDateLong, toISODate } from '../lib/date';
 import { absencesToday, hoursLoggedToday } from '../lib/selectors';
@@ -244,6 +245,10 @@ function MaJournee({
           </p>
         </Card>
       )}
+
+      {/* Le jeudi et le vendredi seulement : la tuile se montre d'elle-même pendant la
+          fenêtre de vote, et ne rend rien le reste du temps. */}
+      <MeteoVoteCard />
 
       {/* --- Les trois choses sur lesquelles agir --- */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

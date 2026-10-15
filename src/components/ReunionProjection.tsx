@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatDateLong, toISODate } from '../lib/date';
 import { COULEUR_ABSENCE, COULEUR_NATURE, ETIQUETTES_ABSENCE, type MeetingReport } from '../lib/meetingReport';
 import { weatherMeta } from '../lib/weeklyReport';
+import { NIVEAUX, resultatMeteo, type ResultatMeteo } from '../lib/meteoVote';
 import type { ProjectTask, TeamMember } from '../types';
 
 /**
@@ -22,12 +23,15 @@ export function ReunionProjection({
   report,
   members,
   teamLabel,
+  meteo: meteoRetenue,
 }: {
   report: MeetingReport;
   members: TeamMember[];
   teamLabel: string;
+  meteo?: ResultatMeteo;
 }) {
-  const ecrans = useMemo(() => construireEcrans(report, members), [report, members]);
+  const resultat = meteoRetenue ?? resultatMeteo(null, report.hebdo.weather);
+  const ecrans = useMemo(() => construireEcrans(report, members, resultat), [report, members, resultat]);
   const [index, setIndex] = useState(0);
   const total = ecrans.length;
 
@@ -47,7 +51,7 @@ export function ReunionProjection({
   }, [aller]);
 
   const ecran = ecrans[Math.min(index, total - 1)];
-  const meteo = weatherMeta[report.hebdo.weather];
+  const meteo = weatherMeta[resultat.niveau];
 
   return (
     <div className="space-y-3">
@@ -115,12 +119,12 @@ interface Ecran {
   contenu: React.ReactNode;
 }
 
-function construireEcrans(report: MeetingReport, members: TeamMember[]): Ecran[] {
+function construireEcrans(report: MeetingReport, members: TeamMember[], meteo: ResultatMeteo): Ecran[] {
   const h = report.hebdo;
   const ecrans: Ecran[] = [];
 
   ecrans.push({ titre: 'Points à aborder', contenu: <EcranPoints report={report} /> });
-  ecrans.push({ titre: 'Météo & chiffres', contenu: <EcranChiffres report={report} /> });
+  ecrans.push({ titre: 'Météo & chiffres', contenu: <EcranChiffres report={report} meteo={meteo} /> });
   if (h.openCriticalIncidents.length > 0 || h.incidentsResolved.length > 0) {
     ecrans.push({ titre: 'Incidents', contenu: <EcranIncidents report={report} members={members} /> });
   }
@@ -173,9 +177,10 @@ function EcranPoints({ report }: { report: MeetingReport }) {
   );
 }
 
-function EcranChiffres({ report }: { report: MeetingReport }) {
+function EcranChiffres({ report, meteo }: { report: MeetingReport; meteo: ResultatMeteo }) {
   const h = report.hebdo;
-  const m = weatherMeta[h.weather];
+  const m = weatherMeta[meteo.niveau];
+  const vote = meteo.vote && meteo.agregat ? meteo.agregat : null;
   const s1 = report.semaines[0];
   const tuiles: [string, string][] = [
     [`${Math.round(h.totalHoursLogged * 10) / 10} h`, `saisies sur ${Math.round(h.totalHoursTarget)} h`],
@@ -197,7 +202,19 @@ function EcranChiffres({ report }: { report: MeetingReport }) {
       <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 16, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '14px 18px' }}>
         <span style={{ fontSize: 38 }}>{m.emoji}</span>
         <span style={{ fontSize: 16, color: '#78350f' }}>
-          <strong>{m.label}</strong> — {h.weatherFactors.join(', ').toLowerCase()}.
+          <strong>{m.label}</strong>
+          {vote ? (
+            <>
+              {' '}
+              — {NIVEAUX.filter((n) => (vote.voix[n] ?? 0) > 0)
+                .map((n) => `${vote.voix[n]} ${weatherMeta[n].label.toLowerCase()}`)
+                .join(', ')}
+              . Les chiffres, eux : {weatherMeta[h.weather].label.toLowerCase()}, {h.weatherFactors.join(', ').toLowerCase()}.
+            </>
+          ) : (
+            <> — {h.weatherFactors.join(', ').toLowerCase()}.</>
+          )}
+          <div style={{ fontSize: 13, marginTop: 4, color: '#92400e' }}>{meteo.mention}</div>
         </span>
       </div>
     </>

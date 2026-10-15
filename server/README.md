@@ -51,6 +51,37 @@ Côté serveur et non dans le navigateur : rangé dans le stockage local, chacun
 sien, et deux personnes regardant le même planning n'y verraient pas la même alerte. En
 mode autonome la valeur d'origine s'applique et le réglage est annoncé indisponible.
 
+## Météo de la semaine votée, anonymement
+
+Chaque membre dépose une voix (ensoleillé, éclaircies, nuageux, orageux) depuis « Ma
+journée », du jeudi matin au vendredi à l'heure de clôture — `config.json`, clé
+`service.meteoCloture` (heure pleine, 15 par défaut, modifiable dans Paramètres par
+l'administrateur). Routes : `GET/POST/PATCH /api/data/meteo/:semaine`, la semaine étant
+la date du **lundi**.
+
+L'anonymat tient à la façon dont c'est rangé, pas à une promesse d'interface :
+
+- `data/meteo-votes.json` ne porte **aucune identité** : semaine, niveau, mot éventuel, et
+  un identifiant aléatoire sans rapport avec la personne ;
+- `data/meteo-jetons.json` ne porte **aucune voix** : l'empreinte HMAC-SHA256 de
+  l'identifiant de session, de la semaine et du secret du serveur. Elle suffit à refuser
+  un second vote, elle ne se retourne pas en identifiant ;
+- ni horodatage, ni ordre d'arrivée : les deux listes sont remélangées à chaque écriture,
+  faute de quoi, à cinq, la première voix du jeudi matin s'attribuerait toute seule.
+
+Conséquence assumée : le serveur ne sait pas quelle voix est la vôtre, donc **seul le
+navigateur qui l'a déposée** peut la modifier (il conserve l'identifiant remis au dépôt).
+Changer de poste, ou effacer son stockage local, coûte cette possibilité — l'interface le
+dit au lieu de laisser croire à un bogue.
+
+Le rapport de réunion affiche la météo votée **à côté** du score calculé, jamais à la
+place : l'écart entre les deux est l'information la plus utile des deux. En dessous de
+trois voix, ou tant que le vote est ouvert, c'est le score calculé qui est affiché, avec
+la raison écrite noir sur blanc. Les voix de plus de 53 semaines sont effacées.
+
+Ces voix ne sont volontairement **pas** une collection partagée : l'instantané
+`GET /api/data/` part à tout le monde et se retrouve dans les sauvegardes du navigateur.
+
 ## Journal d'avancement
 
 Une huitième collection partagée, `journalEntries` (fichier `data/business-journalEntries.json`),

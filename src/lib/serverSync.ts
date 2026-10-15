@@ -11,6 +11,8 @@
  */
 
 import type { Absence, Copil, JournalEntry, Period, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
+import type { AgregatMeteo } from './meteoVote';
+import type { WeatherLevel } from './weeklyReport';
 
 /** Les 8 collections partagées. */
 export interface SharedCollections {
@@ -147,11 +149,29 @@ export const syncRemoveCopil = (id: string) => request<{ ok: boolean }>(`/copils
 export interface ServiceConfig {
   /** 0 → 1. En dessous, l'application signale que le service n'est plus tenu. */
   seuilPresence: number;
+  /** Heure pleine de clôture du vote de la météo, le vendredi. */
+  meteoCloture: number;
   /** Vrai tant que rien n'a été enregistré : la valeur affichée est celle d'origine. */
   parDefaut: boolean;
 }
 
 export const fetchServiceConfig = () => request<ServiceConfig>('/service-config');
 
-export const saveServiceConfig = (seuilPresence: number) =>
-  request<ServiceConfig>('/service-config', { method: 'PUT', body: JSON.stringify({ seuilPresence }) });
+export const saveServiceConfig = (patch: { seuilPresence?: number; meteoCloture?: number }) =>
+  request<ServiceConfig>('/service-config', { method: 'PUT', body: JSON.stringify(patch) });
+
+/**
+ * Météo de la semaine votée par l'équipe (voir server/src/meteoVotes.js).
+ *
+ * Volontairement hors de l'instantané partagé : une voix ne doit pas voyager avec le reste
+ * des données, où elle se retrouverait dans une sauvegarde, un export ou une console que
+ * quelqu'un relit. On la demande semaine par semaine, et le serveur ne renvoie que des
+ * nombres et des mots sans auteur.
+ */
+export const fetchMeteo = (semaine: string) => request<AgregatMeteo>(`/meteo/${semaine}`);
+
+export const postMeteoVote = (semaine: string, niveau: WeatherLevel, mot: string) =>
+  request<{ id: string } & AgregatMeteo>(`/meteo/${semaine}`, { method: 'POST', body: JSON.stringify({ niveau, mot }) });
+
+export const patchMeteoVote = (semaine: string, id: string, niveau: WeatherLevel, mot: string) =>
+  request<{ id: string } & AgregatMeteo>(`/meteo/${semaine}`, { method: 'PATCH', body: JSON.stringify({ id, niveau, mot }) });

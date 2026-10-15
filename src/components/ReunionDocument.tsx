@@ -8,6 +8,7 @@ import {
   type ProjetRollup,
 } from '../lib/meetingReport';
 import { weatherMeta } from '../lib/weeklyReport';
+import { NIVEAUX, resultatMeteo, type ResultatMeteo } from '../lib/meteoVote';
 import { workloadColors } from '../lib/workload';
 import type { Absence, ProjectTask, TeamMember } from '../types';
 
@@ -53,9 +54,11 @@ export interface DocumentProps {
   auteur?: string;
   /** Points décochés par l'utilisateur avant envoi (voir la fenêtre d'envoi). */
   pointsRetires?: string[];
+  /** Météo retenue — votée par l'équipe, ou calculée à défaut de vote abouti. */
+  meteo?: ResultatMeteo;
 }
 
-export function ReunionDocument({ report, members, teamLabel, auteur, pointsRetires = [] }: DocumentProps) {
+export function ReunionDocument({ report, members, teamLabel, auteur, pointsRetires = [], meteo }: DocumentProps) {
   const points = report.points.filter((p) => !pointsRetires.includes(p.id));
   const h = report.hebdo;
   const resolus = h.incidentsResolved;
@@ -68,7 +71,7 @@ export function ReunionDocument({ report, members, teamLabel, auteur, pointsReti
       <EnTete report={report} teamLabel={teamLabel} auteur={auteur} />
 
       <div style={{ padding: '20px 28px 28px' }}>
-        <Meteo report={report} />
+        <Meteo report={report} meteo={meteo ?? resultatMeteo(null, report.hebdo.weather)} />
         <Chiffres report={report} />
 
         {/* L'ordre du jour ouvre le document : c'est par là que commence la réunion, le
@@ -162,40 +165,103 @@ const COULEUR_METEO: Record<string, string> = {
   orageux: '#dc2626',
 };
 
-function Meteo({ report }: { report: MeetingReport }) {
+/**
+ * La météo, votée par l'équipe ou calculée.
+ *
+ * Les deux colonnes de droite ne font pas double emploi : « ce qu'a voté l'équipe » est un
+ * ressenti, « ce que disent les chiffres » une mesure. Les afficher côte à côte est le seul
+ * moyen de voir leur écart — une équipe qui se dit sous l'orage alors que la charge est au
+ * vert dit quelque chose qu'aucun des deux indicateurs ne dit seul. La mention sous la
+ * météo rappelle toujours laquelle des deux est affichée en grand.
+ */
+function Meteo({ report, meteo }: { report: MeetingReport; meteo: ResultatMeteo }) {
   const h = report.hebdo;
-  const m = weatherMeta[h.weather];
+  const m = weatherMeta[meteo.niveau];
+  const a = meteo.agregat;
+  const vote = meteo.vote && a ? a : null;
   return (
     <div
       style={{
         display: 'flex',
         gap: 16,
         border: `1px solid ${TRAIT}`,
-        borderLeft: `4px solid ${COULEUR_METEO[h.weather]}`,
+        borderLeft: `4px solid ${COULEUR_METEO[meteo.niveau]}`,
         borderRadius: 8,
         padding: '14px 16px',
         marginBottom: 16,
         flexWrap: 'wrap',
       }}
     >
-      <div style={{ textAlign: 'center', minWidth: 96 }}>
+      <div style={{ textAlign: 'center', minWidth: 104 }}>
         <div style={{ fontSize: 34, lineHeight: 1 }}>{m.emoji}</div>
         <div style={{ fontSize: 15, fontWeight: 600, marginTop: 4 }}>{m.label}</div>
-        <div style={{ fontSize: 11, color: ENCRE3 }}>score {h.weatherScore} / 100</div>
+        <div style={{ fontSize: 11, color: ENCRE3 }}>{vote ? `${vote.total} voix sur ${vote.effectif}` : `score ${h.weatherScore} / 100`}</div>
       </div>
-      <div style={{ flex: 1, minWidth: 260, borderLeft: `1px solid ${TRAIT}`, paddingLeft: 16 }}>
-        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', color: ENCRE3, marginBottom: 6 }}>
-          Ce qui donne cette météo
+
+      {vote && (
+        <div style={{ minWidth: 190, borderLeft: `1px solid ${TRAIT}`, paddingLeft: 16 }}>
+          <Intitule>Ce qu'a voté l'équipe</Intitule>
+          <Repartition voix={vote.voix} total={vote.total} />
         </div>
+      )}
+
+      <div style={{ flex: 1, minWidth: 240, borderLeft: `1px solid ${TRAIT}`, paddingLeft: 16 }}>
+        <Intitule>{vote ? 'Ce que disent les chiffres' : 'Ce qui donne cette météo'}</Intitule>
+        {vote && (
+          <div style={{ fontSize: 13, color: ENCRE2, marginBottom: 4 }}>
+            {weatherMeta[h.weather].emoji} {weatherMeta[h.weather].label} — score {h.weatherScore} / 100
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '4px 20px', fontSize: 13, color: ENCRE2 }}>
           {h.weatherFactors.map((f) => (
             <span key={f}>{f}</span>
           ))}
         </div>
-        <div style={{ fontSize: 11, color: ENCRE3, marginTop: 8 }}>
-          Calcul affiché volontairement : la météo n'est pas une humeur, elle se vérifie.
-        </div>
+        <div style={{ fontSize: 11, color: ENCRE3, marginTop: 8 }}>{meteo.mention}</div>
+        {vote && h.weather !== meteo.niveau && (
+          <div style={{ marginTop: 6, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '6px 8px', fontSize: 12, color: '#78350f' }}>
+            Le ressenti de l'équipe et les chiffres ne disent pas la même chose. C'est un point à aborder, pas une erreur.
+          </div>
+        )}
+        {vote && vote.mots.length > 0 && (
+          <div style={{ marginTop: 8, borderTop: `1px solid ${TRAIT}`, paddingTop: 6 }}>
+            <Intitule>Mots laissés avec les voix — sans nom, dans un ordre mélangé</Intitule>
+            <div style={{ fontSize: 12.5, color: ENCRE2 }}>{vote.mots.map((t) => `« ${t} »`).join(' · ')}</div>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function Intitule({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.06em', color: ENCRE3, marginBottom: 6 }}>{children}</div>
+  );
+}
+
+/** Barres du dépouillement. Jamais de camembert : quatre parts dont deux proches ne se
+ *  comparent pas à l'œil, et le rapport est souvent relu imprimé en noir et blanc. */
+function Repartition({ voix, total }: { voix: Record<string, number>; total: number }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {NIVEAUX.map((n) => (
+        <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+          <span style={{ width: 16 }}>{weatherMeta[n].emoji}</span>
+          <span style={{ width: 120, height: 10, background: '#f1f5f9', borderRadius: 3, overflow: 'hidden' }}>
+            <span
+              style={{
+                display: 'block',
+                width: `${total > 0 ? ((voix[n] ?? 0) / total) * 100 : 0}%`,
+                height: 10,
+                background: COULEUR_METEO[n],
+                borderRadius: 3,
+              }}
+            />
+          </span>
+          <span style={{ color: ENCRE2, fontVariantNumeric: 'tabular-nums' }}>{voix[n] ?? 0}</span>
+        </div>
+      ))}
     </div>
   );
 }

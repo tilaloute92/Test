@@ -1,6 +1,7 @@
 import { formatWeekRange, toISODate } from '../lib/date';
 import { COULEUR_ABSENCE, COULEUR_NATURE, ETIQUETTES_ABSENCE, type MeetingReport } from '../lib/meetingReport';
 import { weatherMeta } from '../lib/weeklyReport';
+import { resultatMeteo, type ResultatMeteo } from '../lib/meteoVote';
 import type { TeamMember } from '../types';
 
 /**
@@ -23,14 +24,17 @@ export function ReunionSynthese({
   members,
   teamLabel,
   auteur,
+  meteo,
 }: {
   report: MeetingReport;
   members: TeamMember[];
   teamLabel: string;
   auteur?: string;
+  meteo?: ResultatMeteo;
 }) {
   const h = report.hebdo;
-  const m = weatherMeta[h.weather];
+  const resultat = meteo ?? resultatMeteo(null, h.weather);
+  const m = weatherMeta[resultat.niveau];
   const s1 = report.semaines[0];
   const sujets = report.semaines.flatMap((s) => s.sujets);
 
@@ -62,6 +66,9 @@ export function ReunionSynthese({
             <span style={{ fontSize: 18 }}>{m.emoji}</span>
             <span style={{ fontSize: 13, color: '#78350f' }}>
               <strong>{m.label}</strong> · charge {Math.round(h.avgWorkloadRatio * 100)} %
+              {/* La synthèse part à qui n'était pas là : sans cette ligne, rien ne dirait
+                  si la météo vient de l'équipe ou d'un calcul. */}
+              <span style={{ display: 'block', fontSize: 11, color: '#92400e' }}>{resultat.mention}</span>
             </span>
           </div>
         </div>

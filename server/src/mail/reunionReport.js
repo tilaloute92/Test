@@ -138,25 +138,87 @@ function enTete(p) {
 
 const COULEUR_METEO = { Ensoleillé: '#16a34a', Éclaircies: '#65a30d', Nuageux: '#f59e0b', Orageux: '#dc2626' };
 
+/**
+ * Le bloc météo, dans le document joint.
+ *
+ * Trois colonnes quand l'équipe a voté : la météo retenue, le dépouillement, et ce que
+ * disent les chiffres. Les voix sont rendues en barres faites de tableaux et de cellules
+ * de largeur fixe — aucune barre en CSS, aucun pourcentage : Outlook ignore `width:%`
+ * dans un `div` imbriqué et afficherait des barres toutes égales, c'est-à-dire un
+ * graphique faux, ce qui est pire que pas de graphique.
+ */
 function meteo(p) {
   const bord = COULEUR_METEO[p.meteo.label] || '#f59e0b';
+  const v = p.meteo.vote;
+  const largeurMax = 110;
+  const barres = v
+    ? v.repartition
+        .map((r) => {
+          const px = v.total > 0 ? Math.round((r.n / v.total) * largeurMax) : 0;
+          return `<tr>
+            <td style="font-size:13px;padding:1px 6px 1px 0">${e(r.emoji)}</td>
+            <td style="padding:1px 6px 1px 0">
+              <table style="border-collapse:collapse;width:${largeurMax}px"><tr>
+                ${
+                  // Une cellule de largeur nulle occupe quand même quelques pixels chez
+                  // certains clients : à zéro voix on ne l'écrit pas du tout, sinon une
+                  // barre vide se lit comme une voix.
+                  px > 0
+                    ? `<td style="height:10px;width:${px}px;background:${COULEUR_METEO[r.label] || '#94a3b8'};border-radius:3px;font-size:0;line-height:0">&nbsp;</td>`
+                    : ''
+                }
+                ${px < largeurMax ? `<td style="height:10px;width:${largeurMax - px}px;background:#f1f5f9;border-radius:3px;font-size:0;line-height:0">&nbsp;</td>` : ''}
+              </tr></table>
+            </td>
+            <td style="font-size:12px;color:${ENCRE2};padding:1px 0">${e(r.n)}</td>
+          </tr>`;
+        })
+        .join('')
+    : '';
+
   return `<table style="width:100%;border-collapse:collapse;border:1px solid ${TRAIT};border-left:4px solid ${bord};border-radius:8px;margin-bottom:16px">
     <tr>
       <td style="width:110px;text-align:center;padding:14px 8px;vertical-align:top">
         <div style="font-size:34px;line-height:1">${e(p.meteo.emoji)}</div>
         <div style="font-size:15px;font-weight:600;margin-top:4px">${e(p.meteo.label)}</div>
-        <div style="font-size:11px;color:${ENCRE3}">score ${e(p.meteo.score)} / 100</div>
+        <div style="font-size:11px;color:${ENCRE3}">${v ? `${e(v.total)} voix sur ${e(v.effectif)}` : `score ${e(p.meteo.score)} / 100`}</div>
       </td>
+      ${
+        v
+          ? `<td style="padding:14px 16px;border-left:1px solid ${TRAIT};vertical-align:top;width:200px">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:${ENCRE3};margin-bottom:6px">Ce qu'a voté l'équipe</div>
+        <table style="border-collapse:collapse">${barres}</table>
+      </td>`
+          : ''
+      }
       <td style="padding:14px 16px;border-left:1px solid ${TRAIT};vertical-align:top">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:${ENCRE3};margin-bottom:6px">
-          Ce qui donne cette météo
+          ${v ? 'Ce que disent les chiffres' : 'Ce qui donne cette météo'}
         </div>
+        ${
+          v
+            ? `<div style="font-size:13px;color:${ENCRE2};margin-bottom:4px">${e(v.calculEmoji)} ${e(v.calculLabel)} — score ${e(p.meteo.score)} / 100</div>`
+            : ''
+        }
         <div style="font-size:13px;color:${ENCRE2};line-height:1.6">
           ${p.meteo.facteurs.map((f) => e(f)).join('<br>')}
         </div>
-        <div style="font-size:11px;color:${ENCRE3};margin-top:8px">
-          Calcul affiché volontairement : la météo n'est pas une humeur, elle se vérifie.
-        </div>
+        <div style="font-size:11px;color:${ENCRE3};margin-top:8px">${e(p.meteo.mention || "Calcul affiché volontairement : la météo n'est pas une humeur, elle se vérifie.")}</div>
+        ${
+          v && v.ecart
+            ? `<div style="margin-top:6px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 8px;font-size:12px;color:#78350f">
+                 Le ressenti de l'équipe et les chiffres ne disent pas la même chose. C'est un point à aborder, pas une erreur.
+               </div>`
+            : ''
+        }
+        ${
+          v && v.mots.length > 0
+            ? `<div style="margin-top:8px;border-top:1px solid ${TRAIT};padding-top:6px">
+                 <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:${ENCRE3};margin-bottom:4px">Mots laissés avec les voix — sans nom</div>
+                 <div style="font-size:12.5px;color:${ENCRE2}">${v.mots.map((t) => `« ${e(t)} »`).join(' · ')}</div>
+               </div>`
+            : ''
+        }
       </td>
     </tr>
   </table>`;
@@ -465,7 +527,15 @@ export function renderMail(p) {
       <tr>
         <td style="width:44px;padding:10px 0 10px 12px;font-size:26px">${e(p.meteo.emoji)}</td>
         <td style="padding:10px 12px;font-size:13px;color:#78350f">
-          <strong>${e(p.meteo.label)}</strong> — ${p.meteo.facteurs.map((f) => e(f.toLowerCase())).join(', ')}.
+          <strong>${e(p.meteo.label)}</strong> — ${
+            p.meteo.vote
+              ? p.meteo.vote.repartition
+                  .filter((r) => r.n > 0)
+                  .map((r) => `${e(r.n)} ${e(r.label.toLowerCase())}`)
+                  .join(', ')
+              : p.meteo.facteurs.map((f) => e(f.toLowerCase())).join(', ')
+          }.
+          <div style="font-size:11.5px;color:#92400e;margin-top:2px">${e(p.meteo.mention || '')}</div>
         </td>
       </tr>
     </table>
@@ -598,7 +668,15 @@ export function renderText(p) {
     l.push(tronque(p.mot, 2000));
     l.push('');
   }
-  l.push(`Météo : ${p.meteo.label} (score ${p.meteo.score}/100)`);
+  l.push(`Météo : ${p.meteo.label}`);
+  if (p.meteo.mention) l.push(`  ${p.meteo.mention}`);
+  if (p.meteo.vote) {
+    l.push(`  Voix : ${p.meteo.vote.repartition.filter((r) => r.n > 0).map((r) => `${r.n} ${r.label.toLowerCase()}`).join(', ')}`);
+    l.push(`  Chiffres : ${p.meteo.vote.calculLabel} (score ${p.meteo.score}/100)`);
+    for (const t of p.meteo.vote.mots) l.push(`  « ${t} »`);
+  } else {
+    l.push(`  score ${p.meteo.score}/100`);
+  }
   for (const f of p.meteo.facteurs) l.push(`  - ${f}`);
   l.push('');
   for (const c of p.chiffres) l.push(`${c.valeur} ${c.libelle}`);

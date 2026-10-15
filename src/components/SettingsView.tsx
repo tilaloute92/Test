@@ -31,6 +31,7 @@ import { useAppMode, useLinkState } from '../hooks/useAppStatus';
 import { clearLocalArchive, countArchived, readLocalArchive } from '../lib/localArchive';
 import { findExpired, RETENTION_DAYS } from '../lib/retention';
 import { SEUIL_PRESENCE_DEFAUT } from '../lib/presence';
+import { VOIX_MINIMUM } from '../lib/meteoVote';
 import { fetchServiceConfig, saveServiceConfig } from '../lib/serverSync';
 import { fetchMailConfig, saveMailConfig, sendTestMail, verifyMailRelay, type MailConfig } from '../lib/mailApi';
 
@@ -372,6 +373,7 @@ export function SettingsView({ canEdit = true }: { canEdit?: boolean }) {
       <BackupCard confirm={confirm} />
       <MailConfigCard confirm={confirm} />
       <PresenceCard />
+      <MeteoClotureCard />
       <RetentionCard confirm={confirm} />
       <ArchivedDataCard confirm={confirm} />
       </fieldset>
@@ -1128,7 +1130,7 @@ function PresenceCard() {
     setErreur(null);
     setEtat('enregistrement');
     try {
-      const c = await saveServiceConfig(Number(saisie) / 100);
+      const c = await saveServiceConfig({ seuilPresence: Number(saisie) / 100 });
       setSeuil(c.seuilPresence);
       setParDefaut(c.parDefaut);
       setEtat('ok');
@@ -1158,6 +1160,83 @@ function PresenceCard() {
           className="input w-24 text-sm"
         />
         <span className="text-sm text-slate-500 dark:text-slate-400">% de l'effectif</span>
+        <button
+          onClick={() => void enregistrer()}
+          disabled={etat === 'enregistrement' || !saisie}
+          className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
+        >
+          {etat === 'enregistrement' ? 'Enregistrement…' : etat === 'ok' ? 'Enregistré ✓' : 'Enregistrer'}
+        </button>
+        <span className="text-xs text-slate-400">Réservé au compte administrateur.</span>
+      </div>
+      {erreur && (
+        <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300">{erreur}</p>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Heure de clôture du vote de la météo, le vendredi.
+ *
+ * Réglage de service et non préférence d'affichage : la fenêtre de vote doit être la même
+ * pour tout le monde, et c'est le serveur qui la fait respecter — une horloge de poste
+ * avancée ne rouvre pas un vote clos.
+ */
+function MeteoClotureCard() {
+  const mode = useAppMode();
+  const [saisie, setSaisie] = useState('15');
+  const [etat, setEtat] = useState<'' | 'enregistrement' | 'ok'>('');
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (mode !== 'serveur') return;
+    let vivant = true;
+    fetchServiceConfig()
+      .then((c) => vivant && setSaisie(String(c.meteoCloture)))
+      .catch(() => undefined);
+    return () => {
+      vivant = false;
+    };
+  }, [mode]);
+
+  if (mode !== 'serveur') {
+    return (
+      <Card className="p-4">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Vote de la météo</h2>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Le vote est anonyme : il lui faut un serveur pour séparer les voix de ceux qui les déposent. En mode
+          autonome, la météo du rapport reste celle calculée à partir des chiffres de la semaine.
+        </p>
+      </Card>
+    );
+  }
+
+  const enregistrer = async () => {
+    setErreur(null);
+    setEtat('enregistrement');
+    try {
+      const c = await saveServiceConfig({ meteoCloture: Number(saisie) });
+      setSaisie(String(c.meteoCloture));
+      setEtat('ok');
+      setTimeout(() => setEtat(''), 2000);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+      setEtat('');
+    }
+  };
+
+  return (
+    <Card className="p-4">
+      <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Vote de la météo — heure de clôture</h2>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+        Le vote ouvre le jeudi matin et se ferme le vendredi à cette heure. Après la clôture, le rapport de réunion
+        affiche la météo votée ; avant, il affiche la météo calculée en annonçant le vote en cours. Les voix sont
+        anonymes et au moins {VOIX_MINIMUM} sont nécessaires pour qu'elles soient publiées.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input type="number" min={1} max={23} value={saisie} onChange={(e) => setSaisie(e.target.value)} className="input w-24 text-sm" />
+        <span className="text-sm text-slate-500 dark:text-slate-400">h, le vendredi</span>
         <button
           onClick={() => void enregistrer()}
           disabled={etat === 'enregistrement' || !saisie}

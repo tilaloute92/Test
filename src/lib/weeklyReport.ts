@@ -1,5 +1,8 @@
 import { formatDateLong, formatWeekRange, toISODate } from './date';
 import { computeWorkload, workloadColors, workloadLevel, type WorkloadLevel } from './workload';
+// Cycle d'imports apparent mais sans effet à l'exécution : meteoVote ne prend d'ici qu'un
+// type, effacé à la compilation.
+import { NIVEAUX, resultatMeteo, type ResultatMeteo } from './meteoVote';
 import type { Absence, PlanningSlot, ProjectTask, RoadmapItem, RoadmapQuarter, RoadmapStatus, TeamMember, TimeEntry } from '../types';
 
 export type WeatherLevel = 'ensoleille' | 'eclaircies' | 'nuageux' | 'orageux';
@@ -212,14 +215,30 @@ function assigneeNames(task: ProjectTask, members: TeamMember[]): string {
 }
 
 /** Rend le rapport en Markdown, pensé pour être collé tel quel dans un e-mail ou Teams/Slack. */
-export function buildMarkdownReport(report: WeeklyReport, teamLabel: string, members: TeamMember[]): string {
-  const w = weatherMeta[report.weather];
+export function buildMarkdownReport(
+  report: WeeklyReport,
+  teamLabel: string,
+  members: TeamMember[],
+  /** Météo retenue (votée ou calculée). Omise, c'est la météo calculée qui sert. */
+  meteo?: ResultatMeteo
+): string {
+  const resultat = meteo ?? resultatMeteo(null, report.weather);
+  const w = weatherMeta[resultat.niveau];
   const lines: string[] = [];
 
   lines.push(`# Rapport hebdomadaire — ${teamLabel}`);
   lines.push(`**Semaine du ${formatWeekRange(report.weekDays)}** · généré le ${formatDateLong(new Date())}`);
   lines.push('');
   lines.push(`## Météo de la semaine : ${w.emoji} ${w.label}`);
+  lines.push(`_${resultat.mention}_`);
+  if (resultat.vote && resultat.agregat) {
+    const a = resultat.agregat;
+    lines.push(
+      `- Voix : ${NIVEAUX.filter((n) => (a.voix[n] ?? 0) > 0).map((n) => `${a.voix[n]} ${weatherMeta[n].label.toLowerCase()}`).join(', ')}`
+    );
+    lines.push(`- Météo calculée, pour comparaison : ${weatherMeta[report.weather].label.toLowerCase()} (score ${report.weatherScore}/100)`);
+    for (const t of a.mots) lines.push(`- « ${t} »`);
+  }
   for (const f of report.weatherFactors) lines.push(`- ${f}`);
   lines.push('');
   lines.push('## En bref');
