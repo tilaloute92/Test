@@ -12,6 +12,7 @@
 
 import type { Absence, Copil, JournalEntry, Period, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
 import type { AgregatMeteo } from './meteoVote';
+import type { Recurrence } from './recurrences';
 import type { WeatherLevel } from './weeklyReport';
 
 /** Les 8 collections partagées. */
@@ -151,13 +152,15 @@ export interface ServiceConfig {
   seuilPresence: number;
   /** Heure pleine de clôture du vote de la météo, le vendredi. */
   meteoCloture: number;
+  /** Créneaux récurrents du service (réunion d'équipe…) — voir src/lib/recurrences.ts. */
+  recurrences: Recurrence[];
   /** Vrai tant que rien n'a été enregistré : la valeur affichée est celle d'origine. */
   parDefaut: boolean;
 }
 
 export const fetchServiceConfig = () => request<ServiceConfig>('/service-config');
 
-export const saveServiceConfig = (patch: { seuilPresence?: number; meteoCloture?: number }) =>
+export const saveServiceConfig = (patch: { seuilPresence?: number; meteoCloture?: number; recurrences?: Recurrence[] }) =>
   request<ServiceConfig>('/service-config', { method: 'PUT', body: JSON.stringify(patch) });
 
 /**

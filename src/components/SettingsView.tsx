@@ -32,6 +32,16 @@ import { clearLocalArchive, countArchived, readLocalArchive } from '../lib/local
 import { findExpired, RETENTION_DAYS } from '../lib/retention';
 import { SEUIL_PRESENCE_DEFAUT } from '../lib/presence';
 import { VOIX_MINIMUM } from '../lib/meteoVote';
+import {
+  formatDuree,
+  formatHeure,
+  formatPlage,
+  JOURS,
+  RECURRENCES_DEFAUT,
+  verifierRecurrence,
+  type Recurrence,
+} from '../lib/recurrences';
+import { makeId } from '../lib/ids';
 import { fetchServiceConfig, saveServiceConfig } from '../lib/serverSync';
 import { fetchMailConfig, saveMailConfig, sendTestMail, verifyMailRelay, type MailConfig } from '../lib/mailApi';
 
@@ -374,6 +384,7 @@ export function SettingsView({ canEdit = true }: { canEdit?: boolean }) {
       <MailConfigCard confirm={confirm} />
       <PresenceCard />
       <MeteoClotureCard />
+      <RecurrencesCard />
       <RetentionCard confirm={confirm} />
       <ArchivedDataCard confirm={confirm} />
       </fieldset>
@@ -1251,6 +1262,219 @@ function MeteoClotureCard() {
       )}
     </Card>
   );
+}
+
+
+/**
+ * Les créneaux récurrents du service (voir src/lib/recurrences.ts).
+ *
+ * Réglage plutôt que données : ce sont des RÈGLES, et rien n'est écrit chaque semaine.
+ * Modifier l'horaire ici change donc l'affichage des semaines à venir ET des semaines
+ * passées — c'est voulu et c'est dit sous le tableau, parce que la surprise serait de
+ * découvrir après coup que le vendredi d'il y a trois semaines a changé tout seul.
+ */
+function RecurrencesCard() {
+  const mode = useAppMode();
+  const { members } = useStore();
+  const [liste, setListe] = useState<Recurrence[]>(RECURRENCES_DEFAUT);
+  const [etat, setEtat] = useState<'' | 'enregistrement' | 'ok'>('');
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (mode !== 'serveur') return;
+    let vivant = true;
+    fetchServiceConfig()
+      .then((c) => vivant && setListe(c.recurrences ?? RECURRENCES_DEFAUT))
+      .catch((e) => vivant && setErreur(e instanceof Error ? e.message : String(e)));
+    return () => {
+      vivant = false;
+    };
+  }, [mode]);
+
+  const modifier = (id: string, patch: Partial<Recurrence>) =>
+    setListe((l) => l.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+
+  const enregistrer = async () => {
+    setErreur(null);
+    for (const r of liste) {
+      const probleme = verifierRecurrence(r);
+      if (probleme) {
+        setErreur(`« ${r.libelle || 'Sans libellé'} » : ${probleme}`);
+        return;
+      }
+    }
+    setEtat('enregistrement');
+    try {
+      const c = await saveServiceConfig({ recurrences: liste });
+      setListe(c.recurrences);
+      setEtat('ok');
+      setTimeout(() => setEtat(''), 2000);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+      setEtat('');
+    }
+  };
+
+  if (mode !== 'serveur') {
+    return (
+      <Card className="p-4">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Créneaux récurrents</h2>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Réglage d'équipe, conservé par le serveur. En mode autonome, seule la réunion d'équipe du vendredi
+          {' '}{formatPlage(RECURRENCES_DEFAUT[0])} s'applique, et elle n'est pas modifiable.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="p-4">
+      <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Créneaux récurrents</h2>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+        Ce qui revient chaque semaine à heure fixe — la réunion d'équipe, un point régulier. Ces heures
+        apparaissent d'elles-mêmes dans Activité du jour et comptent dans le temps occupé, sans que personne
+        ait à les saisir. Qui est déclaré absent, ou qui saisit son propre temps sur ces heures, n'est pas
+        compté.
+      </p>
+
+      <div className="mt-3 space-y-3">
+        {liste.length === 0 && (
+          <p className="text-xs text-slate-400">Aucun créneau récurrent : rien ne sera ajouté aux journées.</p>
+        )}
+        {liste.map((r) => (
+          <div key={r.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="flex-1 min-w-[12rem] text-xs text-slate-500 dark:text-slate-400">
+                Libellé
+                <input value={r.libelle} onChange={(e) => modifier(r.id, { libelle: e.target.value })} className="input mt-0.5 w-full text-sm" />
+              </label>
+              <label className="text-xs text-slate-500 dark:text-slate-400">
+                Jour
+                <select
+                  value={r.jour}
+                  onChange={(e) => modifier(r.id, { jour: Number(e.target.value) })}
+                  className="input mt-0.5 block text-sm"
+                >
+                  {[1, 2, 3, 4, 5].map((j) => (
+                    <option key={j} value={j}>
+                      {JOURS[j]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs text-slate-500 dark:text-slate-400">
+                Début
+                {/* Une liste plutôt qu'un champ « time » : celui-ci s'affiche en AM/PM sur
+                    un poste dont la langue n'est pas le français, et un horaire de service
+                    écrit « 02:30 PM » se lit de travers une fois sur deux. */}
+                <select
+                  value={formatHeure(r.debut)}
+                  onChange={(e) => modifier(r.id, { debut: enDecimal(e.target.value, r.debut) })}
+                  className="input mt-0.5 block w-28 text-sm"
+                >
+                  {QUARTS.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs text-slate-500 dark:text-slate-400">
+                Durée (min)
+                <input
+                  type="number"
+                  min={15}
+                  max={480}
+                  step={15}
+                  value={Math.round(r.duree * 60)}
+                  onChange={(e) => modifier(r.id, { duree: Number(e.target.value) / 60 })}
+                  className="input mt-0.5 block w-24 text-sm"
+                />
+              </label>
+              <span className="pb-2 text-xs text-slate-400">
+                {formatPlage(r)} · {formatDuree(r.duree)}
+              </span>
+              <button
+                onClick={() => setListe((l) => l.filter((x) => x.id !== r.id))}
+                className="ml-auto rounded-md px-2 py-1.5 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
+              >
+                Supprimer
+              </button>
+            </div>
+
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <label className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={r.participants === null}
+                  onChange={(e) => modifier(r.id, { participants: e.target.checked ? null : members.map((m) => m.id) })}
+                />
+                Toute l'équipe
+              </label>
+              {r.participants !== null &&
+                members.map((m) => {
+                  const coche = r.participants!.includes(m.id);
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() =>
+                        modifier(r.id, {
+                          participants: coche ? r.participants!.filter((x) => x !== m.id) : [...r.participants!, m.id],
+                        })
+                      }
+                      className={`rounded-full px-2 py-0.5 ${
+                        coche
+                          ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
+                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                      }`}
+                    >
+                      {m.name}
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() =>
+            setListe((l) => [
+              ...l,
+              { id: makeId('rec'), libelle: '', jour: 5, debut: 14.5, duree: 1.5, participants: null },
+            ])
+          }
+          className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          + Ajouter un créneau
+        </button>
+        <button
+          onClick={() => void enregistrer()}
+          disabled={etat === 'enregistrement'}
+          className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
+        >
+          {etat === 'enregistrement' ? 'Enregistrement…' : etat === 'ok' ? 'Enregistré ✓' : 'Enregistrer'}
+        </button>
+        <span className="text-xs text-slate-400">
+          Réservé au compte administrateur. Un horaire modifié vaut aussi pour les semaines déjà passées :
+          rien n'est enregistré semaine par semaine.
+        </span>
+      </div>
+      {erreur && (
+        <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300">{erreur}</p>
+      )}
+    </Card>
+  );
+}
+
+/** Les débuts proposés : tous les quarts d'heure des horaires ouvrables. */
+const QUARTS = Array.from({ length: (20 - 6) * 4 }, (_, i) => formatHeure(6 + i / 4));
+
+/** « 14:30 » → 14,5. Une valeur illisible laisse l'heure précédente plutôt que NaN. */
+function enDecimal(valeur: string, precedent: number): number {
+  const [h, m] = valeur.split(':').map(Number);
+  return Number.isFinite(h) && Number.isFinite(m) ? h + m / 60 : precedent;
 }
 
 function RetentionCard({ confirm }: { confirm: ConfirmFn }) {

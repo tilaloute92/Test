@@ -17,6 +17,7 @@ import { useViewMode } from '../hooks/useViewMode';
 import { useMeteoVote } from '../hooks/useMeteoVote';
 import { cleSemaine, resultatMeteo } from '../lib/meteoVote';
 import { useSeuilPresence } from '../hooks/useSeuilPresence';
+import { useRecurrences } from '../hooks/useRecurrences';
 
 const TEAM_LABEL = 'Équipe Infrastructure & Réseau';
 
@@ -45,6 +46,7 @@ export function WeeklyReportView() {
   const [erreur, setErreur] = useState<string | null>(null);
   const [envoiOuvert, setEnvoiOuvert] = useState(false);
   const seuilPresence = useSeuilPresence();
+  const recurrences = useRecurrences();
 
   // La date est réduite à un nombre : un objet Date recréé à chaque rendu relancerait le
   // calcul en boucle à travers useMemo.
@@ -61,8 +63,9 @@ export function WeeklyReportView() {
         planningSlots,
         roadmapItems,
         seuilPresence,
+        recurrences,
       }),
-    [debutMs, members, tasks, timeEntries, absences, planningSlots, roadmapItems, seuilPresence]
+    [debutMs, members, tasks, timeEntries, absences, planningSlots, roadmapItems, seuilPresence, recurrences]
   );
 
   // Qui signe le document. Le choix mémorisé dans « Ma journée » sert de source : il a

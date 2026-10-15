@@ -169,7 +169,13 @@ dataRouter.get('/service-config', (_req, res) => res.json(getServiceConfig()));
 
 dataRouter.put('/service-config', requireAdmin, (req, res) => {
   try {
-    res.json(setServiceConfig({ seuilPresence: req.body?.seuilPresence, meteoCloture: req.body?.meteoCloture }));
+    res.json(
+      setServiceConfig({
+        seuilPresence: req.body?.seuilPresence,
+        meteoCloture: req.body?.meteoCloture,
+        recurrences: req.body?.recurrences,
+      })
+    );
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

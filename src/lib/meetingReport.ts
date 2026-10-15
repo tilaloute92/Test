@@ -1,4 +1,5 @@
 import { addDays, formatDayLabel, formatWeekRange, getWorkingDaysOfWeek, startOfWeek, toISODate } from './date';
+import type { Recurrence } from './recurrences';
 import { computeWeeklyReport, type WeeklyReport } from './weeklyReport';
 import { isAbsent } from './workload';
 import { jourCourt, pourcent, presenceJours, SEUIL_PRESENCE_DEFAUT } from './presence';
@@ -514,6 +515,8 @@ export function computeMeetingReport(opts: {
   roadmapItems: Parameters<typeof computeWeeklyReport>[0]['roadmapItems'];
   /** Seuil en vigueur pour le service (voir src/lib/presence.ts). */
   seuilPresence?: number;
+  /** Créneaux récurrents du service (voir src/lib/recurrences.ts). */
+  recurrences?: Recurrence[];
   /** Injectable pour les tests ; par défaut l'instant présent. */
   maintenant?: Date;
 }): MeetingReport {
@@ -535,6 +538,7 @@ export function computeMeetingReport(opts: {
     absences,
     planningSlots,
     roadmapItems,
+    recurrences: opts.recurrences,
   });
 
   const projets = rollupProjets({ tasks, timeEntries, members, semaineEcoulee, aujourdhui: maintenant });

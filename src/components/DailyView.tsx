@@ -10,6 +10,17 @@ import type { Absence, Period, PlanningSlot, ProjectTask, TaskStatus, TeamMember
 import { useModalDismiss } from './Modal';
 import { placeEntries } from '../lib/dayAllocation';
 import { accepteNature, periodNatureTitle, PERIOD_RANGES } from '../lib/hours';
+import {
+  formatDuree,
+  formatPlage,
+  heuresRecurrentes,
+  JOURS,
+  periodeDe,
+  recurrencesRetenues,
+  tranchesCouvertes,
+  type Recurrence,
+} from '../lib/recurrences';
+import { useRecurrences } from '../hooks/useRecurrences';
 import { useAuteur } from '../hooks/useAuteur';
 
 const PERIOD_LABEL: Record<Period, string> = {
@@ -38,10 +49,14 @@ const HOURLY_PERIODS: Period[] = ['apres_midi'];
  *  heurter : les identifiants sont préfixés par une lettre (voir src/lib/ids.ts). */
 const AUTRE = '__autre__';
 const hourLabel = (n: number) => `${String(n).padStart(2, '0')}:00`;
+/** Une heure et demie s'écrit 1.5, pas 1.5000000000000002 : les durées récurrentes
+ *  s'additionnent en décimal et le flottant se voit à l'écran sans cela. */
+const arrondi = (h: number) => Math.round(h * 100) / 100;
 
 export function DailyView() {
   const { members, tasks, planningSlots, timeEntries, absences, setPlanningSlot, updateTask, addTimeEntry, removeTimeEntry } = useStore();
   const confirm = useConfirm();
+  const recurrences = useRecurrences();
   const [date, setDate] = useState(new Date());
   const [mode, setMode] = useViewMode<DailyViewMode>('activite-jour', DAILY_VIEW_MODES, 'personne');
   const [logging, setLogging] = useState<LoggingTarget | null>(null);
@@ -85,6 +100,9 @@ export function DailyView() {
   const slotContext = {
     iso,
     date,
+    absences,
+    timeEntries,
+    recurrences,
     tasks,
     planningSlots,
     confirm,
@@ -155,6 +173,7 @@ export function DailyView() {
           {members.map((m) => {
             const absence = absencesToday(absences, m.id, date);
             const loggedToday = hoursLoggedToday(timeEntries, m.id, date);
+            const recurrentes = heuresRecurrentes({ recurrences, date, memberId: m.id, absences, timeEntries });
 
             return (
               <Card key={m.id} className="p-4">
@@ -165,8 +184,13 @@ export function DailyView() {
                     <div className="text-xs text-slate-500 dark:text-slate-400">{m.role}</div>
                   </div>
                   <div className="ml-auto text-right text-xs text-slate-500 dark:text-slate-400">
-                    <div>Temps saisi aujourd'hui</div>
-                    <div className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">{loggedToday}h / 7h</div>
+                    <div>Temps occupé aujourd'hui</div>
+                    <div className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">
+                      {arrondi(loggedToday + recurrentes)}h / 7h
+                    </div>
+                    {recurrentes > 0 && (
+                      <div className="text-[11px] text-indigo-600 dark:text-indigo-300">dont {formatDuree(recurrentes)} récurrent</div>
+                    )}
                   </div>
                 </div>
 
@@ -236,6 +260,7 @@ export function DailyView() {
               {members.map((m) => {
                 const absence = absencesToday(absences, m.id, date);
                 const loggedToday = hoursLoggedToday(timeEntries, m.id, date);
+                const recurrentes = heuresRecurrentes({ recurrences, date, memberId: m.id, absences, timeEntries });
                 return (
                   <tr key={m.id} className="border-b border-slate-50 align-top last:border-0 dark:border-slate-800/60">
                     <td className="px-3 py-2">
@@ -249,7 +274,12 @@ export function DailyView() {
                         <SlotEditor member={m} period={period} absence={absence} compact {...slotContext} />
                       </td>
                     ))}
-                    <td className="px-3 py-2 text-xs tabular-nums text-slate-500 dark:text-slate-400">{loggedToday}h / 7h</td>
+                    <td
+                      className="px-3 py-2 text-xs tabular-nums text-slate-500 dark:text-slate-400"
+                      title={recurrentes > 0 ? `${loggedToday}h saisies + ${formatDuree(recurrentes)} de créneau récurrent` : undefined}
+                    >
+                      {arrondi(loggedToday + recurrentes)}h / 7h
+                    </td>
                   </tr>
                 );
               })}
@@ -350,6 +380,10 @@ function SlotEditor({
   period,
   absence,
   iso,
+  date,
+  absences,
+  timeEntries,
+  recurrences,
   tasks,
   planningSlots,
   confirm,
@@ -366,6 +400,9 @@ function SlotEditor({
   absence: Absence | undefined;
   iso: string;
   date: Date;
+  absences: Absence[];
+  timeEntries: TimeEntry[];
+  recurrences: Recurrence[];
   tasks: ProjectTask[];
   planningSlots: PlanningSlot[];
   confirm: ConfirmFn;
@@ -386,15 +423,28 @@ function SlotEditor({
   );
   const entries = recentEntriesFor(member.id, period);
 
+  // Les créneaux récurrents de cette demi-journée (voir src/lib/recurrences.ts). Déjà
+  // filtrés : absent ou ayant saisi autre chose sur ces heures, la personne n'en a aucun.
+  const creneaux = recurrencesRetenues({ recurrences, date, memberId: member.id, absences, timeEntries }).filter(
+    (r) => periodeDe(r) === period
+  );
+  const prises = new Map<number, Recurrence>();
+  for (const r of creneaux) for (const h of tranchesCouvertes(r)) prises.set(h, r);
+
   // Saisie heure par heure : seulement là où elle est prévue, et seulement en affichage
   // large. Le mode Tableau est une grille dense d'une ligne par personne ; y empiler
   // quatre rangées de pastilles le rendrait illisible, il garde donc la saisie globale.
   const parHeure = HOURLY_PERIODS.includes(period) && !compact;
   const occupants = parHeure ? placeEntries(period, entries) : null;
-  // Les saisies qu'aucune tranche ne montre — créneau déjà plein, ou saisie antérieure à
-  // la grille. Elles restent listées : rien de ce qui a été saisi ne doit disparaître de
-  // l'écran sous prétexte que la grille ne sait pas où le mettre.
-  const horsGrille = occupants ? entries.filter((e) => ![...occupants.values()].includes(e)) : entries;
+  // Les saisies qu'aucune tranche ne montre — créneau déjà plein, saisie antérieure à la
+  // grille, ou tranche reprise par un créneau récurrent (une saisie flottante peut tomber
+  // sur l'heure de la réunion, qui s'affiche à sa place). Elles restent listées : rien de
+  // ce qui a été saisi ne doit disparaître de l'écran sous prétexte que la grille ne sait
+  // pas où le mettre.
+  const affichees = occupants
+    ? new Set([...occupants].filter(([h]) => !prises.has(h)).map(([, e]) => e))
+    : null;
+  const horsGrille = affichees ? entries.filter((e) => !affichees.has(e)) : entries;
 
   const history = (
     <SlotEntries
@@ -419,6 +469,10 @@ function SlotEditor({
 
   return (
     <>
+      {creneaux.map((r) => (
+        <BandeauRecurrence key={r.id} recurrence={r} compact={compact} />
+      ))}
+
       <select
         className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
         value={task?.id ?? ''}
@@ -480,6 +534,7 @@ function SlotEditor({
           memberTasks={memberTasks}
           plannedTask={task}
           occupants={occupants!}
+          recurrentes={prises}
           tasks={tasks}
           memberName={member.name}
           confirm={confirm}
@@ -491,6 +546,29 @@ function SlotEditor({
 
       {history}
     </>
+  );
+}
+
+/**
+ * Le rappel d'un créneau récurrent sur la demi-journée.
+ *
+ * Il annonce des heures que personne n'a saisies, et c'est exactement pour cela qu'il doit
+ * dire d'où elles viennent : une durée qui apparaît sans qu'on l'ait tapée passe pour une
+ * erreur de l'application tant qu'on ne sait pas qu'elle vient d'une règle.
+ */
+function BandeauRecurrence({ recurrence, compact }: { recurrence: Recurrence; compact: boolean }) {
+  return (
+    <div
+      title={`Créneau récurrent (${JOURS[recurrence.jour]}, ${formatPlage(recurrence)}) — compté dans les heures du jour sans rien saisir. Si vous n'y étiez pas, saisissez ce que vous avez fait sur ces heures : votre saisie l'emporte.`}
+      className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs dark:border-indigo-500/30 dark:bg-indigo-500/10"
+    >
+      <span>🗓</span>
+      <span className="min-w-0 truncate font-medium text-slate-700 dark:text-slate-200">{recurrence.libelle}</span>
+      {!compact && <span className="tabular-nums text-slate-500 dark:text-slate-400">{formatPlage(recurrence)}</span>}
+      <span className="ml-auto font-semibold tabular-nums text-indigo-700 dark:text-indigo-300">
+        {formatDuree(recurrence.duree)}
+      </span>
+    </div>
   );
 }
 
@@ -518,6 +596,7 @@ function HourGrid({
   memberTasks,
   plannedTask,
   occupants,
+  recurrentes,
   tasks,
   memberName,
   confirm,
@@ -529,6 +608,8 @@ function HourGrid({
   memberTasks: ProjectTask[];
   plannedTask: ProjectTask | undefined;
   occupants: Map<number, TimeEntry>;
+  /** Tranches tenues par un créneau récurrent : ni à remplir, ni à proposer. */
+  recurrentes: Map<number, Recurrence>;
   tasks: ProjectTask[];
   memberName: string;
   confirm: ConfirmFn;
@@ -541,7 +622,10 @@ function HourGrid({
   // La tâche prévue d'abord : c'est celle qu'on valide le plus souvent, et la chercher au
   // milieu des autres à chaque heure serait une friction inutile.
   const choix = plannedTask ? [plannedTask, ...memberTasks.filter((t) => t.id !== plannedTask.id)] : memberTasks;
-  const valides = heures.filter((h) => occupants.has(h)).length;
+  // Les tranches tenues par un créneau récurrent comptent comme occupées : annoncer
+  // « 0 sur 4 » alors que deux d'entre elles ne peuvent pas être remplies donnerait une
+  // journée à rattraper qui n'existe pas.
+  const occupees = heures.filter((h) => occupants.has(h) || recurrentes.has(h)).length;
 
   // Ce que chaque menu affiche tant que l'heure n'est pas validée. Non renseigné, le menu
   // retombe sur la tâche prévue : valider une heure de plus sur ce qui était prévu ne
@@ -554,7 +638,7 @@ function HourGrid({
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Heure par heure</span>
         <span className="text-[10px] tabular-nums text-slate-400">
-          {valides}h validée(s) sur {heures.length}
+          {occupees}h occupée(s) sur {heures.length}
         </span>
       </div>
 
@@ -568,7 +652,21 @@ function HourGrid({
                 {hourLabel(h)} – {hourLabel(h + 1)}
               </span>
 
-              {occupant ? (
+              {recurrentes.get(h) ? (
+                /* Une tranche tenue par un créneau récurrent : rien à valider, et surtout
+                   rien à proposer d'autre — y saisir une tâche compterait deux fois la
+                   même heure. Qui n'était pas à la réunion saisit son travail depuis
+                   « + Saisir temps », ce qui fait justement sauter le créneau. */
+                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 dark:border-indigo-500/30 dark:bg-indigo-500/10">
+                  <span className="shrink-0">🗓</span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-slate-700 dark:text-slate-200">
+                    {recurrentes.get(h)!.libelle}
+                  </span>
+                  <span className="shrink-0 text-[10px] tabular-nums text-indigo-700 dark:text-indigo-300">
+                    {formatPlage(recurrentes.get(h)!)}
+                  </span>
+                </div>
+              ) : occupant ? (
                 <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 dark:border-emerald-500/30 dark:bg-emerald-500/10">
                   <span className="shrink-0 text-emerald-600 dark:text-emerald-400">✓</span>
                   <span className="min-w-0 flex-1 truncate text-sm text-slate-700 dark:text-slate-200">

@@ -4,6 +4,8 @@ import { MeteoVoteCard } from './MeteoVoteCard';
 import { Avatar, Card, PriorityBadge, TaskTypeBadge } from './ui';
 import { formatDateLong, toISODate } from '../lib/date';
 import { absencesToday, hoursLoggedToday } from '../lib/selectors';
+import { formatDuree, heuresRecurrentes } from '../lib/recurrences';
+import { useRecurrences } from '../hooks/useRecurrences';
 import { entriesFor, placeEntries } from '../lib/dayAllocation';
 import { PERIOD_RANGES, formatHour } from '../lib/hours';
 import { resolveMember, setStoredMemberId } from '../lib/identity';
@@ -143,8 +145,13 @@ function MaJournee({
   const iso = toISODate(aujourdhui);
   const { tasks, planningSlots, timeEntries, absences, copils } = data;
 
+  const recurrences = useRecurrences();
   const absence = absencesToday(absences, member.id, aujourdhui);
   const saisies = hoursLoggedToday(timeEntries, member.id, aujourdhui);
+  // Les créneaux récurrents du jour s'ajoutent aux heures saisies : sans eux, tout le monde
+  // paraîtrait en retard de saisie le vendredi après-midi, réunion comprise.
+  const recurrentes = heuresRecurrentes({ recurrences, date: aujourdhui, memberId: member.id, absences, timeEntries });
+  const occupe = Math.round((saisies + recurrentes) * 100) / 100;
 
   const mesTaches = useMemo(
     () => tasks.filter((t) => t.assigneeIds.includes(member.id) && t.status !== 'termine'),
@@ -218,7 +225,8 @@ function MaJournee({
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold text-slate-900 dark:text-white">Bonjour {member.name.split(' ').slice(-1)[0]}</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            {formatDateLong(aujourdhui)} · <span className="tabular-nums">{saisies}h</span> saisies sur {cible}h
+            {formatDateLong(aujourdhui)} · <span className="tabular-nums">{occupe}h</span> sur {cible}h
+            {recurrentes > 0 && <span className="text-indigo-600 dark:text-indigo-300"> · dont {formatDuree(recurrentes)} récurrent</span>}
           </p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">

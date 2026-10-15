@@ -3,6 +3,7 @@ import { computeWorkload, workloadColors, workloadLevel, type WorkloadLevel } fr
 // Cycle d'imports apparent mais sans effet à l'exécution : meteoVote ne prend d'ici qu'un
 // type, effacé à la compilation.
 import { NIVEAUX, resultatMeteo, type ResultatMeteo } from './meteoVote';
+import { heuresRecurrentesSur, type Recurrence } from './recurrences';
 import type { Absence, PlanningSlot, ProjectTask, RoadmapItem, RoadmapQuarter, RoadmapStatus, TeamMember, TimeEntry } from '../types';
 
 export type WeatherLevel = 'ensoleille' | 'eclaircies' | 'nuageux' | 'orageux';
@@ -90,14 +91,24 @@ export function computeWeeklyReport(opts: {
   absences: Absence[];
   planningSlots: PlanningSlot[];
   roadmapItems: RoadmapItem[];
+  /** Créneaux récurrents du service : leurs heures comptent comme du temps occupé, sans
+   *  qu'on les ait saisies (voir recurrences.ts). Omis, le rapport les ignore. */
+  recurrences?: Recurrence[];
 }): WeeklyReport {
-  const { weekDays, nextWeekDays, members, tasks, timeEntries, absences, planningSlots, roadmapItems } = opts;
+  const { weekDays, nextWeekDays, members, tasks, timeEntries, absences, planningSlots, roadmapItems, recurrences = [] } = opts;
   const isoDays = new Set(weekDays.map(toISODate));
   const weekEndIso = toISODate(weekDays[weekDays.length - 1]);
 
   const perMember: MemberWeekStats[] = members.map((m) => {
     const load = computeWorkload(m, weekDays, planningSlots, absences);
-    const hoursLogged = timeEntries.filter((e) => e.memberId === m.id && isoDays.has(e.date)).reduce((s, e) => s + e.hours, 0);
+    const saisies = timeEntries.filter((e) => e.memberId === m.id && isoDays.has(e.date)).reduce((s, e) => s + e.hours, 0);
+    // La réunion d'équipe et les autres créneaux récurrents s'ajoutent aux heures saisies :
+    // sans eux, une équipe qui a passé 1 h 30 ensemble le vendredi apparaît comme ayant
+    // 1 h 30 de moins de travail dans la semaine, et le reproche est fait à tort.
+    const hoursLogged =
+      Math.round(
+        (saisies + heuresRecurrentesSur({ recurrences, jours: weekDays, memberId: m.id, absences, timeEntries })) * 100
+      ) / 100;
     const tasksCompleted = tasks.filter((t) => t.assigneeIds.includes(m.id) && t.completedAt && isoDays.has(t.completedAt.slice(0, 10)));
     const absenceDays = absences.filter((a) => a.memberId === m.id && isoDays.has(a.date)).length;
     return {

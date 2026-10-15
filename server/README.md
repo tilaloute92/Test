@@ -82,6 +82,25 @@ la raison écrite noir sur blanc. Les voix de plus de 53 semaines sont effacées
 Ces voix ne sont volontairement **pas** une collection partagée : l'instantané
 `GET /api/data/` part à tout le monde et se retrouve dans les sauvegardes du navigateur.
 
+## Créneaux récurrents
+
+`config.json`, clé `service.recurrences` — une liste de `{ id, libelle, jour (1–5), debut
+(décimal : 14,5 = 14:30), duree (heures), participants (liste d'identifiants ou null pour
+toute l'équipe) }`. Lue par `GET /api/data/service-config`, écrite par `PUT`, **réservé à
+l'administrateur**. Liste absente = la réunion d'équipe du vendredi 14:30 → 16:00 ; liste
+vide = aucun créneau, et elle le reste (on ne repeuple pas ce qui a été supprimé).
+
+C'est une RÈGLE, pas un enregistrement : rien n'est écrit chaque semaine, les heures sont
+déduites à l'affichage (voir `src/lib/recurrences.ts`). Donc pas de doublon à nettoyer,
+pas de rattrapage sur les semaines passées — mais, en contrepartie, changer l'horaire
+change aussi ce qu'affichent les semaines déjà écoulées, ce que la page Paramètres
+annonce.
+
+Ces heures s'ajoutent aux heures saisies dans Activité du jour, Ma journée et le rapport
+de réunion. Elles ne comptent pas pour une personne déclarée absente sur la demi-journée,
+ni pour une personne ayant saisi son propre temps sur les tranches couvertes, ni pour un
+jour à venir — un créneau qui n'a pas encore eu lieu n'est pas du temps passé.
+
 ## Journal d'avancement
 
 Une huitième collection partagée, `journalEntries` (fichier `data/business-journalEntries.json`),
