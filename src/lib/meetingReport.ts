@@ -75,9 +75,9 @@ export const ETIQUETTES_ABSENCE: Record<AbsenceType, string> = {
 };
 
 /**
- * Les numéros des sections du document de réunion. Une seule section est facultative — « Tâches et
- * demandes commentées », qui n'apparaît que s'il reste des notes qu'aucun tableau ne
- * porte — et c'est elle qui décale tout le reste.
+ * Les numéros des sections du document de réunion. Une seule section est facultative —
+ * « Tâches et demandes commentées », qui n'apparaît que s'il reste des notes qu'aucune
+ * ligne de tableau ne porte — et c'est elle qui décale tout le reste.
  *
  * Exporté : le rendu serveur du mail doit afficher LES MÊMES numéros, et deux
  * numérotations écrites séparément finissent toujours par diverger d'un cran.
@@ -89,8 +89,10 @@ export function numeroterSections(avecAutres: boolean) {
     points: suivant(),
     incidents: suivant(),
     projets: suivant(),
-    autres: avecAutres ? suivant() : 0,
     retards: suivant(),
+    // Le recueil vient APRÈS les trois tableaux : ce qu'il contient est, par définition,
+    // ce qu'aucun d'eux ne portait.
+    autres: avecAutres ? suivant() : 0,
     sujets: suivant(),
     absences: suivant(),
     charge: suivant(),
@@ -164,6 +166,47 @@ function sectionDe(type: ProjectTask['type'] | undefined, projet: string | undef
   if (type === 'Incident') return 'incidents';
   if (projet) return 'projets';
   return 'autres';
+}
+
+/**
+ * Où chaque note se pose dans le document : SOUS LA LIGNE de son sujet.
+ *
+ * Le rangement par nature ne suffisait pas. Le tableau des incidents ne liste que les
+ * incidents ouverts critiques ou hauts, celui des projets liste des PROJETS quand la note
+ * porte sur une tâche : un bloc posé au pied de la section pouvait donc nommer un sujet
+ * absent du tableau juste au-dessus. On cherche maintenant la ligne qui existe vraiment.
+ *
+ * Ordre de priorité, parce qu'une même tâche peut figurer dans deux tableaux (un incident
+ * critique est souvent aussi en retard) et qu'une note ne doit paraître qu'une fois :
+ * incident, puis projet, puis retard. Ce qu'aucune ligne ne porte tombe dans le recueil —
+ * sans lui, la note d'un incident clos ou d'un MCO disparaîtrait du rapport.
+ */
+export interface NotesRangees {
+  parIncident: Map<string, GroupeNotes[]>;
+  parProjet: Map<string, GroupeNotes[]>;
+  parRetard: Map<string, GroupeNotes[]>;
+  recueil: GroupeNotes[];
+}
+
+export function rangerNotes(report: MeetingReport): NotesRangees {
+  const incidents = new Set(report.hebdo.openCriticalIncidents.map((t) => t.id));
+  const projets = new Set(report.projets.map((p) => p.nom));
+  const retards = new Set(report.hebdo.overdueTasks.map((t) => t.id));
+
+  const range: NotesRangees = { parIncident: new Map(), parProjet: new Map(), parRetard: new Map(), recueil: [] };
+  const poser = (m: Map<string, GroupeNotes[]>, cle: string, g: GroupeNotes) => {
+    const liste = m.get(cle);
+    if (liste) liste.push(g);
+    else m.set(cle, [g]);
+  };
+
+  for (const g of report.notes) {
+    if (incidents.has(g.taskId)) poser(range.parIncident, g.taskId, g);
+    else if (g.projet && projets.has(g.projet)) poser(range.parProjet, g.projet, g);
+    else if (retards.has(g.taskId)) poser(range.parRetard, g.taskId, g);
+    else range.recueil.push(g);
+  }
+  return range;
 }
 
 /** Les groupes d'une section, dans l'ordre où ils ont été commentés. */

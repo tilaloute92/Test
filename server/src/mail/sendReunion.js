@@ -79,28 +79,36 @@ export function verifierPayload(payload) {
   if (typeof payload.meteo !== 'object' || payload.meteo === null) return 'Rapport mal formé : « meteo » devrait être un objet.';
   if (typeof payload.grille !== 'object' || payload.grille === null) return 'Rapport mal formé : « grille » devrait être un objet.';
 
-  // Les notes : trois sections, chacune une liste de groupes, chacun une liste de lignes.
-  if (payload.notes !== undefined) {
-    if (typeof payload.notes !== 'object' || payload.notes === null || Array.isArray(payload.notes)) {
-      return 'Rapport mal formé : « notes » devrait être un objet à trois sections.';
-    }
-    const souci = [];
-    for (const section of ['incidents', 'projets', 'autres']) {
-      const groupes = payload.notes[section];
-      if (groupes === undefined) continue;
-      if (!Array.isArray(groupes)) return `Rapport mal formé : « notes.${section} » devrait être une liste.`;
-      if (groupes.length > MAX_ELEMENTS) return `Rapport mal formé : « notes.${section} » dépasse ${MAX_ELEMENTS} sujets.`;
-      for (const g of groupes) {
-        if (!g || typeof g !== 'object' || !Array.isArray(g.lignes)) {
-          return `Rapport mal formé : un sujet de « notes.${section} » n'a pas de lignes.`;
-        }
-        if (g.lignes.length > MAX_ELEMENTS) return `Rapport mal formé : trop de notes sur un même sujet.`;
-        tailleTexte(g.titre, `notes.${section}.titre`, souci);
-        for (const n of g.lignes) tailleTexte(n?.texte, `notes.${section}.texte`, souci);
+  // Les notes voyagent avec leur ligne (incidents, projets, retards) plus un recueil.
+  const souci = [];
+  const verifierGroupes = (groupes, ou) => {
+    if (groupes === undefined) return null;
+    if (!Array.isArray(groupes)) return `Rapport mal formé : « ${ou} » devrait être une liste.`;
+    if (groupes.length > MAX_ELEMENTS) return `Rapport mal formé : « ${ou} » dépasse ${MAX_ELEMENTS} sujets.`;
+    for (const g of groupes) {
+      if (!g || typeof g !== 'object' || !Array.isArray(g.lignes)) {
+        return `Rapport mal formé : un sujet de « ${ou} » n'a pas de lignes.`;
       }
+      if (g.lignes.length > MAX_ELEMENTS) return 'Rapport mal formé : trop de notes sur un même sujet.';
+      tailleTexte(g.titre, `${ou}.titre`, souci);
+      for (const n of g.lignes) tailleTexte(n?.texte, `${ou}.texte`, souci);
     }
-    if (souci.length > 0) return souci[0];
+    return null;
+  };
+
+  for (const [cle, ou] of [
+    ['incidents', 'incidents[].notes'],
+    ['projets', 'projets[].notes'],
+    ['retards', 'retards[].notes'],
+  ]) {
+    for (const ligne of payload[cle] ?? []) {
+      const mauvais = verifierGroupes(ligne?.notes, ou);
+      if (mauvais) return mauvais;
+    }
   }
+  const mauvaisRecueil = verifierGroupes(payload.notesRecueil, 'notesRecueil');
+  if (mauvaisRecueil) return mauvaisRecueil;
+  if (souci.length > 0) return souci[0];
 
   return null;
 }
@@ -133,13 +141,14 @@ export function assainirPayload(payload) {
       })),
     };
   }
-  if (p.notes && typeof p.notes === 'object') {
-    const sections = {};
-    for (const section of ['incidents', 'projets', 'autres']) {
-      sections[section] = liste(p.notes[section]).map((g) => ({ ...g, couleur: couleurSure(g.couleur) }));
-    }
-    p.notes = sections;
-  }
+  // Les notes voyagent maintenant AVEC leur ligne : il faut donc assainir les couleurs à
+  // l'intérieur de chaque incident, de chaque projet et de chaque retard, en plus du
+  // recueil. Une teinte oubliée dans un coin est précisément ce qui passe inaperçu.
+  const notesSures = (v) => liste(v).map((g) => ({ ...g, couleur: couleurSure(g.couleur) }));
+  p.incidents = p.incidents.map((i) => ({ ...i, notes: notesSures(i.notes) }));
+  p.projets = p.projets.map((pr) => ({ ...pr, notes: notesSures(pr.notes) }));
+  p.retards = p.retards.map((t) => ({ ...t, notes: notesSures(t.notes) }));
+  p.notesRecueil = notesSures(p.notesRecueil);
   return p;
 }
 

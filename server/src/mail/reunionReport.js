@@ -72,11 +72,43 @@ function sousTitre(texte) {
   )}</div>`;
 }
 
-/** Le repère « ✎ 2 » d'une ligne de tableau : il y a du texte sur ce sujet, juste en
- *  dessous. Discret — c'est un renvoi, pas une donnée de plus à lire dans la colonne. */
-function marqueNotes(n) {
-  const v = Number(n) || 0;
-  return v > 0 ? `<span style="color:${ENCRE3};font-weight:400;white-space:nowrap"> ✎ ${v}</span>` : '';
+/**
+ * Les notes d'un sujet, posées SOUS SA LIGNE — une ligne de tableau en travers, mêmes
+ * filets et mêmes espacements que LigneNotes dans ReunionDocument.tsx.
+ *
+ * Pas de titre : la ligne au-dessus nomme déjà le sujet. Sauf pour un projet, dont la
+ * ligne porte le nom du PROJET quand la note porte sur une de ses tâches — `avecTitre`.
+ */
+function ligneNotes(groupes, colonnes, { avecTitre = false } = {}) {
+  const liste = Array.isArray(groupes) ? groupes : [];
+  if (liste.length === 0) return '';
+  return `<tr><td colspan="${colonnes}" style="padding:0 0 9px;border-top:none">
+    ${liste
+      .map(
+        (g) => `<table style="width:100%;border-collapse:separate;border-spacing:0;margin:0 0 4px">
+      <tr><td style="border-left:3px solid ${e(g.couleur)};background:#f8fafc;border-radius:0 6px 6px 0;padding:7px 12px 8px">
+        ${avecTitre ? `<div style="font-size:11.5px;font-weight:600;color:${ENCRE};margin-bottom:3px">${e(g.titre)}</div>` : ''}
+        ${g.lignes
+          .map(
+            (n, i) => `<div style="${
+              i === 0 ? '' : `margin-top:8px;padding-top:8px;border-top:1px solid ${TRAIT}`
+            }">
+            <div style="font-size:10.5px;color:${ENCRE3};font-weight:600"><span style="text-transform:uppercase;letter-spacing:.05em">${e(
+              n.quand
+            )}</span><span style="font-size:11.5px;color:${ENCRE2};font-weight:500"> &middot; ${e(n.auteur)}</span>${
+              n.retouchee ? '<span style="font-weight:400"> (retouchée)</span>' : ''
+            }</div>
+            <div style="font-size:12.5px;color:${ENCRE2};line-height:1.55;margin-top:2px;white-space:pre-wrap">${e(
+              n.texte
+            )}</div>
+          </div>`
+          )
+          .join('')}
+      </td></tr>
+    </table>`
+      )
+      .join('')}
+  </td></tr>`;
 }
 
 function vide(texte) {
@@ -113,7 +145,7 @@ function corpsDocument(p, { mot = '', piedPage = '' } = {}) {
   // Les numéros viennent de l'application (voir numeroterSections), ils ne sont pas
   // recalculés ici : deux numérotations écrites séparément divergent d'un cran le jour où
   // une section devient facultative. Le repli ne sert qu'aux anciens envois rejoués.
-  const num = p.sections ?? { points: 1, incidents: 2, projets: 3, autres: 0, retards: 4, sujets: 5, absences: 6, charge: 7, fdr: 8 };
+  const num = p.sections ?? { points: 1, incidents: 2, projets: 3, retards: 4, autres: 0, sujets: 5, absences: 6, charge: 7, fdr: 8 };
   return `${enTete(p)}
   <div style="padding:20px 28px 28px">
     ${
@@ -129,17 +161,11 @@ function corpsDocument(p, { mot = '', piedPage = '' } = {}) {
     ${points(p)}
     ${section(num.incidents, 'Incidents')}
     ${incidents(p)}
-    ${blocNotes(p.notes?.incidents)}
     ${section(num.projets, 'Projets')}
     ${projets(p)}
-    ${blocNotes(p.notes?.projets)}
-    ${
-      num.autres
-        ? section(num.autres, 'Tâches et demandes commentées') + blocNotes(p.notes?.autres, { toujours: true })
-        : ''
-    }
     ${section(num.retards, 'Tâches en retard')}
     ${retards(p)}
+    ${num.autres ? section(num.autres, 'Tâches et demandes commentées') + blocNotes(p.notesRecueil) : ''}
     ${section(num.sujets, 'Sujets prévus sur les deux semaines', 'sous réserve')}
     ${sujets(p)}
     ${sousTitre('Qui travaille sur quoi, demi-journée par demi-journée')}
@@ -328,12 +354,13 @@ function incidents(p) {
         ${p.incidents
           .map(
             (i) => `<tr>
-              <td style="${TD_FORT}">${e(i.titre)}${marqueNotes(p.marques?.taches?.[i.id])}</td>
+              <td style="${TD_FORT}">${e(i.titre)}</td>
               <td style="${TD}">${pastille(i.couleur, i.priorite)}</td>
               <td style="${TD}">${e(i.qui)}</td>
               <td style="${TD}">${e(i.ouvertLe)}</td>
               <td style="${TD}${i.enAttente ? ';color:#b45309' : ''}">${e(i.etat)}</td>
-            </tr>`
+            </tr>
+            ${ligneNotes(i.notes, 5)}`
           )
           .join('')}
       </table>`
@@ -361,7 +388,7 @@ function projets(p) {
       .map(
         (pr) => `<tr>
           <td style="${TD_FORT}">
-            ${carre(pr.couleurEtat, 7)} ${e(pr.nom)}${marqueNotes(p.marques?.projets?.[pr.nom])}
+            ${carre(pr.couleurEtat, 7)} ${e(pr.nom)}
             <div style="font-size:11px;color:${ENCRE3};font-weight:400;margin-left:13px">${e(pr.pilotes)}</div>
           </td>
           <td style="${TD}">
@@ -375,7 +402,8 @@ function projets(p) {
             ${pr.suite ? `<div style="color:${ENCRE};margin-top:2px">→ ${e(pr.suite)}</div>` : ''}
             ${pr.alerte ? `<div style="color:#b45309;font-size:11px;margin-top:2px">⚠ ${e(pr.alerte)}</div>` : ''}
           </td>
-        </tr>`
+        </tr>
+        ${ligneNotes(pr.notes, 5, { avecTitre: true })}`
       )
       .join('')}
     <tr>
@@ -389,19 +417,18 @@ function projets(p) {
 }
 
 /**
- * Les notes d'une section, au pied de son tableau — mêmes filets, même ordre et mêmes
- * espacements que ReunionDocument.tsx. Un `<table>` plutôt qu'un `<div>` à `border-left` :
- * Outlook perd la bordure gauche d'un bloc, pas celle d'une cellule.
+ * Le recueil : les notes qu'aucune ligne de tableau ne porte — un incident clos, un MCO,
+ * une demande, une tâche supprimée depuis. Contrairement aux notes glissées sous une
+ * ligne, celles-ci nomment leur sujet : rien au-dessus d'elles ne le fait.
  *
- * Section vide : rien du tout, pas même un titre. `toujours` vaut pour « Tâches et
- * demandes commentées », dont la section n'est ouverte que si elle a du contenu.
+ * Un `<table>` plutôt qu'un `<div>` à `border-left` : Outlook perd la bordure gauche d'un
+ * bloc, pas celle d'une cellule.
  */
-function blocNotes(groupes, { toujours = false } = {}) {
+function blocNotes(groupes) {
   const liste = Array.isArray(groupes) ? groupes : [];
   if (liste.length === 0) return '';
 
   return `<div style="margin-top:12px">
-    ${toujours ? '' : sousTitre('Notes écrites cette semaine')}
     ${liste
       .map(
         (g) => `<table style="width:100%;border-collapse:separate;border-spacing:0;margin:0 0 8px">
@@ -447,14 +474,15 @@ function retards(p) {
     ${p.retards
       .map(
         (t) => `<tr>
-          <td style="${TD_FORT}">${e(t.titre)}${marqueNotes(p.marques?.taches?.[t.id])}${
+          <td style="${TD_FORT}">${e(t.titre)}${
             t.demandeur ? `<div style="font-size:11px;color:${ENCRE3};font-weight:400">demandé par ${e(t.demandeur)}</div>` : ''
           }</td>
           <td style="${TD}">${pastille(t.couleurNature, t.nature)}</td>
           <td style="${TD}">${e(t.qui)}</td>
           <td style="${TD}">${e(t.echeance)}</td>
           <td style="${TD};color:#b91c1c;font-weight:600">${e(t.retard)}</td>
-        </tr>`
+        </tr>
+        ${ligneNotes(t.notes, 5)}`
       )
       .join('')}
   </table>`;
@@ -678,20 +706,21 @@ export function renderText(p) {
     for (const pr of p.projets)
       l.push(`  - ${pr.nom} — ${pr.avance} % déclaré (${pr.avanceTerminees} % terminé), ${pr.heures}${pr.alerte ? ` (! ${pr.alerte})` : ''}`);
   }
-  // En texte brut il n'y a pas de tableau sous lequel glisser les notes : on les regroupe
-  // par section, dans le même ordre que le document, avec le titre de la section pour
-  // qu'on sache de quoi elles parlent.
-  for (const [cle, titre] of [
-    ['incidents', 'NOTES — INCIDENTS'],
-    ['projets', 'NOTES — PROJETS'],
-    ['autres', 'NOTES — TÂCHES ET DEMANDES'],
-  ]) {
-    const groupes = p.notes?.[cle] ?? [];
-    if (groupes.length === 0) continue;
+  // En texte brut il n'y a pas de ligne de tableau sous laquelle glisser une note : on
+  // les rassemble, dans le même ordre que le document, en reprenant le nom du sujet
+  // puisque rien au-dessus ne le donne.
+  const toutesLesNotes = [
+    ...(p.incidents ?? []).flatMap((i) => (i.notes ?? []).map((g) => ({ ...g, sous: i.titre }))),
+    ...(p.projets ?? []).flatMap((pr) => (pr.notes ?? []).map((g) => ({ ...g, sous: pr.nom }))),
+    ...(p.retards ?? []).flatMap((t) => (t.notes ?? []).map((g) => ({ ...g, sous: t.titre }))),
+    ...(p.notesRecueil ?? []).map((g) => ({ ...g, sous: null })),
+  ];
+  if (toutesLesNotes.length > 0) {
     l.push('');
-    l.push(titre);
-    for (const g of groupes) {
-      l.push(`  ${g.titre}${g.projet ? ` — ${g.projet}` : ''} [${g.nature}]`);
+    l.push('NOTES ÉCRITES CETTE SEMAINE');
+    for (const g of toutesLesNotes) {
+      const ou = g.sous && g.sous !== g.titre ? ` (sous ${g.sous})` : '';
+      l.push(`  ${g.titre}${g.projet ? ` — ${g.projet}` : ''} [${g.nature}]${ou}`);
       for (const n of g.lignes) {
         l.push(`    ${n.quand} · ${n.auteur}${n.retouchee ? ' (retouchée)' : ''}`);
         // Une note sur plusieurs lignes garde ses lignes : la replier d'un seul tenant

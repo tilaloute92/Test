@@ -1,13 +1,12 @@
 import { formatDateLong, formatWeekRange, isWeekend, toISODate } from './date';
 import {
-  compteurNotes,
   COULEUR_ABSENCE,
   COULEUR_NATURE,
   estNature,
   ETIQUETTES_ABSENCE,
   libelleSemaine,
-  notesDeSection,
   numeroterSections,
+  rangerNotes,
   type CodeCreneau,
   type GroupeNotes,
   type MeetingReport,
@@ -101,6 +100,7 @@ function groupePayload(g: GroupeNotes): PayloadGroupeNotes {
 
 export interface PayloadIncident {
   id: string;
+  notes: PayloadGroupeNotes[];
   titre: string;
   priorite: string;
   /** Rouge pour un critique, orange pour un haut — décidé ici, pas dans le gabarit. */
@@ -112,6 +112,7 @@ export interface PayloadIncident {
 }
 
 export interface PayloadProjet {
+  notes: PayloadGroupeNotes[];
   nom: string;
   pilotes: string;
   avance: number;
@@ -128,6 +129,7 @@ export interface PayloadProjet {
 
 export interface PayloadRetard {
   id: string;
+  notes: PayloadGroupeNotes[];
   titre: string;
   /** Pour une demande : qui attend. Absent pour les autres natures. */
   demandeur?: string;
@@ -204,9 +206,8 @@ export interface ReunionPayload {
   points: PayloadPoint[];
   incidents: PayloadIncident[];
   resolus: string[];
-  notes: { incidents: PayloadGroupeNotes[]; projets: PayloadGroupeNotes[]; autres: PayloadGroupeNotes[] };
+  notesRecueil: PayloadGroupeNotes[];
   sections: ReturnType<typeof numeroterSections>;
-  marques: { taches: Record<string, number>; projets: Record<string, number> };
   projets: PayloadProjet[];
   retards: PayloadRetard[];
   semaines: PayloadSemaine[];
@@ -279,7 +280,7 @@ export function buildReunionPayload(opts: {
   const calcul = weatherMeta[h.weather];
   const a = resultat.agregat;
   const s1 = report.semaines[0];
-  const compteurs = compteurNotes(report.notes);
+  const rangees = rangerNotes(report);
   // Le retard se compte depuis la référence qui a servi à le détecter (voir weeklyReport).
   const isoReference = h.referenceRetard;
 
@@ -348,6 +349,8 @@ export function buildReunionPayload(opts: {
       /** Sert au repère « ✎ N » : le serveur le cherche dans `marques.taches`. */
       id: t.id,
       titre: t.title,
+      /** Les notes à poser SOUS cette ligne (voir rangerNotes). */
+      notes: (rangees.parIncident.get(t.id) ?? []).map(groupePayload),
       priorite: t.priority === 'critique' ? 'Critique' : 'Haute',
       couleur: t.priority === 'critique' ? '#b91c1c' : '#ea580c',
       qui: nomsDe(t, members),
@@ -358,25 +361,17 @@ export function buildReunionPayload(opts: {
 
     resolus: h.incidentsResolved.map((t) => t.title),
 
-    /** Les notes de la semaine, rangées par section — mêmes couleurs, même ordre et même
-     *  mise en page que le document : le mail ne doit pas en être une variante. */
-    notes: {
-      incidents: notesDeSection(report.notes, 'incidents').map(groupePayload),
-      projets: notesDeSection(report.notes, 'projets').map(groupePayload),
-      autres: notesDeSection(report.notes, 'autres').map(groupePayload),
-    },
+    /** Les notes qu'aucune ligne de tableau ne porte. Les autres voyagent avec leur
+     *  ligne, dans `incidents`, `projets` et `retards` ci-dessous. */
+    notesRecueil: rangees.recueil.map(groupePayload),
     /** Les numéros de section, calculés une seule fois côté application (voir
      *  numeroterSections) : le serveur les reprend au lieu de les recalculer, sinon les
      *  deux numérotations finissent par diverger d'un cran. */
-    sections: numeroterSections(notesDeSection(report.notes, 'autres').length > 0),
-    /** Combien de notes par sujet, pour le repère « ✎ N » des tableaux. */
-    marques: {
-      taches: Object.fromEntries(compteurs.parTache),
-      projets: Object.fromEntries(compteurs.parProjet),
-    },
+    sections: numeroterSections(rangees.recueil.length > 0),
 
     projets: report.projets.map((p) => ({
       nom: p.nom,
+      notes: (rangees.parProjet.get(p.nom) ?? []).map(groupePayload),
       pilotes: p.pilotes.join(', ') || 'personne d’assigné',
       avance: p.avance,
       avanceTerminees: p.avanceTerminees,
@@ -392,6 +387,7 @@ export function buildReunionPayload(opts: {
     retards: h.overdueTasks.map((t) => ({
       id: t.id,
       titre: t.title,
+      notes: (rangees.parRetard.get(t.id) ?? []).map(groupePayload),
       demandeur: t.demandeur,
       nature: t.type,
       couleurNature: COULEUR_NATURE[t.type],

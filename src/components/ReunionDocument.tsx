@@ -1,13 +1,13 @@
+import { Fragment } from 'react';
 import { formatDateLong, formatWeekRange, isWeekend, toISODate } from '../lib/date';
 import {
-  compteurNotes,
   numeroterSections,
   COULEUR_ABSENCE,
   COULEUR_NATURE,
   estNature,
   ETIQUETTES_ABSENCE,
   libelleSemaine,
-  notesDeSection,
+  rangerNotes,
   type CodeCreneau,
   type GroupeNotes,
   type MeetingReport,
@@ -69,19 +69,14 @@ export function ReunionDocument({ report, members, teamLabel, auteur, pointsReti
   const points = report.points.filter((p) => !pointsRetires.includes(p.id));
   const h = report.hebdo;
   const resolus = h.incidentsResolved;
-  // Les notes ne font plus une section à elles : chacune suit le tableau du sujet qu'elle
-  // commente (voir notesDeSection). Reste « Tâches et demandes », qui recueille celles
-  // qu'aucun tableau ne liste — sans quoi une note sur un MCO disparaîtrait du rapport.
-  const notes = {
-    incidents: notesDeSection(report.notes, 'incidents'),
-    projets: notesDeSection(report.notes, 'projets'),
-    autres: notesDeSection(report.notes, 'autres'),
-  };
-  const compteurs = compteurNotes(report.notes);
-  // Les numéros se calculent une fois, en haut : « Tâches et demandes » n'existe que
-  // s'il y a des notes orphelines, et renuméroter à la main six sections en dessous est
-  // exactement le genre de chose qui finit par sauter un numéro.
-  const num = numeroterSections(notes.autres.length > 0);
+  // Chaque note se pose SOUS LA LIGNE de son sujet (voir rangerNotes). « Tâches et
+  // demandes commentées » recueille celles qu'aucune ligne ne porte — sans elle, la note
+  // d'un incident clos ou d'un MCO disparaîtrait du rapport.
+  const notes = rangerNotes(report);
+  // Les numéros se calculent une fois, en haut : le recueil n'existe que s'il a du
+  // contenu, et renuméroter à la main cinq sections en dessous est exactement le genre
+  // de chose qui finit par sauter un numéro.
+  const num = numeroterSections(notes.recueil.length > 0);
 
   return (
     <div
@@ -100,28 +95,26 @@ export function ReunionDocument({ report, members, teamLabel, auteur, pointsReti
         <ListePoints points={points} />
 
         <Section n={num.incidents} titre="Incidents" />
-        <TableIncidents taches={h.openCriticalIncidents} members={members} notes={compteurs.parTache} />
+        <TableIncidents taches={h.openCriticalIncidents} members={members} notes={notes.parIncident} />
         {resolus.length > 0 && (
           <div style={{ marginTop: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 12px', fontSize: 12.5, color: '#166534' }}>
             <strong style={{ fontWeight: 600 }}>Résolus cette semaine ({resolus.length})</strong>
             <span style={{ color: '#15803d' }}> — {resolus.map((t) => t.title).join(' · ')}</span>
           </div>
         )}
-        <BlocNotes groupes={notes.incidents} />
 
         <Section n={num.projets} titre="Projets" />
-        <TableProjets projets={report.projets} notes={compteurs.parProjet} />
-        <BlocNotes groupes={notes.projets} />
-
-        {notes.autres.length > 0 && (
-          <>
-            <Section n={num.autres} titre="Tâches et demandes commentées" />
-            <BlocNotes groupes={notes.autres} toujours />
-          </>
-        )}
+        <TableProjets projets={report.projets} notes={notes.parProjet} />
 
         <Section n={num.retards} titre="Tâches en retard" />
-        <TableRetard taches={h.overdueTasks} members={members} referenceIso={h.referenceRetard} notes={compteurs.parTache} />
+        <TableRetard taches={h.overdueTasks} members={members} referenceIso={h.referenceRetard} notes={notes.parRetard} />
+
+        {notes.recueil.length > 0 && (
+          <>
+            <Section n={num.autres} titre="Tâches et demandes commentées" />
+            <BlocNotes groupes={notes.recueil} />
+          </>
+        )}
 
         <Section n={num.sujets} titre="Sujets prévus sur les deux semaines" apres="sous réserve" />
         <ListeSujets report={report} />
@@ -400,7 +393,7 @@ function noms(t: ProjectTask, members: TeamMember[]): string {
   return n.length > 0 ? n.join(', ') : 'non assigné';
 }
 
-function TableIncidents({ taches, members, notes }: { taches: ProjectTask[]; members: TeamMember[]; notes: Map<string, number> }) {
+function TableIncidents({ taches, members, notes }: { taches: ProjectTask[]; members: TeamMember[]; notes: Map<string, GroupeNotes[]> }) {
   if (taches.length === 0) return <Vide texte="Aucun incident critique ou haut encore ouvert." />;
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -415,20 +408,20 @@ function TableIncidents({ taches, members, notes }: { taches: ProjectTask[]; mem
       </thead>
       <tbody>
         {taches.map((t) => (
-          <tr key={t.id} style={{ breakInside: 'avoid' }}>
-            <td style={{ ...td, color: ENCRE, fontWeight: 500 }}>
-              {t.title}
-              <MarqueNotes n={notes.get(t.id) ?? 0} />
-            </td>
-            <td style={td}>
-              <Pastille couleur={t.priority === 'critique' ? '#b91c1c' : '#ea580c'} texte={t.priority === 'critique' ? 'Critique' : 'Haute'} />
-            </td>
-            <td style={td}>{noms(t, members)}</td>
-            <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{jolieDate(t.createdAt.slice(0, 10))}</td>
-            <td style={{ ...td, color: t.status === 'en_attente' ? '#b45309' : ENCRE2 }}>
-              {t.status === 'en_attente' ? 'En attente d’un tiers' : t.status === 'en_cours' ? 'En cours' : 'À faire'}
-            </td>
-          </tr>
+          <Fragment key={t.id}>
+            <tr style={{ breakInside: 'avoid' }}>
+              <td style={{ ...td, color: ENCRE, fontWeight: 500 }}>{t.title}</td>
+              <td style={td}>
+                <Pastille couleur={t.priority === 'critique' ? '#b91c1c' : '#ea580c'} texte={t.priority === 'critique' ? 'Critique' : 'Haute'} />
+              </td>
+              <td style={td}>{noms(t, members)}</td>
+              <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{jolieDate(t.createdAt.slice(0, 10))}</td>
+              <td style={{ ...td, color: t.status === 'en_attente' ? '#b45309' : ENCRE2 }}>
+                {t.status === 'en_attente' ? 'En attente d’un tiers' : t.status === 'en_cours' ? 'En cours' : 'À faire'}
+              </td>
+            </tr>
+            <LigneNotes groupes={notes.get(t.id)} colonnes={5} />
+          </Fragment>
         ))}
       </tbody>
     </table>
@@ -445,7 +438,7 @@ function jolieDate(iso?: string): string {
 
 const COULEUR_ETAT: Record<ProjetRollup['etat'], string> = { vert: '#16a34a', orange: '#d97706', rouge: '#dc2626' };
 
-function TableProjets({ projets, notes }: { projets: ProjetRollup[]; notes: Map<string, number> }) {
+function TableProjets({ projets, notes }: { projets: ProjetRollup[]; notes: Map<string, GroupeNotes[]> }) {
   if (projets.length === 0) return <Vide texte="Aucune tâche rattachée à un projet." />;
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -460,14 +453,14 @@ function TableProjets({ projets, notes }: { projets: ProjetRollup[]; notes: Map<
       </thead>
       <tbody>
         {projets.map((p) => (
-          <tr key={p.nom} style={{ breakInside: 'avoid' }}>
+          <Fragment key={p.nom}>
+            <tr style={{ breakInside: 'avoid' }}>
             <td style={{ ...td, color: ENCRE, fontWeight: 500 }}>
               <span
                 title={p.etatRaison}
                 style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 7, background: COULEUR_ETAT[p.etat], marginRight: 6 }}
               />
               {p.nom}
-              <MarqueNotes n={notes.get(p.nom) ?? 0} />
               <div style={{ fontSize: 11, color: ENCRE3, fontWeight: 400, marginLeft: 13 }}>
                 {p.pilotes.join(', ') || 'personne d’assigné'}
               </div>
@@ -492,7 +485,11 @@ function TableProjets({ projets, notes }: { projets: ProjetRollup[]; notes: Map<
               {p.prochaineEtape && <div style={{ color: ENCRE, marginTop: 2 }}>→ {p.prochaineEtape}</div>}
               {p.etat !== 'vert' && <div style={{ color: '#b45309', fontSize: 11, marginTop: 2 }}>⚠ {p.etatRaison}</div>}
             </td>
-          </tr>
+            </tr>
+            {/* La ligne porte le nom du PROJET, la note celui d'une de ses tâches : d'où
+                le titre, contrairement aux autres tableaux. */}
+            <LigneNotes groupes={notes.get(p.nom)} colonnes={5} avecTitre />
+          </Fragment>
         ))}
       </tbody>
       <tfoot>
@@ -510,35 +507,80 @@ function TableProjets({ projets, notes }: { projets: ProjetRollup[]; notes: Map<
 
 // --------------------------------------------------------------------- Notes
 
-/** Le repère dans un tableau : « ✎ 2 » dit qu'il y a du texte sur ce sujet, juste en
- *  dessous. Discret — c'est un renvoi, pas une donnée de plus à lire dans la colonne. */
-function MarqueNotes({ n }: { n: number }) {
-  if (n <= 0) return null;
+/**
+ * Les notes d'un sujet, posées SOUS SA LIGNE dans le tableau.
+ *
+ * Une ligne de tableau en travers plutôt qu'un bloc au pied de la section : la note est
+ * alors là où est le sujet, sans renvoi ni repère à suivre. Le prix, assumé, est que le
+ * tableau se lit moins d'un bloc quand beaucoup de sujets sont commentés.
+ *
+ * Pas de pastille ni de titre ici : la ligne juste au-dessus nomme déjà le sujet. Sauf
+ * pour un projet, dont la ligne porte le nom du PROJET quand la note porte sur une de
+ * ses tâches — `avecTitre` le rétablit alors.
+ */
+function LigneNotes({ groupes, colonnes, avecTitre = false }: { groupes: GroupeNotes[] | undefined; colonnes: number; avecTitre?: boolean }) {
+  if (!groupes || groupes.length === 0) return null;
   return (
-    <span style={{ color: ENCRE3, fontWeight: 400, marginLeft: 6, whiteSpace: 'nowrap' }} title={`${n} note(s) écrite(s) cette semaine`}>
-      ✎ {n}
-    </span>
+    <tr>
+      <td colSpan={colonnes} style={{ padding: '0 0 9px', borderTop: 'none' }}>
+        {groupes.map((g) => {
+          // Gris quand la tâche a été supprimée : elle n'a plus de nature, et lui en
+          // prêter une serait inventer.
+          const couleur = g.type ? COULEUR_NATURE[g.type] : ENCRE3;
+          return (
+            <div
+              key={g.taskId}
+              style={{
+                borderLeft: `3px solid ${couleur}`,
+                background: '#f8fafc',
+                borderRadius: '0 6px 6px 0',
+                padding: '7px 12px 8px',
+                marginBottom: 4,
+                breakInside: 'avoid',
+              }}
+            >
+              {avecTitre && (
+                <div style={{ fontSize: 11.5, fontWeight: 600, color: ENCRE, marginBottom: 3 }}>{g.titre}</div>
+              )}
+              {g.notes.map((n, i) => (
+                <div
+                  key={n.id}
+                  style={{
+                    marginTop: i === 0 ? 0 : 8,
+                    paddingTop: i === 0 ? 0 : 8,
+                    borderTop: i === 0 ? undefined : `1px solid ${TRAIT}`,
+                  }}
+                >
+                  <div style={{ fontSize: 10.5, color: ENCRE3, fontWeight: 600 }}>
+                    <span style={{ textTransform: 'uppercase', letterSpacing: '.05em' }}>{formatDateLong(new Date(n.createdAt))}</span>
+                    <span style={{ fontSize: 11.5, color: ENCRE2, fontWeight: 500 }}> · {n.auteur}</span>
+                    {n.retouchee && <span style={{ fontWeight: 400 }}> (retouchée)</span>}
+                  </div>
+                  {/* `pre-wrap` : une note écrite sur trois lignes se relit sur trois lignes. */}
+                  <div style={{ fontSize: 12.5, color: ENCRE2, lineHeight: 1.55, marginTop: 2, whiteSpace: 'pre-wrap' }}>{n.texte}</div>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </td>
+    </tr>
   );
 }
 
 /**
- * Les notes d'une section, au pied de son tableau.
+ * Le recueil : les notes qu'aucune ligne de tableau ne porte — un incident clos, un MCO,
+ * une demande, une tâche supprimée depuis. Elles ont besoin d'un toit, sinon elles
+ * tomberaient du rapport au motif qu'elles n'ont pas de ligne où se poser.
  *
- * Elles ne font plus une section à part : une note commente un incident, un projet ou une
- * demande, et c'est là qu'on la cherche. Le tableau reste lisible d'un bloc — c'est ce qui
- * l'a emporté sur l'idée de glisser chaque note sous sa ligne — et le repère « ✎ N » de la
- * ligne dit où aller.
- *
- * Section vide : rien du tout, pas même un titre. `toujours` force l'affichage pour
- * « Tâches et demandes commentées », qui N'EXISTE que quand elle a du contenu et dont la
- * section a donc déjà été ouverte.
+ * Contrairement aux notes glissées sous une ligne, celles-ci nomment leur sujet : rien
+ * au-dessus d'elles ne le fait.
  */
-function BlocNotes({ groupes, toujours = false }: { groupes: GroupeNotes[]; toujours?: boolean }) {
+function BlocNotes({ groupes }: { groupes: GroupeNotes[] }) {
   if (groupes.length === 0) return null;
 
   return (
     <div style={{ marginTop: 12 }}>
-      {!toujours && <SousTitre>Notes écrites cette semaine</SousTitre>}
       {groupes.map((g) => {
         // Gris quand la tâche a été supprimée : elle n'a plus de nature, et lui en prêter
         // une serait inventer. Le texte, lui, reste — c'est tout l'intérêt de l'avoir écrit.
@@ -597,7 +639,7 @@ function BlocNotes({ groupes, toujours = false }: { groupes: GroupeNotes[]; touj
 
 // -------------------------------------------------------------------- Retards
 
-function TableRetard({ taches, members, referenceIso, notes }: { taches: ProjectTask[]; members: TeamMember[]; referenceIso: string; notes: Map<string, number> }) {
+function TableRetard({ taches, members, referenceIso, notes }: { taches: ProjectTask[]; members: TeamMember[]; referenceIso: string; notes: Map<string, GroupeNotes[]> }) {
   if (taches.length === 0) return <Vide texte="Aucune — tout est dans les temps." />;
   const iso = referenceIso;
   return (
@@ -615,10 +657,10 @@ function TableRetard({ taches, members, referenceIso, notes }: { taches: Project
         {taches.map((t) => {
           const retard = t.dueDate ? Math.max(0, Math.round((Date.parse(`${iso}T00:00:00`) - Date.parse(`${t.dueDate}T00:00:00`)) / 86_400_000)) : 0;
           return (
-            <tr key={t.id} style={{ breakInside: 'avoid' }}>
+            <Fragment key={t.id}>
+            <tr style={{ breakInside: 'avoid' }}>
               <td style={{ ...td, color: ENCRE, fontWeight: 500 }}>
                 {t.title}
-                <MarqueNotes n={notes.get(t.id) ?? 0} />
                 {/* Une demande en retard, ce n'est pas seulement du travail en retard :
                     c'est quelqu'un qui attend. Le nom du demandeur change la discussion. */}
                 {t.demandeur && <div style={{ fontSize: 11, color: ENCRE3, fontWeight: 400 }}>demandé par {t.demandeur}</div>}
@@ -630,6 +672,8 @@ function TableRetard({ taches, members, referenceIso, notes }: { taches: Project
               <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{jolieDate(t.dueDate)}</td>
               <td style={{ ...td, color: '#b91c1c', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>+{retard} j</td>
             </tr>
+            <LigneNotes groupes={notes.get(t.id)} colonnes={5} />
+            </Fragment>
           );
         })}
       </tbody>
