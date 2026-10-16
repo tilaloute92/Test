@@ -124,6 +124,42 @@ export function ReunionSynthese({
               ))
             )}
 
+            {/* Les notes en version courte : le sujet et sa dernière note, trois au plus.
+                La synthèse tient sur une page — le texte entier est dans la vue Réunion,
+                et la mention le dit pour qu'on ne croie pas que c'est tout. */}
+            <Titre style={{ marginTop: 14 }}>Notes de la semaine</Titre>
+            {report.notes.length === 0 ? (
+              <Rien texte="Aucune note écrite cette semaine." />
+            ) : (
+              <>
+                {report.notes.slice(0, 3).map((g) => {
+                  const derniere = g.notes[g.notes.length - 1];
+                  return (
+                    <div key={g.taskId} style={{ fontSize: 12.5, padding: '4px 0', borderTop: `1px solid ${TRAIT}` }}>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          width: 7,
+                          height: 7,
+                          borderRadius: 2,
+                          background: g.type ? COULEUR_NATURE[g.type] : ENCRE3,
+                          marginRight: 6,
+                        }}
+                      />
+                      {g.titre}
+                      <div style={{ color: ENCRE3, fontSize: 11, marginLeft: 13, lineHeight: 1.45 }}>
+                        {derniere.auteur} — {derniere.texte.length > 110 ? `${derniere.texte.slice(0, 110)}…` : derniere.texte}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{ fontSize: 11, color: ENCRE3, marginTop: 4 }}>
+                  {report.notes.length > 3 && `${report.notes.length - 3} autre(s) sujet(s) commenté(s). `}
+                  Le texte entier est dans la vue Réunion.
+                </div>
+              </>
+            )}
+
             <Titre style={{ marginTop: 14 }}>Absences à venir</Titre>
             <Absences report={report} />
           </div>

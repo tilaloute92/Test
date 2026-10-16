@@ -5,6 +5,7 @@ import {
   estNature,
   ETIQUETTES_ABSENCE,
   type CodeCreneau,
+  type GroupeNotes,
   type MeetingReport,
   type ProjetRollup,
 } from '../lib/meetingReport';
@@ -93,23 +94,29 @@ export function ReunionDocument({ report, members, teamLabel, auteur, pointsReti
         <Section n={3} titre="Projets" />
         <TableProjets projets={report.projets} />
 
-        <Section n={4} titre="Tâches en retard" />
+        {/* Les seules phrases du document : ce que les gens ont écrit de leur main.
+            Après les projets, parce qu'elles les racontent ; avant les retards, parce
+            qu'elles expliquent souvent pourquoi. */}
+        <Section n={4} titre="Notes de la semaine" />
+        <ListeNotes groupes={report.notes} />
+
+        <Section n={5} titre="Tâches en retard" />
         <TableRetard taches={h.overdueTasks} members={members} referenceIso={h.referenceRetard} />
 
-        <Section n={5} titre="Sujets prévus sur les deux semaines" apres="sous réserve" />
+        <Section n={6} titre="Sujets prévus sur les deux semaines" apres="sous réserve" />
         <ListeSujets report={report} />
         <SousTitre>Qui travaille sur quoi, demi-journée par demi-journée</SousTitre>
         <Grille report={report} />
 
-        <Section n={6} titre="Absences" />
+        <Section n={7} titre="Absences" />
         <ListeAbsences report={report} members={members} />
 
-        <Section n={7} titre="Charge par personne" />
+        <Section n={8} titre="Charge par personne" />
         <TableCharge report={report} />
 
         {h.roadmap.total > 0 && (
           <>
-            <Section n={8} titre={`Feuille de route ${h.roadmap.year}`} />
+            <Section n={9} titre={`Feuille de route ${h.roadmap.year}`} />
             <FeuilleDeRoute report={report} />
           </>
         )}
@@ -472,6 +479,75 @@ function TableProjets({ projets }: { projets: ProjetRollup[] }) {
         </tr>
       </tfoot>
     </table>
+  );
+}
+
+// --------------------------------------------------------------------- Notes
+
+/** Gris : une note dont la tâche a été supprimée n'a plus de nature, et lui en prêter
+ *  une serait inventer. Le texte, lui, reste — c'est tout l'intérêt de l'avoir écrit. */
+const COULEUR_SANS_NATURE = '#94a3b8';
+
+function ListeNotes({ groupes }: { groupes: GroupeNotes[] }) {
+  if (groupes.length === 0) {
+    return <Vide texte="Aucune note écrite cette semaine — les tableaux ci-dessus disent tout ce qu'on sait." />;
+  }
+
+  return (
+    <div>
+      {groupes.map((g) => {
+        const couleur = g.type ? COULEUR_NATURE[g.type] : COULEUR_SANS_NATURE;
+        return (
+          <div
+            key={g.taskId}
+            style={{
+              // Le filet de couleur rappelle la nature du sujet, comme dans la grille et
+              // dans la liste des tâches ; la pastille l'écrit, la couleur ne porte
+              // jamais seule.
+              borderLeft: `4px solid ${couleur}`,
+              background: '#f8fafc',
+              borderRadius: 8,
+              padding: '10px 14px 11px',
+              margin: '0 0 8px',
+              breakInside: 'avoid',
+            }}
+          >
+            {/* Pas de flex ni de `margin-left:auto` ici : le mail reprend exactement cette
+                mise en page et Outlook ne sait faire ni l'un ni l'autre. Tout est posé
+                en ligne, dans l'ordre de lecture. */}
+            <div style={{ marginBottom: 8 }}>
+              <Pastille couleur={couleur} texte={g.type ?? 'Sujet supprimé'} />
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: ENCRE, marginLeft: 8 }}>{g.titre}</span>
+              {g.projet && <span style={{ fontSize: 12, color: ENCRE3, marginLeft: 6 }}>— {g.projet}</span>}
+              <span style={{ fontSize: 11, color: ENCRE3, marginLeft: 6 }}>
+                · {g.notes.length} note{g.notes.length > 1 ? 's' : ''}
+              </span>
+            </div>
+
+            {g.notes.map((n, i) => (
+              <div
+                key={n.id}
+                style={{
+                  marginTop: i === 0 ? 0 : 9,
+                  paddingTop: i === 0 ? 0 : 9,
+                  borderTop: i === 0 ? undefined : `1px solid ${TRAIT}`,
+                }}
+              >
+                {/* La date en capitales comme les en-têtes de colonne, le nom en casse
+                    normale : tout en capitales, une liste de noms se lit comme un cri. */}
+                <div style={{ fontSize: 10.5, color: ENCRE3, fontWeight: 600 }}>
+                  <span style={{ textTransform: 'uppercase', letterSpacing: '.05em' }}>{formatDateLong(new Date(n.createdAt))}</span>
+                  <span style={{ fontSize: 11.5, color: ENCRE2, fontWeight: 500 }}> · {n.auteur}</span>
+                  {n.retouchee && <span style={{ fontWeight: 400 }}> (retouchée)</span>}
+                </div>
+                {/* `pre-wrap` : une note écrite sur trois lignes se relit sur trois lignes. */}
+                <div style={{ fontSize: 12.5, color: ENCRE2, lineHeight: 1.55, marginTop: 2, whiteSpace: 'pre-wrap' }}>{n.texte}</div>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

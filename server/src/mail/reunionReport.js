@@ -73,7 +73,7 @@ function vide(texte) {
 // ============================================================ LE DOCUMENT COMPLET
 
 /**
- * Le corps du rapport : en-tête, météo, chiffres, puis les huit sections.
+ * Le corps du rapport : en-tête, météo, chiffres, puis les neuf sections.
  *
  * Écrit UNE fois et servi deux fois — dans le fichier joint et dans le corps du message —
  * depuis que le message reprenait une version condensée qui ne ressemblait plus à ce que
@@ -114,19 +114,21 @@ function corpsDocument(p, { mot = '', piedPage = '' } = {}) {
     ${incidents(p)}
     ${section(3, 'Projets')}
     ${projets(p)}
-    ${section(4, 'Tâches en retard')}
+    ${section(4, 'Notes de la semaine')}
+    ${notes(p)}
+    ${section(5, 'Tâches en retard')}
     ${retards(p)}
-    ${section(5, 'Sujets prévus sur les deux semaines', 'sous réserve')}
+    ${section(6, 'Sujets prévus sur les deux semaines', 'sous réserve')}
     ${sujets(p)}
     <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:${ENCRE3};font-weight:600;margin:16px 0 6px">
       Qui travaille sur quoi, demi-journée par demi-journée
     </div>
     ${grille(p)}
-    ${section(6, 'Absences')}
+    ${section(7, 'Absences')}
     ${absences(p)}
-    ${section(7, 'Charge par personne')}
+    ${section(8, 'Charge par personne')}
     ${charge(p)}
-    ${p.fdr ? section(8, `Feuille de route ${p.fdr.annee}`) + feuilleDeRoute(p.fdr) : ''}
+    ${p.fdr ? section(9, `Feuille de route ${p.fdr.annee}`) + feuilleDeRoute(p.fdr) : ''}
     <div style="margin-top:24px;border-top:1px solid ${TRAIT};padding-top:10px;font-size:10.5px;color:${ENCRE3}">
       ${piedPage || "Suivi Infra &amp; Réseau — document généré automatiquement, chiffres issus des saisies de l'équipe."}
     </div>
@@ -366,6 +368,51 @@ function projets(p) {
   </table>`;
 }
 
+/**
+ * Les notes de la semaine — mêmes filets de couleur, même ordre et mêmes espacements que
+ * dans ReunionDocument.tsx. Un `<table>` plutôt qu'un `<div>` à `border-left` : Outlook
+ * perd la bordure gauche d'un bloc, pas celle d'une cellule.
+ */
+function notes(p) {
+  const groupes = p.notes ?? [];
+  if (groupes.length === 0) {
+    return vide("Aucune note écrite cette semaine — les tableaux ci-dessus disent tout ce qu'on sait.");
+  }
+
+  return groupes
+    .map(
+      (g) => `<table style="width:100%;border-collapse:separate;border-spacing:0;margin:0 0 8px">
+      <tr><td style="border-left:4px solid ${e(g.couleur)};background:#f8fafc;border-radius:8px;padding:10px 14px 11px">
+        <div style="margin-bottom:8px">
+          ${pastille(g.couleur, g.nature)}
+          <span style="font-size:13.5px;font-weight:600;color:${ENCRE};margin-left:8px">${e(g.titre)}</span>
+          ${g.projet ? `<span style="font-size:12px;color:${ENCRE3};margin-left:6px">— ${e(g.projet)}</span>` : ''}
+          <span style="font-size:11px;color:${ENCRE3};margin-left:6px">· ${g.lignes.length} note${
+            g.lignes.length > 1 ? 's' : ''
+          }</span>
+        </div>
+        ${g.lignes
+          .map(
+            (n, i) => `<div style="${
+              i === 0 ? '' : `margin-top:9px;padding-top:9px;border-top:1px solid ${TRAIT}`
+            }">
+            <div style="font-size:10.5px;color:${ENCRE3};font-weight:600"><span style="text-transform:uppercase;letter-spacing:.05em">${e(
+              n.quand
+            )}</span><span style="font-size:11.5px;color:${ENCRE2};font-weight:500"> &middot; ${e(n.auteur)}</span>${
+              n.retouchee ? '<span style="font-weight:400"> (retouchée)</span>' : ''
+            }</div>
+            <div style="font-size:12.5px;color:${ENCRE2};line-height:1.55;margin-top:2px;white-space:pre-wrap">${e(
+              n.texte
+            )}</div>
+          </div>`
+          )
+          .join('')}
+      </td></tr>
+    </table>`
+    )
+    .join('');
+}
+
 function retards(p) {
   if (!p.retards.length) return vide('Aucune — tout est dans les temps.');
   return `<table style="width:100%;border-collapse:collapse">
@@ -547,7 +594,7 @@ function feuilleDeRoute(fdr) {
  * Le corps du message.
  *
  * Exactement le même rapport que le fichier joint et que l'écran : même en-tête, mêmes
- * huit sections, mêmes couleurs. Il a longtemps été une version condensée — quatre
+ * neuf sections, mêmes couleurs. Il a longtemps été une version condensée — quatre
  * chiffres et des listes raccourcies — ce qui obligeait à ouvrir la pièce jointe pour
  * retrouver ce dont on avait parlé, et faisait deux présentations à maintenir pour un
  * seul rapport. Seuls le mot d'introduction et la dernière ligne lui restent propres.
@@ -606,6 +653,19 @@ export function renderText(p) {
     l.push('PROJETS');
     for (const pr of p.projets)
       l.push(`  - ${pr.nom} — ${pr.avance} % déclaré (${pr.avanceTerminees} % terminé), ${pr.heures}${pr.alerte ? ` (! ${pr.alerte})` : ''}`);
+  }
+  if ((p.notes ?? []).length) {
+    l.push('');
+    l.push('NOTES DE LA SEMAINE');
+    for (const g of p.notes) {
+      l.push(`  ${g.titre}${g.projet ? ` — ${g.projet}` : ''} [${g.nature}]`);
+      for (const n of g.lignes) {
+        l.push(`    ${n.quand} · ${n.auteur}${n.retouchee ? ' (retouchée)' : ''}`);
+        // Une note sur plusieurs lignes garde ses lignes : la replier d'un seul tenant
+        // la rendrait illisible dans un client qui n'affiche que le texte brut.
+        for (const ligne of n.texte.split('\n')) l.push(`      ${ligne}`);
+      }
+    }
   }
   l.push('');
   l.push('SUJETS PRÉVUS SUR LES DEUX SEMAINES (sous réserve)');

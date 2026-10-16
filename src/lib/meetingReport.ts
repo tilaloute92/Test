@@ -4,7 +4,7 @@ import { computeWeeklyReport, type WeeklyReport } from './weeklyReport';
 import { isAbsent } from './workload';
 import { avancementProjet } from './avancement';
 import { jourCourt, pourcent, presenceJours, SEUIL_PRESENCE_DEFAUT } from './presence';
-import type { Absence, AbsenceType, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
+import type { Absence, AbsenceType, JournalEntry, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
 
 /**
  * Rapport de réunion d'équipe.
@@ -73,6 +73,71 @@ export const ETIQUETTES_ABSENCE: Record<AbsenceType, string> = {
   astreinte: 'Astreinte',
   autre: 'Absence',
 };
+
+// ------------------------------------------------------------------- Notes
+
+/**
+ * Les notes écrites dans le journal des tâches pendant la semaine.
+ *
+ * Ce sont les seules PHRASES du rapport — tout le reste est compté, déduit ou agrégé. Un
+ * incident résolu dit qu'il l'est ; la note dit comment, et c'est elle qu'on relit six
+ * mois plus tard. Elles n'apparaissaient nulle part dans le document de réunion : il
+ * fallait rouvrir chaque tâche une par une pour les retrouver.
+ *
+ * Seules les notes sont reprises, jamais les changements (statut, priorité, échéance…) :
+ * ceux-là sont déjà lisibles dans les tableaux, et les répéter ici noierait le texte
+ * écrit à la main sous une liste de mouvements.
+ */
+export interface NoteSemaine {
+  id: string;
+  auteur: string;
+  /** Horodatage complet, pour l'ordre ; seul le jour est affiché. */
+  createdAt: string;
+  texte: string;
+  /** La note a été retouchée par son auteur après coup. */
+  retouchee: boolean;
+}
+
+export interface GroupeNotes {
+  taskId: string;
+  titre: string;
+  /** Nature de la tâche, pour la pastille et la couleur. Absente si la tâche n'existe plus :
+   *  la note, elle, reste — supprimer une tâche n'efface pas ce qui a été écrit dessus. */
+  type?: ProjectTask['type'];
+  projet?: string;
+  notes: NoteSemaine[];
+}
+
+export function notesDeLaSemaine(opts: {
+  journalEntries: JournalEntry[];
+  tasks: ProjectTask[];
+  semaine: Date[];
+}): GroupeNotes[] {
+  const { journalEntries, tasks, semaine } = opts;
+  const jours = new Set(semaine.map(toISODate));
+
+  const groupes = new Map<string, GroupeNotes>();
+  for (const e of journalEntries) {
+    if (e.nature !== 'note') continue;
+    const texte = e.texte?.trim();
+    if (!texte) continue;
+    if (!jours.has(e.createdAt.slice(0, 10))) continue;
+
+    let g = groupes.get(e.taskId);
+    if (!g) {
+      const t = tasks.find((x) => x.id === e.taskId);
+      g = { taskId: e.taskId, titre: t?.title ?? 'Tâche supprimée', type: t?.type, projet: t?.project, notes: [] };
+      groupes.set(e.taskId, g);
+    }
+    g.notes.push({ id: e.id, auteur: e.auteur, createdAt: e.createdAt, texte, retouchee: Boolean(e.editedAt) });
+  }
+
+  // L'ordre de la semaine, pas celui du stockage : les sujets dans l'ordre où ils ont été
+  // commentés pour la première fois, et les notes d'un sujet dans l'ordre où elles ont été
+  // écrites. On relit la semaine comme elle s'est déroulée.
+  for (const g of groupes.values()) g.notes.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return [...groupes.values()].sort((a, b) => a.notes[0].createdAt.localeCompare(b.notes[0].createdAt));
+}
 
 // ----------------------------------------------------------------- Projets
 
@@ -510,6 +575,8 @@ export interface MeetingReport {
   grille: LigneGrille[];
   hebdo: WeeklyReport;
   projets: ProjetRollup[];
+  /** Les notes écrites dans le journal pendant la semaine, groupées par sujet. */
+  notes: GroupeNotes[];
   points: PointAborder[];
   genereLe: Date;
 }
@@ -523,6 +590,9 @@ export function computeMeetingReport(opts: {
   absences: Absence[];
   planningSlots: PlanningSlot[];
   roadmapItems: Parameters<typeof computeWeeklyReport>[0]['roadmapItems'];
+  /** Journal des tâches : seules les notes écrites dans la semaine sont reprises.
+   *  Omis, le rapport n'en montre aucune plutôt que d'en inventer. */
+  journalEntries?: JournalEntry[];
   /** Seuil en vigueur pour le service (voir src/lib/presence.ts). */
   seuilPresence?: number;
   /** Créneaux récurrents du service (voir src/lib/recurrences.ts). */
@@ -552,6 +622,7 @@ export function computeMeetingReport(opts: {
   });
 
   const projets = rollupProjets({ tasks, timeEntries, members, semaineEcoulee, aujourdhui: maintenant });
+  const notes = notesDeLaSemaine({ journalEntries: opts.journalEntries ?? [], tasks, semaine: semaineEcoulee });
   const semaines = construireSujets({ semaines: [s1, s2], tasks, members, planningSlots, absences, aujourdhui: maintenant });
   const joursAVenir = [...s1, ...s2];
   const grille = construireGrille({ jours: joursAVenir, members, tasks, planningSlots, absences });
@@ -569,5 +640,5 @@ export function computeMeetingReport(opts: {
   // getWorkingDaysOfWeek renvoie lundi → dimanche : l'index 0 est donc lundi.
   const dateReunion = semaineEcoulee[(JOUR_REUNION + 6) % 7];
 
-  return { semaineEcoulee, dateReunion, semaines, joursAVenir, grille, hebdo, projets, points, genereLe: maintenant };
+  return { semaineEcoulee, dateReunion, semaines, joursAVenir, grille, hebdo, projets, notes, points, genereLe: maintenant };
 }

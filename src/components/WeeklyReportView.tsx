@@ -38,7 +38,7 @@ const VUES = ['reunion', 'projection', 'synthese'] as const;
 type Vue = (typeof VUES)[number];
 
 export function WeeklyReportView() {
-  const { members, tasks, timeEntries, absences, planningSlots, roadmapItems } = useStore();
+  const { members, tasks, timeEntries, absences, planningSlots, roadmapItems, journalEntries } = useStore();
   const [weekOffset, setWeekOffset] = useState(0);
   const [vue, setVue] = useViewMode<Vue>('rapport-reunion', VUES, 'reunion');
   const [copied, setCopied] = useState(false);
@@ -62,10 +62,11 @@ export function WeeklyReportView() {
         absences,
         planningSlots,
         roadmapItems,
+        journalEntries,
         seuilPresence,
         recurrences,
       }),
-    [debutMs, members, tasks, timeEntries, absences, planningSlots, roadmapItems, seuilPresence, recurrences]
+    [debutMs, members, tasks, timeEntries, absences, planningSlots, roadmapItems, journalEntries, seuilPresence, recurrences]
   );
 
   // Qui signe le document. Le choix mémorisé dans « Ma journée » sert de source : il a
@@ -86,7 +87,7 @@ export function WeeklyReportView() {
 
   const copierMarkdown = async () => {
     try {
-      await navigator.clipboard.writeText(buildMarkdownReport(report.hebdo, TEAM_LABEL, members, meteo));
+      await navigator.clipboard.writeText(buildMarkdownReport(report.hebdo, TEAM_LABEL, members, meteo, report.notes));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -99,7 +100,7 @@ export function WeeklyReportView() {
     setErreur(null);
     setBusy('pptx');
     try {
-      await exportWeeklyReportPptx({ report: report.hebdo, members, teamLabel: TEAM_LABEL, meteo });
+      await exportWeeklyReportPptx({ report: report.hebdo, members, teamLabel: TEAM_LABEL, meteo, notes: report.notes });
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     } finally {

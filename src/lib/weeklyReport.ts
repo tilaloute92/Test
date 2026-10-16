@@ -5,6 +5,9 @@ import { computeWorkload, workloadColors, workloadLevel, type WorkloadLevel } fr
 import { NIVEAUX, resultatMeteo, type ResultatMeteo } from './meteoVote';
 import { heuresRecurrentesSur, type Recurrence } from './recurrences';
 import { demiJourneesAbsence, formatDureeAbsence } from './presence';
+// Type seul : meetingReport importe déjà ce module, et un import de valeur en
+// sens inverse ferait un cycle. Les types, eux, disparaissent à la compilation.
+import type { GroupeNotes } from './meetingReport';
 import type { Absence, PlanningSlot, ProjectTask, RoadmapItem, RoadmapQuarter, RoadmapStatus, TeamMember, TimeEntry } from '../types';
 
 export type WeatherLevel = 'ensoleille' | 'eclaircies' | 'nuageux' | 'orageux';
@@ -245,7 +248,10 @@ export function buildMarkdownReport(
   teamLabel: string,
   members: TeamMember[],
   /** Météo retenue (votée ou calculée). Omise, c'est la météo calculée qui sert. */
-  meteo?: ResultatMeteo
+  meteo?: ResultatMeteo,
+  /** Notes écrites dans la semaine (voir meetingReport.ts). Omises, la section saute :
+   *  le rapport hebdomadaire se calcule sans le journal, et il doit continuer à le faire. */
+  notes?: GroupeNotes[]
 ): string {
   const resultat = meteo ?? resultatMeteo(null, report.weather);
   const w = weatherMeta[resultat.niveau];
@@ -289,6 +295,19 @@ export function buildMarkdownReport(
     lines.push('');
     lines.push('## Terminé cette semaine');
     for (const t of report.tasksCompleted) lines.push(`- ${t.title}${t.project ? ` — ${t.project}` : ''} — ${assigneeNames(t, members)}`);
+  }
+  if (notes && notes.length > 0) {
+    lines.push('');
+    lines.push('## Notes de la semaine');
+    for (const g of notes) {
+      lines.push('');
+      lines.push(`### ${g.titre}${g.projet ? ` — ${g.projet}` : ''}${g.type ? ` (${g.type})` : ''}`);
+      for (const n of g.notes) {
+        lines.push(`- **${formatDateLong(new Date(n.createdAt))} · ${n.auteur}**${n.retouchee ? ' _(retouchée)_' : ''}`);
+        // Une note sur plusieurs lignes reste sur plusieurs lignes, indentée sous sa puce.
+        for (const ligne of n.texte.split('\n')) lines.push(`  ${ligne}`);
+      }
+    }
   }
   if (report.overdueTasks.length > 0) {
     lines.push('');

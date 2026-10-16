@@ -10,6 +10,10 @@ import { weatherMeta, type WeeklyReport } from './weeklyReport';
 import { resultatMeteo, type ResultatMeteo } from './meteoVote';
 import { workloadColors } from './workload';
 import type { RoadmapStatus, TeamMember } from '../types';
+import type { GroupeNotes } from './meetingReport';
+
+/** Une note projetée se lit de loin : au-delà, elle déborde de la diapositive. */
+const tronquer = (texte: string, max: number) => (texte.length > max ? `${texte.slice(0, max)}…` : texte);
 
 const ROADMAP_STATUSES: RoadmapStatus[] = ['idee', 'planifie', 'en_cours', 'termine', 'reporte', 'abandonne'];
 const roadmapStatusLabels: Record<RoadmapStatus, string> = {
@@ -26,8 +30,10 @@ export async function exportWeeklyReportPptx(params: {
   members: TeamMember[];
   teamLabel: string;
   meteo?: ResultatMeteo;
+  /** Notes écrites dans la semaine (voir meetingReport.ts). Omises, la diapositive saute. */
+  notes?: GroupeNotes[];
 }): Promise<void> {
-  const { report, members, teamLabel, meteo } = params;
+  const { report, members, teamLabel, meteo, notes = [] } = params;
   const resultat = meteo ?? resultatMeteo(null, report.weather);
   const PptxGenJS = await loadPptxGenJS();
   const pptx = new PptxGenJS();
@@ -122,6 +128,39 @@ export async function exportWeeklyReportPptx(params: {
     report.overdueTasks.map((t) => `${t.title} — éch. ${t.dueDate}`),
     8.8
   );
+
+  // --- Notes de la semaine ---
+  // Une diapositive à part plutôt qu'une quatrième colonne des faits marquants : ce sont
+  // des phrases, pas des titres, et elles ne tiennent pas dans une colonne de 4 pouces.
+  if (notes.length > 0) {
+    const notesSlide = pptx.addSlide();
+    addSectionTitle(notesSlide, 'Notes de la semaine');
+    const lignes: { text: string; options: Record<string, unknown> }[] = [];
+    for (const g of notes.slice(0, 6)) {
+      lignes.push({
+        text: `${g.titre}${g.projet ? ` — ${g.projet}` : ''}`,
+        options: { fontSize: 12, bold: true, color: '1E293B', breakLine: true, paraSpaceBefore: 8 },
+      });
+      for (const n of g.notes) {
+        lignes.push({
+          text: `${n.auteur} · ${tronquer(n.texte, 180)}`,
+          options: { fontSize: 10.5, color: '475569', breakLine: true, indentLevel: 1 },
+        });
+      }
+    }
+    notesSlide.addText(lignes, { x: 0.4, y: 0.95, w: 12.4, h: 5.6, fontFace: PPTX_FONT, valign: 'top' });
+    if (notes.length > 6) {
+      notesSlide.addText(`… et ${notes.length - 6} autre(s) sujet(s) commenté(s)`, {
+        x: 0.4,
+        y: 6.6,
+        w: 12.4,
+        h: 0.3,
+        fontSize: 10,
+        color: '94A3B8',
+        fontFace: PPTX_FONT,
+      });
+    }
+  }
 
   // --- Feuille de route (FDR) ---
   const rm = report.roadmap;

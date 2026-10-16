@@ -132,6 +132,9 @@ function construireEcrans(report: MeetingReport, members: TeamMember[], meteo: R
   if (report.projets.length > 0) {
     ecrans.push({ titre: 'Projets', contenu: <EcranProjets report={report} /> });
   }
+  if (report.notes.length > 0) {
+    ecrans.push({ titre: 'Notes', contenu: <EcranNotes report={report} /> });
+  }
   ecrans.push({ titre: 'Deux semaines', contenu: <EcranSujets report={report} /> });
   ecrans.push({ titre: 'Absences', contenu: <EcranAbsences report={report} /> });
 
@@ -253,6 +256,59 @@ function EcranIncidents({ report, members }: { report: MeetingReport; members: T
       {h.incidentsResolved.length > 0 && (
         <div style={{ marginTop: 14, fontSize: 14, color: '#166534' }}>
           <strong>Résolus cette semaine ({h.incidentsResolved.length})</strong> — {h.incidentsResolved.map((t) => t.title).join(' · ')}
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Les notes écrites dans la semaine. Projetées, elles sont le seul écran où l'équipe lit
+ * des phrases et non des chiffres — c'est là qu'on s'arrête pour en parler.
+ *
+ * Trois sujets au plus, et les notes tronquées : un écran projeté se lit de loin, et
+ * personne ne lit un paragraphe au mur. Le document et le mail, eux, les donnent en
+ * entier, et la mention le dit plutôt que de laisser croire qu'il n'y a que ça.
+ */
+const NOTES_PROJETEES = 3;
+const LONGUEUR_PROJETEE = 220;
+
+function EcranNotes({ report }: { report: MeetingReport }) {
+  const montres = report.notes.slice(0, NOTES_PROJETEES);
+  const reste = report.notes.length - montres.length;
+  return (
+    <>
+      <Titre apres={`${report.notes.length} sujet${report.notes.length > 1 ? 's' : ''} commenté${report.notes.length > 1 ? 's' : ''}`}>
+        Notes de la semaine
+      </Titre>
+      {montres.map((g) => (
+        <div
+          key={g.taskId}
+          style={{
+            borderLeft: `4px solid ${g.type ? COULEUR_NATURE[g.type] : ENCRE3}`,
+            background: '#f8fafc',
+            borderRadius: 8,
+            padding: '10px 16px 12px',
+            marginBottom: 10,
+          }}
+        >
+          <div style={{ fontSize: 17, fontWeight: 500 }}>
+            {g.titre}
+            {g.projet && <span style={{ fontSize: 14, color: ENCRE3 }}> — {g.projet}</span>}
+          </div>
+          {g.notes.map((n) => (
+            <div key={n.id} style={{ marginTop: 6 }}>
+              <span style={{ fontSize: 12, color: ENCRE3 }}>{n.auteur} · </span>
+              <span style={{ fontSize: 14, color: ENCRE2, lineHeight: 1.5 }}>
+                {n.texte.length > LONGUEUR_PROJETEE ? `${n.texte.slice(0, LONGUEUR_PROJETEE)}…` : n.texte}
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
+      {reste > 0 && (
+        <div style={{ fontSize: 14, color: ENCRE3, marginTop: 4 }}>
+          … et {reste} autre{reste > 1 ? 's' : ''} sujet{reste > 1 ? 's' : ''} commenté{reste > 1 ? 's' : ''} — tout est dans le document.
         </div>
       )}
     </>

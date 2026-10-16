@@ -63,6 +63,22 @@ export interface PayloadPoint {
   source: string;
 }
 
+export interface PayloadNote {
+  /** Déjà mis en forme côté client — le serveur ne refait aucun calcul de date. */
+  quand: string;
+  auteur: string;
+  texte: string;
+  retouchee: boolean;
+}
+
+export interface PayloadGroupeNotes {
+  titre: string;
+  nature: string;
+  couleur: string;
+  projet?: string;
+  lignes: PayloadNote[];
+}
+
 export interface PayloadIncident {
   titre: string;
   priorite: string;
@@ -165,6 +181,7 @@ export interface ReunionPayload {
   points: PayloadPoint[];
   incidents: PayloadIncident[];
   resolus: string[];
+  notes: PayloadGroupeNotes[];
   projets: PayloadProjet[];
   retards: PayloadRetard[];
   semaines: PayloadSemaine[];
@@ -309,6 +326,21 @@ export function buildReunionPayload(opts: {
     })),
 
     resolus: h.incidentsResolved.map((t) => t.title),
+
+    /** Les notes écrites dans la semaine, groupées par sujet. Mêmes couleurs, même ordre
+     *  et même mise en page que le document : le mail ne doit pas en être une variante. */
+    notes: report.notes.map((g) => ({
+      titre: g.titre,
+      nature: g.type ?? 'Sujet supprimé',
+      couleur: g.type ? COULEUR_NATURE[g.type] : '#94a3b8',
+      projet: g.projet,
+      lignes: g.notes.map((n) => ({
+        quand: formatDateLong(new Date(n.createdAt)),
+        auteur: n.auteur,
+        texte: n.texte,
+        retouchee: n.retouchee,
+      })),
+    })),
 
     projets: report.projets.map((p) => ({
       nom: p.nom,
