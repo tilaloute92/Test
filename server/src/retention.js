@@ -2,7 +2,7 @@ import { getSnapshot, purgeRecords } from './businessData.js';
 
 /**
  * Purge automatique des éléments périmés : tâches terminées et absences passées de plus de
- * RETENTION_DAYS jours.
+ * leurs durées de rétention respectives.
  *
  * Elle s'exécute ICI, sur le serveur, et nulle part ailleurs en mode client/serveur. Si
  * chaque navigateur purgeait de son côté, dix postes ouverts lanceraient dix suppressions
@@ -18,14 +18,32 @@ import { getSnapshot, purgeRecords } from './businessData.js';
  * délibérément prudente sur les cas ambigus.
  */
 
-export const RETENTION_DAYS = 10;
+/**
+ * DEUX durées, pas une — et c'est la correction d'un défaut sérieux.
+ *
+ * Une seule durée de 10 jours s'appliquait aux tâches terminées comme aux absences. Les
+ * saisies de temps partant avec leur tâche, l'historique de charge sur 3, 6 et 12 mois se
+ * vidait à mesure : sur six mois d'activité simulée, 440 h saisies tombaient à 40 h, et
+ * le graphique montrait un effondrement de la charge qui n'avait jamais eu lieu. Les
+ * heures consommées d'un projet et la relecture d'une semaine passée subissaient la même
+ * chose.
+ *
+ * - ACTIVITÉ (tâches terminées et leurs saisies de temps) : 400 jours. Treize mois, soit
+ *   la fenêtre de 12 mois du graphique plus une marge. C'est la mémoire de l'équipe, elle
+ *   doit couvrir ce que l'application prétend montrer.
+ * - ABSENCES : 10 jours, inchangé. Ce sont des données personnelles — congés, formations —
+ *   dont l'application n'a aucun usage une fois la date passée. Les garder treize mois
+ *   serait de la conservation sans objet.
+ */
+export const RETENTION_ACTIVITE_JOURS = 400;
+export const RETENTION_ABSENCES_JOURS = 10;
 
 const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
 
 /** Date « AAAA-MM-JJ » à partir de laquelle un élément est conservé. Tout ce qui est
  *  strictement antérieur est périmé. */
-export function cutoffDate(now, days = RETENTION_DAYS) {
+export function cutoffDate(now, days = RETENTION_ACTIVITE_JOURS) {
   return new Date(now.getTime() - days * DAY).toISOString().slice(0, 10);
 }
 
@@ -33,8 +51,9 @@ export function cutoffDate(now, days = RETENTION_DAYS) {
  * Ce qui serait supprimé, sans rien supprimer. Fonction pure : c'est elle qu'on éprouve, et
  * c'est elle que l'aperçu affiche avant que quiconque appuie sur un bouton.
  */
-export function findExpired(snapshot, now, days = RETENTION_DAYS) {
+export function findExpired(snapshot, now, days = RETENTION_ACTIVITE_JOURS, joursAbsences = RETENTION_ABSENCES_JOURS) {
   const limite = cutoffDate(now, days);
+  const limiteAbsences = cutoffDate(now, joursAbsences);
 
   const notees = new Set((snapshot.journalEntries ?? []).filter((e) => e.nature === 'note').map((e) => e.taskId));
 
@@ -52,7 +71,7 @@ export function findExpired(snapshot, now, days = RETENTION_DAYS) {
     return String(t.completedAt).slice(0, 10) < limite;
   });
 
-  const absences = snapshot.absences.filter((a) => a.date && a.date < limite);
+  const absences = snapshot.absences.filter((a) => a.date && a.date < limiteAbsences);
 
   const taskIds = new Set(taches.map((t) => t.id));
   // Les saisies de temps rattachées partent avec la tâche : sans elle, elles ne s'affichent
@@ -63,6 +82,7 @@ export function findExpired(snapshot, now, days = RETENTION_DAYS) {
 
   return {
     cutoff: limite,
+    cutoffAbsences: limiteAbsences,
     tasks: taches,
     absences,
     timeEntries,
@@ -71,17 +91,17 @@ export function findExpired(snapshot, now, days = RETENTION_DAYS) {
 }
 
 /** Applique la purge et renvoie le compte de ce qui a été retiré. */
-export function purgeExpired(now = new Date(), days = RETENTION_DAYS) {
+export function purgeExpired(now = new Date(), days = RETENTION_ACTIVITE_JOURS) {
   const expired = findExpired(getSnapshot(), now, days);
   if (expired.total === 0) {
-    return { ...counts(expired), purged: false, cutoff: expired.cutoff };
+    return { ...counts(expired), purged: false, cutoff: expired.cutoff, cutoffAbsences: expired.cutoffAbsences };
   }
   purgeRecords({
     taskIds: expired.tasks.map((t) => t.id),
     absenceIds: expired.absences.map((a) => a.id),
     timeEntryIds: expired.timeEntries.map((e) => e.id),
   });
-  return { ...counts(expired), purged: true, cutoff: expired.cutoff };
+  return { ...counts(expired), purged: true, cutoff: expired.cutoff, cutoffAbsences: expired.cutoffAbsences };
 }
 
 function counts(expired) {
@@ -103,14 +123,18 @@ export function startRetentionScheduler() {
       const r = purgeExpired();
       if (r.purged) {
         console.log(
-          `[purge] ${r.tasks} tâche(s) terminée(s), ${r.absences} absence(s) et ${r.timeEntries} saisie(s) de temps supprimées (antérieures au ${r.cutoff}).`
+          `[purge] ${r.tasks} tâche(s) terminée(s) et ${r.timeEntries} saisie(s) de temps antérieures au ${r.cutoff}, ` +
+            `${r.absences} absence(s) antérieure(s) au ${r.cutoffAbsences}.`
         );
       }
     } catch (error) {
       console.error(`[purge] Échec : ${error.message}`);
     }
   };
-  console.log(`[purge] Rétention : ${RETENTION_DAYS} jours après achèvement ou après la date d'absence.`);
+  console.log(
+    `[purge] Rétention : ${RETENTION_ACTIVITE_JOURS} jours après achèvement pour les tâches et leurs saisies, ` +
+      `${RETENTION_ABSENCES_JOURS} jours après la date pour les absences.`
+  );
   setInterval(run, HOUR).unref();
   run();
 }

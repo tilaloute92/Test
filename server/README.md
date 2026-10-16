@@ -153,8 +153,15 @@ entrées — exactement ce qu'on veut, contrairement à une tâche où la second
 écraserait la première. Seules les notes sont modifiables (`PATCH /api/data/journal-entries/:id`) ;
 une entrée automatique est un fait, pas un avis.
 
+Deux durées de rétention, parce que ces données n'ont pas la même utilité dans le temps :
+**400 jours** pour les tâches terminées et leurs saisies de temps (treize mois — la fenêtre
+de 12 mois de l'historique de charge plus une marge ; une durée unique de dix jours vidait
+ce graphique à mesure, 440 h saisies tombant à 40 h sur six mois), **10 jours** pour les
+absences, qui sont des données personnelles sans usage une fois la date passée. Voir
+`src/retention.js`.
+
 Le fil part avec sa tâche, à la suppression comme à la purge. En revanche, **une tâche
-terminée qui porte au moins une note n'est pas purgée** au bout de dix jours : quelqu'un a
+terminée qui porte au moins une note n'est jamais purgée** : quelqu'un a
 pris la peine de l'expliquer, et c'est six mois plus tard qu'on y revient. Les entrées
 automatiques ne comptent pas — toute tâche en a, et plus rien ne serait jamais purgé.
 

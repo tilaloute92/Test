@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { addDays, formatWeekRange, startOfWeek } from '../lib/date';
-import { computeMeetingReport } from '../lib/meetingReport';
+import { computeMeetingReport, libelleSemaine } from '../lib/meetingReport';
 import { buildMarkdownReport } from '../lib/weeklyReport';
 import { buildReunionPayload } from '../lib/reunionPayload';
 import { exportWeeklyReportPptx } from '../lib/weeklyReportPptx';
@@ -147,7 +147,7 @@ export function WeeklyReportView() {
         <div>
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Rapport de réunion</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            {TEAM_LABEL} · semaine écoulée du {formatWeekRange(report.semaineEcoulee)}
+            {TEAM_LABEL} · {libelleSemaine(report.semaineEcoulee, report.genereLe).prefixe.toLowerCase()} : {formatWeekRange(report.semaineEcoulee)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

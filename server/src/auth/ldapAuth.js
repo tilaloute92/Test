@@ -106,6 +106,25 @@ function escapeFilter(valeur) {
   return String(valeur).replace(/[\\*()\0/]/g, (c) => '\\' + c.charCodeAt(0).toString(16).padStart(2, '0'));
 }
 
+/**
+ * Échappement RFC 4514, pour le DN et non pour le filtre.
+ *
+ * Le mode « motif » construit le DN par substitution : `uid={username},ou=gens,dc=x`. Sans
+ * échappement, un identifiant contenant une virgule le découpe — `jean,ou=admins` donne un
+ * DN entièrement différent de celui qu'on croit interroger. Le mode « recherche »
+ * échappait déjà son filtre (escapeFilter) ; ce n'est pas la même grammaire, et il lui
+ * fallait sa propre fonction.
+ */
+function escapeDn(valeur) {
+  return String(valeur)
+    .replace(/([\\,+"<>;=])/g, '\\$1')
+    .replace(/^([ #])/, '\\$1')
+    .replace(/ $/, '\\ ')
+    // Un octet nul n'a rien à faire dans un DN : certaines piles le traitent comme une fin
+    // de chaîne et tronquent le reste.
+    .replace(/\0/g, '');
+}
+
 function nouveauClient(cfg) {
   return new Client({
     url: cfg.url,
@@ -160,7 +179,7 @@ function appartientAuGroupe(memberOf, attendu) {
  */
 async function resoudreDn(cfg, username, journal) {
   if (cfg.mode !== 'search') {
-    const dn = cfg.userDnPattern.replace('{username}', username);
+    const dn = cfg.userDnPattern.replace('{username}', escapeDn(username));
     journal?.push({ etape: 'dn', ok: true, detail: `DN déduit du motif : ${dn}` });
     return { dn, entry: null };
   }

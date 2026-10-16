@@ -296,10 +296,17 @@ export function buildMarkdownReport(
     lines.push('## Terminé cette semaine');
     for (const t of report.tasksCompleted) lines.push(`- ${t.title}${t.project ? ` — ${t.project}` : ''} — ${assigneeNames(t, members)}`);
   }
-  if (notes && notes.length > 0) {
+  // Groupées par section, dans l'ordre du document de réunion.
+  for (const [section, titre] of [
+    ['incidents', 'Notes — incidents'],
+    ['projets', 'Notes — projets'],
+    ['autres', 'Notes — tâches et demandes'],
+  ] as const) {
+    const groupes = (notes ?? []).filter((g) => g.section === section);
+    if (groupes.length === 0) continue;
     lines.push('');
-    lines.push('## Notes de la semaine');
-    for (const g of notes) {
+    lines.push(`## ${titre}`);
+    for (const g of groupes) {
       lines.push('');
       lines.push(`### ${g.titre}${g.projet ? ` — ${g.projet}` : ''}${g.type ? ` (${g.type})` : ''}`);
       for (const n of g.notes) {

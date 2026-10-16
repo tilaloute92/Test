@@ -22,14 +22,125 @@ const MAX_OBJET = 300;
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * Longueur maximale d'un champ de texte libre du rapport. Les notes du journal sont le
+ * seul champ réellement long ; 20 000 caractères laissent largement la place d'une note
+ * détaillée tout en bornant ce qu'un appel peut faire écrire dans un document conservé.
+ */
+const MAX_TEXTE = 20_000;
+const MAX_ELEMENTS = 500;
+
+/** Une couleur et rien d'autre. */
+const COULEUR = /^#[0-9a-fA-F]{3,8}$/;
+
+/**
+ * Normalise une couleur venue du navigateur avant qu'elle n'entre dans un attribut
+ * `style`. L'échappement HTML empêche de sortir de l'attribut — il n'y a donc pas de XSS —
+ * mais pas d'y écrire du CSS : `red;background-image:url(https://ailleurs/x)` ferait
+ * appeler un serveur extérieur par chaque lecteur du rapport, y compris dans le document
+ * conservé et re-servi par /api/mail/rapport-reunion/envois/:id. On n'accepte donc qu'une
+ * notation hexadécimale, et à défaut un gris neutre : une couleur fausse est un détail,
+ * un appel sortant non.
+ */
+export function couleurSure(valeur, defaut = '#94a3b8') {
+  return typeof valeur === 'string' && COULEUR.test(valeur.trim()) ? valeur.trim() : defaut;
+}
+
+function tailleTexte(valeur, chemin, souci) {
+  if (typeof valeur === 'string' && valeur.length > MAX_TEXTE) souci.push(`« ${chemin} » dépasse ${MAX_TEXTE} caractères.`);
+}
+
+/**
+ * Contrôle de ce qui arrive du navigateur. Ce n'était auparavant qu'un test de présence
+ * sur six clés : tout le reste passait sans que ni le type ni la taille ne soient
+ * regardés, si bien qu'un rapport malformé produisait une erreur 500 au rendu plutôt
+ * qu'un refus net, et qu'une chaîne de n'importe quelle longueur finissait dans un
+ * document conservé sur le serveur.
+ *
+ * Le contenu reste échappé au rendu : ceci borne et typage, cela empêche l'injection. Les
+ * deux sont nécessaires.
+ */
 export function verifierPayload(payload) {
-  if (!payload || typeof payload !== 'object') return 'Rapport absent de la requête.';
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return 'Rapport absent de la requête.';
+
   const attendus = ['teamLabel', 'meteo', 'chiffres', 'points', 'semaines', 'grille'];
   for (const cle of attendus) {
     if (payload[cle] === undefined) return `Rapport incomplet : « ${cle} » manque.`;
   }
-  if (!Array.isArray(payload.chiffres) || !Array.isArray(payload.points)) return 'Rapport mal formé.';
+
+  const tableaux = ['chiffres', 'points', 'incidents', 'resolus', 'projets', 'retards', 'semaines', 'absences', 'charge'];
+  for (const cle of tableaux) {
+    const v = payload[cle];
+    if (v === undefined) continue;
+    if (!Array.isArray(v)) return `Rapport mal formé : « ${cle} » devrait être une liste.`;
+    if (v.length > MAX_ELEMENTS) return `Rapport mal formé : « ${cle} » dépasse ${MAX_ELEMENTS} éléments.`;
+  }
+
+  if (typeof payload.meteo !== 'object' || payload.meteo === null) return 'Rapport mal formé : « meteo » devrait être un objet.';
+  if (typeof payload.grille !== 'object' || payload.grille === null) return 'Rapport mal formé : « grille » devrait être un objet.';
+
+  // Les notes : trois sections, chacune une liste de groupes, chacun une liste de lignes.
+  if (payload.notes !== undefined) {
+    if (typeof payload.notes !== 'object' || payload.notes === null || Array.isArray(payload.notes)) {
+      return 'Rapport mal formé : « notes » devrait être un objet à trois sections.';
+    }
+    const souci = [];
+    for (const section of ['incidents', 'projets', 'autres']) {
+      const groupes = payload.notes[section];
+      if (groupes === undefined) continue;
+      if (!Array.isArray(groupes)) return `Rapport mal formé : « notes.${section} » devrait être une liste.`;
+      if (groupes.length > MAX_ELEMENTS) return `Rapport mal formé : « notes.${section} » dépasse ${MAX_ELEMENTS} sujets.`;
+      for (const g of groupes) {
+        if (!g || typeof g !== 'object' || !Array.isArray(g.lignes)) {
+          return `Rapport mal formé : un sujet de « notes.${section} » n'a pas de lignes.`;
+        }
+        if (g.lignes.length > MAX_ELEMENTS) return `Rapport mal formé : trop de notes sur un même sujet.`;
+        tailleTexte(g.titre, `notes.${section}.titre`, souci);
+        for (const n of g.lignes) tailleTexte(n?.texte, `notes.${section}.texte`, souci);
+      }
+    }
+    if (souci.length > 0) return souci[0];
+  }
+
   return null;
+}
+
+/**
+ * Remplace toutes les couleurs du rapport par des couleurs sûres. Fait ici, en un seul
+ * endroit, plutôt que dans chaque fonction de rendu : une teinte oubliée dans un coin du
+ * document est précisément ce qui passe inaperçu.
+ */
+export function assainirPayload(payload) {
+  const p = { ...payload };
+  const liste = (v) => (Array.isArray(v) ? v : []);
+
+  p.incidents = liste(p.incidents).map((i) => ({ ...i, couleur: couleurSure(i.couleur, '#b91c1c') }));
+  p.projets = liste(p.projets).map((pr) => ({ ...pr, couleurEtat: couleurSure(pr.couleurEtat, '#16a34a') }));
+  p.retards = liste(p.retards).map((t) => ({ ...t, couleurNature: couleurSure(t.couleurNature) }));
+  p.charge = liste(p.charge).map((c) => ({ ...c, couleur: couleurSure(c.couleur, '#16a34a') }));
+  p.absences = liste(p.absences).map((a) => ({ ...a, couleur: couleurSure(a.couleur) }));
+  p.semaines = liste(p.semaines).map((s) => ({
+    ...s,
+    sujets: liste(s.sujets).map((x) => ({ ...x, couleurNature: couleurSure(x.couleurNature) })),
+  }));
+  if (p.grille && typeof p.grille === 'object') {
+    p.grille = {
+      ...p.grille,
+      legende: liste(p.grille.legende).map((c) => ({ ...c, couleur: couleurSure(c.couleur) })),
+      lignes: liste(p.grille.lignes).map((l) => ({
+        ...l,
+        cases: liste(l.cases).map((c) => (c && typeof c === 'object' ? { ...c, couleur: c.couleur ? couleurSure(c.couleur) : c.couleur } : c)),
+      })),
+    };
+  }
+  if (p.notes && typeof p.notes === 'object') {
+    const sections = {};
+    for (const section of ['incidents', 'projets', 'autres']) {
+      sections[section] = liste(p.notes[section]).map((g) => ({ ...g, couleur: couleurSure(g.couleur) }));
+    }
+    p.notes = sections;
+  }
+  return p;
 }
 
 /**
@@ -79,17 +190,18 @@ export async function envoyerRapportReunion({ payload, destinataires, objet, joi
   }
 
   const sujet = String(objet || '').trim().slice(0, MAX_OBJET) || `Réunion d'équipe — ${payload.teamLabel}`;
-  const document = renderDocument(payload);
+  const propre = assainirPayload(payload);
+  const document = renderDocument(propre);
 
   let resultats;
   try {
     const info = await sendMail({
       to: aEnvoyer.map((c) => c.email).join(', '),
       subject: sujet,
-      text: renderText(payload),
-      html: renderMail(payload),
+      text: renderText(propre),
+      html: renderMail(propre),
       attachments: joindreDocument
-        ? [{ filename: nomFichier(payload), content: document, contentType: 'text/html; charset=utf-8' }]
+        ? [{ filename: nomFichier(propre), content: document, contentType: 'text/html; charset=utf-8' }]
         : undefined,
     });
     // Le relais peut accepter certaines adresses et en refuser d'autres dans le même
@@ -116,5 +228,5 @@ export async function envoyerRapportReunion({ payload, destinataires, objet, joi
     document,
   });
 
-  return { envoyeLe: envoi.envoyeLe, objet: sujet, resultats, piecesJointes: joindreDocument ? [nomFichier(payload)] : [] };
+  return { envoyeLe: envoi.envoyeLe, objet: sujet, resultats, piecesJointes: joindreDocument ? [nomFichier(propre)] : [] };
 }

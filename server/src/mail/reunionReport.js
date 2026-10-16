@@ -66,6 +66,19 @@ function section(n, titre, apres) {
   </div>`;
 }
 
+function sousTitre(texte) {
+  return `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:${ENCRE3};font-weight:600;margin:16px 0 6px">${e(
+    texte
+  )}</div>`;
+}
+
+/** Le repère « ✎ 2 » d'une ligne de tableau : il y a du texte sur ce sujet, juste en
+ *  dessous. Discret — c'est un renvoi, pas une donnée de plus à lire dans la colonne. */
+function marqueNotes(n) {
+  const v = Number(n) || 0;
+  return v > 0 ? `<span style="color:${ENCRE3};font-weight:400;white-space:nowrap"> ✎ ${v}</span>` : '';
+}
+
 function vide(texte) {
   return `<p style="font-size:12.5px;color:${ENCRE3};margin:4px 0 0">${e(texte)}</p>`;
 }
@@ -97,6 +110,10 @@ function compacter(html) {
 }
 
 function corpsDocument(p, { mot = '', piedPage = '' } = {}) {
+  // Les numéros viennent de l'application (voir numeroterSections), ils ne sont pas
+  // recalculés ici : deux numérotations écrites séparément divergent d'un cran le jour où
+  // une section devient facultative. Le repli ne sert qu'aux anciens envois rejoués.
+  const num = p.sections ?? { points: 1, incidents: 2, projets: 3, autres: 0, retards: 4, sujets: 5, absences: 6, charge: 7, fdr: 8 };
   return `${enTete(p)}
   <div style="padding:20px 28px 28px">
     ${
@@ -108,27 +125,30 @@ function corpsDocument(p, { mot = '', piedPage = '' } = {}) {
     }
     ${meteo(p)}
     ${chiffres(p)}
-    ${section(1, 'Points à aborder')}
+    ${section(num.points, 'Points à aborder')}
     ${points(p)}
-    ${section(2, 'Incidents')}
+    ${section(num.incidents, 'Incidents')}
     ${incidents(p)}
-    ${section(3, 'Projets')}
+    ${blocNotes(p.notes?.incidents)}
+    ${section(num.projets, 'Projets')}
     ${projets(p)}
-    ${section(4, 'Notes de la semaine')}
-    ${notes(p)}
-    ${section(5, 'Tâches en retard')}
+    ${blocNotes(p.notes?.projets)}
+    ${
+      num.autres
+        ? section(num.autres, 'Tâches et demandes commentées') + blocNotes(p.notes?.autres, { toujours: true })
+        : ''
+    }
+    ${section(num.retards, 'Tâches en retard')}
     ${retards(p)}
-    ${section(6, 'Sujets prévus sur les deux semaines', 'sous réserve')}
+    ${section(num.sujets, 'Sujets prévus sur les deux semaines', 'sous réserve')}
     ${sujets(p)}
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:${ENCRE3};font-weight:600;margin:16px 0 6px">
-      Qui travaille sur quoi, demi-journée par demi-journée
-    </div>
+    ${sousTitre('Qui travaille sur quoi, demi-journée par demi-journée')}
     ${grille(p)}
-    ${section(7, 'Absences')}
+    ${section(num.absences, 'Absences')}
     ${absences(p)}
-    ${section(8, 'Charge par personne')}
+    ${section(num.charge, 'Charge par personne')}
     ${charge(p)}
-    ${p.fdr ? section(9, `Feuille de route ${p.fdr.annee}`) + feuilleDeRoute(p.fdr) : ''}
+    ${p.fdr ? section(num.fdr, `Feuille de route ${p.fdr.annee}`) + feuilleDeRoute(p.fdr) : ''}
     <div style="margin-top:24px;border-top:1px solid ${TRAIT};padding-top:10px;font-size:10.5px;color:${ENCRE3}">
       ${piedPage || "Suivi Infra &amp; Réseau — document généré automatiquement, chiffres issus des saisies de l'équipe."}
     </div>
@@ -163,7 +183,7 @@ function enTete(p) {
           Réunion d'équipe${p.dateReunion ? ` · ${e(p.dateReunion)}` : ''}
         </div>
         <div style="font-size:22px;font-weight:600;margin-top:2px">${e(p.teamLabel)}</div>
-        <div style="font-size:13px;color:#c7d2fe;margin-top:4px">Semaine écoulée : ${e(p.semaineLabel)}</div>
+        <div style="font-size:13px;color:#c7d2fe;margin-top:4px">${e(p.semainePrefixe || 'Semaine écoulée')} : ${e(p.semaineLabel)}</div>
       </td>
       <td style="vertical-align:top;text-align:right;font-size:11px;color:#a5b4fc;line-height:1.6;white-space:nowrap">
         Document généré le<br><span style="color:#fff;font-size:13px">${e(p.genereLe)}</span>
@@ -308,7 +328,7 @@ function incidents(p) {
         ${p.incidents
           .map(
             (i) => `<tr>
-              <td style="${TD_FORT}">${e(i.titre)}</td>
+              <td style="${TD_FORT}">${e(i.titre)}${marqueNotes(p.marques?.taches?.[i.id])}</td>
               <td style="${TD}">${pastille(i.couleur, i.priorite)}</td>
               <td style="${TD}">${e(i.qui)}</td>
               <td style="${TD}">${e(i.ouvertLe)}</td>
@@ -341,7 +361,7 @@ function projets(p) {
       .map(
         (pr) => `<tr>
           <td style="${TD_FORT}">
-            ${carre(pr.couleurEtat, 7)} ${e(pr.nom)}
+            ${carre(pr.couleurEtat, 7)} ${e(pr.nom)}${marqueNotes(p.marques?.projets?.[pr.nom])}
             <div style="font-size:11px;color:${ENCRE3};font-weight:400;margin-left:13px">${e(pr.pilotes)}</div>
           </td>
           <td style="${TD}">
@@ -369,19 +389,22 @@ function projets(p) {
 }
 
 /**
- * Les notes de la semaine — mêmes filets de couleur, même ordre et mêmes espacements que
- * dans ReunionDocument.tsx. Un `<table>` plutôt qu'un `<div>` à `border-left` : Outlook
- * perd la bordure gauche d'un bloc, pas celle d'une cellule.
+ * Les notes d'une section, au pied de son tableau — mêmes filets, même ordre et mêmes
+ * espacements que ReunionDocument.tsx. Un `<table>` plutôt qu'un `<div>` à `border-left` :
+ * Outlook perd la bordure gauche d'un bloc, pas celle d'une cellule.
+ *
+ * Section vide : rien du tout, pas même un titre. `toujours` vaut pour « Tâches et
+ * demandes commentées », dont la section n'est ouverte que si elle a du contenu.
  */
-function notes(p) {
-  const groupes = p.notes ?? [];
-  if (groupes.length === 0) {
-    return vide("Aucune note écrite cette semaine — les tableaux ci-dessus disent tout ce qu'on sait.");
-  }
+function blocNotes(groupes, { toujours = false } = {}) {
+  const liste = Array.isArray(groupes) ? groupes : [];
+  if (liste.length === 0) return '';
 
-  return groupes
-    .map(
-      (g) => `<table style="width:100%;border-collapse:separate;border-spacing:0;margin:0 0 8px">
+  return `<div style="margin-top:12px">
+    ${toujours ? '' : sousTitre('Notes écrites cette semaine')}
+    ${liste
+      .map(
+        (g) => `<table style="width:100%;border-collapse:separate;border-spacing:0;margin:0 0 8px">
       <tr><td style="border-left:4px solid ${e(g.couleur)};background:#f8fafc;border-radius:8px;padding:10px 14px 11px">
         <div style="margin-bottom:8px">
           ${pastille(g.couleur, g.nature)}
@@ -409,8 +432,9 @@ function notes(p) {
           .join('')}
       </td></tr>
     </table>`
-    )
-    .join('');
+      )
+      .join('')}
+  </div>`;
 }
 
 function retards(p) {
@@ -423,7 +447,7 @@ function retards(p) {
     ${p.retards
       .map(
         (t) => `<tr>
-          <td style="${TD_FORT}">${e(t.titre)}${
+          <td style="${TD_FORT}">${e(t.titre)}${marqueNotes(p.marques?.taches?.[t.id])}${
             t.demandeur ? `<div style="font-size:11px;color:${ENCRE3};font-weight:400">demandé par ${e(t.demandeur)}</div>` : ''
           }</td>
           <td style="${TD}">${pastille(t.couleurNature, t.nature)}</td>
@@ -622,7 +646,7 @@ export function renderText(p) {
   const l = [];
   l.push(`RÉUNION D'ÉQUIPE — ${p.teamLabel}`);
   if (p.dateReunion) l.push(p.dateReunion);
-  l.push(`Semaine écoulée : ${p.semaineLabel}`);
+  l.push(`${p.semainePrefixe || 'Semaine écoulée'} : ${p.semaineLabel}`);
   l.push('');
   if (p.mot) {
     l.push(tronque(p.mot, 2000));
@@ -654,10 +678,19 @@ export function renderText(p) {
     for (const pr of p.projets)
       l.push(`  - ${pr.nom} — ${pr.avance} % déclaré (${pr.avanceTerminees} % terminé), ${pr.heures}${pr.alerte ? ` (! ${pr.alerte})` : ''}`);
   }
-  if ((p.notes ?? []).length) {
+  // En texte brut il n'y a pas de tableau sous lequel glisser les notes : on les regroupe
+  // par section, dans le même ordre que le document, avec le titre de la section pour
+  // qu'on sache de quoi elles parlent.
+  for (const [cle, titre] of [
+    ['incidents', 'NOTES — INCIDENTS'],
+    ['projets', 'NOTES — PROJETS'],
+    ['autres', 'NOTES — TÂCHES ET DEMANDES'],
+  ]) {
+    const groupes = p.notes?.[cle] ?? [];
+    if (groupes.length === 0) continue;
     l.push('');
-    l.push('NOTES DE LA SEMAINE');
-    for (const g of p.notes) {
+    l.push(titre);
+    for (const g of groupes) {
       l.push(`  ${g.titre}${g.projet ? ` — ${g.projet}` : ''} [${g.nature}]`);
       for (const n of g.lignes) {
         l.push(`    ${n.quand} · ${n.auteur}${n.retouchee ? ' (retouchée)' : ''}`);

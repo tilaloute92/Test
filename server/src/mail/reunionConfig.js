@@ -1,4 +1,4 @@
-import { readJson, writeJson } from '../dataStore.js';
+import { readJson, readText, removeText, writeJson, writeText } from '../dataStore.js';
 
 const FILE = 'config.json';
 const CLE = 'rapportReunion';
@@ -13,8 +13,19 @@ const CLE = 'rapportReunion';
  * impossible de répondre en novembre à « qu'est-ce qu'on vous avait annoncé en octobre ? ».
  */
 
-/** Au-delà, le fichier de configuration grossit sans qu'on relise jamais les anciens. */
+/** Au-delà, on ne relit jamais les plus anciens. */
 const MAX_ENVOIS = 30;
+
+/**
+ * Les documents conservés vivent dans des fichiers à part, UN PAR ENVOI, et non dans
+ * config.json.
+ *
+ * Ils pèsent ~35 Ko pièce : trente d'entre eux faisaient un config.json d'un mégaoctet.
+ * Or ce fichier est relu et reparsé à chaque contrôle de droit administrateur
+ * (voir auth/admin.js) et réécrit en entier au moindre changement de réglage. La trace
+ * reste exactement la même pour qui la consulte ; c'est son rangement qui change.
+ */
+const fichierDocument = (id) => `envoi-${id}.html`;
 
 function lire() {
   const stocke = readJson(FILE, {})[CLE] ?? {};
@@ -51,25 +62,47 @@ export function setDestinatairesExternes(adresses) {
  */
 export function enregistrerEnvoi({ par, objet, destinataires, resultats, document }) {
   const etat = lire();
+  const id = `${Date.now()}`;
   const envoi = {
-    id: `${Date.now()}`,
+    id,
     envoyeLe: new Date().toISOString(),
     par: par || '',
     objet,
     destinataires,
     resultats,
     echecs: resultats.filter((r) => r.statut === 'echec').length,
-    document,
+    taille: document ? document.length : 0,
   };
-  ecrire({ ...etat, envois: [envoi, ...etat.envois].slice(0, MAX_ENVOIS) });
+  if (document) writeText(fichierDocument(id), document);
+
+  const envois = [envoi, ...etat.envois];
+  // Les documents des envois sortis de la liste n'ont plus personne pour les ouvrir :
+  // les laisser sur le disque ferait grossir le dossier sans fin.
+  for (const vieux of envois.slice(MAX_ENVOIS)) {
+    try {
+      removeText(fichierDocument(vieux.id));
+    } catch {
+      // Un fichier déjà absent n'est pas une erreur : la trace, elle, est bien retirée.
+    }
+  }
+  ecrire({ ...etat, envois: envois.slice(0, MAX_ENVOIS) });
   return envoi;
 }
 
-/** Liste sans les documents : les renvoyer tous ferait une réponse de plusieurs mégaoctets. */
+/** Liste des traces, sans les documents — ils sont dans des fichiers à part. */
 export function listerEnvois() {
-  return lire().envois.map(({ document, ...reste }) => ({ ...reste, taille: document ? document.length : 0 }));
+  return lire().envois.map(({ document, ...reste }) => ({
+    ...reste,
+    // `document` subsiste sur les traces écrites par les versions précédentes : on en
+    // garde la taille, et `lireEnvoi` sait encore le servir.
+    taille: reste.taille ?? (document ? document.length : 0),
+  }));
 }
 
 export function lireEnvoi(id) {
-  return lire().envois.find((e) => e.id === id) ?? null;
+  const envoi = lire().envois.find((e) => e.id === id);
+  if (!envoi) return null;
+  // Trace d'avant le rangement en fichiers : le document y est encore en ligne.
+  const document = envoi.document ?? readText(fichierDocument(envoi.id));
+  return { ...envoi, document };
 }

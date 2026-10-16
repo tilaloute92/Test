@@ -1,9 +1,13 @@
 import { formatDateLong, formatWeekRange, isWeekend, toISODate } from '../lib/date';
 import {
+  compteurNotes,
+  numeroterSections,
   COULEUR_ABSENCE,
   COULEUR_NATURE,
   estNature,
   ETIQUETTES_ABSENCE,
+  libelleSemaine,
+  notesDeSection,
   type CodeCreneau,
   type GroupeNotes,
   type MeetingReport,
@@ -65,6 +69,19 @@ export function ReunionDocument({ report, members, teamLabel, auteur, pointsReti
   const points = report.points.filter((p) => !pointsRetires.includes(p.id));
   const h = report.hebdo;
   const resolus = h.incidentsResolved;
+  // Les notes ne font plus une section à elles : chacune suit le tableau du sujet qu'elle
+  // commente (voir notesDeSection). Reste « Tâches et demandes », qui recueille celles
+  // qu'aucun tableau ne liste — sans quoi une note sur un MCO disparaîtrait du rapport.
+  const notes = {
+    incidents: notesDeSection(report.notes, 'incidents'),
+    projets: notesDeSection(report.notes, 'projets'),
+    autres: notesDeSection(report.notes, 'autres'),
+  };
+  const compteurs = compteurNotes(report.notes);
+  // Les numéros se calculent une fois, en haut : « Tâches et demandes » n'existe que
+  // s'il y a des notes orphelines, et renuméroter à la main six sections en dessous est
+  // exactement le genre de chose qui finit par sauter un numéro.
+  const num = numeroterSections(notes.autres.length > 0);
 
   return (
     <div
@@ -79,44 +96,47 @@ export function ReunionDocument({ report, members, teamLabel, auteur, pointsReti
 
         {/* L'ordre du jour ouvre le document : c'est par là que commence la réunion, le
             reste ne sert qu'à l'étayer. */}
-        <Section n={1} titre="Points à aborder" />
+        <Section n={num.points} titre="Points à aborder" />
         <ListePoints points={points} />
 
-        <Section n={2} titre="Incidents" />
-        <TableIncidents taches={h.openCriticalIncidents} members={members} />
+        <Section n={num.incidents} titre="Incidents" />
+        <TableIncidents taches={h.openCriticalIncidents} members={members} notes={compteurs.parTache} />
         {resolus.length > 0 && (
           <div style={{ marginTop: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 12px', fontSize: 12.5, color: '#166534' }}>
             <strong style={{ fontWeight: 600 }}>Résolus cette semaine ({resolus.length})</strong>
             <span style={{ color: '#15803d' }}> — {resolus.map((t) => t.title).join(' · ')}</span>
           </div>
         )}
+        <BlocNotes groupes={notes.incidents} />
 
-        <Section n={3} titre="Projets" />
-        <TableProjets projets={report.projets} />
+        <Section n={num.projets} titre="Projets" />
+        <TableProjets projets={report.projets} notes={compteurs.parProjet} />
+        <BlocNotes groupes={notes.projets} />
 
-        {/* Les seules phrases du document : ce que les gens ont écrit de leur main.
-            Après les projets, parce qu'elles les racontent ; avant les retards, parce
-            qu'elles expliquent souvent pourquoi. */}
-        <Section n={4} titre="Notes de la semaine" />
-        <ListeNotes groupes={report.notes} />
+        {notes.autres.length > 0 && (
+          <>
+            <Section n={num.autres} titre="Tâches et demandes commentées" />
+            <BlocNotes groupes={notes.autres} toujours />
+          </>
+        )}
 
-        <Section n={5} titre="Tâches en retard" />
-        <TableRetard taches={h.overdueTasks} members={members} referenceIso={h.referenceRetard} />
+        <Section n={num.retards} titre="Tâches en retard" />
+        <TableRetard taches={h.overdueTasks} members={members} referenceIso={h.referenceRetard} notes={compteurs.parTache} />
 
-        <Section n={6} titre="Sujets prévus sur les deux semaines" apres="sous réserve" />
+        <Section n={num.sujets} titre="Sujets prévus sur les deux semaines" apres="sous réserve" />
         <ListeSujets report={report} />
         <SousTitre>Qui travaille sur quoi, demi-journée par demi-journée</SousTitre>
         <Grille report={report} />
 
-        <Section n={7} titre="Absences" />
+        <Section n={num.absences} titre="Absences" />
         <ListeAbsences report={report} members={members} />
 
-        <Section n={8} titre="Charge par personne" />
+        <Section n={num.charge} titre="Charge par personne" />
         <TableCharge report={report} />
 
         {h.roadmap.total > 0 && (
           <>
-            <Section n={9} titre={`Feuille de route ${h.roadmap.year}`} />
+            <Section n={num.fdr} titre={`Feuille de route ${h.roadmap.year}`} />
             <FeuilleDeRoute report={report} />
           </>
         )}
@@ -140,7 +160,7 @@ function EnTete({ report, teamLabel, auteur }: { report: MeetingReport; teamLabe
           </div>
           <div style={{ fontSize: 22, fontWeight: 600, marginTop: 2 }}>{teamLabel}</div>
           <div style={{ fontSize: 13, color: '#c7d2fe', marginTop: 4 }}>
-            Semaine écoulée : {formatWeekRange(report.semaineEcoulee)}
+            {libelleSemaine(report.semaineEcoulee, report.genereLe).prefixe} : {formatWeekRange(report.semaineEcoulee)}
           </div>
         </div>
         <div style={{ textAlign: 'right', fontSize: 11, color: '#a5b4fc', lineHeight: 1.6 }}>
@@ -303,6 +323,8 @@ function arrondi(n: number): number {
 
 // ------------------------------------------------------------------ Sections
 
+
+
 function Section({ n, titre, apres }: { n: number; titre: string; apres?: string }) {
   return (
     <div
@@ -378,7 +400,7 @@ function noms(t: ProjectTask, members: TeamMember[]): string {
   return n.length > 0 ? n.join(', ') : 'non assigné';
 }
 
-function TableIncidents({ taches, members }: { taches: ProjectTask[]; members: TeamMember[] }) {
+function TableIncidents({ taches, members, notes }: { taches: ProjectTask[]; members: TeamMember[]; notes: Map<string, number> }) {
   if (taches.length === 0) return <Vide texte="Aucun incident critique ou haut encore ouvert." />;
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -394,7 +416,10 @@ function TableIncidents({ taches, members }: { taches: ProjectTask[]; members: T
       <tbody>
         {taches.map((t) => (
           <tr key={t.id} style={{ breakInside: 'avoid' }}>
-            <td style={{ ...td, color: ENCRE, fontWeight: 500 }}>{t.title}</td>
+            <td style={{ ...td, color: ENCRE, fontWeight: 500 }}>
+              {t.title}
+              <MarqueNotes n={notes.get(t.id) ?? 0} />
+            </td>
             <td style={td}>
               <Pastille couleur={t.priority === 'critique' ? '#b91c1c' : '#ea580c'} texte={t.priority === 'critique' ? 'Critique' : 'Haute'} />
             </td>
@@ -420,7 +445,7 @@ function jolieDate(iso?: string): string {
 
 const COULEUR_ETAT: Record<ProjetRollup['etat'], string> = { vert: '#16a34a', orange: '#d97706', rouge: '#dc2626' };
 
-function TableProjets({ projets }: { projets: ProjetRollup[] }) {
+function TableProjets({ projets, notes }: { projets: ProjetRollup[]; notes: Map<string, number> }) {
   if (projets.length === 0) return <Vide texte="Aucune tâche rattachée à un projet." />;
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -442,6 +467,7 @@ function TableProjets({ projets }: { projets: ProjetRollup[] }) {
                 style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 7, background: COULEUR_ETAT[p.etat], marginRight: 6 }}
               />
               {p.nom}
+              <MarqueNotes n={notes.get(p.nom) ?? 0} />
               <div style={{ fontSize: 11, color: ENCRE3, fontWeight: 400, marginLeft: 13 }}>
                 {p.pilotes.join(', ') || 'personne d’assigné'}
               </div>
@@ -484,26 +510,45 @@ function TableProjets({ projets }: { projets: ProjetRollup[] }) {
 
 // --------------------------------------------------------------------- Notes
 
-/** Gris : une note dont la tâche a été supprimée n'a plus de nature, et lui en prêter
- *  une serait inventer. Le texte, lui, reste — c'est tout l'intérêt de l'avoir écrit. */
-const COULEUR_SANS_NATURE = '#94a3b8';
+/** Le repère dans un tableau : « ✎ 2 » dit qu'il y a du texte sur ce sujet, juste en
+ *  dessous. Discret — c'est un renvoi, pas une donnée de plus à lire dans la colonne. */
+function MarqueNotes({ n }: { n: number }) {
+  if (n <= 0) return null;
+  return (
+    <span style={{ color: ENCRE3, fontWeight: 400, marginLeft: 6, whiteSpace: 'nowrap' }} title={`${n} note(s) écrite(s) cette semaine`}>
+      ✎ {n}
+    </span>
+  );
+}
 
-function ListeNotes({ groupes }: { groupes: GroupeNotes[] }) {
-  if (groupes.length === 0) {
-    return <Vide texte="Aucune note écrite cette semaine — les tableaux ci-dessus disent tout ce qu'on sait." />;
-  }
+/**
+ * Les notes d'une section, au pied de son tableau.
+ *
+ * Elles ne font plus une section à part : une note commente un incident, un projet ou une
+ * demande, et c'est là qu'on la cherche. Le tableau reste lisible d'un bloc — c'est ce qui
+ * l'a emporté sur l'idée de glisser chaque note sous sa ligne — et le repère « ✎ N » de la
+ * ligne dit où aller.
+ *
+ * Section vide : rien du tout, pas même un titre. `toujours` force l'affichage pour
+ * « Tâches et demandes commentées », qui N'EXISTE que quand elle a du contenu et dont la
+ * section a donc déjà été ouverte.
+ */
+function BlocNotes({ groupes, toujours = false }: { groupes: GroupeNotes[]; toujours?: boolean }) {
+  if (groupes.length === 0) return null;
 
   return (
-    <div>
+    <div style={{ marginTop: 12 }}>
+      {!toujours && <SousTitre>Notes écrites cette semaine</SousTitre>}
       {groupes.map((g) => {
-        const couleur = g.type ? COULEUR_NATURE[g.type] : COULEUR_SANS_NATURE;
+        // Gris quand la tâche a été supprimée : elle n'a plus de nature, et lui en prêter
+        // une serait inventer. Le texte, lui, reste — c'est tout l'intérêt de l'avoir écrit.
+        const couleur = g.type ? COULEUR_NATURE[g.type] : ENCRE3;
         return (
           <div
             key={g.taskId}
             style={{
-              // Le filet de couleur rappelle la nature du sujet, comme dans la grille et
-              // dans la liste des tâches ; la pastille l'écrit, la couleur ne porte
-              // jamais seule.
+              // Le filet rappelle la nature du sujet, comme dans la grille et la liste des
+              // tâches ; la pastille l'écrit, la couleur ne porte jamais seule.
               borderLeft: `4px solid ${couleur}`,
               background: '#f8fafc',
               borderRadius: 8,
@@ -512,9 +557,8 @@ function ListeNotes({ groupes }: { groupes: GroupeNotes[] }) {
               breakInside: 'avoid',
             }}
           >
-            {/* Pas de flex ni de `margin-left:auto` ici : le mail reprend exactement cette
-                mise en page et Outlook ne sait faire ni l'un ni l'autre. Tout est posé
-                en ligne, dans l'ordre de lecture. */}
+            {/* Pas de flex ni de `margin-left:auto` : le mail reprend exactement cette mise
+                en page et Outlook ne sait faire ni l'un ni l'autre. */}
             <div style={{ marginBottom: 8 }}>
               <Pastille couleur={couleur} texte={g.type ?? 'Sujet supprimé'} />
               <span style={{ fontSize: 13.5, fontWeight: 600, color: ENCRE, marginLeft: 8 }}>{g.titre}</span>
@@ -553,7 +597,7 @@ function ListeNotes({ groupes }: { groupes: GroupeNotes[] }) {
 
 // -------------------------------------------------------------------- Retards
 
-function TableRetard({ taches, members, referenceIso }: { taches: ProjectTask[]; members: TeamMember[]; referenceIso: string }) {
+function TableRetard({ taches, members, referenceIso, notes }: { taches: ProjectTask[]; members: TeamMember[]; referenceIso: string; notes: Map<string, number> }) {
   if (taches.length === 0) return <Vide texte="Aucune — tout est dans les temps." />;
   const iso = referenceIso;
   return (
@@ -574,6 +618,7 @@ function TableRetard({ taches, members, referenceIso }: { taches: ProjectTask[];
             <tr key={t.id} style={{ breakInside: 'avoid' }}>
               <td style={{ ...td, color: ENCRE, fontWeight: 500 }}>
                 {t.title}
+                <MarqueNotes n={notes.get(t.id) ?? 0} />
                 {/* Une demande en retard, ce n'est pas seulement du travail en retard :
                     c'est quelqu'un qui attend. Le nom du demandeur change la discussion. */}
                 {t.demandeur && <div style={{ fontSize: 11, color: ENCRE3, fontWeight: 400 }}>demandé par {t.demandeur}</div>}

@@ -128,7 +128,7 @@ export interface StoreState extends SharedSnapshot {
    *  jamais de synchronisation en retour (voir le hook de sondage périodique dans App.tsx). */
   applyServerSnapshot: (snapshot: SharedSnapshot) => void;
 
-  /** Purge locale des tâches terminées et absences passées de plus de RETENTION_DAYS jours
+  /** Purge locale des tâches terminées et des absences passées, chacune selon sa durée
    *  (voir src/lib/retention.ts). N'a d'effet qu'en mode AUTONOME : en client/serveur c'est
    *  le serveur qui purge, et ce navigateur reçoit le résultat au sondage suivant. */
   purgeExpiredRecords: (now?: Date) => { tasks: number; absences: number; timeEntries: number };

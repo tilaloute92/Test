@@ -48,6 +48,47 @@ export function readJson(name, defaultValue) {
   }
 }
 
+/**
+ * Lecture/écriture d'un fichier texte du dossier de données, pour ce qui n'est pas du
+ * JSON de configuration : aujourd'hui les documents de rapport conservés, qui pèsent
+ * ~35 Ko pièce. Les loger dans config.json faisait un fichier d'un mégaoctet, relu et
+ * reparsé à CHAQUE contrôle de droit administrateur, et réécrit en entier à chaque
+ * changement de réglage.
+ *
+ * `nom` est composé par l'appelant à partir d'un identifiant qu'il a lui-même produit,
+ * jamais d'une entrée réseau ; la vérification ci-dessous le garantit plutôt que de
+ * l'espérer.
+ */
+function nomSimple(name) {
+  if (!/^[A-Za-z0-9._-]+$/.test(name) || name.includes('..')) {
+    throw new Error(`Nom de fichier refusé : ${name}`);
+  }
+  return name;
+}
+
+export function readText(name, defaultValue = null) {
+  const p = filePath(nomSimple(name));
+  return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : defaultValue;
+}
+
+export function writeText(name, contenu) {
+  const target = filePath(nomSimple(name));
+  const tmp = `${target}.tmp`;
+  const handle = fs.openSync(tmp, 'w');
+  try {
+    fs.writeFileSync(handle, contenu);
+    fs.fsyncSync(handle);
+  } finally {
+    fs.closeSync(handle);
+  }
+  fs.renameSync(tmp, target);
+}
+
+export function removeText(name) {
+  const p = filePath(nomSimple(name));
+  if (fs.existsSync(p)) fs.unlinkSync(p);
+}
+
 export function writeJson(name, value) {
   const target = filePath(name);
   // Fichier temporaire dans le MÊME dossier : le renommage n'est atomique qu'à l'intérieur

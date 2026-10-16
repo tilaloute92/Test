@@ -7,7 +7,7 @@ import { sendDailyProgrammes } from '../mail/send.js';
 import { getMailState } from '../mail/scheduler.js';
 import { buildProgramme, renderSubject, renderText, toISODate } from '../mail/dailyProgramme.js';
 import { getSnapshot } from '../businessData.js';
-import { envoyerRapportReunion, resoudreDestinataires, verifierPayload } from '../mail/sendReunion.js';
+import { assainirPayload, envoyerRapportReunion, resoudreDestinataires, verifierPayload } from '../mail/sendReunion.js';
 import { getReunionConfig, lireEnvoi, listerEnvois, setDestinatairesExternes } from '../mail/reunionConfig.js';
 import { renderDocument } from '../mail/reunionReport.js';
 
@@ -146,11 +146,23 @@ mailRouter.put('/rapport-reunion/config', requireAdmin, (req, res) => {
   res.json({ destinatairesExternes: setDestinatairesExternes(adresses) });
 });
 
-/** Le document complet en HTML, sans rien envoyer : sert au bouton « Télécharger ». */
+/**
+ * Le document complet en HTML, sans rien envoyer : sert au bouton « Télécharger ».
+ *
+ * `nosniff` et une CSP verrouillée : ce document est construit à partir de ce qu'envoie
+ * un navigateur, et il est servi depuis l'origine de l'application. Tout y est échappé au
+ * rendu et les couleurs sont normalisées en amont, mais ces deux en-têtes font que même
+ * une faille d'échappement ne donnerait rien d'exécutable — ni script, ni appel sortant.
+ */
+const EN_TETES_DOCUMENT = {
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'",
+};
+
 mailRouter.post('/rapport-reunion/document', (req, res) => {
   const souci = verifierPayload(req.body?.payload);
   if (souci) return res.status(400).json({ error: souci });
-  res.type('html').send(renderDocument(req.body.payload));
+  res.set(EN_TETES_DOCUMENT).type('html').send(renderDocument(assainirPayload(req.body.payload)));
 });
 
 /** Qui recevrait quoi, sans envoyer : la fenêtre d'envoi s'en sert pour annoncer les
@@ -185,5 +197,5 @@ mailRouter.get('/rapport-reunion/envois', (_req, res) => {
 mailRouter.get('/rapport-reunion/envois/:id', (req, res) => {
   const envoi = lireEnvoi(req.params.id);
   if (!envoi) return res.status(404).json({ error: 'Envoi inconnu.' });
-  res.type('html').send(envoi.document || '<p>Document non conservé.</p>');
+  res.set(EN_TETES_DOCUMENT).type('html').send(envoi.document || '<p>Document non conservé.</p>');
 });

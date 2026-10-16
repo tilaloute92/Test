@@ -29,7 +29,7 @@ import { fetchStatus, type ServerStatus } from '../lib/serverSync';
 import { getSyncUser, isSyncActive, onSyncActiveChange, type SyncUser } from '../lib/syncState';
 import { useAppMode, useLinkState } from '../hooks/useAppStatus';
 import { clearLocalArchive, countArchived, readLocalArchive } from '../lib/localArchive';
-import { findExpired, RETENTION_DAYS } from '../lib/retention';
+import { findExpired, RETENTION_ABSENCES_JOURS, RETENTION_ACTIVITE_JOURS } from '../lib/retention';
 import { SEUIL_PRESENCE_DEFAUT } from '../lib/presence';
 import { VOIX_MINIMUM } from '../lib/meteoVote';
 import {
@@ -1500,12 +1500,16 @@ function RetentionCard({ confirm }: { confirm: ConfirmFn }) {
   return (
     <Card className="space-y-3 p-4">
       <div>
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Purge automatique ({RETENTION_DAYS} jours)</h2>
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Purge automatique</h2>
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          Sont supprimés automatiquement les <strong>tâches terminées</strong> depuis plus de {RETENTION_DAYS} jours et les{' '}
-          <strong>absences</strong> dont la date est passée de plus de {RETENTION_DAYS} jours. Une tâche dont le{' '}
-          <strong>journal contient au moins une note</strong> est conservée : quelqu'un a pris la peine de l'expliquer, et
-          c'est six mois plus tard qu'on y revient.
+          Deux durées, parce que ces données n'ont pas la même utilité dans le temps. Les{' '}
+          <strong>tâches terminées</strong> et leurs saisies de temps sont gardées{' '}
+          <strong>{RETENTION_ACTIVITE_JOURS} jours</strong> — treize mois, soit la fenêtre de 12 mois de l'historique de
+          charge plus une marge : c'est la mémoire de l'équipe, elle doit couvrir ce que l'application prétend montrer. Les{' '}
+          <strong>absences</strong> sont supprimées <strong>{RETENTION_ABSENCES_JOURS} jours</strong> après leur date : ce
+          sont des données personnelles, sans usage une fois la date passée. Une tâche dont le{' '}
+          <strong>journal contient au moins une note</strong> n'est jamais purgée : quelqu'un a pris la peine de
+          l'expliquer, et c'est des mois plus tard qu'on y revient.
         </p>
       </div>
 

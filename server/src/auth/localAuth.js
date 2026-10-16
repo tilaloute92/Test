@@ -42,12 +42,21 @@ export function listLocalUsers() {
   return loadUsers().map(({ username, name }) => ({ username, name }));
 }
 
+/**
+ * Empreinte factice, comparée quand le compte n'existe pas.
+ *
+ * Sans elle, un identifiant inconnu répondait tout de suite et un identifiant connu après
+ * le calcul bcrypt — un écart mesurable, qui permet d'éprouver l'existence d'un compte
+ * sans jamais en trouver le mot de passe. On paie donc le même prix dans les deux cas.
+ * Le haché est celui d'une valeur qui n'est le mot de passe de personne.
+ */
+const HACHE_FACTICE = bcrypt.hashSync('rien-ne-correspond-a-ce-hache', 10);
+
 export async function verifyLocalLogin(username, password) {
   const users = loadUsers();
   const user = users.find((u) => u.username.toLowerCase() === String(username).toLowerCase());
-  if (!user) return null;
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  return ok ? { username: user.username, name: user.name } : null;
+  const ok = await bcrypt.compare(String(password ?? ''), user ? user.passwordHash : HACHE_FACTICE);
+  return user && ok ? { username: user.username, name: user.name } : null;
 }
 
 /**

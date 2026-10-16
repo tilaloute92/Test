@@ -74,6 +74,44 @@ export const ETIQUETTES_ABSENCE: Record<AbsenceType, string> = {
   autre: 'Absence',
 };
 
+/**
+ * Les numéros des sections du document de réunion. Une seule section est facultative — « Tâches et
+ * demandes commentées », qui n'apparaît que s'il reste des notes qu'aucun tableau ne
+ * porte — et c'est elle qui décale tout le reste.
+ *
+ * Exporté : le rendu serveur du mail doit afficher LES MÊMES numéros, et deux
+ * numérotations écrites séparément finissent toujours par diverger d'un cran.
+ */
+export function numeroterSections(avecAutres: boolean) {
+  let n = 0;
+  const suivant = () => ++n;
+  return {
+    points: suivant(),
+    incidents: suivant(),
+    projets: suivant(),
+    autres: avecAutres ? suivant() : 0,
+    retards: suivant(),
+    sujets: suivant(),
+    absences: suivant(),
+    charge: suivant(),
+    fdr: suivant(),
+  };
+}
+
+/**
+ * Comment nommer la semaine du rapport.
+ *
+ * Elle était toujours annoncée « semaine écoulée », y compris dans le cas normal : la
+ * réunion a lieu le VENDREDI de la semaine rapportée, qui n'est donc pas écoulée — il
+ * reste la fin de l'après-midi, et souvent le travail dont on parle en réunion. Écrit en
+ * tête du document et du mail, c'était la première phrase lue, et elle était fausse.
+ */
+export function libelleSemaine(semaine: Date[], maintenant: Date): { prefixe: string; plage: string } {
+  const dernier = semaine[semaine.length - 1];
+  const finie = toISODate(dernier) < toISODate(maintenant);
+  return { prefixe: finie ? 'Semaine écoulée' : 'Semaine en cours', plage: formatWeekRange(semaine) };
+}
+
 // ------------------------------------------------------------------- Notes
 
 /**
@@ -98,6 +136,19 @@ export interface NoteSemaine {
   retouchee: boolean;
 }
 
+/**
+ * Où la note se range dans le document. Une note appartient à UNE section et une seule :
+ * la voir deux fois ferait croire à deux notes.
+ *
+ * - `incidents` : la nature prime, parce que c'est ainsi qu'on lit la semaine — un
+ *   incident reste un incident même s'il est rattaché à un projet ;
+ * - `projets`   : tout ce qui porte un projet ;
+ * - `autres`    : MCO, demandes, tâches sans projet, et les notes dont la tâche a été
+ *   supprimée. Elles ont besoin d'un toit : sans lui, elles disparaîtraient du rapport
+ *   au motif qu'aucun tableau ne les liste.
+ */
+export type SectionNotes = 'incidents' | 'projets' | 'autres';
+
 export interface GroupeNotes {
   taskId: string;
   titre: string;
@@ -105,7 +156,34 @@ export interface GroupeNotes {
    *  la note, elle, reste — supprimer une tâche n'efface pas ce qui a été écrit dessus. */
   type?: ProjectTask['type'];
   projet?: string;
+  section: SectionNotes;
   notes: NoteSemaine[];
+}
+
+function sectionDe(type: ProjectTask['type'] | undefined, projet: string | undefined): SectionNotes {
+  if (type === 'Incident') return 'incidents';
+  if (projet) return 'projets';
+  return 'autres';
+}
+
+/** Les groupes d'une section, dans l'ordre où ils ont été commentés. */
+export function notesDeSection(groupes: GroupeNotes[], section: SectionNotes): GroupeNotes[] {
+  return groupes.filter((g) => g.section === section);
+}
+
+/**
+ * Combien de notes porte chaque sujet cette semaine, par identifiant de tâche puis par
+ * nom de projet. Les tableaux s'en servent pour le repère « ✎ N » : savoir qu'il y a du
+ * texte plus bas sans avoir à le chercher.
+ */
+export function compteurNotes(groupes: GroupeNotes[]): { parTache: Map<string, number>; parProjet: Map<string, number> } {
+  const parTache = new Map<string, number>();
+  const parProjet = new Map<string, number>();
+  for (const g of groupes) {
+    parTache.set(g.taskId, (parTache.get(g.taskId) ?? 0) + g.notes.length);
+    if (g.projet) parProjet.set(g.projet, (parProjet.get(g.projet) ?? 0) + g.notes.length);
+  }
+  return { parTache, parProjet };
 }
 
 export function notesDeLaSemaine(opts: {
@@ -126,7 +204,14 @@ export function notesDeLaSemaine(opts: {
     let g = groupes.get(e.taskId);
     if (!g) {
       const t = tasks.find((x) => x.id === e.taskId);
-      g = { taskId: e.taskId, titre: t?.title ?? 'Tâche supprimée', type: t?.type, projet: t?.project, notes: [] };
+      g = {
+        taskId: e.taskId,
+        titre: t?.title ?? 'Tâche supprimée',
+        type: t?.type,
+        projet: t?.project,
+        section: sectionDe(t?.type, t?.project),
+        notes: [],
+      };
       groupes.set(e.taskId, g);
     }
     g.notes.push({ id: e.id, auteur: e.auteur, createdAt: e.createdAt, texte, retouchee: Boolean(e.editedAt) });
