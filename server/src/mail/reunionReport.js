@@ -498,8 +498,10 @@ function charge(p) {
         (c) => `<tr>
           <td style="${TD_FORT}">${e(c.nom)}</td>
           <td style="${TD}">
-            ${barre(c.pourcent, c.couleur, 150)}
-            <div style="font-size:11px;color:${ENCRE3};margin-top:3px">${e(c.pourcent)} % — ${e(c.niveau)}</div>
+            ${barre(c.absent ? 100 : c.pourcent, c.couleur, 150)}
+            <div style="font-size:11px;color:${ENCRE3};margin-top:3px">${
+              c.absent ? 'Absent toute la semaine' : `${e(c.pourcent)} % — ${e(c.niveau)}`
+            }</div>
           </td>
           <td style="${TD}">${e(c.saisies)}</td>
           <td style="${TD}">${e(c.terminees)}</td>

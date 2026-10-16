@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { addDays, formatDateLong, isToday, toISODate } from '../lib/date';
 import { absencesToday, getTaskById, hoursLoggedToday } from '../lib/selectors';
+import { cibleDuJour, libelleTempsOccupe } from '../lib/workload';
 import { useViewMode } from '../hooks/useViewMode';
 import { Avatar, Card, ModeSwitcher, PriorityBadge, PrintButton, PrintHeader, TaskTypeBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
@@ -59,12 +60,6 @@ const HOURLY_PERIODS: Period[] = ['matin', 'apres_midi'];
  *  heurter : les identifiants sont préfixés par une lettre (voir src/lib/ids.ts). */
 const AUTRE = '__autre__';
 const hourLabel = (n: number) => `${String(n).padStart(2, '0')}:00`;
-/** Une heure et demie s'écrit 1.5, pas 1.5000000000000002 : les durées récurrentes
- *  s'additionnent en décimal et le flottant se voit à l'écran sans cela. */
-const arrondi = (h: number) => Math.round(h * 100) / 100;
-/** La journée d'une personne : son volume hebdomadaire sur cinq jours, et non une
- *  constante — un temps partiel ne doit pas être mesuré à l'aune d'une journée pleine. */
-const cibleDuJour = (m: TeamMember) => Math.round((m.weeklyHours / 5) * 10) / 10;
 
 export function DailyView() {
   const { members, tasks, planningSlots, timeEntries, absences, setPlanningSlot, updateTask, addTimeEntry, removeTimeEntry } = useStore();
@@ -84,14 +79,15 @@ export function DailyView() {
   const iso = toISODate(date);
 
   // `timeEntries` est une liste d'ajouts : la dernière saisie est donc la dernière du tableau.
-  // On la relit à l'envers pour montrer ce qui vient d'être saisi en premier. La profondeur
-  // s'applique à chaque couple personne/créneau, si bien qu'une personne qui saisit beaucoup ne
-  // masque jamais les saisies de ses collègues.
+  // On les rend DANS L'ORDRE où elles ont été faites — c'est cet ordre qui décide, à
+  // égalité, laquelle garde une tranche que deux saisies revendiquent (voir
+  // dayAllocation.ts). Les relire à l'envers ici faisait gagner la plus récente et
+  // éparpillait la première sur les tranches restantes. C'est la liste « Dernières
+  // saisies » qui s'affiche à l'envers, au moment de l'affichage.
+  // La profondeur s'applique à chaque couple personne/créneau, si bien qu'une personne qui
+  // saisit beaucoup ne masque jamais les saisies de ses collègues.
   const recentEntriesFor = (memberId: string, period: Period) =>
-    timeEntries
-      .filter((e) => e.date === iso && e.memberId === memberId && e.period === period)
-      .slice(-RECENT_ENTRIES_DEPTH)
-      .reverse();
+    timeEntries.filter((e) => e.date === iso && e.memberId === memberId && e.period === period).slice(-RECENT_ENTRIES_DEPTH);
 
   const openLogging = (target: LoggingTarget) => {
     setLogging(target);
@@ -215,7 +211,7 @@ export function DailyView() {
                   <div className="ml-auto text-right text-xs text-slate-500 dark:text-slate-400">
                     <div>Temps occupé aujourd'hui</div>
                     <div className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">
-                      {arrondi(loggedToday + recurrentes)}h / {cibleDuJour(m)}h
+                      {libelleTempsOccupe(loggedToday + recurrentes, cibleDuJour(m, absences, date))}
                     </div>
                     {recurrentes > 0 && (
                       <div className="text-[11px] text-indigo-600 dark:text-indigo-300">dont {formatDuree(recurrentes)} récurrent</div>
@@ -307,7 +303,7 @@ export function DailyView() {
                       className="px-3 py-2 text-xs tabular-nums text-slate-500 dark:text-slate-400"
                       title={recurrentes > 0 ? `${loggedToday}h saisies + ${formatDuree(recurrentes)} de créneau récurrent` : undefined}
                     >
-                      {arrondi(loggedToday + recurrentes)}h / {cibleDuJour(m)}h
+                      {libelleTempsOccupe(loggedToday + recurrentes, cibleDuJour(m, absences, date))}
                     </td>
                   </tr>
                 );
@@ -470,7 +466,8 @@ function SlotEditor({
   // large. Le mode Tableau est une grille dense d'une ligne par personne ; y empiler
   // quatre rangées de pastilles le rendrait illisible, il garde donc la saisie globale.
   const parHeure = HOURLY_PERIODS.includes(period) && !compact;
-  const occupants = parHeure ? placeEntries(period, entries) : null;
+  const placement = parHeure ? placeEntries(period, entries) : null;
+  const occupants = placement?.parTranche ?? null;
 
   // Les tranches que la réunion occupe. Une saisie posée sur l'une d'elles reste affichée
   // à sa place — c'est un fait, le créneau n'est qu'une règle — mais ne la retire plus au
@@ -596,6 +593,7 @@ function SlotEditor({
           memberTasks={memberTasks}
           plannedTask={task}
           occupants={occupants!}
+          heuresHorsGrille={placement!.heuresHorsGrille}
           recurrentes={prises}
           prevus={prevus}
           onValidateCreneau={onValidateCreneau}
@@ -744,6 +742,7 @@ function HourGrid({
   memberTasks,
   plannedTask,
   occupants,
+  heuresHorsGrille,
   recurrentes,
   prevus,
   onValidateCreneau,
@@ -758,6 +757,9 @@ function HourGrid({
   memberTasks: ProjectTask[];
   plannedTask: ProjectTask | undefined;
   occupants: Map<number, TimeEntry>;
+  /** Heures saisies que la demi-journée n'a pas pu porter : elle n'a que quatre tranches.
+   *  Annoncé en clair — une matinée à 5 h de saisies ne doit pas en perdre une en silence. */
+  heuresHorsGrille: number;
   /** Tranches tenues par un créneau récurrent : ni à remplir, ni à proposer. */
   recurrentes: Map<number, Recurrence>;
   /** Tranches réservées par un créneau posé sur une tâche, à valider d'un clic. */
@@ -792,6 +794,9 @@ function HourGrid({
         <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Heure par heure</span>
         <span className="text-[10px] tabular-nums text-slate-400">
           {occupees}h occupée(s) sur {heures.length}
+          {heuresHorsGrille > 0 && (
+            <span className="text-amber-600 dark:text-amber-400"> · {heuresHorsGrille}h hors grille</span>
+          )}
         </span>
       </div>
 
@@ -934,6 +939,9 @@ function SlotEntries({
 }) {
   if (entries.length === 0) return null;
   const total = entries.reduce((sum, e) => sum + e.hours, 0);
+  // La plus récente en haut : c'est celle qu'on vient d'enregistrer, et celle qu'on
+  // corrige. L'ordre de saisie, lui, est conservé en amont — il sert au placement.
+  const recentesDabord = [...entries].reverse();
 
   return (
     <div className="mt-2 border-t border-slate-100 pt-2 dark:border-slate-800">
@@ -944,7 +952,7 @@ function SlotEntries({
         </span>
       </div>
       <ul className="space-y-0.5">
-        {entries.map((e) => {
+        {recentesDabord.map((e) => {
           const task = getTaskById(tasks, e.taskId);
           return (
             <li key={e.id} className="flex items-baseline gap-1.5 text-xs">

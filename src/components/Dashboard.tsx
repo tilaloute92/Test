@@ -121,9 +121,18 @@ export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id:
     return map;
   }, [members, weeks, planningSlots, absences]);
 
+  /**
+   * Charge moyenne de l'équipe, sur les SEULES personnes qui avaient de la capacité
+   * cette semaine-là. Quelqu'un absent toute la semaine pèse 0 % : compté dans la
+   * moyenne, il faisait baisser la charge affichée et une semaine à effectif réduit
+   * paraissait plus calme qu'une semaine complète. Même règle que dans le rapport
+   * hebdomadaire (voir weeklyReport.ts).
+   */
+  const presentsSemaine = members.filter((m) => loadThisWeek[m.id].capacityHours > 0);
   const chargeMoyenne = Math.round(
-    (members.reduce((sum, m) => sum + loadThisWeek[m.id].ratio, 0) / Math.max(members.length, 1)) * 100
+    (presentsSemaine.reduce((sum, m) => sum + loadThisWeek[m.id].ratio, 0) / Math.max(presentsSemaine.length, 1)) * 100
   );
+  const absentsSemaine = members.length - presentsSemaine.length;
 
   const sortedMembers = [...members].sort((a, b) => loadThisWeek[b.id].ratio - loadThisWeek[a.id].ratio);
 
@@ -135,7 +144,9 @@ export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id:
   const criticalIncidents = tasks.filter(
     (t) => t.type === 'Incident' && t.status !== 'termine' && (t.priority === 'critique' || t.priority === 'haute')
   );
-  const overloadedMembers = members.filter((m) => workloadLevel(loadThisWeek[m.id].ratio) === 'surcharge');
+  const overloadedMembers = members.filter(
+    (m) => workloadLevel(loadThisWeek[m.id].ratio, loadThisWeek[m.id].capacityHours) === 'surcharge'
+  );
   const roadmapStats = computeRoadmapWeekStats(roadmapItems, today);
   const projectSummaries = listProjects(tasks).map((p) => computeFlashReport(p, tasks, timeEntries, members, today));
   const redProjects = projectSummaries.filter((r) => r.rag === 'rouge');
@@ -278,7 +289,12 @@ export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id:
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiCard label="Incidents ouverts" value={incidentsOuverts} accent="text-red-600 dark:text-red-400" />
         <KpiCard label="Tâches en retard" value={enRetard} accent="text-amber-600 dark:text-amber-400" />
-        <KpiCard label="Charge moyenne équipe" value={`${chargeMoyenne}%`} accent="text-violet-600 dark:text-violet-400" />
+        <KpiCard
+          label="Charge moyenne équipe"
+          value={`${chargeMoyenne}%`}
+          accent="text-violet-600 dark:text-violet-400"
+          sous={absentsSemaine > 0 ? `sur ${presentsSemaine.length} présent(s) · ${absentsSemaine} absent(s) la semaine` : undefined}
+        />
         <KpiCard label="Présents aujourd'hui" value={`${presentsAujourdhui}/${members.length}`} accent="text-emerald-600 dark:text-emerald-400" />
       </div>
 
@@ -289,7 +305,7 @@ export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id:
             <div className="space-y-3">
               {sortedMembers.map((m) => {
                 const load = loadThisWeek[m.id];
-                const level = workloadLevel(load.ratio);
+                const level = workloadLevel(load.ratio, load.capacityHours);
                 return (
                   <button
                     key={m.id}
@@ -325,9 +341,9 @@ export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id:
                 const currentTask = getCurrentTask(planningSlots, tasks, m.id);
                 const absence = absencesToday(absences, m.id);
                 const load = loadThisWeek[m.id];
-                const level = workloadLevel(load.ratio);
+                const level = workloadLevel(load.ratio, load.capacityHours);
                 const openTasks = openTasksForMember(tasks, m.id);
-                const weekRatios = weeks.map((wDays) => computeWorkload(m, wDays, planningSlots, absences).ratio);
+                const weekLoads = weeks.map((wDays) => computeWorkload(m, wDays, planningSlots, absences));
 
                 return (
                   <Card key={m.id} className="flex flex-col gap-3 p-4">
@@ -376,9 +392,15 @@ export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id:
                     <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                       <span>Tendance 3 semaines</span>
                       <div className="flex items-center gap-1">
-                        {weekRatios.map((r, i) => {
-                          const lvl = workloadLevel(r);
-                          return <span key={i} className={`h-3 w-3 rounded-sm ${workloadColors[lvl].bar}`} title={`S${i + 1}: ${Math.round(r * 100)}%`} />;
+                        {weekLoads.map((l, i) => {
+                          const lvl = workloadLevel(l.ratio, l.capacityHours);
+                          return (
+                            <span
+                              key={i}
+                              className={`h-3 w-3 rounded-sm ${workloadColors[lvl].bar}`}
+                              title={`S${i + 1} : ${lvl === 'absent' ? 'absent toute la semaine' : `${Math.round(l.ratio * 100)}%`}`}
+                            />
+                          );
                         })}
                       </div>
                     </div>
@@ -409,7 +431,7 @@ export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id:
             <tbody>
               {sortedMembers.map((m) => {
                 const load = loadThisWeek[m.id];
-                const level = workloadLevel(load.ratio);
+                const level = workloadLevel(load.ratio, load.capacityHours);
                 const currentTask = getCurrentTask(planningSlots, tasks, m.id);
                 const absence = absencesToday(absences, m.id);
                 const openTasks = openTasksForMember(tasks, m.id);
@@ -483,7 +505,7 @@ export function Dashboard({ onSelectMember, onNavigate }: { onSelectMember: (id:
                   </td>
                   {weeks.map((wDays, i) => {
                     const load = computeWorkload(m, wDays, planningSlots, absences);
-                    const level = workloadLevel(load.ratio);
+                    const level = workloadLevel(load.ratio, load.capacityHours);
                     return (
                       <td key={i} className="px-3 py-2">
                         <div className="flex items-center gap-2">
@@ -639,7 +661,7 @@ function OverloadDetails({
     <ul className="space-y-1.5">
       {members.map((m) => {
         const l = load[m.id];
-        const level = workloadLevel(l.ratio);
+        const level = workloadLevel(l.ratio, l.capacityHours);
         return (
           <li key={m.id}>
             <button onClick={() => onSelectMember(m.id)} className="flex w-full items-center gap-2 text-left text-sm hover:underline">
@@ -710,7 +732,7 @@ function RoadmapDetails({ items }: { items: RoadmapItem[] }) {
 function WorkloadLegend() {
   return (
     <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-400">
-      {(['sous-charge', 'equilibre', 'charge', 'surcharge'] as const).map((lvl) => (
+      {(['sous-charge', 'equilibre', 'charge', 'surcharge', 'absent'] as const).map((lvl) => (
         <span key={lvl} className="inline-flex items-center gap-1.5">
           <span className={`h-2 w-2 rounded-full ${workloadColors[lvl].bar}`} />
           {workloadColors[lvl].label}
@@ -720,11 +742,24 @@ function WorkloadLegend() {
   );
 }
 
-function KpiCard({ label, value, accent }: { label: string; value: string | number; accent: string }) {
+function KpiCard({
+  label,
+  value,
+  accent,
+  sous,
+}: {
+  label: string;
+  value: string | number;
+  accent: string;
+  /** Précision sous le libellé — ce qui rend le chiffre explicable (sur combien de
+   *  personnes il est calculé, par exemple) plutôt qu'à prendre sur parole. */
+  sous?: string;
+}) {
   return (
     <Card className="p-4">
       <div className={`text-2xl font-semibold tabular-nums ${accent}`}>{value}</div>
       <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{label}</div>
+      {sous && <div className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">{sous}</div>}
     </Card>
   );
 }

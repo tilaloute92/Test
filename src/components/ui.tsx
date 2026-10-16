@@ -89,7 +89,10 @@ export function PriorityBadge({ priority }: { priority: Priority }) {
 
 export function WorkloadBar({ ratio, level, compact = false }: { ratio: number; level: WorkloadLevel; compact?: boolean }) {
   const c = workloadColors[level];
-  const pct = Math.min(ratio * 100, 130);
+  // Absent toute la semaine : la barre est pleine en gris, pas vide. Vide se lit « rien
+  // à faire » ; pleine en gris se lit « la semaine est prise », ce qui est le cas. La
+  // pastille « Absent » à côté lève l'ambiguïté, la couleur ne porte pas seule.
+  const pct = level === 'absent' ? 100 : Math.min(ratio * 100, 130);
   return (
     <div className={compact ? 'w-full' : 'w-full'}>
       <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">

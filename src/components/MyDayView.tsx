@@ -9,6 +9,7 @@ import { useRecurrences } from '../hooks/useRecurrences';
 import { entriesFor, placeEntries } from '../lib/dayAllocation';
 import { PERIOD_RANGES, formatHour } from '../lib/hours';
 import { resolveMember, setStoredMemberId } from '../lib/identity';
+import { cibleDuJour, libelleTempsOccupe } from '../lib/workload';
 import type { Period, ProjectTask, TeamMember } from '../types';
 import type { Tab } from '../App';
 
@@ -178,7 +179,7 @@ function MaJournee({
     const trous: { period: Period; heures: number[] }[] = [];
     for (const period of PERIODES) {
       if (absence && (absence.period === 'jour' || absence.period === period)) continue;
-      const occupes = placeEntries(period, entriesFor(timeEntries, member.id, iso, period));
+      const { parTranche: occupes } = placeEntries(period, entriesFor(timeEntries, member.id, iso, period));
       const { start, end } = PERIOD_RANGES[period];
       const heures: number[] = [];
       for (let h = start; h < end; h++) if (!occupes.has(h)) heures.push(h);
@@ -193,7 +194,7 @@ function MaJournee({
       PERIODES.map((period) => {
         const slot = planningSlots.find((s) => s.memberId === member.id && s.date === iso && s.period === period);
         const prevue = tasks.find((t) => t.id === slot?.taskId);
-        const occupes = placeEntries(period, entriesFor(timeEntries, member.id, iso, period));
+        const { parTranche: occupes } = placeEntries(period, entriesFor(timeEntries, member.id, iso, period));
         const { start, end } = PERIOD_RANGES[period];
         const tranches = [];
         for (let h = start; h < end; h++) {
@@ -215,7 +216,7 @@ function MaJournee({
     return { copil: c, miennes, jours };
   }, [copils, iso, member.id]);
 
-  const cible = Math.round((member.weeklyHours / 5) * 10) / 10;
+  const cible = cibleDuJour(member, absences, aujourdhui);
 
   return (
     <div className="space-y-4">
@@ -225,7 +226,7 @@ function MaJournee({
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold text-slate-900 dark:text-white">Bonjour {member.name.split(' ').slice(-1)[0]}</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            {formatDateLong(aujourdhui)} · <span className="tabular-nums">{occupe}h</span> sur {cible}h
+            {formatDateLong(aujourdhui)} · <span className="tabular-nums">{libelleTempsOccupe(occupe, cible, 'sur')}</span>
             {recurrentes > 0 && <span className="text-indigo-600 dark:text-indigo-300"> · dont {formatDuree(recurrentes)} récurrent</span>}
           </p>
         </div>

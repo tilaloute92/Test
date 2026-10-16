@@ -10,7 +10,7 @@ import {
 } from '../lib/meetingReport';
 import { weatherMeta } from '../lib/weeklyReport';
 import { NIVEAUX, resultatMeteo, type ResultatMeteo } from '../lib/meteoVote';
-import { workloadColors } from '../lib/workload';
+import { workloadColors, workloadHex } from '../lib/workload';
 import { formatDureeAbsence } from '../lib/presence';
 import type { Absence, ProjectTask, TeamMember } from '../types';
 
@@ -785,15 +785,18 @@ function TableCharge({ report }: { report: MeetingReport }) {
               <div style={{ height: 6, background: '#f1f5f9', borderRadius: 3, overflow: 'hidden' }}>
                 <div
                   style={{
-                    width: `${Math.min(100, Math.round(p.workloadRatio * 100))}%`,
+                    // Absent toute la semaine : barre pleine en gris, pas vide (voir WorkloadBar).
+                    width: p.workloadLevel === 'absent' ? '100%' : `${Math.min(100, Math.round(p.workloadRatio * 100))}%`,
                     height: '100%',
-                    background: p.workloadLevel === 'surcharge' ? '#dc2626' : p.workloadLevel === 'charge' ? '#d97706' : '#16a34a',
+                    background: workloadHex[p.workloadLevel],
                     borderRadius: 3,
                   }}
                 />
               </div>
               <div style={{ fontSize: 11, color: ENCRE3, marginTop: 3, fontVariantNumeric: 'tabular-nums' }}>
-                {Math.round(p.workloadRatio * 100)} % — {workloadColors[p.workloadLevel].label}
+                {p.workloadLevel === 'absent'
+                  ? 'Absent toute la semaine'
+                  : `${Math.round(p.workloadRatio * 100)} % — ${workloadColors[p.workloadLevel].label}`}
               </div>
             </td>
             <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>

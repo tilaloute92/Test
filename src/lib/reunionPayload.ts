@@ -10,7 +10,7 @@ import {
 import { weatherMeta } from './weeklyReport';
 import { NIVEAUX, resultatMeteo, type ResultatMeteo } from './meteoVote';
 import { formatDureeAbsence } from './presence';
-import { workloadColors } from './workload';
+import { workloadColors, workloadHex } from './workload';
 import type { ProjectTask, TeamMember } from '../types';
 
 /**
@@ -371,7 +371,11 @@ export function buildReunionPayload(opts: {
       nom: p.member.name,
       pourcent: Math.round(p.workloadRatio * 100),
       niveau: workloadColors[p.workloadLevel].label,
-      couleur: p.workloadLevel === 'surcharge' ? '#dc2626' : p.workloadLevel === 'charge' ? '#d97706' : '#16a34a',
+      couleur: workloadHex[p.workloadLevel],
+      /** Absent toute la semaine : capacité nulle, donc hors de l'échelle de charge.
+       *  Le mail remplit alors la barre en gris et écrit l'absence au lieu d'un « 0 % »
+       *  qui se lirait comme une semaine vide. */
+      absent: p.workloadLevel === 'absent',
       saisies: `${arrondi(p.hoursLogged)} h / ${arrondi(p.hoursTarget)} h`,
       terminees: p.tasksCompleted.length,
       absences: formatDureeAbsence(p.absenceDemiJournees),

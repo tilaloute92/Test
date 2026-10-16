@@ -21,6 +21,21 @@ import type { Period, PlanningSlot, TimeEntry } from '../types';
  * Les ancrées sont placées EN PREMIER : sans cela, une flottante saisie plus tôt occuperait
  * une tranche qu'une ancrée revendique explicitement, et l'affichage contredirait ce que la
  * personne a validé de sa main.
+ *
+ * DEUX RÈGLES, APPRISES D'UN DÉFAUT. Une ancrée écrasait sa voisine : 3 h posées à 08:00
+ * puis 1 h posée à 09:00 donnaient trois tranches occupées pour quatre heures saisies, et
+ * la matinée était comptée 3 h. Et une ancrée qui débordait de la demi-journée (3 h à
+ * 11:00) perdait purement et simplement ce qui dépassait. Désormais :
+ *
+ *   1. une tranche prise le reste — la première saisie posée la garde, la suivante se
+ *      décale sur la première tranche libre plutôt que de la déloger ;
+ *   2. ce qui ne rentre nulle part est COMPTÉ et renvoyé (`trancheseHorsGrille`), pour que
+ *      l'écran puisse le dire. Une matinée n'a que quatre tranches : y saisir cinq heures
+ *      est possible, le cacher ne l'est pas.
+ *
+ * Tout se compte en TRANCHES D'UNE HEURE, comme les créneaux récurrents : une saisie d'1 h 30
+ * en occupe deux. La grille ne sait afficher que des tranches entières, et les heures
+ * réellement saisies, elles, restent la somme des saisies — elles ne passent pas par ici.
  */
 
 /** Ce qu'affiche une tranche d'une heure. */
@@ -38,7 +53,8 @@ export interface PlacedItem {
   hour?: number;
 }
 
-/** Les tranches couvertes par une activité démarrant à `from` et durant `hours`. */
+/** Les tranches couvertes par une activité démarrant à `from` et durant `hours`.
+ *  `end` borne la demi-journée ; `Infinity` donne la liste naturelle, débordement compris. */
 function tranches(from: number, hours: number, end: number): number[] {
   const to = Math.min(from + hours, end);
   const couvertes: number[] = [];
@@ -50,39 +66,62 @@ function tranches(from: number, hours: number, end: number): number[] {
   return couvertes;
 }
 
+export interface Placement {
+  /** Tranche d'une heure → identifiant de l'activité qui l'occupe. */
+  parTranche: Map<number, string>;
+  /** Tranches qu'aucune heure de la demi-journée n'a pu porter : elle est pleine. */
+  trancheseHorsGrille: number;
+}
+
 /**
- * Répartit les activités sur les heures de la demi-journée. Une activité qui déborde du
- * créneau est tronquée à sa dernière heure : le créneau ne s'étire pas au-delà de 12:00 ou
- * 18:00.
+ * Répartit les activités sur les heures de la demi-journée (voir l'en-tête du module pour
+ * les deux règles). Ce qui ne tient pas est compté, jamais effacé en silence.
  */
-export function placeItems(period: Period, items: PlacedItem[]): Map<number, string> {
+export function placeItems(period: Period, items: PlacedItem[]): Placement {
   const { start, end } = PERIOD_RANGES[period];
-  const placed = new Map<number, string>();
+  const parTranche = new Map<number, string>();
+  /** Ce qu'il reste à caser pour chaque activité, indexé comme `items`. */
+  const restant = new Map<number, number>();
 
-  // 1. Les ancrées, qui revendiquent une tranche précise.
-  for (const item of items) {
-    if (item.hours <= 0 || item.hour === undefined) continue;
-    for (const h of tranches(item.hour, item.hours, end)) placed.set(h, item.taskId);
-  }
-
-  // 2. Les flottantes, à la suite, en sautant ce qui est déjà pris.
-  let cursor = start;
-  for (const item of items) {
-    if (item.hours <= 0 || item.hour !== undefined) continue;
-    let restant = item.hours;
-    while (restant > 0 && cursor < end) {
-      if (placed.has(Math.floor(cursor))) {
-        cursor = Math.floor(cursor) + 1;
-        continue;
-      }
-      const pas = Math.min(restant, Math.floor(cursor) + 1 - cursor || 1);
-      for (const h of tranches(cursor, pas, end)) placed.set(h, item.taskId);
-      cursor += pas;
-      restant -= pas;
+  // 1. Les ancrées, sur LEURS tranches — sans déloger celles déjà prises.
+  items.forEach((item, i) => {
+    if (item.hours <= 0 || item.hour === undefined) return;
+    const voulues = tranches(item.hour, item.hours, Infinity);
+    let obtenues = 0;
+    for (const h of voulues) {
+      if (h < start || h >= end || parTranche.has(h)) continue;
+      parTranche.set(h, item.taskId);
+      obtenues += 1;
     }
+    if (voulues.length > obtenues) restant.set(i, voulues.length - obtenues);
+  });
+
+  // 2. Les flottantes, et ce que les ancrées n'ont pas pu poser, à la suite dans les
+  //    tranches libres — dans l'ordre de saisie, celui des `items` : une activité notée
+  //    avant une autre reste affichée avant elle.
+  const reste = items
+    .map((item, i) => ({
+      taskId: item.taskId,
+      tranches:
+        item.hours <= 0 ? 0 : item.hour === undefined ? tranches(start, item.hours, Infinity).length : (restant.get(i) ?? 0),
+    }))
+    .filter((r) => r.tranches > 0);
+
+  let curseur = start;
+  let trancheseHorsGrille = 0;
+  for (const r of reste) {
+    let restant = r.tranches;
+    while (restant > 0 && curseur < end) {
+      if (!parTranche.has(curseur)) {
+        parTranche.set(curseur, r.taskId);
+        restant -= 1;
+      }
+      curseur += 1;
+    }
+    trancheseHorsGrille += restant;
   }
 
-  return placed;
+  return { parTranche, trancheseHorsGrille };
 }
 
 /** Les saisies de temps d'une personne sur une demi-journée, dans l'ordre où elles ont été faites. */
@@ -105,14 +144,21 @@ export function toPlacedItems(entries: TimeEntry[]): PlacedItem[] {
  * L'indice sert de clé le temps du placement : deux saisies peuvent porter la même tâche
  * sur deux tranches différentes, et les distinguer par taskId les confondrait.
  */
-export function placeEntries(period: Period, entries: TimeEntry[]): Map<number, TimeEntry> {
-  const parIndice = placeItems(
+export interface PlacementSaisies {
+  parTranche: Map<number, TimeEntry>;
+  /** Heures saisies qu'aucune tranche ne peut porter — la demi-journée n'en a que quatre.
+   *  Affiché tel quel : une matinée à 5 h de saisies doit le dire, pas en perdre une. */
+  heuresHorsGrille: number;
+}
+
+export function placeEntries(period: Period, entries: TimeEntry[]): PlacementSaisies {
+  const { parTranche: parIndice, trancheseHorsGrille } = placeItems(
     period,
     entries.map((e, i) => ({ taskId: String(i), hours: e.hours, hour: e.hour }))
   );
-  const resultat = new Map<number, TimeEntry>();
-  for (const [heure, indice] of parIndice) resultat.set(heure, entries[Number(indice)]);
-  return resultat;
+  const parTranche = new Map<number, TimeEntry>();
+  for (const [heure, indice] of parIndice) parTranche.set(heure, entries[Number(indice)]);
+  return { parTranche, heuresHorsGrille: trancheseHorsGrille };
 }
 
 /**
@@ -126,7 +172,7 @@ export function assignHours(slot: PlanningSlot | undefined, entries: (period: Pe
   const place = (period: Period) => {
     let m = parCreneau.get(period);
     if (!m) {
-      m = placeItems(period, toPlacedItems(entries(period)));
+      m = placeItems(period, toPlacedItems(entries(period))).parTranche;
       parCreneau.set(period, m);
     }
     return m;

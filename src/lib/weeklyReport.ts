@@ -117,7 +117,7 @@ export function computeWeeklyReport(opts: {
     return {
       member: m,
       workloadRatio: load.ratio,
-      workloadLevel: workloadLevel(load.ratio),
+      workloadLevel: workloadLevel(load.ratio, load.capacityHours),
       hoursLogged,
       hoursTarget: load.capacityHours,
       tasksCompleted,
@@ -125,7 +125,18 @@ export function computeWeeklyReport(opts: {
     };
   });
 
-  const avgWorkloadRatio = perMember.reduce((s, p) => s + p.workloadRatio, 0) / Math.max(perMember.length, 1);
+  /**
+   * Charge moyenne de l'équipe, sur les SEULES personnes qui avaient de la capacité.
+   *
+   * Quelqu'un en congés toute la semaine pèse 0 % : compté dans la moyenne, il faisait
+   * baisser la charge de l'équipe et, par ricochet, rendait la météo plus clémente — une
+   * semaine à effectif réduit paraissait plus calme qu'une semaine complète. Or deux
+   * personnes absentes ne rendent pas la semaine des autres plus légère ; c'est en
+   * général l'inverse.
+   */
+  const presents = perMember.filter((p) => p.workloadLevel !== 'absent');
+  const avgWorkloadRatio = presents.reduce((s, p) => s + p.workloadRatio, 0) / Math.max(presents.length, 1);
+  const absentsCount = perMember.length - presents.length;
   const overloadedCount = perMember.filter((p) => p.workloadLevel === 'surcharge').length;
 
   const tasksCompleted = tasks.filter((t) => t.completedAt && isoDays.has(t.completedAt.slice(0, 10)));
@@ -177,7 +188,7 @@ export function computeWeeklyReport(opts: {
   const roadmap = computeRoadmapWeekStats(roadmapItems, weekDays[0]);
 
   const weatherFactors = [
-    `Charge moyenne équipe : ${Math.round(avgWorkloadRatio * 100)}%`,
+    `Charge moyenne équipe : ${Math.round(avgWorkloadRatio * 100)}%${absentsCount > 0 ? ` (sur ${presents.length} présent(s), ${absentsCount} absent(s) toute la semaine)` : ''}`,
     `${overloadedCount} personne(s) en surcharge`,
     `${openCriticalIncidents.length} incident(s) critique/haut encore ouvert(s)`,
     `${overdueTasks.length} tâche(s) en retard`,
