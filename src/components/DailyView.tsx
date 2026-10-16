@@ -10,14 +10,16 @@ import type { Absence, Period, PlanningSlot, ProjectTask, TaskStatus, TeamMember
 import { useModalDismiss } from './Modal';
 import { placeEntries } from '../lib/dayAllocation';
 import { accepteNature, periodNatureTitle, PERIOD_RANGES } from '../lib/hours';
+import { ETIQUETTES_ABSENCE } from '../lib/meetingReport';
 import {
   formatDuree,
   formatPlage,
   heuresRecurrentes,
   JOURS,
+  creneauxRecurrents,
   periodeDe,
-  recurrencesRetenues,
   tranchesCouvertes,
+  type CreneauRetenu,
   type Recurrence,
 } from '../lib/recurrences';
 import { useRecurrences } from '../hooks/useRecurrences';
@@ -452,31 +454,38 @@ function SlotEditor({
   );
   const entries = recentEntriesFor(member.id, period);
 
-  // Les créneaux récurrents de cette demi-journée (voir src/lib/recurrences.ts). Déjà
-  // filtrés : absent ou ayant saisi autre chose sur ces heures, la personne n'en a aucun.
-  const creneaux = recurrencesRetenues({ recurrences, date, memberId: member.id, absences, timeEntries }).filter(
-    (r) => periodeDe(r) === period
+  // Les créneaux récurrents de cette demi-journée (voir src/lib/recurrences.ts), AVEC
+  // ceux qui ne comptent plus : une réunion écartée parce qu'on était absent ou parce que
+  // ses heures ont été saisies autrement doit se voir et se dire, pas disparaître.
+  const creneaux = creneauxRecurrents({ recurrences, date, memberId: member.id, absences, timeEntries }).filter(
+    (c) => periodeDe(c.recurrence) === period
   );
-  const prises = new Map<number, Recurrence>();
-  for (const r of creneaux) for (const h of tranchesCouvertes(r)) prises.set(h, r);
-
   // Les créneaux posés sur une tâche, encore à valider. Ceux qui tombent sur une heure
   // déjà prise (récurrence ou saisie) ne sont pas affichés dans la grille : la règle de
   // non-chevauchement est vérifiée à la pose, mais un horaire de réunion déplacé depuis
   // peut recouvrir un créneau pris avant — la grille ne peut pas montrer deux choses sur
   // la même ligne, alors elle montre ce qui est certain.
   const poses = creneauxDeLaDemiJournee({ tasks, date, memberId: member.id, period, timeEntries });
+  // Saisie heure par heure : seulement là où elle est prévue, et seulement en affichage
+  // large. Le mode Tableau est une grille dense d'une ligne par personne ; y empiler
+  // quatre rangées de pastilles le rendrait illisible, il garde donc la saisie globale.
+  const parHeure = HOURLY_PERIODS.includes(period) && !compact;
+  const occupants = parHeure ? placeEntries(period, entries) : null;
+
+  // Les tranches que la réunion occupe encore : celles déjà prises par une saisie
+  // reviennent à la saisie, qui est un fait, là où le créneau n'est qu'une règle.
+  const prises = new Map<number, Recurrence>();
+  for (const c of creneaux) {
+    if (c.heures <= 0) continue;
+    for (const h of tranchesCouvertes(c.recurrence)) if (!occupants?.has(h)) prises.set(h, c.recurrence);
+  }
+
   const prevus = new Map<number, { pose: CreneauPose; premier: boolean }>();
   for (const pose of poses) {
     const tranches = tranchesDuCreneau(pose.creneau).filter((h) => !prises.has(h) && !prevus.has(h));
     tranches.forEach((h, i) => prevus.set(h, { pose, premier: i === 0 }));
   }
 
-  // Saisie heure par heure : seulement là où elle est prévue, et seulement en affichage
-  // large. Le mode Tableau est une grille dense d'une ligne par personne ; y empiler
-  // quatre rangées de pastilles le rendrait illisible, il garde donc la saisie globale.
-  const parHeure = HOURLY_PERIODS.includes(period) && !compact;
-  const occupants = parHeure ? placeEntries(period, entries) : null;
   // Les saisies qu'aucune tranche ne montre — créneau déjà plein, saisie antérieure à la
   // grille, ou tranche reprise par un créneau récurrent (une saisie flottante peut tomber
   // sur l'heure de la réunion, qui s'affiche à sa place). Elles restent listées : rien de
@@ -502,7 +511,10 @@ function SlotEditor({
   if (isAbsentPeriod) {
     return (
       <>
-        <div className="text-sm text-slate-400">Absent(e) — {absence?.label ?? absence?.type}</div>
+        {/* Le libellé lisible, pas le code interne : « conge » s'affichait tel quel. */}
+        <div className="text-sm text-slate-400">
+          Absent(e) — {absence?.label ?? (absence ? ETIQUETTES_ABSENCE[absence.type] : '')}
+        </div>
         {history}
       </>
     );
@@ -510,8 +522,8 @@ function SlotEditor({
 
   return (
     <>
-      {creneaux.map((r) => (
-        <BandeauRecurrence key={r.id} recurrence={r} compact={compact} />
+      {creneaux.map((c) => (
+        <BandeauRecurrence key={c.recurrence.id} creneau={c} compact={compact} />
       ))}
 
       {/* Sans grille horaire (mode Tableau), les créneaux posés sur une tâche n'auraient
@@ -606,18 +618,88 @@ function SlotEditor({
  * dire d'où elles viennent : une durée qui apparaît sans qu'on l'ait tapée passe pour une
  * erreur de l'application tant qu'on ne sait pas qu'elle vient d'une règle.
  */
-function BandeauRecurrence({ recurrence, compact }: { recurrence: Recurrence; compact: boolean }) {
+function BandeauRecurrence({ creneau, compact }: { creneau: CreneauRetenu; compact: boolean }) {
+  const { recurrence: r, heures, dejaSaisi, ecarte } = creneau;
+  const compte = heures > 0;
+  const explication = ecarte === 'absent'
+    ? 'non comptée — vous êtes noté absent sur cette demi-journée'
+    : ecarte === 'tout-saisi'
+      ? 'non comptée — ces heures sont déjà saisies sur autre chose'
+      : dejaSaisi > 0
+        ? `${formatDuree(dejaSaisi)} déjà saisie(s) sur ces heures`
+        : '';
+
   return (
     <div
-      title={`Créneau récurrent (${JOURS[recurrence.jour]}, ${formatPlage(recurrence)}) — compté dans les heures du jour sans rien saisir. Si vous n'y étiez pas, saisissez ce que vous avez fait sur ces heures : votre saisie l'emporte.`}
-      className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs dark:border-indigo-500/30 dark:bg-indigo-500/10"
+      title={`Créneau récurrent (${JOURS[r.jour]}, ${formatPlage(r)}) — compté dans les heures du jour sans rien saisir. Il ne compte que pour ce qui n'a pas déjà été saisi sur sa plage.`}
+      className={`mb-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border px-2 py-1.5 text-xs ${
+        compte
+          ? 'border-indigo-200 bg-indigo-50 dark:border-indigo-500/30 dark:bg-indigo-500/10'
+          : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/60'
+      }`}
     >
-      <span>🗓</span>
-      <span className="min-w-0 truncate font-medium text-slate-700 dark:text-slate-200">{recurrence.libelle}</span>
-      {!compact && <span className="tabular-nums text-slate-500 dark:text-slate-400">{formatPlage(recurrence)}</span>}
-      <span className="ml-auto font-semibold tabular-nums text-indigo-700 dark:text-indigo-300">
-        {formatDuree(recurrence.duree)}
+      <span className={compte ? '' : 'opacity-50'}>🗓</span>
+      <span className={`min-w-0 truncate font-medium ${compte ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400'}`}>
+        {r.libelle}
       </span>
+      {!compact && <span className="tabular-nums text-slate-500 dark:text-slate-400">{formatPlage(r)}</span>}
+      {/* La raison est écrite à côté du chiffre, jamais à la place : une heure qui
+          disparaît sans explication passe pour un bogue, et c'en était un. */}
+      {explication && <span className="text-[11px] text-slate-400">· {explication}</span>}
+      <span
+        className={`ml-auto font-semibold tabular-nums ${compte ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-400 line-through'}`}
+      >
+        {formatDuree(compte ? heures : r.duree)}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Une tranche déjà saisie : l'activité réellement enregistrée, et la croix pour la défaire.
+ *
+ * Extrait de la grille le jour où une saisie a dû passer AVANT le créneau récurrent dans
+ * l'ordre d'affichage : une saisie est un fait, un créneau récurrent n'est qu'une règle,
+ * et deux copies du même bloc auraient fini par diverger.
+ */
+function OccupantTranche({
+  occupant,
+  tache,
+  heure,
+  memberName,
+  confirm,
+  onRemoveEntry,
+}: {
+  occupant: TimeEntry;
+  tache: ProjectTask | undefined;
+  heure: number;
+  memberName: string;
+  confirm: ConfirmFn;
+  onRemoveEntry: (id: string) => void;
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+      <span className="shrink-0 text-emerald-600 dark:text-emerald-400">✓</span>
+      <span className="min-w-0 flex-1 truncate text-sm text-slate-700 dark:text-slate-200">
+        {tache?.title ?? 'Tâche supprimée'}
+        {occupant.note && <span className="text-slate-400 dark:text-slate-500"> — « {occupant.note} »</span>}
+      </span>
+      <span className="shrink-0 text-[10px] font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">{occupant.hours}h</span>
+      <button
+        onClick={async () => {
+          const message =
+            occupant.hours > 1
+              ? `Cette saisie couvre ${occupant.hours}h : l'annuler retirera toutes ses heures, pas seulement ${hourLabel(heure)}. Continuer ?`
+              : `Annuler l'heure de ${hourLabel(heure)} sur "${tache?.title ?? 'cette tâche'}" pour ${memberName} ?`;
+          if (await confirm({ title: 'Annuler cette saisie', message, confirmLabel: 'Annuler la saisie', danger: true })) {
+            onRemoveEntry(occupant.id);
+          }
+        }}
+        title={occupant.hours > 1 ? `Annuler cette saisie de ${occupant.hours}h` : 'Annuler cette heure'}
+        className="shrink-0 rounded px-1 text-slate-300 hover:bg-red-50 hover:text-red-600 dark:text-slate-600 dark:hover:bg-red-500/10 print:hidden"
+      >
+        ✕
+      </button>
     </div>
   );
 }
@@ -722,7 +804,16 @@ function HourGrid({
                 {hourLabel(h)} – {hourLabel(h + 1)}
               </span>
 
-              {prevu && !recurrentes.get(h) && !occupant ? (
+              {occupant ? (
+                <OccupantTranche
+                  occupant={occupant}
+                  tache={tache}
+                  heure={h}
+                  memberName={memberName}
+                  confirm={confirm}
+                  onRemoveEntry={onRemoveEntry}
+                />
+              ) : prevu && !recurrentes.get(h) ? (
                 /* Un créneau posé sur la tâche : prévu, pas encore fait. Le bouton n'ajoute
                    pas une heure mais la durée entière du créneau — on enregistre ce qui a
                    été fait, pas la façon dont la grille le découpe. Les tranches suivantes
@@ -770,32 +861,6 @@ function HourGrid({
                   <span className="shrink-0 text-[10px] tabular-nums text-indigo-700 dark:text-indigo-300">
                     {formatPlage(recurrentes.get(h)!)}
                   </span>
-                </div>
-              ) : occupant ? (
-                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 dark:border-emerald-500/30 dark:bg-emerald-500/10">
-                  <span className="shrink-0 text-emerald-600 dark:text-emerald-400">✓</span>
-                  <span className="min-w-0 flex-1 truncate text-sm text-slate-700 dark:text-slate-200">
-                    {tache?.title ?? 'Tâche supprimée'}
-                    {occupant.note && <span className="text-slate-400 dark:text-slate-500"> — « {occupant.note} »</span>}
-                  </span>
-                  <span className="shrink-0 text-[10px] font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-                    {occupant.hours}h
-                  </span>
-                  <button
-                    onClick={async () => {
-                      const message =
-                        occupant.hours > 1
-                          ? `Cette saisie couvre ${occupant.hours}h : l'annuler retirera toutes ses heures, pas seulement ${hourLabel(h)}. Continuer ?`
-                          : `Annuler l'heure de ${hourLabel(h)} sur "${tache?.title ?? 'cette tâche'}" pour ${memberName} ?`;
-                      if (await confirm({ title: 'Annuler cette saisie', message, confirmLabel: 'Annuler la saisie', danger: true })) {
-                        onRemoveEntry(occupant.id);
-                      }
-                    }}
-                    title={occupant.hours > 1 ? `Annuler cette saisie de ${occupant.hours}h` : 'Annuler cette heure'}
-                    className="shrink-0 rounded px-1 text-slate-300 hover:bg-red-50 hover:text-red-600 dark:text-slate-600 dark:hover:bg-red-500/10 print:hidden"
-                  >
-                    ✕
-                  </button>
                 </div>
               ) : (
                 <div className="flex min-w-0 flex-1 items-center gap-1.5 print:hidden">

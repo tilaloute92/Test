@@ -122,9 +122,17 @@ change aussi ce qu'affichent les semaines déjà écoulées, ce que la page Para
 annonce.
 
 Ces heures s'ajoutent aux heures saisies dans Activité du jour, Ma journée et le rapport
-de réunion. Elles ne comptent pas pour une personne déclarée absente sur la demi-journée,
-ni pour une personne ayant saisi son propre temps sur les tranches couvertes, ni pour un
-jour à venir — un créneau qui n'a pas encore eu lieu n'est pas du temps passé.
+de réunion. Un créneau ne compte pas pour une personne déclarée absente sur la
+demi-journée, ni pour un jour à venir — un créneau qui n'a pas encore eu lieu n'est pas du
+temps passé.
+
+Il ne compte, enfin, que **pour ce qui n'a pas déjà été saisi** sur sa plage : une heure
+validée de 14:00 à 15:00 recouvre une demi-heure de la réunion de 14:30 → 16:00, qui
+compte donc pour 1 h. La règle était d'abord binaire — une seule saisie sur l'une des
+heures couvertes faisait sauter tout le créneau — et c'est ce qui faisait disparaître la
+réunion du vendredi de l'activité du jour, sans rien dire, dès que quelqu'un avait validé
+son 14:00. L'interface affiche maintenant le créneau dans tous les cas, avec ce qu'il
+compte et, s'il compte moins, pourquoi.
 
 ## Journal d'avancement
 

@@ -86,35 +86,70 @@ function absentSur(absences: Absence[], memberId: string, iso: string, periode: 
   return absences.some((a) => a.memberId === memberId && a.date === iso && (a.period === 'jour' || a.period === periode));
 }
 
+/** Ce que vaut un créneau récurrent pour une personne, un jour donné. */
+export interface CreneauRetenu {
+  recurrence: Recurrence;
+  /** Heures effectivement comptées : la durée, moins ce qui a déjà été saisi dessus. */
+  heures: number;
+  /** Heures de la plage déjà couvertes par une saisie de temps. */
+  dejaSaisi: number;
+  /** Renseigné quand rien n'est compté, pour pouvoir le dire à l'écran. */
+  ecarte: 'absent' | 'tout-saisi' | null;
+}
+
+/** Intersection, en heures, entre deux plages horaires. */
+function chevauchement(a1: number, a2: number, b1: number, b2: number): number {
+  return Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
+}
+
 /**
- * Les créneaux récurrents qui comptent réellement pour cette personne ce jour-là.
+ * Les créneaux récurrents de la journée, avec ce qu'ils comptent réellement.
  *
- * @param timeEntries  toutes les saisies : une saisie posée sur une tranche couverte vaut
- *   renoncement au créneau récurrent. Sans cette règle, qui déclare avoir traité un
- *   incident pendant la réunion verrait ses deux activités comptées en même temps.
+ * La règle a d'abord été binaire : une seule saisie posée sur l'une des heures couvertes
+ * faisait sauter tout le créneau. En pratique la réunion du vendredi 14:30 → 16:00 occupe
+ * les tranches de 14 h et de 15 h, si bien qu'une heure validée à 14:00 sur un projet —
+ * avant la réunion, donc parfaitement légitime — effaçait les 1 h 30 d'un coup, sans rien
+ * dire. C'est ce qui faisait disparaître la réunion de l'activité du vendredi.
+ *
+ * Le créneau compte désormais POUR CE QUI N'A PAS DÉJÀ ÉTÉ SAISI sur sa plage : une heure
+ * saisie de 14:00 à 15:00 en recouvre une demi-heure, la réunion compte donc pour 1 h. Le
+ * total de l'après-midi reste juste, rien n'est compté deux fois, et rien ne disparaît
+ * d'un coup — ce qui reste est affiché, et ce qui est retiré est expliqué.
+ *
+ * Une absence déclarée sur la demi-journée, elle, écarte toujours le créneau entièrement :
+ * on n'était pas là.
  */
-export function recurrencesRetenues(opts: {
+export function creneauxRecurrents(opts: {
   recurrences: Recurrence[];
   date: Date;
   memberId: string;
   absences: Absence[];
   timeEntries: TimeEntry[];
-}): Recurrence[] {
+}): CreneauRetenu[] {
   const { recurrences, date, memberId, absences, timeEntries } = opts;
   const iso = toISODate(date);
-  const duJour = timeEntries.filter((e) => e.memberId === memberId && e.date === iso);
+  const duJour = timeEntries.filter((e) => e.memberId === memberId && e.date === iso && e.hour !== undefined);
 
-  return recurrencesDuJour(recurrences, date, memberId).filter((r) => {
-    const periode = periodeDe(r);
-    if (absentSur(absences, memberId, iso, periode)) return false;
-    const couvertes = new Set(tranchesCouvertes(r));
-    return !duJour.some((e) => e.hour !== undefined && couvertes.has(e.hour));
+  return recurrencesDuJour(recurrences, date, memberId).map((recurrence) => {
+    const fin = recurrence.debut + recurrence.duree;
+    if (absentSur(absences, memberId, iso, periodeDe(recurrence))) {
+      return { recurrence, heures: 0, dejaSaisi: 0, ecarte: 'absent' as const };
+    }
+    // Les saisies flottantes (sans heure d'ancrage) ne sont pas prises en compte : elles
+    // ne disent pas À QUEL MOMENT le temps a été passé, et les supposer sur la réunion
+    // serait une invention.
+    const dejaSaisi = Math.min(
+      recurrence.duree,
+      duJour.reduce((s, e) => s + chevauchement(e.hour!, e.hour! + e.hours, recurrence.debut, fin), 0)
+    );
+    const heures = Math.round((recurrence.duree - dejaSaisi) * 100) / 100;
+    return { recurrence, heures, dejaSaisi, ecarte: heures <= 0 ? ('tout-saisi' as const) : null };
   });
 }
 
-/** Total en heures des créneaux récurrents retenus — ce qui s'ajoute aux heures saisies. */
-export function heuresRecurrentes(opts: Parameters<typeof recurrencesRetenues>[0]): number {
-  return recurrencesRetenues(opts).reduce((s, r) => s + r.duree, 0);
+/** Total en heures des créneaux récurrents — ce qui s'ajoute aux heures saisies. */
+export function heuresRecurrentes(opts: Parameters<typeof creneauxRecurrents>[0]): number {
+  return Math.round(creneauxRecurrents(opts).reduce((s, c) => s + c.heures, 0) * 100) / 100;
 }
 
 /**
