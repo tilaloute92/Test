@@ -72,23 +72,40 @@ function vide(texte) {
 
 // ============================================================ LE DOCUMENT COMPLET
 
-export function renderDocument(p) {
-  return `<!doctype html>
-<html lang="fr"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${e(`Réunion d'équipe — ${p.teamLabel} — ${p.semaineLabel}`)}</title>
-<style>
-  /* La seule feuille de style du fichier, et elle ne sert qu'à l'impression : le reste
-     est en ligne pour survivre aux clients de messagerie. */
-  @page { size: A4; margin: 12mm; }
-  @media print { body { background: #fff !important; } .doc { box-shadow: none !important; margin: 0 !important; } }
-</style>
-</head>
-<body style="margin:0;padding:16px;background:#f1f5f9;font-family:${POLICE};color:${ENCRE}">
-<div class="doc" style="max-width:820px;margin:0 auto;background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.18)">
-  ${enTete(p)}
+/**
+ * Le corps du rapport : en-tête, météo, chiffres, puis les huit sections.
+ *
+ * Écrit UNE fois et servi deux fois — dans le fichier joint et dans le corps du message —
+ * depuis que le message reprenait une version condensée qui ne ressemblait plus à ce que
+ * l'équipe voit à l'écran. Deux mises en page pour un même rapport, c'est deux vérités à
+ * tenir, et celle que personne ne relit dérive en silence.
+ *
+ * @param mot      Mot d'introduction, propre au message : le fichier joint n'en a pas.
+ * @param piedPage Dernière ligne, elle aussi différente selon le support.
+ */
+/**
+ * Retire l'indentation du HTML produit, sans toucher au texte.
+ *
+ * Gmail coupe un message au-delà d'environ 102 ko et affiche « message tronqué » : le
+ * rapport complet en pèse déjà 72 avec cinq personnes, et une semaine chargée s'en
+ * approche. On ne supprime que les espaces qui PRÉCÈDENT une balise en début de ligne —
+ * jamais ceux d'un nœud de texte, où ils séparent des mots, ni ceux du mot
+ * d'introduction, qui est affiché tel qu'il a été écrit.
+ */
+function compacter(html) {
+  return html.replace(/\n[ \t]+(?=<)/g, '\n');
+}
+
+function corpsDocument(p, { mot = '', piedPage = '' } = {}) {
+  return `${enTete(p)}
   <div style="padding:20px 28px 28px">
+    ${
+      mot
+        ? `<p style="margin:0 0 16px;font-size:13px;color:${ENCRE2};line-height:1.5;white-space:pre-wrap">${e(
+            tronque(mot, 2000)
+          )}</p>`
+        : ''
+    }
     ${meteo(p)}
     ${chiffres(p)}
     ${section(1, 'Points à aborder')}
@@ -111,9 +128,27 @@ export function renderDocument(p) {
     ${charge(p)}
     ${p.fdr ? section(8, `Feuille de route ${p.fdr.annee}`) + feuilleDeRoute(p.fdr) : ''}
     <div style="margin-top:24px;border-top:1px solid ${TRAIT};padding-top:10px;font-size:10.5px;color:${ENCRE3}">
-      Suivi Infra &amp; Réseau — document généré automatiquement, chiffres issus des saisies de l'équipe.
+      ${piedPage || "Suivi Infra &amp; Réseau — document généré automatiquement, chiffres issus des saisies de l'équipe."}
     </div>
-  </div>
+  </div>`;
+}
+
+export function renderDocument(p) {
+  return `<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${e(`Réunion d'équipe — ${p.teamLabel} — ${p.semaineLabel}`)}</title>
+<style>
+  /* La seule feuille de style du fichier, et elle ne sert qu'à l'impression : le reste
+     est en ligne pour survivre aux clients de messagerie. */
+  @page { size: A4; margin: 12mm; }
+  @media print { body { background: #fff !important; } .doc { box-shadow: none !important; margin: 0 !important; } }
+</style>
+</head>
+<body style="margin:0;padding:16px;background:#f1f5f9;font-family:${POLICE};color:${ENCRE}">
+<div class="doc" style="max-width:820px;margin:0 auto;background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.18)">
+  ${corpsDocument(p)}
 </div>
 </body></html>`;
 }
@@ -321,6 +356,13 @@ function projets(p) {
         </tr>`
       )
       .join('')}
+    <tr>
+      <td colspan="5" style="font-size:10.5px;color:${ENCRE3};padding-top:6px">
+        Avancement : le premier chiffre est celui déclaré par l'équipe — la moyenne des avancements saisis sur les
+        tâches, pondérée par leurs heures estimées. Le second est la part du budget d'heures réellement terminée.
+        L'écart entre les deux se discute ; aucun des deux ne se déduit de l'autre.
+      </td>
+    </tr>
   </table>`;
 }
 
@@ -499,163 +541,30 @@ function feuilleDeRoute(fdr) {
  * téléphone, le dimanche soir. Le document entier part en pièce jointe pour qui veut le
  * détail et la grille.
  */
+/**
+ * Le corps du message.
+ *
+ * Exactement le même rapport que le fichier joint et que l'écran : même en-tête, mêmes
+ * huit sections, mêmes couleurs. Il a longtemps été une version condensée — quatre
+ * chiffres et des listes raccourcies — ce qui obligeait à ouvrir la pièce jointe pour
+ * retrouver ce dont on avait parlé, et faisait deux présentations à maintenir pour un
+ * seul rapport. Seuls le mot d'introduction et la dernière ligne lui restent propres.
+ *
+ * Largeur portée à 820 px, celle du document : la grille des quatorze demi-journées ne
+ * tient pas dans 600 px, et c'est elle qui fixe la largeur minimale du rapport.
+ */
 export function renderMail(p) {
-  const titre = (t) =>
-    `<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:${ENCRE3};font-weight:700;border-bottom:2px solid ${ENCRE};padding-bottom:3px;margin:0 0 8px">${e(
-      t
-    )}</div>`;
-
   const sujetsPlat = p.semaines.flatMap((s) => s.sujets.map((x) => ({ ...x, semaine: s.label })));
+  const pied = `Suivi Infra &amp; Réseau — ${p.auteur ? `envoyé par ${e(p.auteur)}, ` : ''}${e(p.genereLe)}. ${
+    sujetsPlat.length
+  } sujet(s) prévu(s) sur les deux semaines. Le même document est joint à ce message, pour l'imprimer ou le classer.`;
 
-  return `<!doctype html>
+  return compacter(`<!doctype html>
 <html lang="fr"><body style="margin:0;padding:16px;background:#f1f5f9;font-family:${POLICE};color:${ENCRE}">
-<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden">
-  <div style="background:#1e1b4b;color:#fff;padding:16px 20px">
-    <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#a5b4fc">
-      Réunion d'équipe${p.dateReunion ? ` · ${e(p.dateReunion)}` : ''}
-    </div>
-    <div style="font-size:17px;font-weight:600;margin-top:2px">${e(p.teamLabel)}</div>
-  </div>
-  <div style="padding:14px 20px 18px">
-    ${
-      p.mot
-        ? `<p style="margin:0 0 14px;font-size:13px;color:${ENCRE2};line-height:1.5;white-space:pre-wrap">${e(
-            tronque(p.mot, 2000)
-          )}</p>`
-        : ''
-    }
-
-    <table style="width:100%;border-collapse:collapse;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin-bottom:14px">
-      <tr>
-        <td style="width:44px;padding:10px 0 10px 12px;font-size:26px">${e(p.meteo.emoji)}</td>
-        <td style="padding:10px 12px;font-size:13px;color:#78350f">
-          <strong>${e(p.meteo.label)}</strong> — ${
-            p.meteo.vote
-              ? p.meteo.vote.repartition
-                  .filter((r) => r.n > 0)
-                  .map((r) => `${e(r.n)} ${e(r.label.toLowerCase())}`)
-                  .join(', ')
-              : p.meteo.facteurs.map((f) => e(f.toLowerCase())).join(', ')
-          }.
-          <div style="font-size:11.5px;color:#92400e;margin-top:2px">${e(p.meteo.mention || '')}</div>
-        </td>
-      </tr>
-    </table>
-
-    <table style="width:100%;border-collapse:separate;border-spacing:6px 6px;margin:0 -6px 10px">
-      ${[0, 2]
-        .map(
-          (depart) => `<tr>${p.chiffres
-            .slice(depart, depart + 2)
-            .map(
-              (c) => `<td style="border:1px solid ${TRAIT};border-radius:6px;padding:8px 10px;text-align:center;width:50%">
-                <div style="font-size:17px;font-weight:600">${e(c.valeur)}</div>
-                <div style="font-size:10.5px;color:${ENCRE3}">${e(c.libelle)}</div>
-              </td>`
-            )
-            .join('')}</tr>`
-        )
-        .join('')}
-    </table>
-
-    ${titre('Points à aborder')}
-    ${
-      p.points.length
-        ? `<ol style="margin:0 0 14px;padding-left:20px;font-size:12.5px;color:${ENCRE2};line-height:1.6">
-            ${p.points.map((pt) => `<li>${e(pt.texte)}</li>`).join('')}
-          </ol>`
-        : `<p style="margin:0 0 14px;font-size:12.5px;color:${ENCRE3}">Rien que les données signalent cette semaine.</p>`
-    }
-
-    ${titre('Incidents ouverts')}
-    ${
-      p.incidents.length
-        ? `<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12.5px">
-            ${p.incidents
-              .map(
-                (i) => `<tr>
-                  <td style="padding:6px 8px 6px 0;border-top:1px solid ${TRAIT};color:${ENCRE}">
-                    ${e(i.titre)}<div style="color:${ENCRE3};font-size:11px">${e(i.qui)} · ouvert le ${e(i.ouvertLe)}</div>
-                  </td>
-                  <td style="padding:6px 0;border-top:1px solid ${TRAIT};text-align:right;white-space:nowrap">
-                    ${pastille(i.couleur, i.priorite)}
-                  </td>
-                </tr>`
-              )
-              .join('')}
-          </table>`
-        : `<p style="margin:0 0 14px;font-size:12.5px;color:${ENCRE3}">Aucun.</p>`
-    }
-
-    ${
-      p.projets.length
-        ? `${titre('Projets')}
-          <table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12.5px">
-            ${p.projets
-              .map(
-                (pr) => `<tr>
-                  <td style="padding:6px 8px 6px 0;border-top:1px solid ${TRAIT};color:${ENCRE}">${e(pr.nom)}</td>
-                  <td style="padding:6px 0;border-top:1px solid ${TRAIT};width:120px">${barre(pr.avance, '#7c3aed', 110)}</td>
-                  <td style="padding:6px 0 6px 8px;border-top:1px solid ${TRAIT};text-align:right;color:${ENCRE3};white-space:nowrap">${e(
-                    pr.avance
-                  )} %<div style="font-size:11px;color:${ENCRE3}">${e(pr.avanceTerminees)} % terminé</div></td>
-                </tr>`
-              )
-              .join('')}
-          </table>`
-        : ''
-    }
-
-    ${titre('Sujets prévus sur les deux semaines — sous réserve')}
-    ${p.semaines
-      .map(
-        (s) => `<div style="margin-bottom:10px">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:${ENCRE2};margin-bottom:3px">
-            ${e(s.label)}
-          </div>
-          ${
-            s.sujets.length
-              ? s.sujets
-                  .map(
-                    (l) => `<div style="font-size:12.5px;color:${ENCRE};padding:3px 0;border-top:1px solid ${TRAIT}">
-                      ${carre(l.couleurNature, 7)} ${e(l.titre)}
-                      <div style="color:${ENCRE3};font-size:11px;margin-left:13px">
-                        ${e(l.qui)} · ${e(l.quand)}${l.reserve ? `<span style="color:#b45309"> · ⚠ ${e(l.reserve)}</span>` : ''}
-                      </div>
-                    </div>`
-                  )
-                  .join('')
-              : `<div style="font-size:12.5px;color:${ENCRE3}">Rien de planifié ni d'échu.</div>`
-          }
-        </div>`
-      )
-      .join('')}
-    <p style="margin:0 0 14px;font-size:11px;color:${ENCRE3}">
-      Une intention, pas un engagement : un incident rebat la liste en une demi-journée. La grille jour par jour,
-      personne par personne, est dans la pièce jointe — illisible sur téléphone dans le corps du message.
-    </p>
-
-    ${titre('Absences')}
-    ${
-      p.absences.length
-        ? `<ul style="margin:0 0 8px;padding-left:20px;font-size:12.5px;color:${ENCRE2};line-height:1.6">
-            ${p.absences
-              .map((a) => `<li><strong style="color:${ENCRE}">${e(a.qui)}</strong> — ${e(a.quoi)}, ${e(a.quand)}</li>`)
-              .join('')}
-          </ul>`
-        : `<p style="margin:0 0 8px;font-size:12.5px;color:${ENCRE3}">Aucune — toute l'équipe est là.</p>`
-    }
-    <p style="margin:0 0 14px;font-size:12px;color:${ENCRE2}">
-      ${p.semaines.map((s) => `${e(s.label)} : planning rempli à ${e(s.remplissage)} %`).join(' · ')}
-    </p>
-
-    <div style="border-top:1px solid ${TRAIT};padding-top:10px;font-size:11px;color:${ENCRE3}">
-      Suivi Infra &amp; Réseau — ${p.auteur ? `envoyé par ${e(p.auteur)}, ` : ''}${e(p.genereLe)}.
-      ${sujetsPlat.length} sujet(s) prévu(s) sur les deux semaines, détail complet en pièce jointe.
-    </div>
-  </div>
+<div style="max-width:820px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden">
+  ${corpsDocument(p, { mot: p.mot, piedPage: pied })}
 </div>
-</body></html>`;
+</body></html>`);
 }
 
 /** Version texte, pour les clients qui refusent le HTML et pour les filtres anti-spam,

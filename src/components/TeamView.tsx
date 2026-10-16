@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
-import { addDays, isWeekend, toISODate } from '../lib/date';
+import { addDays, isWeekend, toISODate, VOLUME_HEBDO_DEFAUT } from '../lib/date';
+
+/** La valeur par défaut d'avant le passage à 8 h par jour. Sert uniquement à repérer les
+ *  fiches jamais revues depuis, pour proposer de les mettre à jour. */
+const ANCIEN_VOLUME = 35;
 import { Avatar, Card, PrintButton, PrintHeader } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import type { AbsenceType, TeamMember } from '../types';
@@ -20,6 +24,23 @@ export function TeamView() {
   const { members, absences, addMember, updateMember, removeMember, addAbsenceRange, removeAbsence } = useStore();
   const confirm = useConfirm();
   const [showMemberForm, setShowMemberForm] = useState(false);
+
+  // Les fiches restées à l'ancienne valeur par défaut, et elle seule : qui a délibérément
+  // saisi 28 h ou 21 h n'est pas concerné.
+  const aRemettre = members.filter((m) => m.weeklyHours === ANCIEN_VOLUME);
+  const passerA40 = async () => {
+    if (
+      await confirm({
+        title: `Passer à ${VOLUME_HEBDO_DEFAUT} h par semaine`,
+        message: `${aRemettre.map((m) => m.name).join(', ')} ${
+          aRemettre.length === 1 ? 'passera' : 'passeront'
+        } de ${ANCIEN_VOLUME} h à ${VOLUME_HEBDO_DEFAUT} h. Les capacités, les taux de charge et l'historique des mois passés seront recalculés sur cette base — les heures déjà saisies, elles, ne bougent pas.`,
+        confirmLabel: 'Mettre à jour',
+      })
+    ) {
+      for (const m of aRemettre) updateMember(m.id, { weeklyHours: VOLUME_HEBDO_DEFAUT });
+    }
+  };
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
   const [showAbsenceForm, setShowAbsenceForm] = useState(false);
 
@@ -27,11 +48,11 @@ export function TeamView() {
 
   return (
     <div className="space-y-6">
-      <PrintHeader title="Équipe" subtitle={`${members.length} personnes · 35h/semaine, matin MCO/incidents, après-midi projets`} />
+      <PrintHeader title="Équipe" subtitle={`${members.length} personnes · 40h/semaine (8h/jour), matin MCO/incidents, après-midi projets`} />
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Équipe</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{members.length} personnes · 35h/semaine, matin MCO/incidents, après-midi projets</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{members.length} personnes · 40h/semaine (8h/jour), matin MCO/incidents, après-midi projets</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <PrintButton />
@@ -40,6 +61,26 @@ export function TeamView() {
           </button>
         </div>
       </div>
+
+      {/* Le passage à 8 h par jour ne réécrit rien tout seul : le volume hebdomadaire est
+          une donnée d'équipe, saisie personne par personne, et un temps partiel à 35 h
+          n'est pas un reliquat de l'ancienne valeur par défaut. On signale, on propose,
+          on n'applique que sur un clic. */}
+      {aRemettre.length > 0 && (
+        <Card className="flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 p-3 print:hidden dark:border-amber-500/30 dark:bg-amber-500/10">
+          <p className="min-w-0 flex-1 text-sm text-amber-900 dark:text-amber-200">
+            <strong>{aRemettre.length === 1 ? 'Une personne est' : `${aRemettre.length} personnes sont`}</strong> encore à{' '}
+            {ANCIEN_VOLUME} h par semaine, alors que le service compte désormais 8 h par jour ({VOLUME_HEBDO_DEFAUT} h).
+            Tant qu'elles y restent, leur capacité et leur charge se calculent sur {ANCIEN_VOLUME} h.
+          </p>
+          <button
+            onClick={() => void passerA40()}
+            className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700"
+          >
+            Passer {aRemettre.length === 1 ? 'cette personne' : `ces ${aRemettre.length} personnes`} à {VOLUME_HEBDO_DEFAUT} h
+          </button>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {members.map((m) => (
@@ -195,7 +236,7 @@ function MemberForm({
   const [role, setRole] = useState(initial?.role ?? '');
   const [email, setEmail] = useState(initial?.email ?? '');
   const [skills, setSkills] = useState(initial?.skills.join(', ') ?? '');
-  const [weeklyHours, setWeeklyHours] = useState(String(initial?.weeklyHours ?? 35));
+  const [weeklyHours, setWeeklyHours] = useState(String(initial?.weeklyHours ?? VOLUME_HEBDO_DEFAUT));
 
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" {...dismiss.backdrop}>

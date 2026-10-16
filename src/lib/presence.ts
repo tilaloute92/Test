@@ -105,6 +105,32 @@ export function tauxSemaine(jours: PresenceJour[]): number {
   return ouvres.reduce((s, j) => s + j.taux, 0) / ouvres.length;
 }
 
+/**
+ * Combien de demi-journées représentent ces absences.
+ *
+ * Une absence « jour » en vaut DEUX. Le compte se faisait auparavant sur le nombre
+ * d'enregistrements, si bien qu'une journée entière de congé s'affichait « 1
+ * demi-journée(s) » dans la charge — un chiffre faux doublé d'un libellé faux.
+ */
+export function demiJourneesAbsence(absences: Absence[]): number {
+  return absences.reduce((total, a) => total + (a.period === 'jour' ? 2 : 1), 0);
+}
+
+/**
+ * « ½ journée », « 1 journée », « 1 journée ½ », « 3 journées ».
+ *
+ * On compte en journées et non en demi-journées : c'est ainsi qu'on pose ses congés et
+ * qu'on en parle. La demi-journée restante s'écrit « ½ », qui se lit d'un coup d'œil dans
+ * un tableau, plutôt que « 3,5 journées », qui se calcule.
+ */
+export function formatDureeAbsence(demiJournees: number): string {
+  if (demiJournees <= 0) return '—';
+  const jours = Math.floor(demiJournees / 2);
+  const demi = demiJournees % 2 === 1;
+  if (jours === 0) return '½ journée';
+  return `${jours} journée${jours > 1 ? 's' : ''}${demi ? ' ½' : ''}`;
+}
+
 /** Libellé court d'un jour, pour les messages d'alerte : « mer 21 ». */
 export function jourCourt(d: Date): string {
   return `${['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'][d.getDay()]} ${d.getDate()}`;

@@ -60,6 +60,9 @@ const hourLabel = (n: number) => `${String(n).padStart(2, '0')}:00`;
 /** Une heure et demie s'écrit 1.5, pas 1.5000000000000002 : les durées récurrentes
  *  s'additionnent en décimal et le flottant se voit à l'écran sans cela. */
 const arrondi = (h: number) => Math.round(h * 100) / 100;
+/** La journée d'une personne : son volume hebdomadaire sur cinq jours, et non une
+ *  constante — un temps partiel ne doit pas être mesuré à l'aune d'une journée pleine. */
+const cibleDuJour = (m: TeamMember) => Math.round((m.weeklyHours / 5) * 10) / 10;
 
 export function DailyView() {
   const { members, tasks, planningSlots, timeEntries, absences, setPlanningSlot, updateTask, addTimeEntry, removeTimeEntry } = useStore();
@@ -210,7 +213,7 @@ export function DailyView() {
                   <div className="ml-auto text-right text-xs text-slate-500 dark:text-slate-400">
                     <div>Temps occupé aujourd'hui</div>
                     <div className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">
-                      {arrondi(loggedToday + recurrentes)}h / 7h
+                      {arrondi(loggedToday + recurrentes)}h / {cibleDuJour(m)}h
                     </div>
                     {recurrentes > 0 && (
                       <div className="text-[11px] text-indigo-600 dark:text-indigo-300">dont {formatDuree(recurrentes)} récurrent</div>
@@ -302,7 +305,7 @@ export function DailyView() {
                       className="px-3 py-2 text-xs tabular-nums text-slate-500 dark:text-slate-400"
                       title={recurrentes > 0 ? `${loggedToday}h saisies + ${formatDuree(recurrentes)} de créneau récurrent` : undefined}
                     >
-                      {arrondi(loggedToday + recurrentes)}h / 7h
+                      {arrondi(loggedToday + recurrentes)}h / {cibleDuJour(m)}h
                     </td>
                   </tr>
                 );

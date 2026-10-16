@@ -16,12 +16,12 @@ const rand = mulberry32(42);
 const pick = <T,>(arr: T[]): T => arr[Math.floor(rand() * arr.length)];
 
 export const members: TeamMember[] = [
-  { id: 'm1', name: 'Camille Bernard', role: 'Administratrice systèmes', skills: ['Linux', 'VMware', 'Sauvegarde'], weeklyHours: 35, color: '#7c3aed', initials: 'CB' },
-  { id: 'm2', name: 'Karim Belkacem', role: 'Ingénieur réseau', skills: ['Cisco', 'Firewall', 'VPN'], weeklyHours: 35, color: '#0ea5e9', initials: 'KB' },
-  { id: 'm3', name: 'Julie Moreau', role: 'Administratrice systèmes & virtualisation', skills: ['Windows Server', 'Hyper-V', 'Active Directory'], weeklyHours: 35, color: '#db2777', initials: 'JM' },
-  { id: 'm4', name: 'Thomas Petit', role: 'Technicien support N2', skills: ['Helpdesk N2', 'Postes de travail', 'Impression'], weeklyHours: 35, color: '#16a34a', initials: 'TP' },
-  { id: 'm5', name: 'Sofia Rahmani', role: 'Ingénieure cloud & infra', skills: ['Azure', 'Terraform', 'Kubernetes'], weeklyHours: 35, color: '#ea580c', initials: 'SR' },
-  { id: 'm6', name: 'Nicolas Faure', role: 'Technicien réseau N1/N2', skills: ['LAN/WAN', 'Switching', 'Supervision'], weeklyHours: 35, color: '#64748b', initials: 'NF' },
+  { id: 'm1', name: 'Camille Bernard', role: 'Administratrice systèmes', skills: ['Linux', 'VMware', 'Sauvegarde'], weeklyHours: 40, color: '#7c3aed', initials: 'CB' },
+  { id: 'm2', name: 'Karim Belkacem', role: 'Ingénieur réseau', skills: ['Cisco', 'Firewall', 'VPN'], weeklyHours: 40, color: '#0ea5e9', initials: 'KB' },
+  { id: 'm3', name: 'Julie Moreau', role: 'Administratrice systèmes & virtualisation', skills: ['Windows Server', 'Hyper-V', 'Active Directory'], weeklyHours: 40, color: '#db2777', initials: 'JM' },
+  { id: 'm4', name: 'Thomas Petit', role: 'Technicien support N2', skills: ['Helpdesk N2', 'Postes de travail', 'Impression'], weeklyHours: 40, color: '#16a34a', initials: 'TP' },
+  { id: 'm5', name: 'Sofia Rahmani', role: 'Ingénieure cloud & infra', skills: ['Azure', 'Terraform', 'Kubernetes'], weeklyHours: 40, color: '#ea580c', initials: 'SR' },
+  { id: 'm6', name: 'Nicolas Faure', role: 'Technicien réseau N1/N2', skills: ['LAN/WAN', 'Switching', 'Supervision'], weeklyHours: 40, color: '#64748b', initials: 'NF' },
 ];
 
 const today = new Date();
@@ -137,7 +137,7 @@ for (let w = 0; w < 3; w++) {
 // A couple of overload/underload examples for the dashboard to be meaningful:
 // Karim (m2) overloaded this week: fill every slot, week-end compris — illustre la
 // "surcharge" désormais possible quand quelqu'un est planifié au-delà de son volume
-// hebdomadaire (35h) du fait des horaires décalés.
+// hebdomadaire (40h) du fait des horaires décalés.
 for (let d = 0; d < 7; d++) {
   const day = toISODate(addDays(weekStart, d));
   for (const period of ['matin', 'apres_midi'] as const) {

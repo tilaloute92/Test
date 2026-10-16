@@ -17,7 +17,7 @@ export function isAbsent(absences: Absence[], memberId: string, date: Date, peri
 
 /**
  * La charge d'une personne se mesure par rapport à son propre volume hebdomadaire
- * (`member.weeklyHours`, 35h par défaut mais modifiable par personne dans l'onglet
+ * (`member.weeklyHours`, 40h par défaut mais modifiable par personne dans l'onglet
  * Équipe) — pas en comptant les jours affichés. C'est ce qui permet des horaires
  * décalés (travail le week-end, jours de repos en semaine) sans fausser le calcul :
  * ajouter samedi/dimanche à la grille ne change la capacité de personne, seul ce qui

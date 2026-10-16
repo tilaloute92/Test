@@ -1,6 +1,17 @@
 import type { Period } from '../types';
 
-export const PERIOD_HOURS = 3.5;
+/**
+ * Ce que vaut une demi-journée de travail.
+ *
+ * Quatre heures, comme les tranches horaires affichées (8 h → 12 h et 14 h → 18 h, voir
+ * PERIOD_RANGES) : les deux disaient autre chose l'un de l'autre tant que la demi-journée
+ * comptait pour 3,5 h, et la capacité calculée ne retombait pas sur la journée affichée.
+ */
+export const PERIOD_HOURS = 4;
+
+/** Volume hebdomadaire par défaut d'une personne : 8 h par jour, 5 jours. Modifiable
+ *  personne par personne dans l'onglet Équipe — horaires décalés, temps partiels. */
+export const VOLUME_HEBDO_DEFAUT = 40;
 
 export function toISODate(d: Date): string {
   const y = d.getFullYear();

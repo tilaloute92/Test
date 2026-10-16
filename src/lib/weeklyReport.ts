@@ -4,6 +4,7 @@ import { computeWorkload, workloadColors, workloadLevel, type WorkloadLevel } fr
 // type, effacé à la compilation.
 import { NIVEAUX, resultatMeteo, type ResultatMeteo } from './meteoVote';
 import { heuresRecurrentesSur, type Recurrence } from './recurrences';
+import { demiJourneesAbsence, formatDureeAbsence } from './presence';
 import type { Absence, PlanningSlot, ProjectTask, RoadmapItem, RoadmapQuarter, RoadmapStatus, TeamMember, TimeEntry } from '../types';
 
 export type WeatherLevel = 'ensoleille' | 'eclaircies' | 'nuageux' | 'orageux';
@@ -22,7 +23,9 @@ export interface MemberWeekStats {
   hoursLogged: number;
   hoursTarget: number;
   tasksCompleted: ProjectTask[];
-  absenceDays: number;
+  /** Durée d'absence de la semaine, EN DEMI-JOURNÉES (une absence « jour » en vaut deux).
+   *  Mise en forme par formatDureeAbsence — voir src/lib/presence.ts. */
+  absenceDemiJournees: number;
 }
 
 const ROADMAP_STATUSES: RoadmapStatus[] = ['idee', 'planifie', 'en_cours', 'termine', 'reporte', 'abandonne'];
@@ -110,7 +113,7 @@ export function computeWeeklyReport(opts: {
         (saisies + heuresRecurrentesSur({ recurrences, jours: weekDays, memberId: m.id, absences, timeEntries })) * 100
       ) / 100;
     const tasksCompleted = tasks.filter((t) => t.assigneeIds.includes(m.id) && t.completedAt && isoDays.has(t.completedAt.slice(0, 10)));
-    const absenceDays = absences.filter((a) => a.memberId === m.id && isoDays.has(a.date)).length;
+    const absenceDemiJournees = demiJourneesAbsence(absences.filter((a) => a.memberId === m.id && isoDays.has(a.date)));
     return {
       member: m,
       workloadRatio: load.ratio,
@@ -118,7 +121,7 @@ export function computeWeeklyReport(opts: {
       hoursLogged,
       hoursTarget: load.capacityHours,
       tasksCompleted,
-      absenceDays,
+      absenceDemiJournees,
     };
   });
 
@@ -263,7 +266,7 @@ export function buildMarkdownReport(
   lines.push('## Charge par personne');
   for (const p of report.perMember) {
     lines.push(
-      `- **${p.member.name}** — ${Math.round(p.workloadRatio * 100)}% (${workloadColors[p.workloadLevel].label}) · ${p.hoursLogged}h saisies / ${p.hoursTarget}h · ${p.tasksCompleted.length} tâche(s) terminée(s)${p.absenceDays > 0 ? ` · ${p.absenceDays} jour(s) d'absence` : ''}`
+      `- **${p.member.name}** — ${Math.round(p.workloadRatio * 100)}% (${workloadColors[p.workloadLevel].label}) · ${p.hoursLogged}h saisies / ${p.hoursTarget}h · ${p.tasksCompleted.length} tâche(s) terminée(s)${p.absenceDemiJournees > 0 ? ` · ${formatDureeAbsence(p.absenceDemiJournees)} d'absence` : ''}`
     );
   }
   if (report.openCriticalIncidents.length > 0) {

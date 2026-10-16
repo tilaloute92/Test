@@ -157,11 +157,11 @@ contrairement au programme du jour, qui est personnel et part donc en autant de 
 de personnes, le rapport est le même pour tout le monde et les destinataires ont intérêt à
 savoir qui d'autre l'a reçu.
 
-Le corps du message est la **synthèse** (lisible sur un téléphone) ; le **document complet**
-est joint en fichier `.html` autonome, qui s'ouvre d'un double-clic et s'imprime en PDF. Pas
-de PDF généré côté serveur : cela imposerait d'embarquer un navigateur sans interface
-(≈ 300 Mo à installer et à maintenir) pour un résultat que l'impression du fichier joint
-donne déjà.
+Le corps du message et le fichier joint sont rendus par **la même fonction**
+(`corpsDocument` dans `reunionReport.js`) : mêmes sections, mêmes couleurs, même grille.
+Seuls le mot d'introduction et la dernière ligne diffèrent. Le corps est compacté (on
+retire l'indentation, jamais le texte) parce que Gmail tronque un message au-delà
+d'environ 102 ko, et que le rapport complet en pèse déjà 67 avec cinq personnes
 
 Le navigateur envoie au serveur des **chiffres et des libellés déjà calculés**, jamais du
 HTML (voir `src/lib/reunionPayload.ts` côté application et `src/mail/reunionReport.js` ici) :

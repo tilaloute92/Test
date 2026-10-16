@@ -3,6 +3,7 @@ import { formatDateLong, toISODate } from '../lib/date';
 import { COULEUR_ABSENCE, COULEUR_NATURE, estNature, ETIQUETTES_ABSENCE, type MeetingReport } from '../lib/meetingReport';
 import { weatherMeta } from '../lib/weeklyReport';
 import { NIVEAUX, resultatMeteo, type ResultatMeteo } from '../lib/meteoVote';
+import { formatDureeAbsence } from '../lib/presence';
 import type { ProjectTask, TeamMember } from '../types';
 
 /**
@@ -320,13 +321,16 @@ function EcranSujets({ report }: { report: MeetingReport }) {
 
 function EcranAbsences({ report }: { report: MeetingReport }) {
   // Une ligne par personne et par type, agrégée sur les deux semaines.
-  const lignes = new Map<string, { nom: string; type: string; jours: string[] }>();
+  // `demi` compte les CASES (une case = une demi-journée), `jours` ne sert qu'au résumé
+  // des dates : une journée entière occupe deux cases mais une seule date.
+  const lignes = new Map<string, { nom: string; type: string; jours: string[]; demi: number }>();
   report.grille.forEach((ligne) => {
     ligne.creneaux.forEach((code, i) => {
       if (estNature(code) || code === 'libre') return;
       const jour = report.joursAVenir[Math.floor(i / 2)];
       const cle = `${ligne.member.id}|${code}`;
-      const entree = lignes.get(cle) ?? { nom: ligne.member.name, type: code, jours: [] };
+      const entree = lignes.get(cle) ?? { nom: ligne.member.name, type: code, jours: [], demi: 0 };
+      entree.demi += 1;
       const iso = toISODate(jour);
       if (!entree.jours.includes(iso)) entree.jours.push(iso);
       lignes.set(cle, entree);
@@ -344,7 +348,7 @@ function EcranAbsences({ report }: { report: MeetingReport }) {
             <span style={{ width: 12, height: 12, borderRadius: 3, background: COULEUR_ABSENCE[l.type as keyof typeof COULEUR_ABSENCE] ?? '#d9f99d', flexShrink: 0 }} />
             <span style={{ fontSize: 17, fontWeight: 500, width: 180 }}>{l.nom}</span>
             <span style={{ fontSize: 16, color: ENCRE2, width: 180 }}>{ETIQUETTES_ABSENCE[l.type as keyof typeof ETIQUETTES_ABSENCE] ?? l.type}</span>
-            <span style={{ fontSize: 16, color: ENCRE2 }}>{l.jours.length} demi-journée(s) · {resume(l.jours)}</span>
+            <span style={{ fontSize: 16, color: ENCRE2 }}>{formatDureeAbsence(l.demi)} · {resume(l.jours)}</span>
           </div>
         ))
       )}

@@ -2,6 +2,7 @@ import { formatWeekRange, toISODate } from '../lib/date';
 import { COULEUR_ABSENCE, COULEUR_NATURE, estNature, ETIQUETTES_ABSENCE, type MeetingReport } from '../lib/meetingReport';
 import { weatherMeta } from '../lib/weeklyReport';
 import { resultatMeteo, type ResultatMeteo } from '../lib/meteoVote';
+import { formatDureeAbsence } from '../lib/presence';
 import type { TeamMember } from '../types';
 
 /**
@@ -189,13 +190,17 @@ function Rien({ texte }: { texte: string }) {
 }
 
 function Absences({ report }: { report: MeetingReport }) {
-  const lignes = new Map<string, { nom: string; type: string; jours: string[] }>();
+  // `demi` compte les CASES de la grille, qui valent chacune une demi-journée ; `jours`
+  // ne sert qu'à ne pas répéter une date. Les confondre affichait « 5 demi-journée(s) »
+  // pour cinq jours entiers de congés.
+  const lignes = new Map<string, { nom: string; type: string; jours: string[]; demi: number }>();
   report.grille.forEach((ligne) => {
     ligne.creneaux.forEach((code, i) => {
       if (estNature(code) || code === 'libre') return;
       const iso = toISODate(report.joursAVenir[Math.floor(i / 2)]);
       const cle = `${ligne.member.id}|${code}`;
-      const e = lignes.get(cle) ?? { nom: ligne.member.name, type: code, jours: [] };
+      const e = lignes.get(cle) ?? { nom: ligne.member.name, type: code, jours: [], demi: 0 };
+      e.demi += 1;
       if (!e.jours.includes(iso)) e.jours.push(iso);
       lignes.set(cle, e);
     });
@@ -212,7 +217,7 @@ function Absences({ report }: { report: MeetingReport }) {
           <span style={{ width: 7, height: 7, borderRadius: 2, background: COULEUR_ABSENCE[l.type as keyof typeof COULEUR_ABSENCE] ?? '#d9f99d', flexShrink: 0, marginTop: 5 }} />
           <span>
             <strong style={{ color: ENCRE, fontWeight: 600 }}>{l.nom}</strong> —{' '}
-            {ETIQUETTES_ABSENCE[l.type as keyof typeof ETIQUETTES_ABSENCE] ?? l.type}, {l.jours.length} demi-journée(s)
+            {ETIQUETTES_ABSENCE[l.type as keyof typeof ETIQUETTES_ABSENCE] ?? l.type}, {formatDureeAbsence(l.demi)}
           </span>
         </div>
       ))}

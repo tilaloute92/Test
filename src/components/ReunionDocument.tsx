@@ -11,6 +11,7 @@ import {
 import { weatherMeta } from '../lib/weeklyReport';
 import { NIVEAUX, resultatMeteo, type ResultatMeteo } from '../lib/meteoVote';
 import { workloadColors } from '../lib/workload';
+import { formatDureeAbsence } from '../lib/presence';
 import type { Absence, ProjectTask, TeamMember } from '../types';
 
 /**
@@ -799,7 +800,7 @@ function TableCharge({ report }: { report: MeetingReport }) {
               {arrondi(p.hoursLogged)} h <span style={{ color: ENCRE3 }}>/ {arrondi(p.hoursTarget)} h</span>
             </td>
             <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{p.tasksCompleted.length}</td>
-            <td style={td}>{p.absenceDays > 0 ? `${p.absenceDays} demi-journée(s)` : '—'}</td>
+            <td style={td}>{formatDureeAbsence(p.absenceDemiJournees)}</td>
           </tr>
         ))}
       </tbody>

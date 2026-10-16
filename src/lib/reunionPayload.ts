@@ -9,6 +9,7 @@ import {
 } from './meetingReport';
 import { weatherMeta } from './weeklyReport';
 import { NIVEAUX, resultatMeteo, type ResultatMeteo } from './meteoVote';
+import { formatDureeAbsence } from './presence';
 import { workloadColors } from './workload';
 import type { ProjectTask, TeamMember } from '../types';
 
@@ -373,7 +374,7 @@ export function buildReunionPayload(opts: {
       couleur: p.workloadLevel === 'surcharge' ? '#dc2626' : p.workloadLevel === 'charge' ? '#d97706' : '#16a34a',
       saisies: `${arrondi(p.hoursLogged)} h / ${arrondi(p.hoursTarget)} h`,
       terminees: p.tasksCompleted.length,
-      absences: p.absenceDays > 0 ? `${p.absenceDays} demi-journée(s)` : '—',
+      absences: formatDureeAbsence(p.absenceDemiJournees),
     })),
 
     fdr:
