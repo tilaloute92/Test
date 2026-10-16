@@ -1333,8 +1333,8 @@ function RecurrencesCard() {
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
         Ce qui revient chaque semaine à heure fixe — la réunion d'équipe, un point régulier. Ces heures
         apparaissent d'elles-mêmes dans Activité du jour et comptent dans le temps occupé, sans que personne
-        ait à les saisir. Un créneau compte les tranches d'une heure qu'il occupe : une réunion de 14:30 à
-        16:00 compte 2 h. Qui est déclaré absent n'est pas compté.
+        ait à les saisir. Un créneau compte les tranches d'une heure qu'il occupe : la réunion du vendredi, de 14:00 à
+        16:00, compte 2 h. Qui est déclaré absent n'est pas compté.
       </p>
 
       <div className="mt-3 space-y-3">
@@ -1442,7 +1442,9 @@ function RecurrencesCard() {
           onClick={() =>
             setListe((l) => [
               ...l,
-              { id: makeId('rec'), libelle: '', jour: 5, debut: 14.5, duree: 1.5, participants: null },
+              // Un créneau neuf part d'une heure pleine d'une heure : c'est à remplir, pas
+              // une copie de la réunion d'équipe.
+              { id: makeId('rec'), libelle: '', jour: 5, debut: 14, duree: 1, participants: null },
             ])
           }
           className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"

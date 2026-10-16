@@ -26,7 +26,7 @@ const METEO_CLOTURE_DEFAUT = 15;
  * RÈGLE du service, pas un enregistrement : rien n'est écrit chaque semaine.
  */
 const RECURRENCES_DEFAUT = [
-  { id: 'reunion-hebdo', libelle: "Réunion d'équipe", jour: 5, debut: 14.5, duree: 1.5, participants: null },
+  { id: 'reunion-hebdo', libelle: "Réunion d'équipe", jour: 5, debut: 14, duree: 2, participants: null },
 ];
 
 function recurrenceValide(r) {

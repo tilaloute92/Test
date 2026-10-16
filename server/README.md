@@ -112,7 +112,7 @@ intervention faite.
 `config.json`, clé `service.recurrences` — une liste de `{ id, libelle, jour (1–5), debut
 (décimal : 14,5 = 14:30), duree (heures), participants (liste d'identifiants ou null pour
 toute l'équipe) }`. Lue par `GET /api/data/service-config`, écrite par `PUT`, **réservé à
-l'administrateur**. Liste absente = la réunion d'équipe du vendredi 14:30 → 16:00 ; liste
+l'administrateur**. Liste absente = la réunion d'équipe du vendredi 14:00 → 16:00 ; liste
 vide = aucun créneau, et elle le reste (on ne repeuple pas ce qui a été supprimé).
 
 C'est une RÈGLE, pas un enregistrement : rien n'est écrit chaque semaine, les heures sont
@@ -126,8 +126,9 @@ de réunion. Un créneau ne compte pas pour une personne déclarée absente sur 
 demi-journée, ni pour un jour à venir — un créneau qui n'a pas encore eu lieu n'est pas du
 temps passé.
 
-Il compte **les tranches d'une heure qu'il occupe**, et non sa durée exacte : la réunion
-de 14:30 → 16:00 prend les tranches de 14 h et de 15 h, elle compte donc 2 h. Deux règles
+Il compte **les tranches d'une heure qu'il occupe**, et non sa durée exacte : un point
+déclaré de 14:30 à 16:00 occupe les tranches de 14 h et de 15 h, il compte donc 2 h. La
+réunion d'équipe, de 14:00 à 16:00, tient exactement dans ces deux tranches. Deux règles
 ont été écartées en chemin — le tout ou rien (une saisie sur l'une des heures faisait
 sauter le créneau entier, ce qui faisait disparaître la réunion du vendredi sans rien
 dire) et le prorata (durée moins le temps déjà saisi, exact à la minute mais une réunion

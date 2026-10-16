@@ -41,7 +41,7 @@ export interface Recurrence {
 /** La réunion d'équipe du vendredi, telle qu'elle existe déjà dans le service. Sert tant
  *  que rien n'a été enregistré, et en mode autonome où il n'y a pas de serveur. */
 export const RECURRENCES_DEFAUT: Recurrence[] = [
-  { id: 'reunion-hebdo', libelle: "Réunion d'équipe", jour: 5, debut: 14.5, duree: 1.5, participants: null },
+  { id: 'reunion-hebdo', libelle: "Réunion d'équipe", jour: 5, debut: 14, duree: 2, participants: null },
 ];
 
 export const JOURS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
@@ -105,12 +105,13 @@ function chevauchement(a1: number, a2: number, b1: number, b2: number): number {
 /**
  * Les créneaux récurrents de la journée, avec ce qu'ils comptent réellement.
  *
- * Un créneau compte LES TRANCHES D'UNE HEURE QU'IL OCCUPE, et non sa durée exacte : la
- * réunion de 14:30 à 16:00 prend les tranches de 14 h et de 15 h, elle compte donc 2 h et
- * non 1 h 30. C'est la réalité d'une demi-journée — la demi-heure qui précède une réunion
- * ne sert à rien d'autre — et c'est aussi ce que montre la grille, qui ne sait afficher
- * que des tranches entières. Compter 1 h 30 là où la grille en bloque 2 laissait un écart
- * inexplicable entre ce qu'on voit et ce qui est compté.
+ * Un créneau compte LES TRANCHES D'UNE HEURE QU'IL OCCUPE, et non sa durée exacte : un
+ * point de 14:30 à 16:00 occupe les tranches de 14 h et de 15 h, il compte donc 2 h et
+ * non 1 h 30. C'est la réalité d'une demi-journée — la demi-heure qui précède un rendez-
+ * vous ne sert à rien d'autre — et c'est aussi ce que montre la grille, qui ne sait
+ * afficher que des tranches entières. Compter 1 h 30 là où la grille en bloque 2 laissait
+ * un écart inexplicable entre ce qu'on voit et ce qui est compté. La réunion d'équipe,
+ * elle, tient désormais exactement dans ses deux tranches : 14:00 → 16:00.
  *
  * Deux règles écartées en chemin, et pourquoi :
  * - tout ou rien (une saisie sur l'une des heures faisait sauter le créneau entier) :
