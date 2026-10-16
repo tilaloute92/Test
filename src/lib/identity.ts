@@ -85,7 +85,7 @@ export function resolveMember(
   }
 
   // 4. L'identifiant contre le nom, pour les comptes du type « rnelson » face à
-  //    « R. Nelson ». Exigé sans ambiguïté : si deux fiches correspondent, on ne tranche
+  //    « A. Virgo ». Exigé sans ambiguïté : si deux fiches correspondent, on ne tranche
   //    pas à la place de la personne.
   if (identifiant) {
     const candidats = members.filter((m) => {

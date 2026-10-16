@@ -280,7 +280,7 @@ l'étape qui échoue :
 ```
 ✔ connexion — Serveur ldaps://dc01.monentreprise.local:636 joignable
 ✔ service   — Compte de service connecté (CN=svc_suivi,...)
-✔ recherche — Trouvé : CN=R. Nelson,OU=Utilisateurs,DC=...
+✔ recherche — Trouvé : CN=A. Virgo,OU=Utilisateurs,DC=...
 ✔ bind      — Mot de passe accepté par le contrôleur de domaine
 ✘ groupe    — NON membre de Techniciens Infra — accès refusé
 ```
@@ -499,7 +499,7 @@ passer par l'application :
 
 ```powershell
 cd C:\services\suivi-infra
-node scripts\create-local-user.js rnelson "MotDePasseSolide123!" "R. Nelson"
+node scripts\create-local-user.js avirgo "MotDePasseSolide123!" "A. Virgo"
 ```
 
 > ### ⚠ Cette commande exige une console **administrateur**
@@ -521,7 +521,7 @@ n'apparaisse ni dans la liste des processus ni dans l'historique du terminal :
 
 ```powershell
 $env:SUIVI_INFRA_PASSWORD = 'MotDePasseSolide123!'
-node scripts\create-local-user.js rnelson --name "R. Nelson"
+node scripts\create-local-user.js avirgo --name "A. Virgo"
 Remove-Item Env:\SUIVI_INFRA_PASSWORD
 ```
 

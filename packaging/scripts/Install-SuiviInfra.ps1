@@ -60,7 +60,7 @@
     passe n'est jamais passé en paramètre : il est toujours saisi masqué.
 
 .PARAMETER AdminName
-    Nom complet associé à ce compte (ex. "R. Nelson"). Défaut : l'identifiant.
+    Nom complet associé à ce compte (ex. "A. Virgo"). Défaut : l'identifiant.
 
 .PARAMETER SkipAdminAccount
     Ne crée aucun compte et ne pose aucune question. À utiliser pour une installation
@@ -430,6 +430,28 @@ if ($WithService) {
     }
     Set-Acl -Path (Join-Path $ServicePath 'data') -AclObject $acl
     Write-Ok 'Droits restreints sur service\data (Administrateurs + SYSTEM)'
+
+    # .env porte la CLÉ DE SIGNATURE DES SESSIONS (JWT_SECRET) et, selon la configuration,
+    # le mot de passe du relais SMTP. Il est posé à la racine du dossier de service, pas
+    # dans data\ : il héritait donc des droits du parent, et le dossier par défaut
+    # (C:\services\...) est créé sous C:\, où le groupe Utilisateurs a un accès en
+    # lecture par héritage. Autrement dit, n'importe quel compte ouvrant une session sur ce
+    # serveur pouvait lire la clé — et avec elle FABRIQUER un cookie de session valide pour
+    # n'importe qui, « admin » compris, puisqu'un JWT se vérifie tout seul, sans rien
+    # consulter côté serveur. Même traitement que data\, donc.
+    # service.log suit, par précaution : une trace d'erreur peut contenir du contenu métier.
+    foreach ($fichier in @('.env', 'service.log')) {
+        $chemin = Join-Path $ServicePath $fichier
+        if (-not (Test-Path $chemin)) { continue }
+        $aclF = Get-Acl $chemin
+        $aclF.SetAccessRuleProtection($true, $false)
+        foreach ($sid in @($sidAdmins, $sidSystem)) {
+            $aclF.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
+                $sid, 'FullControl', 'None', 'None', 'Allow')))
+        }
+        Set-Acl -Path $chemin -AclObject $aclF
+    }
+    Write-Ok 'Droits restreints sur .env (clé de session) et service.log'
 
     $nodeExe = (Get-Command node.exe).Source
     $entryPoint = Join-Path $ServicePath 'src\index.js'

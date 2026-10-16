@@ -27,7 +27,7 @@
     Réinitialise « admin », mot de passe demandé de façon masquée.
 
 .EXAMPLE
-    .\Reset-SuiviInfraAdmin.ps1 -UserName rnelson -FullName "R. Nelson"
+    .\Reset-SuiviInfraAdmin.ps1 -UserName avirgo -FullName "A. Virgo"
 #>
 
 [CmdletBinding()]

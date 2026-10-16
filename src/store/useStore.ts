@@ -561,6 +561,12 @@ export const useStore = create<StoreState>()(
           absences: state.absences,
           roadmapItems: state.roadmapItems,
           copils: state.copils,
+          // journalEntries manquait : les sept autres collections étaient enregistrées, pas
+          // celle-ci. En mode autonome, toute note écrite dans le journal d'une tâche
+          // disparaissait donc au rechargement de la page — et c'est précisément ce qu'on
+          // écrit pour le relire plus tard. En mode client/serveur le défaut ne se voyait
+          // pas : c'est le serveur qui détient les notes.
+          journalEntries: state.journalEntries,
         } as unknown as StoreState;
       },
       // Réparation des données déjà enregistrées avec l'ancienne génération d'identifiants :
