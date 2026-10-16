@@ -442,7 +442,11 @@ function TableProjets({ projets }: { projets: ProjetRollup[] }) {
               <div style={{ height: 6, background: '#f1f5f9', borderRadius: 3, overflow: 'hidden' }}>
                 <div style={{ width: `${Math.min(100, p.avance)}%`, height: '100%', background: COULEUR_NATURE.Projet, borderRadius: 3 }} />
               </div>
-              <div style={{ fontSize: 11, color: ENCRE3, marginTop: 3, fontVariantNumeric: 'tabular-nums' }}>{p.avance} %</div>
+              {/* Le déclaré en barre, le terminé en toutes lettres : un projet annoncé à
+                  80 % dont 10 % des heures sont bouclées se voit alors d'un coup d'œil. */}
+              <div style={{ fontSize: 11, color: ENCRE3, marginTop: 3, fontVariantNumeric: 'tabular-nums' }}>
+                {p.avance} % · {p.avanceTerminees} % terminé
+              </div>
             </td>
             <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>
               <strong style={{ color: p.budget > 0 && p.heuresPassees > p.budget ? '#b91c1c' : ENCRE, fontWeight: 600 }}>{p.heuresPassees} h</strong>
@@ -457,6 +461,15 @@ function TableProjets({ projets }: { projets: ProjetRollup[] }) {
           </tr>
         ))}
       </tbody>
+      <tfoot>
+        <tr>
+          <td colSpan={5} style={{ fontSize: 10.5, color: ENCRE3, paddingTop: 6 }}>
+            Avancement : le premier chiffre est celui déclaré par l'équipe — la moyenne des avancements saisis sur les
+            tâches, pondérée par leurs heures estimées. Le second est la part du budget d'heures réellement terminée.
+            L'écart entre les deux se discute ; aucun des deux ne se déduit de l'autre.
+          </td>
+        </tr>
+      </tfoot>
     </table>
   );
 }

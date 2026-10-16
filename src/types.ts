@@ -44,6 +44,14 @@ export interface ProjectTask {
   createdAt: string;
   completedAt?: string;
   description?: string;
+  /**
+   * Avancement déclaré, de 0 à 100 — une appréciation humaine, pas un calcul.
+   *
+   * Absent sur l'immense majorité des tâches, et c'est voulu : une tâche vaut alors 0 ou
+   * 100 selon son statut, exactement comme avant. Il sert surtout aux tâches de projet
+   * assez grosses pour qu'« en cours » ne dise rien d'utile.
+   */
+  avancement?: number;
   /** Qui a formulé la demande (service, personne) — pour les tâches de nature Demande.
    *  Texte libre : l'annuaire n'est pas dans l'application, et un demandeur peut être
    *  « la direction » ou « le standard » autant qu'une personne nommée. */
@@ -287,7 +295,7 @@ export interface AuthSettings {
  * c'est précisément l'enchaînement « on a constaté ça, donc on est passé en critique » qui
  * a de la valeur six mois plus tard.
  */
-export type JournalNature = 'note' | 'statut' | 'priorite' | 'echeance' | 'assignation' | 'creation';
+export type JournalNature = 'note' | 'statut' | 'priorite' | 'echeance' | 'assignation' | 'avancement' | 'creation';
 
 /**
  * Entrée du journal d'une tâche, d'un incident ou d'un projet.

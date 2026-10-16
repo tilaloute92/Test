@@ -2,6 +2,7 @@ import { addDays, formatDayLabel, formatWeekRange, getWorkingDaysOfWeek, startOf
 import type { Recurrence } from './recurrences';
 import { computeWeeklyReport, type WeeklyReport } from './weeklyReport';
 import { isAbsent } from './workload';
+import { avancementProjet } from './avancement';
 import { jourCourt, pourcent, presenceJours, SEUIL_PRESENCE_DEFAUT } from './presence';
 import type { Absence, AbsenceType, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
 
@@ -81,8 +82,17 @@ export interface ProjetRollup {
   nom: string;
   /** Noms des personnes assignées aux tâches du projet, les plus présentes d'abord. */
   pilotes: string[];
-  /** 0–100. Part du budget d'heures portée par les tâches terminées (voir calculeAvancement). */
+  /** 0–100. Avancement déclaré : moyenne des avancements des tâches, pondérée par les
+   *  heures estimées (voir src/lib/avancement.ts). */
   avance: number;
+  /** 0–100. Part du budget d'heures portée par les tâches terminées — le chiffre qui ne
+   *  dépend de l'avis de personne, affiché à côté du précédent. */
+  avanceTerminees: number;
+  /** Faux quand aucune tâche n'est estimée : les deux chiffres sont alors des moyennes
+   *  par tâche, et l'interface doit pouvoir le dire. */
+  avancePondere: boolean;
+  /** Combien de tâches portent un avancement saisi à la main. */
+  avanceRenseignee: number;
   heuresPassees: number;
   /** Somme des charges estimées de toutes les tâches du projet, terminées ou non. */
   budget: number;
@@ -98,24 +108,6 @@ export interface ProjetRollup {
   /** Jours écoulés depuis la dernière heure saisie sur le projet. null = jamais rien saisi. */
   joursSansActivite: number | null;
   tachesEnRetard: number;
-}
-
-/**
- * Avancement d'un projet : part des heures ESTIMÉES que portent ses tâches terminées.
- *
- * Volontairement pas « nombre de tâches terminées / nombre de tâches » : un projet de dix
- * tâches dont neuf font une heure et la dixième quarante afficherait 90 % alors qu'il
- * reste l'essentiel à faire. Quand aucune tâche n'est estimée — c'est fréquent au début —
- * on retombe sur le comptage, en le disant.
- */
-function calculeAvancement(taches: ProjectTask[]): number {
-  const budget = taches.reduce((s, t) => s + t.estimatedHours, 0);
-  if (budget > 0) {
-    const fait = taches.filter((t) => t.status === 'termine').reduce((s, t) => s + t.estimatedHours, 0);
-    return Math.round((fait / budget) * 100);
-  }
-  if (taches.length === 0) return 0;
-  return Math.round((taches.filter((t) => t.status === 'termine').length / taches.length) * 100);
 }
 
 function joursDepuis(iso: string, reference: Date): number {
@@ -166,7 +158,7 @@ export function rollupProjets(opts: {
       members
     ).slice(0, 2);
 
-    const avance = calculeAvancement(taches);
+    const av = avancementProjet(taches);
 
     let etat: EtatProjet = 'vert';
     let etatRaison = 'rien à signaler';
@@ -200,7 +192,10 @@ export function rollupProjets(opts: {
     projets.push({
       nom,
       pilotes,
-      avance,
+      avance: av.declare,
+      avanceTerminees: av.termine,
+      avancePondere: av.pondere,
+      avanceRenseignee: av.tachesRenseignees,
       heuresPassees: Math.round(heuresPassees * 10) / 10,
       budget,
       echeance: echeances.at(-1),

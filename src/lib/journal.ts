@@ -37,6 +37,7 @@ export const LIBELLE_NATURE: Record<JournalNature, string> = {
   priorite: 'Priorité',
   echeance: 'Échéance',
   assignation: 'Assignation',
+  avancement: 'Avancement',
   creation: 'Création',
 };
 
@@ -98,6 +99,11 @@ export function entreesDeChangement(
   }
   if (patch.dueDate !== undefined && (patch.dueDate || '') !== (avant.dueDate || '')) {
     out.push(entree(avant.id, 'echeance', auteur, { de: jolieDate(avant.dueDate), vers: jolieDate(patch.dueDate) }));
+  }
+  // L'avancement est une appréciation : savoir qui l'a portée de 25 à 70 %, et quand, est
+  // le seul moyen de la relire plus tard autrement que comme un chiffre tombé du ciel.
+  if (patch.avancement !== undefined && (patch.avancement ?? 0) !== (avant.avancement ?? 0)) {
+    out.push(entree(avant.id, 'avancement', auteur, { de: `${avant.avancement ?? 0} %`, vers: `${patch.avancement ?? 0} %` }));
   }
   if (patch.assigneeIds !== undefined) {
     const a = [...avant.assigneeIds].sort().join(',');

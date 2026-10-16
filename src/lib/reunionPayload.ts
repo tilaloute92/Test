@@ -77,6 +77,8 @@ export interface PayloadProjet {
   nom: string;
   pilotes: string;
   avance: number;
+  /** Part du budget d'heures réellement terminée, affichée à côté de l'avancement déclaré. */
+  avanceTerminees: number;
   heures: string;
   depassement: boolean;
   echeance: string;
@@ -311,6 +313,7 @@ export function buildReunionPayload(opts: {
       nom: p.nom,
       pilotes: p.pilotes.join(', ') || 'personne d’assigné',
       avance: p.avance,
+      avanceTerminees: p.avanceTerminees,
       heures: `${p.heuresPassees} h / ${p.budget} h`,
       depassement: p.budget > 0 && p.heuresPassees > p.budget,
       echeance: jolieDate(p.echeance),

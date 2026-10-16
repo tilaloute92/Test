@@ -142,7 +142,12 @@ export function ReunionSynthese({
                       <span style={{ display: 'block', width: `${Math.min(100, p.avance)}%`, height: 6, background: COULEUR_NATURE.Projet, borderRadius: 3 }} />
                     </span>
                   </span>
-                  <span style={{ width: 34, textAlign: 'right', color: ENCRE3, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{p.avance} %</span>
+                  <span
+                    style={{ width: 34, textAlign: 'right', color: ENCRE3, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}
+                    title={`${p.avanceTerminees} % des heures terminées`}
+                  >
+                    {p.avance} %
+                  </span>
                 </div>
               ))
             )}

@@ -9,6 +9,7 @@
  * raisons qui l'expliquent sont toujours retournées avec le résultat et affichées à l'écran.
  */
 
+import { avancementProjet } from './avancement';
 import { addDays, formatDateLong, toISODate } from './date';
 import type { ProjectTask, TeamMember, TimeEntry } from '../types';
 
@@ -27,7 +28,11 @@ export interface FlashReport {
   todoTasks: ProjectTask[];
   waitingTasks: ProjectTask[];
   overdueTasks: ProjectTask[];
+  /** 0–1. Avancement déclaré (voir src/lib/avancement.ts) — le MÊME chiffre que celui du
+   *  rapport de réunion, qui en calculait un autre jusqu'ici. */
   completionRatio: number;
+  /** 0–1. Part du budget d'heures portée par les tâches terminées. */
+  completedRatio: number;
   estimatedHours: number;
   spentHours: number;
   team: TeamMember[];
@@ -73,6 +78,8 @@ export function computeFlashReport(
   }
   const spentHours = Array.from(spentByTask.values()).reduce((s, h) => s + h, 0);
   const estimatedHours = projectTasks.reduce((s, t) => s + t.estimatedHours, 0);
+
+  const avancement = avancementProjet(projectTasks);
 
   const memberIds = new Set(projectTasks.flatMap((t) => t.assigneeIds));
   const team = members.filter((m) => memberIds.has(m.id));
@@ -120,7 +127,8 @@ export function computeFlashReport(
     todoTasks,
     waitingTasks,
     overdueTasks,
-    completionRatio: projectTasks.length > 0 ? completedTasks.length / projectTasks.length : 0,
+    completionRatio: avancement.declare / 100,
+    completedRatio: avancement.termine / 100,
     estimatedHours,
     spentHours,
     team,

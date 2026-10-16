@@ -106,7 +106,14 @@ export function FlashReportModal({
 
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Kpi label="Tâches terminées" value={`${report.completedTasks.length}/${report.totalTasks}`} />
-          <Kpi label="Avancement" value={`${Math.round(report.completionRatio * 100)}%`} />
+          {/* Deux chiffres dans une même tuile : l'avancement déclaré est une appréciation,
+              la part terminée ne dépend de l'avis de personne. Les séparer en deux tuiles
+              les faisait lire comme deux indicateurs sans rapport. */}
+          <Kpi
+            label="Avancement déclaré"
+            value={`${Math.round(report.completionRatio * 100)} %`}
+            sous={`dont ${Math.round(report.completedRatio * 100)} % des heures terminées`}
+          />
           <Kpi label="Charge (passé / estimé)" value={`${report.spentHours}h / ${report.estimatedHours}h`} />
           <Kpi label="En attente" value={String(report.waitingTasks.length)} />
         </div>
@@ -211,11 +218,12 @@ function JournalProjet({ project, tasks }: { project: string; tasks: ProjectTask
   );
 }
 
-function Kpi({ label, value }: { label: string; value: string }) {
+function Kpi({ label, value, sous }: { label: string; value: string; sous?: string }) {
   return (
     <Card className="p-3">
       <div className="text-lg font-semibold tabular-nums text-slate-800 dark:text-slate-100">{value}</div>
       <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{label}</div>
+      {sous && <div className="text-[11px] text-slate-400">{sous}</div>}
     </Card>
   );
 }

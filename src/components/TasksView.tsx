@@ -10,6 +10,7 @@ import { bucketTasksByDueDate, KANBAN_STATUSES } from '../lib/taskViews';
 import { nextSort, sortTasks, type TaskSort, type TaskSortKey } from '../lib/taskSort';
 import type { Priority, ProjectTask, TaskCreneau, TaskStatus, TaskType, TeamMember } from '../types';
 import { conflitCreneau, formatDuree, formatPlage, periodeDuCreneau } from '../lib/creneaux';
+import { avancementSaisi, avancementTache } from '../lib/avancement';
 import { formatHeure } from '../lib/hours';
 import { useRecurrences } from '../hooks/useRecurrences';
 import { makeId } from '../lib/ids';
@@ -204,8 +205,13 @@ export function TasksView() {
               <div key={r.project} className="relative flex flex-wrap items-center gap-3 py-2 text-sm">
                 <RagBadge rag={r.rag} />
                 <span className="min-w-0 flex-1 truncate font-medium text-slate-800 dark:text-slate-100">{r.project}</span>
-                <span className="text-xs text-slate-400">
-                  {r.completedTasks.length}/{r.totalTasks} tâche(s) · {Math.round(r.completionRatio * 100)}%
+                <span
+                  className="text-xs text-slate-400"
+                  title={`Avancement déclaré ${Math.round(r.completionRatio * 100)} % — moyenne des avancements des tâches pondérée par les heures estimées. Tâches terminées : ${Math.round(
+                    r.completedRatio * 100
+                  )} % du budget d'heures.`}
+                >
+                  {Math.round(r.completionRatio * 100)} % · {r.completedTasks.length}/{r.totalTasks} tâche(s) terminée(s)
                 </span>
                 <button
                   onClick={() => setFlashReportProject(r.project)}
@@ -463,6 +469,16 @@ function TaskTable({
                 <td className="px-3 py-2">
                   <div className="font-medium text-slate-800 dark:text-slate-100">{t.title}</div>
                   {t.project && <div className="text-xs text-slate-400">{t.project}</div>}
+                  {/* L'avancement n'apparaît que là où il a été renseigné : une barre à 0 %
+                      sur chaque ligne ferait du bruit sans rien apprendre. */}
+                  {avancementSaisi(t) && (
+                    <div className="mt-1 flex items-center gap-1.5" title={`Avancement déclaré : ${avancementTache(t)} %`}>
+                      <span className="block h-1.5 w-16 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                        <span className="block h-1.5 rounded-full bg-violet-500" style={{ width: `${avancementTache(t)}%` }} />
+                      </span>
+                      <span className="text-[11px] tabular-nums text-slate-400">{avancementTache(t)} %</span>
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <TaskTypeBadge type={t.type} />
@@ -803,6 +819,7 @@ interface TaskFormPayload {
   description?: string;
   demandeur?: string;
   creneaux?: TaskCreneau[];
+  avancement?: number;
 }
 
 function TaskForm({
@@ -833,6 +850,7 @@ function TaskForm({
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [demandeur, setDemandeur] = useState(initial?.demandeur ?? '');
+  const [avancement, setAvancement] = useState(initial?.avancement ?? 0);
   const [creneaux, setCreneaux] = useState<TaskCreneau[]>(initial?.creneaux ?? []);
   const [erreurCreneau, setErreurCreneau] = useState<string | null>(null);
   const recurrences = useRecurrences();
@@ -854,6 +872,9 @@ function TaskForm({
       dueDate: dueDate || undefined,
       description: description.trim() || undefined,
       demandeur: type === 'Demande' ? demandeur.trim() || undefined : undefined,
+      // Zéro et « pas renseigné » se valent pour le calcul : on n'enregistre donc rien
+      // plutôt qu'un 0, ce qui garde les tâches jamais renseignées exactement comme avant.
+      avancement: type === 'Projet' && avancement > 0 ? avancement : undefined,
       creneaux: creneaux.length > 0 ? creneaux : undefined,
     };
 
@@ -926,6 +947,34 @@ function TaskForm({
           {type === 'Projet' && (
             <Field label="Projet">
               <input value={project} onChange={(e) => setProject(e.target.value)} className="input" placeholder="Ex : Migration Datacenter Nord" />
+            </Field>
+          )}
+          {type === 'Projet' && status !== 'termine' && (
+            <Field label={`Avancement — ${avancement} %`}>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={avancement}
+                  onChange={(e) => setAvancement(Number(e.target.value))}
+                  className="h-1.5 flex-1 accent-violet-600"
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={avancement}
+                  onChange={(e) => setAvancement(Math.min(100, Math.max(0, Number(e.target.value))))}
+                  className="input w-20 text-sm"
+                />
+              </div>
+              <span className="mt-1 block text-[11px] text-slate-400">
+                Votre appréciation, pas un calcul. L'avancement du projet est la moyenne de celles de ses tâches,
+                pondérée par les heures estimées. Une tâche passée en « Terminé » vaut 100 % quoi qu'il en soit.
+              </span>
             </Field>
           )}
           {type === 'Demande' && (

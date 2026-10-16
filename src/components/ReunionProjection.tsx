@@ -279,6 +279,7 @@ function EcranProjets({ report }: { report: MeetingReport }) {
           </span>
           <span style={{ width: 96, textAlign: 'right', fontSize: 14, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
             <strong>{p.avance} %</strong>
+            <span style={{ fontSize: 13, color: ENCRE3 }}> · {p.avanceTerminees} % terminé</span>
           </span>
         </div>
       ))}

@@ -309,7 +309,7 @@ function projets(p) {
           </td>
           <td style="${TD}">
             ${barre(pr.avance, '#7c3aed', 110)}
-            <div style="font-size:11px;color:${ENCRE3};margin-top:3px">${e(pr.avance)} %</div>
+            <div style="font-size:11px;color:${ENCRE3};margin-top:3px">${e(pr.avance)} % · ${e(pr.avanceTerminees)} % terminé</div>
           </td>
           <td style="${TD}${pr.depassement ? ';color:#b91c1c;font-weight:600' : ''}">${e(pr.heures)}</td>
           <td style="${TD}">${e(pr.echeance)}</td>
@@ -598,7 +598,7 @@ export function renderMail(p) {
                   <td style="padding:6px 0;border-top:1px solid ${TRAIT};width:120px">${barre(pr.avance, '#7c3aed', 110)}</td>
                   <td style="padding:6px 0 6px 8px;border-top:1px solid ${TRAIT};text-align:right;color:${ENCRE3};white-space:nowrap">${e(
                     pr.avance
-                  )} %</td>
+                  )} %<div style="font-size:11px;color:${ENCRE3}">${e(pr.avanceTerminees)} % terminé</div></td>
                 </tr>`
               )
               .join('')}
@@ -693,7 +693,8 @@ export function renderText(p) {
   if (p.projets.length) {
     l.push('');
     l.push('PROJETS');
-    for (const pr of p.projets) l.push(`  - ${pr.nom} — ${pr.avance} %, ${pr.heures}${pr.alerte ? ` (! ${pr.alerte})` : ''}`);
+    for (const pr of p.projets)
+      l.push(`  - ${pr.nom} — ${pr.avance} % déclaré (${pr.avanceTerminees} % terminé), ${pr.heures}${pr.alerte ? ` (! ${pr.alerte})` : ''}`);
   }
   l.push('');
   l.push('SUJETS PRÉVUS SUR LES DEUX SEMAINES (sous réserve)');

@@ -18,6 +18,7 @@ const REPERE: Record<JournalNature, { signe: string; couleur: string }> = {
   priorite: { signe: '▲', couleur: 'text-amber-500' },
   echeance: { signe: '◷', couleur: 'text-amber-500' },
   assignation: { signe: '☗', couleur: 'text-emerald-500' },
+  avancement: { signe: '▮', couleur: 'text-violet-500' },
   creation: { signe: '＋', couleur: 'text-slate-400' },
 };
 

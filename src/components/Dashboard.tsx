@@ -611,7 +611,7 @@ function ProjectDetails({ reports }: { reports: FlashReport[] }) {
             <RagBadge rag={r.rag} />
             <span className="font-medium text-slate-800 dark:text-slate-100">{r.project}</span>
             <span className="text-xs text-slate-400">
-              {r.completedTasks.length}/{r.totalTasks} tâche(s) · {Math.round(r.completionRatio * 100)}%
+              {Math.round(r.completionRatio * 100)} % · {r.completedTasks.length}/{r.totalTasks} tâche(s) terminée(s)
             </span>
           </div>
           {/* Les raisons du statut sont toujours affichées : un flash report ne donne jamais une couleur sans dire pourquoi. */}
