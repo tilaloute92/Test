@@ -34,6 +34,65 @@ export function TasksView() {
   const { members, tasks, timeEntries, journalEntries, planningSlots, addTask, updateTask, removeTask, setPlanningSlot } = useStore();
   // Qui signe ce qui sera écrit dans les journaux.
   const auteur = useAuteur();
+  const [menuProjet, setMenuProjet] = useState<string | null>(null);
+  const [renommage, setRenommage] = useState<string | null>(null);
+
+  /**
+   * Agir sur un « projet » revient toujours à agir sur SES TÂCHES : un projet n'est pas un
+   * enregistrement, c'est la valeur du champ Projet partagée par plusieurs tâches (voir
+   * listProjects). D'où ces trois actions, qui disent chacune ce qu'elles font aux tâches
+   * plutôt que de laisser croire à la suppression d'un objet qui n'existe pas.
+   *
+   * On retient toutes les tâches portant ce nom, y compris celles qui ne sont pas de
+   * nature Projet : une tâche importée peut en porter un, et la laisser derrière ferait
+   * réapparaître le projet au prochain changement de nature.
+   */
+  const tachesDuProjet = (nom: string) => tasks.filter((t) => t.project === nom);
+
+  /** « 1 tâche », « 3 tâches » — dans ces messages on connaît le nombre, le « (s) » de
+   *  précaution utilisé ailleurs n'a plus de raison d'être. */
+  const pluriel = (n: number, mot: string) => `${n} ${mot}${n > 1 ? 's' : ''}`;
+
+  const heuresDuProjet = (ids: string[]) =>
+    Math.round(timeEntries.filter((e) => ids.includes(e.taskId)).reduce((somme, e) => somme + e.hours, 0) * 10) / 10;
+
+  const renommerProjet = (ancien: string, nouveau: string) => {
+    for (const t of tachesDuProjet(ancien)) updateTask(t.id, { project: nouveau }, auteur);
+    setRenommage(null);
+    setMenuProjet(null);
+  };
+
+  const detacherProjet = async (nom: string) => {
+    const concernees = tachesDuProjet(nom);
+    setMenuProjet(null);
+    if (
+      await confirm({
+        title: `Détacher les tâches de « ${nom} »`,
+        message: `${pluriel(concernees.length, 'tâche')} perdront leur rattachement au projet. Elles restent dans la liste avec leurs heures et leur journal ; « ${nom} » disparaît des flash reports et ses heures passent sous « Hors projet » dans l'onglet Temps.`,
+        confirmLabel: 'Détacher',
+      })
+    ) {
+      for (const t of concernees) updateTask(t.id, { project: undefined }, auteur);
+    }
+  };
+
+  const supprimerProjet = async (nom: string) => {
+    const concernees = tachesDuProjet(nom);
+    const heures = heuresDuProjet(concernees.map((t) => t.id));
+    setMenuProjet(null);
+    if (
+      await confirm({
+        title: `Supprimer « ${nom} » et ses tâches`,
+        message: `${pluriel(concernees.length, 'tâche')} seront supprimées définitivement, avec leur journal. ${
+          heures > 0 ? `Les ${heures} h déjà saisies ne sont pas perdues : elles se regrouperont sous « Tâches supprimées » dans l'onglet Temps. ` : ''
+        }Il n'y a pas de corbeille — le seul retour en arrière est une sauvegarde.`,
+        confirmLabel: 'Supprimer',
+        danger: true,
+      })
+    ) {
+      for (const t of concernees) removeTask(t.id);
+    }
+  };
 
   /**
    * Un créneau réserve la demi-journée dans le planning — mais seulement si elle est
@@ -142,7 +201,7 @@ export function TasksView() {
           </p>
           <div className="divide-y divide-slate-50 dark:divide-slate-800/60">
             {projectSummaries.map((r) => (
-              <div key={r.project} className="flex flex-wrap items-center gap-3 py-2 text-sm">
+              <div key={r.project} className="relative flex flex-wrap items-center gap-3 py-2 text-sm">
                 <RagBadge rag={r.rag} />
                 <span className="min-w-0 flex-1 truncate font-medium text-slate-800 dark:text-slate-100">{r.project}</span>
                 <span className="text-xs text-slate-400">
@@ -154,6 +213,43 @@ export function TasksView() {
                 >
                   Flash report
                 </button>
+                <button
+                  onClick={() => setMenuProjet(menuProjet === r.project ? null : r.project)}
+                  title={`Renommer, détacher ou supprimer « ${r.project} »`}
+                  aria-label={`Actions sur le projet ${r.project}`}
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                >
+                  ⋯
+                </button>
+
+                {menuProjet === r.project && (
+                  <>
+                    {/* Même fermeture que le menu des assignés : un fond transparent qui
+                        prend le clic suivant, où qu'il tombe. */}
+                    <div className="fixed inset-0 z-10" onClick={() => setMenuProjet(null)} />
+                    <div className="absolute right-0 top-full z-20 mt-1 w-72 rounded-lg border border-slate-200 bg-white p-1.5 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                      <ActionProjet
+                        titre="Renommer le projet"
+                        detail={`Réécrit le nom sur ${pluriel(tachesDuProjet(r.project).length, 'tâche')}.`}
+                        onClick={() => {
+                          setRenommage(r.project);
+                          setMenuProjet(null);
+                        }}
+                      />
+                      <ActionProjet
+                        titre="Détacher les tâches"
+                        detail="Les tâches restent, avec leurs heures et leur journal ; le projet disparaît."
+                        onClick={() => void detacherProjet(r.project)}
+                      />
+                      <ActionProjet
+                        titre="Supprimer le projet et ses tâches"
+                        detail="Les tâches et leur journal sont supprimés. Les heures saisies restent, sous « Tâches supprimées »."
+                        danger
+                        onClick={() => void supprimerProjet(r.project)}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -229,6 +325,16 @@ export function TasksView() {
             reserverDemiJournees(patch.creneaux, id);
             setEditingTask(null);
           }}
+        />
+      )}
+
+      {renommage && (
+        <RenameProjectModal
+          ancien={renommage}
+          projets={projectSummaries.map((r) => r.project)}
+          nbTaches={tachesDuProjet(renommage).length}
+          onCancel={() => setRenommage(null)}
+          onValider={(nouveau) => renommerProjet(renommage, nouveau)}
         />
       )}
 
@@ -897,6 +1003,97 @@ function TaskForm({
   );
 }
 
+
+
+/** Une entrée du menu d'un projet : ce qu'elle fait, et ce qu'elle laisse derrière. Le
+ *  détail n'est pas décoratif — « supprimer » et « détacher » se ressemblent dans un menu
+ *  et ne se rattrapent pas de la même façon. */
+function ActionProjet({
+  titre,
+  detail,
+  danger = false,
+  onClick,
+}: {
+  titre: string;
+  detail: string;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`block w-full rounded-md px-2 py-1.5 text-left ${
+        danger ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+      }`}
+    >
+      <span className={`block font-medium ${danger ? '' : 'text-slate-700 dark:text-slate-200'}`}>{titre}</span>
+      <span className="block text-[11px] leading-snug text-slate-400">{detail}</span>
+    </button>
+  );
+}
+
+/**
+ * Renommer un projet, c'est réécrire le même nom sur toutes ses tâches.
+ *
+ * D'où l'avertissement quand le nom saisi est celui d'un projet existant : l'application
+ * ne peut pas l'empêcher — deux projets du même nom n'en font qu'un, par construction —
+ * mais elle doit le dire avant, pas le laisser découvrir après coup.
+ */
+function RenameProjectModal({
+  ancien,
+  projets,
+  nbTaches,
+  onCancel,
+  onValider,
+}: {
+  ancien: string;
+  projets: string[];
+  nbTaches: number;
+  onCancel: () => void;
+  onValider: (nouveau: string) => void;
+}) {
+  const dismiss = useModalDismiss(onCancel, 'ce renommage');
+  const [nom, setNom] = useState(ancien);
+  const propre = nom.trim();
+  const fusion = propre !== ancien && projets.some((p) => p !== ancien && p.localeCompare(propre, 'fr', { sensitivity: 'base' }) === 0);
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4" {...dismiss.backdrop}>
+      <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl dark:bg-slate-900" {...dismiss.content}>
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Renommer « {ancien} »</h3>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Le nom sera réécrit sur {nbTaches} tâche{nbTaches > 1 ? 's' : ''}. Rien d'autre ne change : heures, journaux et créneaux suivent.
+        </p>
+        <input
+          autoFocus
+          value={nom}
+          onChange={(e) => setNom(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && propre && propre !== ancien) onValider(propre);
+          }}
+          className="input mt-3 w-full text-sm"
+        />
+        {fusion && (
+          <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+            Un projet porte déjà ce nom : les deux n'en feront plus qu'un, et c'est sans retour automatique.
+          </p>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onCancel} className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800">
+            Annuler
+          </button>
+          <button
+            disabled={!propre || propre === ancien}
+            onClick={() => onValider(propre)}
+            className="rounded-md bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
+          >
+            Renommer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Les créneaux horaires posés sur la tâche.

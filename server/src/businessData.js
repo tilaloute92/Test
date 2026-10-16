@@ -139,10 +139,25 @@ export function addMember(payload) {
   persist('members');
   return item;
 }
+/**
+ * Applique une modification partielle à un enregistrement, en traitant `null` comme un
+ * EFFACEMENT.
+ *
+ * Le navigateur ne peut pas transmettre `undefined` : `JSON.stringify` supprime la clé, et
+ * la modification arriverait amputée — vider le projet ou l'échéance d'une tâche semblerait
+ * marcher à l'écran puis réapparaîtrait au rechargement, ce qui est la pire des deux issues.
+ * Il envoie donc `null`, et c'est ici qu'on retire le champ.
+ */
+function appliquerPatch(current, patch, id) {
+  const next = { ...current, ...patch, id };
+  for (const [cle, valeur] of Object.entries(patch)) if (valeur === null) delete next[cle];
+  return next;
+}
+
 export function updateMember(id, patch) {
   const idx = cache.members.findIndex((m) => m.id === id);
   if (idx === -1) return null;
-  cache.members[idx] = { ...cache.members[idx], ...patch, id };
+  cache.members[idx] = appliquerPatch(cache.members[idx], patch, id);
   persist('members');
   return cache.members[idx];
 }
@@ -184,9 +199,9 @@ export function updateTask(id, patch, actor, baseUpdatedAt) {
   if (idx === -1) return { status: 'notfound' };
   const current = cache.tasks[idx];
   if (conflicts(current, baseUpdatedAt)) return { status: 'conflict', item: current };
-  const next = { ...current, ...patch, id };
+  const next = appliquerPatch(current, patch, id);
   if (patch.status === 'termine' && current.status !== 'termine') next.completedAt = new Date().toISOString();
-  else if (patch.status && patch.status !== 'termine') next.completedAt = undefined;
+  else if (patch.status && patch.status !== 'termine') delete next.completedAt;
   next.updatedAt = new Date().toISOString();
   next.updatedBy = actor;
   cache.tasks[idx] = next;
@@ -346,7 +361,7 @@ export function updateRoadmapItem(id, patch, actor, baseUpdatedAt) {
   if (idx === -1) return { status: 'notfound' };
   const current = cache.roadmapItems[idx];
   if (conflicts(current, baseUpdatedAt)) return { status: 'conflict', item: current };
-  const next = { ...current, ...patch, id, updatedAt: new Date().toISOString(), updatedBy: actor };
+  const next = { ...appliquerPatch(current, patch, id), updatedAt: new Date().toISOString(), updatedBy: actor };
   cache.roadmapItems[idx] = next;
   persist('roadmapItems');
   return { status: 'ok', item: next };
@@ -377,7 +392,7 @@ export function updateCopil(id, patch, actor, baseUpdatedAt) {
   if (idx === -1) return { status: 'notfound' };
   const current = cache.copils[idx];
   if (conflicts(current, baseUpdatedAt)) return { status: 'conflict', item: current };
-  const next = { ...current, ...patch, id, updatedAt: new Date().toISOString(), updatedBy: actor };
+  const next = { ...appliquerPatch(current, patch, id), updatedAt: new Date().toISOString(), updatedBy: actor };
   cache.copils[idx] = next;
   persist('copils');
   return { status: 'ok', item: next };

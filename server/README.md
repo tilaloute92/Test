@@ -82,6 +82,19 @@ la raison écrite noir sur blanc. Les voix de plus de 53 semaines sont effacées
 Ces voix ne sont volontairement **pas** une collection partagée : l'instantané
 `GET /api/data/` part à tout le monde et se retrouve dans les sauvegardes du navigateur.
 
+## Modifier un champ, le vider : `null` veut dire « retire-le »
+
+Un `PATCH` sur une tâche, une fiche d'équipe, une initiative FDR ou un COPIL applique les
+champs reçus et **supprime ceux reçus à `null`** (voir `appliquerPatch` dans
+`businessData.js`). Le navigateur ne peut pas dire « vide ce champ » autrement :
+`JSON.stringify({ dueDate: undefined })` produit `{}` — la modification partait amputée, le
+serveur ne voyait rien à changer et renvoyait l'ancienne valeur. Effacer une échéance, un
+projet ou un demandeur semblait alors marcher, jusqu'au rechargement.
+
+Cela ne vaut pas pour `PUT /api/data/service-config`, qui n'est pas la modification d'un
+enregistrement mais un réglage par champs nommés : un champ absent n'y est pas touché, et
+un `null` y est une valeur invalide, refusée.
+
 ## Demandes et créneaux horaires des tâches
 
 Deux champs facultatifs de plus sur une tâche, stockés tels quels dans

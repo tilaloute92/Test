@@ -93,13 +93,30 @@ export const initializeServer = (snapshot?: SharedCollections) =>
   request<ServerStatus & SharedCollections>('/initialize', { method: 'POST', body: JSON.stringify(snapshot ? { snapshot } : {}) });
 
 export const syncAddMember = (member: TeamMember) => request<TeamMember>('/members', { method: 'POST', body: JSON.stringify(member) });
+
+/**
+ * Un champ VIDÉ doit traverser le réseau, et `undefined` ne le fait pas.
+ *
+ * `JSON.stringify({ project: undefined })` produit `{}` : la modification part amputée,
+ * le serveur ne voit rien à changer et renvoie l'ancienne valeur, que le sondage suivant
+ * réaffiche. Effacer l'échéance, le projet ou le demandeur d'une tâche semblait alors
+ * marcher… jusqu'au rechargement. On convertit donc en `null`, qui franchit JSON et que
+ * le serveur interprète comme « retire ce champ » (voir `appliquerPatch` dans
+ * server/src/businessData.js).
+ */
+function avecEffacements<T extends object>(patch: T): Record<string, unknown> {
+  const sortie: Record<string, unknown> = {};
+  for (const [cle, valeur] of Object.entries(patch)) sortie[cle] = valeur === undefined ? null : valeur;
+  return sortie;
+}
+
 export const syncUpdateMember = (id: string, patch: Partial<TeamMember>) =>
-  request<TeamMember>(`/members/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) });
+  request<TeamMember>(`/members/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(avecEffacements(patch)) });
 export const syncRemoveMember = (id: string) => request<{ ok: boolean }>(`/members/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 export const syncAddTask = (task: ProjectTask) => request<ProjectTask>('/tasks', { method: 'POST', body: JSON.stringify(task) });
 export const syncUpdateTask = (id: string, patch: Partial<ProjectTask>, baseUpdatedAt?: string) =>
-  request<ProjectTask>(`/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch), headers: baseHeader(baseUpdatedAt) });
+  request<ProjectTask>(`/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(avecEffacements(patch)), headers: baseHeader(baseUpdatedAt) });
 export const syncRemoveTask = (id: string) => request<{ ok: boolean }>(`/tasks/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 export const syncSetPlanningSlot = (memberId: string, date: string, period: Period, taskId: string | null) =>
@@ -116,7 +133,7 @@ export const syncAddRoadmapItem = (item: RoadmapItem) => request<RoadmapItem>('/
 export const syncUpdateRoadmapItem = (id: string, patch: Partial<RoadmapItem>, baseUpdatedAt?: string) =>
   request<RoadmapItem>(`/roadmap-items/${encodeURIComponent(id)}`, {
     method: 'PATCH',
-    body: JSON.stringify(patch),
+    body: JSON.stringify(avecEffacements(patch)),
     headers: baseHeader(baseUpdatedAt),
   });
 export const syncRemoveRoadmapItem = (id: string) => request<{ ok: boolean }>(`/roadmap-items/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -140,7 +157,7 @@ export const syncRemoveJournalEntry = (id: string) =>
 
 export const syncAddCopil = (item: Copil) => request<Copil>('/copils', { method: 'POST', body: JSON.stringify(item) });
 export const syncUpdateCopil = (id: string, patch: Partial<Copil>, baseUpdatedAt?: string) =>
-  request<Copil>(`/copils/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch), headers: baseHeader(baseUpdatedAt) });
+  request<Copil>(`/copils/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(avecEffacements(patch)), headers: baseHeader(baseUpdatedAt) });
 export const syncRemoveCopil = (id: string) => request<{ ok: boolean }>(`/copils/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 /**
@@ -161,6 +178,10 @@ export interface ServiceConfig {
 export const fetchServiceConfig = () => request<ServiceConfig>('/service-config');
 
 export const saveServiceConfig = (patch: { seuilPresence?: number; meteoCloture?: number; recurrences?: Recurrence[] }) =>
+  // Pas d'`avecEffacements` ici : ce n'est pas la modification d'un enregistrement mais un
+  // réglage par champs nommés, et le serveur distingue « absent » (ne pas toucher) de
+  // « null » (valeur invalide). Envoyer null ferait échouer l'enregistrement d'un seul
+  // champ sur les autres.
   request<ServiceConfig>('/service-config', { method: 'PUT', body: JSON.stringify(patch) });
 
 /**
