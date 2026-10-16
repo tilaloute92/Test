@@ -1333,8 +1333,8 @@ function RecurrencesCard() {
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
         Ce qui revient chaque semaine à heure fixe — la réunion d'équipe, un point régulier. Ces heures
         apparaissent d'elles-mêmes dans Activité du jour et comptent dans le temps occupé, sans que personne
-        ait à les saisir. Qui est déclaré absent, ou qui saisit son propre temps sur ces heures, n'est pas
-        compté.
+        ait à les saisir. Un créneau compte les tranches d'une heure qu'il occupe : une réunion de 14:30 à
+        16:00 compte 2 h. Qui est déclaré absent n'est pas compté.
       </p>
 
       <div className="mt-3 space-y-3">

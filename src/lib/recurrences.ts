@@ -89,12 +89,12 @@ function absentSur(absences: Absence[], memberId: string, iso: string, periode: 
 /** Ce que vaut un créneau récurrent pour une personne, un jour donné. */
 export interface CreneauRetenu {
   recurrence: Recurrence;
-  /** Heures effectivement comptées : la durée, moins ce qui a déjà été saisi dessus. */
+  /** Heures comptées : les TRANCHES D'UNE HEURE que le créneau occupe (voir plus bas). */
   heures: number;
-  /** Heures de la plage déjà couvertes par une saisie de temps. */
+  /** Heures saisies par ailleurs sur la plage du créneau — information, pas déduction. */
   dejaSaisi: number;
   /** Renseigné quand rien n'est compté, pour pouvoir le dire à l'écran. */
-  ecarte: 'absent' | 'tout-saisi' | null;
+  ecarte: 'absent' | null;
 }
 
 /** Intersection, en heures, entre deux plages horaires. */
@@ -105,19 +105,20 @@ function chevauchement(a1: number, a2: number, b1: number, b2: number): number {
 /**
  * Les créneaux récurrents de la journée, avec ce qu'ils comptent réellement.
  *
- * La règle a d'abord été binaire : une seule saisie posée sur l'une des heures couvertes
- * faisait sauter tout le créneau. En pratique la réunion du vendredi 14:30 → 16:00 occupe
- * les tranches de 14 h et de 15 h, si bien qu'une heure validée à 14:00 sur un projet —
- * avant la réunion, donc parfaitement légitime — effaçait les 1 h 30 d'un coup, sans rien
- * dire. C'est ce qui faisait disparaître la réunion de l'activité du vendredi.
+ * Un créneau compte LES TRANCHES D'UNE HEURE QU'IL OCCUPE, et non sa durée exacte : la
+ * réunion de 14:30 à 16:00 prend les tranches de 14 h et de 15 h, elle compte donc 2 h et
+ * non 1 h 30. C'est la réalité d'une demi-journée — la demi-heure qui précède une réunion
+ * ne sert à rien d'autre — et c'est aussi ce que montre la grille, qui ne sait afficher
+ * que des tranches entières. Compter 1 h 30 là où la grille en bloque 2 laissait un écart
+ * inexplicable entre ce qu'on voit et ce qui est compté.
  *
- * Le créneau compte désormais POUR CE QUI N'A PAS DÉJÀ ÉTÉ SAISI sur sa plage : une heure
- * saisie de 14:00 à 15:00 en recouvre une demi-heure, la réunion compte donc pour 1 h. Le
- * total de l'après-midi reste juste, rien n'est compté deux fois, et rien ne disparaît
- * d'un coup — ce qui reste est affiché, et ce qui est retiré est expliqué.
+ * Deux règles écartées en chemin, et pourquoi :
+ * - tout ou rien (une saisie sur l'une des heures faisait sauter le créneau entier) :
+ *   valider son 14:00 effaçait la réunion sans rien dire ;
+ * - au prorata (durée moins le temps déjà saisi sur la plage) : exact à la minute, mais
+ *   une réunion d'1 h 30 finissait comptée 1 h, ce qui la sous-estime plus encore.
  *
- * Une absence déclarée sur la demi-journée, elle, écarte toujours le créneau entièrement :
- * on n'était pas là.
+ * Reste l'absence, qui écarte toujours le créneau en entier : on n'était pas là.
  */
 export function creneauxRecurrents(opts: {
   recurrences: Recurrence[];
@@ -135,15 +136,11 @@ export function creneauxRecurrents(opts: {
     if (absentSur(absences, memberId, iso, periodeDe(recurrence))) {
       return { recurrence, heures: 0, dejaSaisi: 0, ecarte: 'absent' as const };
     }
-    // Les saisies flottantes (sans heure d'ancrage) ne sont pas prises en compte : elles
-    // ne disent pas À QUEL MOMENT le temps a été passé, et les supposer sur la réunion
-    // serait une invention.
-    const dejaSaisi = Math.min(
-      recurrence.duree,
-      duJour.reduce((s, e) => s + chevauchement(e.hour!, e.hour! + e.hours, recurrence.debut, fin), 0)
-    );
-    const heures = Math.round((recurrence.duree - dejaSaisi) * 100) / 100;
-    return { recurrence, heures, dejaSaisi, ecarte: heures <= 0 ? ('tout-saisi' as const) : null };
+    // Les saisies flottantes (sans heure d'ancrage) ne disent pas à quel moment le temps a
+    // été passé : les supposer sur la réunion serait une invention.
+    const dejaSaisi =
+      Math.round(duJour.reduce((s, e) => s + chevauchement(e.hour!, e.hour! + e.hours, recurrence.debut, fin), 0) * 100) / 100;
+    return { recurrence, heures: tranchesCouvertes(recurrence).length, dejaSaisi, ecarte: null };
   });
 }
 

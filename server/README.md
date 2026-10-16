@@ -126,13 +126,13 @@ de réunion. Un créneau ne compte pas pour une personne déclarée absente sur 
 demi-journée, ni pour un jour à venir — un créneau qui n'a pas encore eu lieu n'est pas du
 temps passé.
 
-Il ne compte, enfin, que **pour ce qui n'a pas déjà été saisi** sur sa plage : une heure
-validée de 14:00 à 15:00 recouvre une demi-heure de la réunion de 14:30 → 16:00, qui
-compte donc pour 1 h. La règle était d'abord binaire — une seule saisie sur l'une des
-heures couvertes faisait sauter tout le créneau — et c'est ce qui faisait disparaître la
-réunion du vendredi de l'activité du jour, sans rien dire, dès que quelqu'un avait validé
-son 14:00. L'interface affiche maintenant le créneau dans tous les cas, avec ce qu'il
-compte et, s'il compte moins, pourquoi.
+Il compte **les tranches d'une heure qu'il occupe**, et non sa durée exacte : la réunion
+de 14:30 → 16:00 prend les tranches de 14 h et de 15 h, elle compte donc 2 h. Deux règles
+ont été écartées en chemin — le tout ou rien (une saisie sur l'une des heures faisait
+sauter le créneau entier, ce qui faisait disparaître la réunion du vendredi sans rien
+dire) et le prorata (durée moins le temps déjà saisi, exact à la minute mais une réunion
+d'1 h 30 finissait comptée 1 h). L'interface affiche le créneau dans tous les cas, avec ce
+qu'il compte, la durée réelle quand elle diffère, et les saisies faites en parallèle.
 
 ## Journal d'avancement
 

@@ -472,12 +472,13 @@ function SlotEditor({
   const parHeure = HOURLY_PERIODS.includes(period) && !compact;
   const occupants = parHeure ? placeEntries(period, entries) : null;
 
-  // Les tranches que la réunion occupe encore : celles déjà prises par une saisie
-  // reviennent à la saisie, qui est un fait, là où le créneau n'est qu'une règle.
+  // Les tranches que la réunion occupe. Une saisie posée sur l'une d'elles reste affichée
+  // à sa place — c'est un fait, le créneau n'est qu'une règle — mais ne la retire plus au
+  // créneau pour autant : la réunion a bien eu lieu, et elle est comptée en entier.
   const prises = new Map<number, Recurrence>();
   for (const c of creneaux) {
     if (c.heures <= 0) continue;
-    for (const h of tranchesCouvertes(c.recurrence)) if (!occupants?.has(h)) prises.set(h, c.recurrence);
+    for (const h of tranchesCouvertes(c.recurrence)) prises.set(h, c.recurrence);
   }
 
   const prevus = new Map<number, { pose: CreneauPose; premier: boolean }>();
@@ -491,9 +492,10 @@ function SlotEditor({
   // sur l'heure de la réunion, qui s'affiche à sa place). Elles restent listées : rien de
   // ce qui a été saisi ne doit disparaître de l'écran sous prétexte que la grille ne sait
   // pas où le mettre.
-  const affichees = occupants
-    ? new Set([...occupants].filter(([h]) => !prises.has(h)).map(([, e]) => e))
-    : null;
+  // Depuis qu'une saisie l'emporte sur le créneau à l'affichage, toute saisie placée par
+  // la grille y est bien visible : la lister une seconde fois en « autres saisies »
+  // donnait à croire qu'il y en avait deux.
+  const affichees = occupants ? new Set(occupants.values()) : null;
   const horsGrille = affichees ? entries.filter((e) => !affichees.has(e)) : entries;
 
   const history = (
@@ -621,17 +623,19 @@ function SlotEditor({
 function BandeauRecurrence({ creneau, compact }: { creneau: CreneauRetenu; compact: boolean }) {
   const { recurrence: r, heures, dejaSaisi, ecarte } = creneau;
   const compte = heures > 0;
+  // Ce qui mérite un mot : la réunion ne dure pas un compte rond, ou des heures ont été
+  // saisies par-dessus. Le reste se lit dans la plage affichée.
   const explication = ecarte === 'absent'
     ? 'non comptée — vous êtes noté absent sur cette demi-journée'
-    : ecarte === 'tout-saisi'
-      ? 'non comptée — ces heures sont déjà saisies sur autre chose'
-      : dejaSaisi > 0
-        ? `${formatDuree(dejaSaisi)} déjà saisie(s) sur ces heures`
+    : dejaSaisi > 0
+      ? `${formatDuree(dejaSaisi)} saisie(s) en parallèle sur ces heures`
+      : heures !== r.duree
+        ? `${formatDuree(r.duree)} de réunion, arrondies aux tranches occupées`
         : '';
 
   return (
     <div
-      title={`Créneau récurrent (${JOURS[r.jour]}, ${formatPlage(r)}) — compté dans les heures du jour sans rien saisir. Il ne compte que pour ce qui n'a pas déjà été saisi sur sa plage.`}
+      title={`Créneau récurrent (${JOURS[r.jour]}, ${formatPlage(r)}) — compté dans les heures du jour sans rien saisir, à hauteur des tranches d'une heure qu'il occupe.`}
       className={`mb-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border px-2 py-1.5 text-xs ${
         compte
           ? 'border-indigo-200 bg-indigo-50 dark:border-indigo-500/30 dark:bg-indigo-500/10'
@@ -643,8 +647,6 @@ function BandeauRecurrence({ creneau, compact }: { creneau: CreneauRetenu; compa
         {r.libelle}
       </span>
       {!compact && <span className="tabular-nums text-slate-500 dark:text-slate-400">{formatPlage(r)}</span>}
-      {/* La raison est écrite à côté du chiffre, jamais à la place : une heure qui
-          disparaît sans explication passe pour un bogue, et c'en était un. */}
       {explication && <span className="text-[11px] text-slate-400">· {explication}</span>}
       <span
         className={`ml-auto font-semibold tabular-nums ${compte ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-400 line-through'}`}
