@@ -457,6 +457,24 @@ function App() {
   // « Ma journée » plutôt que le tableau de bord d'équipe : quatre personnes sur cinq
   // ouvrent l'application pour leur propre travail, pas pour piloter l'équipe.
   const [tab, setTab] = useState<Tab>('myday');
+  /**
+   * Le jour sur lequel ouvrir Activité du jour, posé par le rattrapage de « Ma journée ».
+   * Remis à zéro dès qu'on quitte l'onglet : revenir dessus plus tard doit montrer
+   * aujourd'hui, pas le jour qu'on rattrapait la semaine dernière. La `key` du composant
+   * dépend de cette date, pour que la vue se remonte sur le bon jour même si elle est
+   * déjà affichée.
+   */
+  const [jourAOuvrir, setJourAOuvrir] = useState<Date | undefined>(undefined);
+  const ouvrirJour = (d: Date) => {
+    setJourAOuvrir(d);
+    setTab('daily');
+  };
+  /** Toute autre navigation oublie le jour rattrapé : revenir sur Activité du jour plus
+   *  tard doit montrer aujourd'hui, pas le jour qu'on rattrapait la semaine dernière. */
+  const allerA = (t: Tab) => {
+    setJourAOuvrir(undefined);
+    setTab(t);
+  };
   const [searchOpen, setSearchOpen] = useState(false);
   const { dark, setDark } = useTheme();
   const authGate = useAuthGate();
@@ -520,7 +538,7 @@ function App() {
       : null;
   }, [authGate.session]);
 
-  const goToMember = () => setTab('planning');
+  const goToMember = () => allerA('planning');
 
   /**
    * Sortie volontaire du mode client/serveur. Confirmation obligatoire : ce n'est pas un
@@ -584,8 +602,8 @@ function App() {
               </div>
             </div>
           </div>
-          <DesktopNav tab={tab} onSelect={setTab} onSearch={() => setSearchOpen(true)} />
-          <CompactNav tab={tab} onSelect={setTab} />
+          <DesktopNav tab={tab} onSelect={allerA} onSearch={() => setSearchOpen(true)} />
+          <CompactNav tab={tab} onSelect={allerA} />
           {authGate.displayName && (
             <div className="ml-auto hidden max-w-[220px] items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 md:flex">
               {/* Le mode n'est jamais implicite : un point vert = les données viennent du
@@ -660,9 +678,9 @@ function App() {
       {/* pb-20 sur petit écran : la barre fixe du bas recouvrirait sinon le dernier bloc,
           et rien n'indiquerait qu'il reste du contenu dessous. */}
       <main className="mx-auto max-w-7xl px-4 py-6 pb-20 lg:pb-6">
-        {tab === 'myday' && <MyDayView onNavigate={setTab} />}
-        {tab === 'dashboard' && <Dashboard onSelectMember={goToMember} onNavigate={setTab} />}
-        {tab === 'daily' && <DailyView />}
+        {tab === 'myday' && <MyDayView onNavigate={allerA} onOuvrirJour={ouvrirJour} />}
+        {tab === 'dashboard' && <Dashboard onSelectMember={goToMember} onNavigate={allerA} />}
+        {tab === 'daily' && <DailyView key={jourAOuvrir?.getTime() ?? 'aujourdhui'} dateInitiale={jourAOuvrir} />}
         {tab === 'planning' && <PlanningView />}
         {tab === 'tasks' && <TasksView />}
         {tab === 'time' && <TimeTrackingView />}
@@ -674,8 +692,8 @@ function App() {
         {tab === 'settings' && <SettingsView canEdit={authGate.isAdmin} />}
       </main>
 
-      <MobileTabBar tab={tab} onSelect={setTab} />
-      {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} onNavigate={setTab} />}
+      <MobileTabBar tab={tab} onSelect={allerA} />
+      {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} onNavigate={allerA} />}
     </div>
   );
 }

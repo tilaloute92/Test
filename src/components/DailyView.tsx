@@ -61,11 +61,27 @@ const HOURLY_PERIODS: Period[] = ['matin', 'apres_midi'];
 const AUTRE = '__autre__';
 const hourLabel = (n: number) => `${String(n).padStart(2, '0')}:00`;
 
-export function DailyView() {
+/**
+ * « Temps occupé aujourd'hui », ou la date quand ce n'en est pas une.
+ *
+ * Le libellé était écrit en dur : en reculant d'un jour pour saisir la veille — le geste
+ * le plus courant, puisqu'on remplit rarement ses heures à la minute — l'écran continuait
+ * d'annoncer « aujourd'hui » au-dessus d'un total qui portait sur un autre jour. De quoi
+ * douter que la saisie soit partie au bon endroit, alors qu'elle l'était.
+ */
+const libelleTempsOccupeTitre = (date: Date): string =>
+  isToday(date) ? "Temps occupé aujourd'hui" : `Temps occupé — ${formatDateLong(date).toLowerCase()}`;
+
+/**
+ * `dateInitiale` : le jour sur lequel s'ouvrir, au lieu d'aujourd'hui. Sert au rattrapage
+ * depuis « Ma journée » — cliquer « lun 19 oct., 4 h non saisies » doit poser l'écran sur
+ * le 19, pas sur aujourd'hui avec le champ date à retrouver.
+ */
+export function DailyView({ dateInitiale }: { dateInitiale?: Date } = {}) {
   const { members, tasks, planningSlots, timeEntries, absences, setPlanningSlot, updateTask, addTimeEntry, removeTimeEntry } = useStore();
   const confirm = useConfirm();
   const recurrences = useRecurrences();
-  const [date, setDate] = useState(new Date());
+  const [date, setDate] = useState(() => dateInitiale ?? new Date());
   const [mode, setMode] = useViewMode<DailyViewMode>('activite-jour', DAILY_VIEW_MODES, 'personne');
   const [logging, setLogging] = useState<LoggingTarget | null>(null);
   const [hours, setHours] = useState('3.5');
@@ -209,7 +225,7 @@ export function DailyView() {
                     <div className="text-xs text-slate-500 dark:text-slate-400">{m.role}</div>
                   </div>
                   <div className="ml-auto text-right text-xs text-slate-500 dark:text-slate-400">
-                    <div>Temps occupé aujourd'hui</div>
+                    <div>{libelleTempsOccupeTitre(date)}</div>
                     <div className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">
                       {libelleTempsOccupe(loggedToday + recurrentes, cibleDuJour(m, absences, date))}
                     </div>
@@ -792,10 +808,13 @@ function HourGrid({
     <div className="mt-2 border-t border-slate-100 pt-2 dark:border-slate-800">
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Heure par heure</span>
+        {/* « tranches » et non « h » : ce compteur compte des CASES de la grille, pas des
+            heures. Une saisie d'1 h 30 en occupe deux — annoncer « 2h occupées » à côté
+            d'un total de 1,5 h faisait se contredire deux chiffres du même écran. */}
         <span className="text-[10px] tabular-nums text-slate-400">
-          {occupees}h occupée(s) sur {heures.length}
+          {occupees} tranche{occupees > 1 ? 's' : ''} sur {heures.length}
           {heuresHorsGrille > 0 && (
-            <span className="text-amber-600 dark:text-amber-400"> · {heuresHorsGrille}h hors grille</span>
+            <span className="text-amber-600 dark:text-amber-400"> · {heuresHorsGrille} hors grille</span>
           )}
         </span>
       </div>

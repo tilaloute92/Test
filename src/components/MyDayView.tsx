@@ -10,6 +10,7 @@ import { entriesFor, placeEntries } from '../lib/dayAllocation';
 import { PERIOD_RANGES, formatHour } from '../lib/hours';
 import { resolveMember, setStoredMemberId } from '../lib/identity';
 import { cibleDuJour, libelleTempsOccupe } from '../lib/workload';
+import { joursIncomplets } from '../lib/saisieEnRetard';
 import type { Period, ProjectTask, TeamMember } from '../types';
 import type { Tab } from '../App';
 
@@ -29,7 +30,7 @@ import type { Tab } from '../App';
 const PERIODES: Period[] = ['matin', 'apres_midi'];
 const PERIODE_LABEL: Record<Period, string> = { matin: 'Matin', apres_midi: 'Après-midi' };
 
-export function MyDayView({ onNavigate }: { onNavigate: (t: Tab) => void }) {
+export function MyDayView({ onNavigate, onOuvrirJour }: { onNavigate: (t: Tab) => void; onOuvrirJour: (d: Date) => void }) {
   const { members, tasks, planningSlots, timeEntries, absences, copils } = useStore();
   const session = useSessionLike();
   // `choix` compte les fois où la personne s'est désignée. Il doit entrer dans les
@@ -75,6 +76,7 @@ export function MyDayView({ onNavigate }: { onNavigate: (t: Tab) => void }) {
         forcer((n) => n + 1);
       }}
       onNavigate={onNavigate}
+      onOuvrirJour={onOuvrirJour}
       data={{ tasks, planningSlots, timeEntries, absences, copils, members }}
     />
   );
@@ -134,12 +136,15 @@ function MaJournee({
   source,
   onChangerDePersonne,
   onNavigate,
+  onOuvrirJour,
   data,
 }: {
   member: TeamMember;
   source: string;
   onChangerDePersonne: () => void;
   onNavigate: (t: Tab) => void;
+  /** Ouvrir Activité du jour sur une date précise — le rattrapage d'un jour passé. */
+  onOuvrirJour: (d: Date) => void;
   data: Donnees;
 }) {
   const aujourdhui = new Date();
@@ -173,6 +178,18 @@ function MaJournee({
 
   const enRetard = mesTaches.filter((t) => t.dueDate && t.dueDate < iso);
   const prioritaire = parUrgence[0];
+
+  /**
+   * Les jours ouvrés passés où il reste des heures à saisir (voir saisieEnRetard.ts).
+   * Sans ce rappel, la veille non saisie disparaissait de l'écran à minuit.
+   */
+  const joursACompleter = useMemo(
+    // La date est reconstruite depuis `iso` plutôt que reprise de `aujourdhui` : un objet
+    // Date recréé à chaque rendu relancerait le calcul en boucle. Midi, pour qu'un
+    // changement d'heure ne fasse jamais basculer le jour.
+    () => joursIncomplets({ member, timeEntries, absences, recurrences, aujourdhui: new Date(`${iso}T12:00:00`) }),
+    [member, timeEntries, absences, recurrences, iso]
+  );
 
   /** Les tranches d'une heure non renseignées, créneau par créneau. */
   const manquantes = useMemo(() => {
@@ -291,7 +308,10 @@ function MaJournee({
           )}
         </Tuile>
 
-        <Tuile ton={manquantes.length > 0 ? 'ambre' : 'vert'} titre="Heures à valider">
+        {/* Les jours passés rejoignent cette tuile plutôt que d'en occuper une quatrième,
+            qui resterait seule sur une deuxième rangée. C'est le même sujet : ce qu'il
+            reste à saisir. */}
+        <Tuile ton={manquantes.length > 0 || joursACompleter.length > 0 ? 'ambre' : 'vert'} titre="Heures à valider">
           {manquantes.length === 0 ? (
             <p className="text-sm text-slate-600 dark:text-slate-300">
               {absence?.period === 'jour' ? 'Journée d’absence : rien à saisir.' : 'Tout est saisi pour aujourd’hui.'}
@@ -311,6 +331,22 @@ function MaJournee({
                 Compléter dans Activité du jour →
               </button>
             </>
+          )}
+
+          {joursACompleter.length > 0 && (
+            <div className="mt-2 border-t border-amber-200/70 pt-2 dark:border-amber-500/30">
+              <div className="text-xs text-amber-700 dark:text-amber-400">Jours passés à compléter</div>
+              {joursACompleter.map((j) => (
+                <button
+                  key={j.iso}
+                  onClick={() => onOuvrirJour(j.date)}
+                  className="mt-0.5 block w-full text-left text-sm text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
+                >
+                  {formatDateLong(j.date)}
+                  <span className="text-slate-400"> — {j.saisi}h sur {j.cible}h</span>
+                </button>
+              ))}
+            </div>
           )}
         </Tuile>
 
