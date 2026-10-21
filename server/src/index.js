@@ -6,6 +6,7 @@ import { authRouter } from './routes/auth.js';
 import { dataRouter } from './routes/data.js';
 import { mailRouter } from './routes/mail.js';
 import { equipesRouter } from './routes/equipes.js';
+import { glpiRouter } from './routes/glpi.js';
 import { startMailScheduler } from './mail/scheduler.js';
 import { startRetentionScheduler } from './retention.js';
 import { listerEquipes, migrerSiBesoin, rattacherComptesSansEquipe } from './equipes.js';
@@ -51,6 +52,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/data', dataRouter);
 app.use('/api/mail', mailRouter);
 app.use('/api/equipes', equipesRouter);
+app.use('/api/glpi', glpiRouter);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

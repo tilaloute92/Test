@@ -55,6 +55,14 @@ import {
 import { makeId } from '../lib/ids';
 import { fetchServiceConfig, saveServiceConfig } from '../lib/serverSync';
 import { fetchMailConfig, saveMailConfig, sendTestMail, verifyMailRelay, type MailConfig } from '../lib/mailApi';
+import {
+  criteresDepuisUrl,
+  fetchGlpiConfig,
+  saveGlpiConfig,
+  testGlpi,
+  type GlpiConfig,
+  type GlpiTest,
+} from '../lib/glpiApi';
 
 const NOT_LOGGED_IN_HINT =
   "Connectez-vous d'abord avec un compte local ou LDAP existant (celui créé via `npm run create-user` sur le serveur, par exemple) pour gérer ceci depuis l'application.";
@@ -400,6 +408,12 @@ export function SettingsView({ canEdit = true }: { canEdit?: boolean }) {
       <RetentionCard confirm={confirm} />
       <ArchivedDataCard confirm={confirm} />
       </fieldset>
+
+      {/* HORS du fieldset réservé au compte « admin » : ce réglage appartient au RÉFÉRENT
+          de l'équipe — c'est la file de tickets de son équipe, pas une configuration de
+          la plateforme. La carte se retire d'elle-même pour qui n'est pas référent (le
+          serveur refuse la lecture), et c'est lui, pas l'affichage, qui fait la règle. */}
+      <GlpiCard />
     </div>
   );
 }
@@ -1489,6 +1503,321 @@ const QUARTS = Array.from({ length: (20 - 6) * 4 }, (_, i) => formatHeure(6 + i 
 function enDecimal(valeur: string, precedent: number): number {
   const [h, m] = valeur.split(':').map(Number);
   return Number.isFinite(h) && Number.isFinite(m) ? h + m / 60 : precedent;
+}
+
+/**
+ * Raccordement à GLPI : où est l'instance, avec quels jetons, et quels tickets compter.
+ *
+ * Réservé au référent de l'équipe : c'est la file de SON équipe. Les deux jetons ne sont
+ * jamais réaffichés — le serveur ne renvoie que « renseigné ou non » — si bien qu'on ne
+ * peut pas les récupérer depuis un poste, même avec les droits.
+ */
+function GlpiCard() {
+  const mode = useAppMode();
+  const [cfg, setCfg] = useState<GlpiConfig | null>(null);
+  const [refuse, setRefuse] = useState(false);
+  const [url, setUrl] = useState('');
+  const [appToken, setAppToken] = useState('');
+  const [userToken, setUserToken] = useState('');
+  const [actif, setActif] = useState(false);
+  const [champStatut, setChampStatut] = useState('12');
+  const [champTechnicien, setChampTechnicien] = useState('5');
+  const [intervalle, setIntervalle] = useState('5');
+  const [criteres, setCriteres] = useState<unknown[]>([]);
+  const [urlRecherche, setUrlRecherche] = useState('');
+  const [correspondances, setCorrespondances] = useState('');
+  const [etat, setEtat] = useState<'' | 'enregistrement' | 'ok' | 'essai'>('');
+  const [essai, setEssai] = useState<GlpiTest | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  const appliquer = (c: GlpiConfig) => {
+    setCfg(c);
+    setUrl(c.url);
+    setActif(c.actif);
+    setChampStatut(String(c.champStatut));
+    setChampTechnicien(String(c.champTechnicien));
+    setIntervalle(String(c.intervalleMinutes));
+    setCriteres(c.criteres);
+    setCorrespondances(
+      Object.entries(c.correspondances)
+        .map(([app, glpi]) => `${app} = ${glpi}`)
+        .join('\n')
+    );
+  };
+
+  /** « compte de l'application = compte GLPI », une paire par ligne. Format de saisie
+   *  volontairement pauvre : il y a zéro ou deux lignes dans la plupart des services, et
+   *  un tableau avec boutons coûterait plus à lire qu'il ne rapporte. */
+  const correspondancesLues = () =>
+    Object.fromEntries(
+      correspondances
+        .split('\n')
+        .map((l) => l.split('='))
+        .filter((paire) => paire.length === 2 && paire[0].trim() && paire[1].trim())
+        .map(([app, glpi]) => [app.trim().toLowerCase(), glpi.trim()])
+    );
+
+  useEffect(() => {
+    if (mode !== 'serveur') return;
+    let vivant = true;
+    fetchGlpiConfig()
+      .then((c) => vivant && appliquer(c))
+      // 403 : la personne n'est pas référente de son équipe. La carte se retire plutôt
+      // que d'afficher un réglage qu'elle ne pourra pas enregistrer.
+      .catch(() => vivant && setRefuse(true));
+    return () => {
+      vivant = false;
+    };
+  }, [mode]);
+
+  if (mode !== 'serveur' || refuse) return null;
+
+  const valeurs = () => ({
+    url,
+    appToken: appToken.trim() || undefined,
+    userToken: userToken.trim() || undefined,
+    champStatut: Number(champStatut),
+    champTechnicien: Number(champTechnicien),
+    intervalleMinutes: Number(intervalle),
+    criteres,
+    correspondances: correspondancesLues(),
+  });
+
+  const essayer = async () => {
+    setErreur(null);
+    setEssai(null);
+    setEtat('essai');
+    try {
+      setEssai(await testGlpi(valeurs()));
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEtat('');
+    }
+  };
+
+  const enregistrer = async () => {
+    setErreur(null);
+    setEtat('enregistrement');
+    try {
+      appliquer(await saveGlpiConfig({ ...valeurs(), actif }));
+      setAppToken('');
+      setUserToken('');
+      setEtat('ok');
+      setTimeout(() => setEtat(''), 2000);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+      setEtat('');
+    }
+  };
+
+  const importerRecherche = async () => {
+    setErreur(null);
+    try {
+      const { criteres: lus } = await criteresDepuisUrl(urlRecherche);
+      setCriteres(lus);
+      setUrlRecherche('');
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  return (
+    <Card className="p-4">
+      <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Compteur de tickets GLPI</h2>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+        Affiche, en face de «&nbsp;Mon programme&nbsp;», le nombre de tickets ouverts de l'équipe, leur répartition par
+        état, et combien sont affectés à la personne connectée. Le relevé est fait par le serveur toutes les quelques
+        minutes&nbsp;: <strong>les jetons ne sont jamais transmis aux navigateurs</strong>, et GLPI n'est pas interrogé
+        une fois par poste.
+      </p>
+
+      <details className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300 print:hidden">
+        <summary className="cursor-pointer font-medium">Ce qu'il faut créer dans GLPI (5 minutes, une seule fois)</summary>
+        <ol className="mt-2 list-decimal space-y-1 pl-4">
+          <li>
+            <em>Configuration → Générale → API</em>&nbsp;: activer l'API REST, puis <strong>ajouter un client API</strong>
+            — il fournit le <strong>jeton d'application</strong>. Restreignez sa plage d'adresses IP à celle de ce serveur.
+          </li>
+          <li>
+            Créer un <strong>compte de service en lecture seule</strong> (profil «&nbsp;Observateur&nbsp;» sur l'entité
+            concernée). Le compteur ne verra que ce que ce profil a le droit de voir.
+          </li>
+          <li>
+            Sur ce compte&nbsp;: <em>Préférences → Clés d'accès distantes → jeton d'API</em> — c'est le{' '}
+            <strong>jeton utilisateur</strong>.
+          </li>
+          <li>
+            Les numéros de champ ci-dessous sont ceux de GLPI&nbsp;10 (12&nbsp;= statut, 5&nbsp;= technicien attribué).
+            Ils dépendent de la version&nbsp;: <code>GET /apirest.php/listSearchOptions/Ticket</code> donne la liste
+            exacte de votre instance.
+          </li>
+        </ol>
+      </details>
+
+      <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        <label className="block sm:col-span-2">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">Adresse de GLPI</span>
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://glpi.monentreprise.local/apirest.php"
+            className="input"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">
+            Jeton d'application {cfg?.appTokenSet && <span className="text-emerald-600 dark:text-emerald-400">— enregistré</span>}
+          </span>
+          <input
+            type="password"
+            value={appToken}
+            onChange={(e) => setAppToken(e.target.value)}
+            placeholder={cfg?.appTokenSet ? 'inchangé' : 'App-Token'}
+            className="input"
+            autoComplete="off"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">
+            Jeton utilisateur {cfg?.userTokenSet && <span className="text-emerald-600 dark:text-emerald-400">— enregistré</span>}
+          </span>
+          <input
+            type="password"
+            value={userToken}
+            onChange={(e) => setUserToken(e.target.value)}
+            placeholder={cfg?.userTokenSet ? 'inchangé' : 'user_token'}
+            className="input"
+            autoComplete="off"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">N° du champ « statut »</span>
+          <input value={champStatut} onChange={(e) => setChampStatut(e.target.value)} className="input" inputMode="numeric" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">N° du champ « technicien attribué »</span>
+          <input
+            value={champTechnicien}
+            onChange={(e) => setChampTechnicien(e.target.value)}
+            className="input"
+            inputMode="numeric"
+          />
+        </label>
+      </div>
+
+      {/* Recopier des numéros de champ à la main donne un compteur plausible et faux. Le
+          chemin fiable est de construire la recherche dans GLPI, où l'on voit les tickets
+          qu'elle renvoie, puis d'en coller l'adresse. */}
+      <div className="mt-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <p className="text-xs font-medium text-slate-700 dark:text-slate-200">Quels tickets compter</p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          {criteres.length === 0
+            ? "Aucun filtre : tous les tickets non clos visibles par le compte de service. Pour restreindre à votre groupe, faites la recherche dans GLPI et collez l'adresse de la page ici."
+            : `${criteres.length} critère(s) repris d'une recherche GLPI.`}
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <input
+            value={urlRecherche}
+            onChange={(e) => setUrlRecherche(e.target.value)}
+            placeholder="https://glpi…/front/ticket.php?criteria[0][field]=8…"
+            className="input min-w-0 flex-1"
+          />
+          <button onClick={() => void importerRecherche()} disabled={!urlRecherche.trim()} className="btn-ghost">
+            Reprendre les filtres
+          </button>
+          {criteres.length > 0 && (
+            <button onClick={() => setCriteres([])} className="btn-ghost">
+              Retirer
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <p className="text-xs font-medium text-slate-700 dark:text-slate-200">
+          Identifiants différents entre l'application et GLPI
+        </p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Laissez vide si ce sont les mêmes — c'est le cas lorsque les deux viennent du même annuaire. Sinon, une
+          correspondance par ligne, sous la forme <code>compte application = compte GLPI</code>. Elle ne sert qu'au
+          nombre personnel&nbsp;; le total de l'équipe n'en dépend pas.
+        </p>
+        <textarea
+          value={correspondances}
+          onChange={(e) => setCorrespondances(e.target.value)}
+          rows={2}
+          placeholder="jdupont = j.dupont"
+          className="input mt-2 font-mono text-xs"
+        />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+          <input type="checkbox" checked={actif} onChange={(e) => setActif(e.target.checked)} className="h-4 w-4" />
+          Afficher le compteur dans «&nbsp;Ma journée&nbsp;»
+        </label>
+        <label className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+          Relevé toutes les
+          <input
+            value={intervalle}
+            onChange={(e) => setIntervalle(e.target.value)}
+            className="input w-16 text-sm"
+            inputMode="numeric"
+          />
+          minutes
+        </label>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => void enregistrer()}
+          disabled={etat === 'enregistrement'}
+          className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
+        >
+          {etat === 'enregistrement' ? 'Enregistrement…' : etat === 'ok' ? 'Enregistré ✓' : 'Enregistrer'}
+        </button>
+        <button onClick={() => void essayer()} disabled={etat === 'essai'} className="btn-ghost">
+          {etat === 'essai' ? 'Essai en cours…' : 'Tester la connexion'}
+        </button>
+        <span className="text-xs text-slate-400">Réservé au référent de l'équipe.</span>
+      </div>
+
+      {essai && (
+        <div
+          className={`mt-2 rounded-lg px-3 py-2 text-xs ${
+            essai.ok
+              ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300'
+              : 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300'
+          }`}
+        >
+          {essai.ok ? (
+            <>
+              <strong>{essai.total}</strong> ticket(s) ouvert(s) — {essai.parStatut?.nouveaux} nouveau(x),{' '}
+              {essai.parStatut?.enCours} en cours, {essai.parStatut?.enAttente} en attente, {essai.parStatut?.aClore} à
+              clore.
+              <br />
+              {essai.compteTrouve ? (
+                <>
+                  Compte GLPI «&nbsp;{essai.login}&nbsp;» trouvé : le nombre personnel s'affichera.
+                </>
+              ) : (
+                <>
+                  Aucun compte GLPI nommé «&nbsp;{essai.login}&nbsp;» : le nombre personnel restera vide. Renseignez la
+                  correspondance ci-dessus si votre identifiant diffère entre l'application et GLPI.
+                </>
+              )}
+            </>
+          ) : (
+            essai.error
+          )}
+        </div>
+      )}
+      {erreur && (
+        <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300">{erreur}</p>
+      )}
+    </Card>
+  );
 }
 
 function RetentionCard({ confirm }: { confirm: ConfirmFn }) {

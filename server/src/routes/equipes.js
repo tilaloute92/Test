@@ -3,6 +3,7 @@ import { requireAuth } from '../auth/session.js';
 import { requirePlateforme } from '../auth/admin.js';
 import { listLocalUsers } from '../auth/localAuth.js';
 import { oublierEspace } from '../businessData.js';
+import { oublierCache as oublierCacheGlpi } from '../glpi/compteur.js';
 import { creerEquipe, listerEquipes, renommerEquipe, retirerEquipe } from '../equipes.js';
 import {
   affecter,
@@ -56,6 +57,7 @@ equipesRouter.delete('/:id', (req, res) =>
     // L'espace mémoire part avec l'inscription : une équipe recréée sous le même
     // identifiant doit repartir de son dossier, pas d'un cache resté là.
     oublierEspace(req.params.id);
+    oublierCacheGlpi(req.params.id);
     return { ok: true };
   })
 );

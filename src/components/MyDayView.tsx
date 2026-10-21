@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { MeteoVoteCard } from './MeteoVoteCard';
+import { GlpiTicketsCard } from './GlpiTicketsCard';
 import { Avatar, Card, PriorityBadge, TaskTypeBadge } from './ui';
 import { formatDateLong, toISODate } from '../lib/date';
 import { absencesToday, hoursLoggedToday } from '../lib/selectors';
@@ -372,48 +373,53 @@ function MaJournee({
         </Tuile>
       </div>
 
-      {/* --- Mon programme --- */}
-      <Card className="p-4">
-        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Mon programme</h2>
-          <button onClick={() => onNavigate('daily')} className="text-xs text-violet-600 hover:underline dark:text-violet-400">
-            Modifier →
-          </button>
-        </div>
-        {absence?.period === 'jour' ? (
-          <p className="text-sm text-slate-400">Absent(e) toute la journée.</p>
-        ) : (
-          <div className="space-y-3">
-            {programme.map(({ period, prevue, tranches }) => (
-              <div key={period}>
-                <div className="mb-1 flex items-baseline gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{PERIODE_LABEL[period]}</span>
-                  <span className="min-w-0 truncate text-xs text-slate-400">
-                    {prevue ? `prévu : ${prevue.title}` : 'aucun créneau prévu'}
-                  </span>
-                </div>
-                <div className="space-y-0.5">
-                  {tranches.map(({ hour, tache, saisi }) => (
-                    <div key={hour} className="flex items-baseline gap-3 text-sm">
-                      <span className="w-[5.5rem] shrink-0 text-xs tabular-nums text-slate-400">
-                        {formatHour(hour)} – {formatHour(hour + 1)}
-                      </span>
-                      <span className={`min-w-0 flex-1 truncate ${saisi ? 'text-slate-700 dark:text-slate-200' : 'italic text-slate-400'}`}>
-                        {saisi ? tache?.title ?? 'Tâche supprimée' : 'Non saisi'}
-                      </span>
-                      {saisi && (
-                        <span className="shrink-0 text-xs text-emerald-600 dark:text-emerald-400" aria-label="saisi">
-                          ✓
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+      {/* --- Mon programme, et en face la file de tickets --- */}
+      {/* Une rangée plutôt qu'une grille : quand GLPI n'est pas raccordé, la tuile ne
+          rend rien et le programme reprend toute la largeur, sans colonne vide. */}
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start">
+        <Card className="min-w-0 flex-1 p-4">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Mon programme</h2>
+            <button onClick={() => onNavigate('daily')} className="text-xs text-violet-600 hover:underline dark:text-violet-400">
+              Modifier →
+            </button>
           </div>
-        )}
-      </Card>
+          {absence?.period === 'jour' ? (
+            <p className="text-sm text-slate-400">Absent(e) toute la journée.</p>
+          ) : (
+            <div className="space-y-3">
+              {programme.map(({ period, prevue, tranches }) => (
+                <div key={period}>
+                  <div className="mb-1 flex items-baseline gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{PERIODE_LABEL[period]}</span>
+                    <span className="min-w-0 truncate text-xs text-slate-400">
+                      {prevue ? `prévu : ${prevue.title}` : 'aucun créneau prévu'}
+                    </span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {tranches.map(({ hour, tache, saisi }) => (
+                      <div key={hour} className="flex items-baseline gap-3 text-sm">
+                        <span className="w-[5.5rem] shrink-0 text-xs tabular-nums text-slate-400">
+                          {formatHour(hour)} – {formatHour(hour + 1)}
+                        </span>
+                        <span className={`min-w-0 flex-1 truncate ${saisi ? 'text-slate-700 dark:text-slate-200' : 'italic text-slate-400'}`}>
+                          {saisi ? tache?.title ?? 'Tâche supprimée' : 'Non saisi'}
+                        </span>
+                        {saisi && (
+                          <span className="shrink-0 text-xs text-emerald-600 dark:text-emerald-400" aria-label="saisi">
+                            ✓
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+        <GlpiTicketsCard className="xl:w-[330px] xl:shrink-0" />
+      </div>
 
       {/* --- Mes tâches, au-delà de la plus urgente --- */}
       {mesTaches.length > 0 && (

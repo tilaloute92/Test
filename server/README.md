@@ -204,6 +204,56 @@ le relit en novembre. Les trente derniers sont gardés, au-delà les plus ancien
 Déclenchement **à la demande uniquement** : il n'y a pas d'équivalent de `DAILY_MAIL_AT` pour
 le rapport de réunion. Rien ne part sans un clic, après relecture et choix des destinataires.
 
+## Compteur de tickets GLPI
+
+Le serveur interroge GLPI et sert un relevé mis en cache ; le navigateur ne parle jamais
+à GLPI. Deux raisons, l'une et l'autre rédhibitoires : GLPI ne renvoie pas d'en-têtes
+CORS, et le jeton du compte de service finirait dans le stockage local de chaque poste.
+
+Configuration **par équipe**, dans `data/equipes/<id>/glpi.json` — mêmes protections de
+fichier que le reste du dossier de données, car **ce fichier contient deux jetons** :
+
+```json
+{
+  "actif": true,
+  "url": "https://glpi.exemple.fr/apirest.php",
+  "appToken": "…",            // jamais renvoyé au navigateur
+  "userToken": "…",           // jamais renvoyé au navigateur
+  "criteres": [],              // critères repris d'une recherche GLPI
+  "champStatut": 12,
+  "champTechnicien": 5,
+  "intervalleMinutes": 5,
+  "correspondances": { "jdupont": "j.dupont" }
+}
+```
+
+Côté GLPI : *Configuration → Générale → API* (activer l'API REST, créer un client API →
+`App-Token`, restreindre sa plage d'IP), puis un compte de service en lecture seule dont
+les *Clés d'accès distantes* fournissent le `user_token`. Le compteur ne voit que ce que
+le profil de ce compte autorise.
+
+Les numéros de champ `12` (statut) et `5` (technicien attribué) sont ceux de GLPI 10 ;
+ils dépendent de la version et des plugins. `GET /apirest.php/listSearchOptions/Ticket`
+donne la liste exacte d'une instance.
+
+Routes (`/api/glpi`, session requise ; le réglage exige d'être référent de l'équipe) :
+
+| Route | Qui | Ce qu'elle fait |
+|---|---|---|
+| `GET /tickets` | membre | Le relevé : total, répartition par état, nombre personnel, date du relevé, erreur éventuelle. |
+| `GET /config` · `PUT /config` | référent | Le raccordement, jetons masqués en lecture (`appTokenSet`, `userTokenSet`). |
+| `POST /test` | référent | Essai immédiat avec les valeurs saisies, **sans les enregistrer**. |
+| `POST /criteres-depuis-url` | référent | Extrait les critères d'une URL de recherche GLPI collée. |
+| `GET /historique` | référent | Les relevés quotidiens archivés (`glpi-historique.json`, 400 jours). |
+
+Un relevé = `initSession` → une recherche `range=0-0` par état (aucun ticket n'est
+transféré, seulement `totalcount`) → `killSession`. Le cas `ERROR_RANGE_EXCEED_TOTAL`,
+que GLPI renvoie en 400 lorsqu'il n'y a **aucun** résultat, est traité comme un zéro :
+sans cela, une file vide s'afficherait comme une panne.
+
+En cas d'échec, le dernier relevé réussi est conservé et daté ; le serveur ne renvoie
+jamais `0` pour dire « je ne sais pas ».
+
 ## Déploiement en production
 
 Voir [`../DEPLOYMENT.md`](../DEPLOYMENT.md), section "Service Windows + authentification" : ce service tourne en tâche de fond (Windows Service via NSSM) et IIS lui relaie les appels `/api/*`, tout en continuant de servir le reste de l'application en HTTPS.
