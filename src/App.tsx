@@ -372,11 +372,14 @@ function ServerUnavailableScreen({ onRetry, onSwitchLocal }: { onRetry: () => vo
 }
 
 /**
- * Première utilisation : le serveur n'a jamais été mis en service. Deux départs possibles,
- * présentés côte à côte parce que le bon choix dépend de l'historique de l'équipe — et non
- * d'un défaut de l'un ou de l'autre.
+ * Première utilisation : CETTE ÉQUIPE n'a jamais été mise en service. Deux départs
+ * possibles, présentés côte à côte parce que le bon choix dépend de l'historique de
+ * l'équipe — et non d'un défaut de l'un ou de l'autre.
+ *
+ * Depuis le multi-équipe, l'écran se reproduit pour chaque équipe nouvellement créée :
+ * le drapeau de mise en service appartient à l'équipe, pas au serveur.
  */
-function FirstRunScreen({ onInitialized }: { onInitialized: () => void }) {
+function FirstRunScreen({ onInitialized, nomEquipe }: { onInitialized: () => void; nomEquipe?: string | null }) {
   const archive = readLocalArchive();
   const [busy, setBusy] = useState<'vide' | 'reprise' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -385,7 +388,7 @@ function FirstRunScreen({ onInitialized }: { onInitialized: () => void }) {
   const run = async (kind: 'vide' | 'reprise') => {
     if (
       !(await confirm({
-        title: kind === 'vide' ? 'Démarrer avec un serveur vide' : 'Reprendre les données de ce poste',
+        title: kind === 'vide' ? 'Démarrer avec une équipe vide' : 'Reprendre les données de ce poste',
         message:
           kind === 'vide'
             ? "Le serveur démarrera sans aucune donnée : vous créerez l'équipe depuis l'onglet Équipe. Cette mise en service n'a lieu qu'une fois — ensuite, le serveur refusera toute nouvelle initialisation pour protéger le travail de l'équipe."
@@ -414,10 +417,16 @@ function FirstRunScreen({ onInitialized }: { onInitialized: () => void }) {
 
   return (
     <Gateway>
-      <h1 className="text-center text-base font-semibold text-slate-900 dark:text-white">Mise en service du serveur</h1>
+      {/* « de l'équipe » et non « du serveur » : depuis le multi-équipe, chaque équipe a
+          sa propre mise en service, et le serveur peut déjà en servir dix autres. Parler
+          du serveur laisserait croire qu'on s'apprête à toucher à tout le monde. */}
+      <h1 className="text-center text-base font-semibold text-slate-900 dark:text-white">
+        Mise en service{nomEquipe ? ` — ${nomEquipe}` : " de l'équipe"}
+      </h1>
       <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-        Le serveur ne contient encore aucune donnée d'équipe. Choisissez son point de départ — <strong>une seule fois, par une seule
-        personne</strong> : les autres postes basculeront dessus automatiquement.
+        {nomEquipe ? <><strong>{nomEquipe}</strong> ne contient</> : 'Cette équipe ne contient'} encore aucune donnée.
+        Choisissez son point de départ — <strong>une seule fois, par une seule personne</strong> : les autres postes de
+        l'équipe basculeront dessus automatiquement. Les autres équipes ne sont pas concernées.
       </p>
 
       <button
@@ -425,7 +434,7 @@ function FirstRunScreen({ onInitialized }: { onInitialized: () => void }) {
         disabled={busy !== null}
         className="mt-4 w-full rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
       >
-        {busy === 'vide' ? 'Mise en service…' : 'Démarrer avec un serveur vide'}
+        {busy === 'vide' ? 'Mise en service…' : 'Démarrer avec une équipe vide'}
       </button>
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">L'équipe et les tâches se saisissent ensuite dans l'application.</p>
 
@@ -483,6 +492,20 @@ function App() {
   const link = useLinkState();
   const confirm = useConfirm();
   const memberCount = useStore((s) => s.members.length);
+  /**
+   * Le nom de l'équipe servie. Il vient du SERVEUR, jamais du navigateur : c'est lui qui
+   * décide quelle équipe on regarde, et un nom décidé ici pourrait désigner autre chose
+   * que ce qui s'affiche. Vide en mode autonome, où il n'y a qu'une équipe par
+   * construction — celle du poste.
+   */
+  const equipeNom = sync.equipeNom ?? authGate.session?.equipeNom ?? null;
+  /**
+   * Personne ne lui a attribué d'équipe. Le serveur refuse alors toutes les données
+   * (403) : sans ce bandeau, l'application paraîtrait simplement en panne. Le cas se
+   * produit pour un compte d'annuaire dont aucun groupe ne correspond, ou pour un
+   * compte créé après la mise en multi-équipe.
+   */
+  const sansEquipe = Boolean(authGate.session) && authGate.backendUp && authGate.session?.equipe === null;
 
   const [syncError, setSyncError] = useState<string | null>(null);
   // Réparation d'identifiants dupliqués au chargement (voir src/lib/repairIds.ts) : on le
@@ -534,7 +557,15 @@ function App() {
   // Un seul endroit décide — voir src/lib/identity.ts.
   useEffect(() => {
     (window as unknown as { __suiviSession?: unknown }).__suiviSession = authGate.session
-      ? { username: authGate.session.username, name: authGate.session.name, isAdmin: authGate.session.isAdmin }
+      ? {
+          username: authGate.session.username,
+          name: authGate.session.name,
+          isAdmin: authGate.session.isAdmin,
+          // Le nom de l'équipe suit : le rapport de réunion le porte en titre, et il doit
+          // nommer l'équipe réellement servie plutôt qu'une constante du code.
+          equipe: authGate.session.equipe,
+          equipeNom: authGate.session.equipeNom,
+        }
       : null;
   }, [authGate.session]);
 
@@ -578,7 +609,7 @@ function App() {
 
   if (mode === 'serveur') {
     if (!sync.hydrated) return <LoadingScreen message="Chargement des données de l'équipe…" />;
-    if (sync.initialized === false) return <FirstRunScreen onInitialized={sync.refresh} />;
+    if (sync.initialized === false) return <FirstRunScreen onInitialized={sync.refresh} nomEquipe={equipeNom} />;
   }
 
   return (
@@ -597,8 +628,13 @@ function App() {
               <div className="text-sm font-semibold leading-tight">Suivi Infra & Réseau</div>
               {/* L'effectif était écrit en dur (« 6 personnes ») : sur un serveur fraîchement
                   mis en service, l'en-tête annonçait donc une équipe qui n'existait pas encore. */}
+              {/* Le nom de l'équipe est écrit en permanence, et non seulement quand on en
+                  change : avec plus de dix équipes cloisonnées, « suis-je au bon endroit ? »
+                  est la question qu'on se pose avant d'écrire. */}
               <div className="text-[11px] leading-tight text-slate-400">
-                Activité d'équipe · {memberCount} personne{memberCount > 1 ? 's' : ''}
+                {equipeNom ? <span className="font-medium text-slate-500 dark:text-slate-300">{equipeNom}</span> : "Activité d'équipe"}
+                {' · '}
+                {memberCount} personne{memberCount > 1 ? 's' : ''}
               </div>
             </div>
           </div>
@@ -660,6 +696,19 @@ function App() {
             >
               J'ai compris
             </button>
+          </div>
+        </div>
+      )}
+
+      {sansEquipe && (
+        <div className="mx-auto max-w-3xl px-4 pt-4">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+            <div className="font-semibold">Aucune équipe ne vous est affectée</div>
+            <p className="mt-1 text-xs">
+              L'application est cloisonnée par équipe, et votre compte n'est rattaché à aucune : il n'y a donc rien à vous
+              montrer. Demandez à l'administrateur de la plateforme de vous rattacher à votre équipe — c'est l'affaire de
+              quelques secondes, dans Paramètres → Équipes.
+            </p>
           </div>
         </div>
       )}

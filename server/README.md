@@ -214,3 +214,42 @@ Voir [`../DEPLOYMENT.md`](../DEPLOYMENT.md), section "Service Windows + authenti
 - Il **ne stocke aucun mot de passe en clair** : les comptes locaux sont hachés (bcrypt) ; pour LDAP, le mot de passe n'est jamais conservé, seulement transmis le temps de la vérification ("bind" LDAP).
 - Il **stocke les données métier** de l'équipe (membres, tâches, planning, temps saisi, absences, feuille de route, COPIL) dans `data/business-*.json` : en mode client/serveur, c'est lui la source de vérité, pas le navigateur (voir `src/businessData.js`).
 - Il **envoie le programme du jour** par mail si un relais SMTP est configuré (voir plus haut).
+
+## Multi-équipe
+
+Une installation sert plusieurs équipes, cloisonnées les unes des autres.
+
+**Où vivent les données.** `data/equipes/<id>/` — un dossier par équipe, contenant ses huit
+collections métier, sa méta (version, mise en service), ses règles de service, ses votes
+météo, sa configuration de rapport et son état d'envoi. Restent à la racine de `data/` :
+les comptes (`users.json`), la configuration commune (`config.json` : SMTP, LDAP,
+administrateurs de plateforme, référents), le registre des équipes (`equipes.json`) et la
+table d'appartenance (`appartenances.json`).
+
+**Comment le cloisonnement tient.** Les 27 fonctions de `businessData.js` prennent
+l'identifiant d'équipe en premier argument, SANS valeur par défaut : un oubli lève une
+erreur au premier accès au lieu de servir en silence les données d'une autre équipe. Ce
+choix a déjà payé — il a attrapé deux appels manqués pendant le portage même. L'identifiant
+vient du middleware `auth/equipeCourante.js`, qui le tire de la session et de nulle part
+ailleurs ; la seule exception est l'en-tête `X-Equipe`, honoré pour le seul administrateur
+de plateforme et ignoré pour tous les autres.
+
+**Qui appartient à quoi.** Deux sources, dans cet ordre : la correspondance
+« groupe LDAP → équipe » (relue à chaque connexion, elle fait autorité) et la table
+`appartenances.json` tenue à la main. Conséquence : un déplacement dans la table prend
+effet à la requête suivante, un déplacement dans l'annuaire à la prochaine connexion —
+rafraîchir les groupes à chaque requête voudrait dire interroger le LDAP des dizaines de
+fois par minute.
+
+**Les rôles.** `requireAdmin` / `requirePlateforme` (même garde) pour ce qui touche la
+plateforme ; `requireReferent` pour les réglages d'une équipe, accordé au référent déclaré
+dans `config.json` (clé `referents`) comme à l'administrateur de plateforme.
+
+**En mémoire.** Huit espaces d'équipe au plus, chargés à la demande, les moins récemment
+servis relâchés. Relâcher est sans risque : toute écriture est sur le disque avant de
+rendre la main.
+
+**Migration.** Au premier démarrage, les fichiers `data/business-*.json` de l'ancienne
+disposition sont DÉPLACÉS dans `data/equipes/equipe-1/`. Tant qu'il n'existe qu'une équipe,
+les comptes locaux sans affectation y sont rattachés à chaque démarrage — sans quoi la
+création de la deuxième équipe mettrait tout le monde dehors d'un coup.

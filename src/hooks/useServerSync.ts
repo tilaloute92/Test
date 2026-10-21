@@ -19,6 +19,8 @@ export interface ServerSyncState {
   hydrated: boolean;
   /** Le serveur a-t-il été mis en service ? `null` tant qu'on l'ignore. */
   initialized: boolean | null;
+  /** Le nom de l'équipe servie, tel que le serveur l'annonce. */
+  equipeNom: string | null;
   /** Le serveur ne contient aucune donnée métier. */
   isEmpty: boolean;
   /** Relecture immédiate, hors du cycle de sondage. */
@@ -47,6 +49,7 @@ export function useServerSync(): ServerSyncState {
   const failuresRef = useRef(0);
   const [hydrated, setHydrated] = useState(false);
   const [initialized, setInitialized] = useState<boolean | null>(null);
+  const [equipeNom, setEquipeNom] = useState<string | null>(null);
   const [isEmpty, setIsEmpty] = useState(false);
   // Un compteur qu'on incrémente pour déclencher une relecture forcée depuis l'extérieur.
   const [forceTick, setForceTick] = useState(0);
@@ -72,6 +75,7 @@ export function useServerSync(): ServerSyncState {
         setLinkState('connecte');
         versionRef.current = res.version;
         setInitialized(res.initialized);
+        setEquipeNom(res.equipeNom ?? null);
         setIsEmpty(res.isEmpty);
         if (!res.unchanged) {
           applyServerSnapshot({
@@ -112,5 +116,5 @@ export function useServerSync(): ServerSyncState {
     };
   }, [active, applyServerSnapshot, forceTick]);
 
-  return { hydrated, initialized, isEmpty, refresh };
+  return { hydrated, initialized, isEmpty, equipeNom, refresh };
 }

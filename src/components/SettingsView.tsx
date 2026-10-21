@@ -30,6 +30,17 @@ import { getSyncUser, isSyncActive, onSyncActiveChange, type SyncUser } from '..
 import { useAppMode, useLinkState } from '../hooks/useAppStatus';
 import { clearLocalArchive, countArchived, readLocalArchive } from '../lib/localArchive';
 import { findExpired, RETENTION_ABSENCES_JOURS, RETENTION_ACTIVITE_JOURS } from '../lib/retention';
+import {
+  creerEquipe,
+  enregistrerCorrespondances,
+  fetchEquipes,
+  renommerEquipe,
+  retirerEquipe,
+  type Correspondance,
+  type Equipe,
+  type EtatEquipes,
+} from '../lib/equipesApi';
+import { getEquipeRegardee, setEquipeRegardee } from '../lib/equipeCourante';
 import { SEUIL_PRESENCE_DEFAUT } from '../lib/presence';
 import { VOIX_MINIMUM } from '../lib/meteoVote';
 import {
@@ -301,6 +312,7 @@ export function SettingsView({ canEdit = true }: { canEdit?: boolean }) {
       {/* ------------------------------------------------------------------ */}
       {/* 2. Comptes locaux — géré par le serveur d'authentification (server/) */}
       {/* ------------------------------------------------------------------ */}
+      {backendUp && <EquipesCard confirm={confirm} />}
       {backendUp && <LocalAccountsCard confirm={confirm} />}
 
       {/* ------------------------------------------------------------------ */}
@@ -1764,5 +1776,287 @@ function BackupCard({ confirm }: { confirm: ConfirmFn }) {
         )}
       </div>
     </Card>
+  );
+}
+
+// --------------------------------------------------------------- Équipes
+
+/**
+ * Gestion des équipes — visible du seul administrateur de plateforme.
+ *
+ * Le serveur refuse ces appels à tout autre compte ; la carte se masque d'elle-même
+ * quand il répond 403, plutôt que d'afficher des commandes qui échoueraient. Masquer
+ * ne protège rien — c'est le serveur qui protège — mais montrer l'inutilisable est une
+ * promesse qu'on ne tient pas.
+ */
+function EquipesCard({ confirm }: { confirm: ReturnType<typeof useConfirm> }) {
+  const [etat, setEtat] = useState<EtatEquipes | null>(null);
+  const [visible, setVisible] = useState(true);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [nouvelle, setNouvelle] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const recharger = async () => {
+    try {
+      setEtat(await fetchEquipes());
+      setVisible(true);
+    } catch (e) {
+      // 403 : ce compte n'est pas administrateur de plateforme. Ce n'est pas une erreur
+      // à afficher, c'est simplement une carte qui ne le concerne pas.
+      if (e instanceof Error && /403/.test(e.message)) setVisible(false);
+      else setErreur(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  useEffect(() => {
+    void recharger();
+  }, []);
+
+  if (!visible) return null;
+
+  const agir = async (action: () => Promise<unknown>) => {
+    setBusy(true);
+    setErreur(null);
+    try {
+      await action();
+      await recharger();
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const equipes = etat?.equipes ?? [];
+  const parEquipe = (id: string) => (etat?.appartenances ?? []).filter((a) => a.equipe === id);
+
+  return (
+    <Card className="space-y-3 p-4">
+      <div>
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Équipes</h2>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Chaque équipe a ses propres données, ses propres réglages et ne voit rien des autres. Une personne appartient à
+          une seule équipe. Vous êtes le seul à pouvoir en changer, et à pouvoir regarder une autre équipe que la vôtre —
+          le bandeau de bascule est en haut de cette carte une fois une deuxième équipe créée.
+        </p>
+      </div>
+
+      {erreur && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300">{erreur}</p>}
+
+      {equipes.length > 1 && <BasculeEquipe equipes={equipes} />}
+
+      {(etat?.sansEquipe.length ?? 0) > 0 && equipes.length > 1 && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          <strong>{etat?.sansEquipe.length} compte(s) sans équipe</strong> — {etat?.sansEquipe.join(', ')}. Tant qu'ils ne
+          sont rattachés à aucune équipe, l'application leur est fermée.
+        </p>
+      )}
+
+      <ul className="space-y-2">
+        {equipes.map((e) => (
+          <li key={e.id} className="rounded-lg border border-slate-200 p-2.5 dark:border-slate-700">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-slate-800 dark:text-slate-100">{e.nom}</span>
+              <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">{e.id}</code>
+              <span className="text-xs text-slate-400">
+                {parEquipe(e.id).length} personne{parEquipe(e.id).length > 1 ? 's' : ''}
+              </span>
+              <div className="ml-auto flex gap-1.5">
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    const nom = window.prompt("Nouveau nom de l'équipe", e.nom);
+                    if (nom && nom.trim()) void agir(() => renommerEquipe(e.id, nom.trim()));
+                  }}
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  Renommer
+                </button>
+                {equipes.length > 1 && (
+                  <button
+                    disabled={busy}
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          title: "Retirer l'équipe",
+                          message: `Retirer « ${e.nom} » de la liste ? Ses données RESTENT sur le serveur et ne sont pas supprimées — seul son rattachement disparaît. Les personnes qui y étaient n'auront plus accès à l'application tant qu'elles ne seront pas rattachées ailleurs.`,
+                        })
+                      ) {
+                        void agir(() => retirerEquipe(e.id));
+                      }
+                    }}
+                    className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-40 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10"
+                  >
+                    Retirer
+                  </button>
+                )}
+              </div>
+            </div>
+            {parEquipe(e.id).length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {parEquipe(e.id).map((a) => (
+                  <span
+                    key={a.username}
+                    title={`Affectation ${a.source === 'ldap' ? "venue de l'annuaire" : a.source === 'automatique' ? 'posée au démarrage' : 'posée à la main'}`}
+                    className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                  >
+                    {a.username}
+                    {a.source === 'ldap' && <span className="text-slate-400">annuaire</span>}
+                  </span>
+                ))}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={nouvelle}
+          onChange={(ev) => setNouvelle(ev.target.value)}
+          placeholder="Nom d'une nouvelle équipe"
+          className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+        />
+        <button
+          disabled={busy || !nouvelle.trim()}
+          onClick={() =>
+            void agir(async () => {
+              await creerEquipe(nouvelle.trim());
+              setNouvelle('');
+            })
+          }
+          className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-40"
+        >
+          Créer
+        </button>
+      </div>
+
+      <CorrespondancesLdap etat={etat} onEnregistre={recharger} />
+    </Card>
+  );
+}
+
+/**
+ * La correspondance « groupe d'annuaire → équipe ».
+ *
+ * C'est la source PRIORITAIRE : à chaque connexion LDAP, le groupe de la personne est
+ * relu et son équipe réécrite. La table nominative ne sert qu'aux comptes locaux et à
+ * ceux qu'aucun groupe ne désigne. Conséquence à savoir, écrite à l'écran : un
+ * déplacement dans l'annuaire prend effet à la prochaine connexion, pas tout de suite.
+ */
+function CorrespondancesLdap({ etat, onEnregistre }: { etat: EtatEquipes | null; onEnregistre: () => Promise<void> }) {
+  const [lignes, setLignes] = useState<Correspondance[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (etat) setLignes(etat.correspondances);
+  }, [etat]);
+
+  if (!etat || etat.equipes.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-slate-200 p-2.5 dark:border-slate-700">
+      <div className="text-xs font-medium text-slate-600 dark:text-slate-300">Groupes de l'annuaire → équipe</div>
+      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+        L'annuaire fait autorité : le groupe est relu à chaque connexion et réécrit l'équipe de la personne. Un
+        déplacement dans l'annuaire prend donc effet à sa <strong>prochaine connexion</strong>. Les comptes locaux, et
+        ceux qu'aucun groupe ne désigne, gardent l'affectation posée ici à la main.
+      </p>
+
+      {lignes.map((l, i) => (
+        <div key={i} className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <input
+            value={l.groupe}
+            onChange={(e) => setLignes(lignes.map((x, j) => (i === j ? { ...x, groupe: e.target.value } : x)))}
+            placeholder="CN=Techniciens Infra ou Techniciens Infra"
+            className="min-w-0 flex-1 rounded-md border border-slate-200 px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+          <span className="text-xs text-slate-400">→</span>
+          <select
+            value={l.equipe}
+            onChange={(e) => setLignes(lignes.map((x, j) => (i === j ? { ...x, equipe: e.target.value } : x)))}
+            className="rounded-md border border-slate-200 px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          >
+            {etat.equipes.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.nom}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => setLignes(lignes.filter((_, j) => j !== i))}
+            className="rounded-md px-1.5 py-1 text-xs text-slate-400 hover:text-red-600"
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+
+      <div className="mt-2 flex gap-1.5">
+        <button
+          onClick={() => setLignes([...lignes, { groupe: '', equipe: etat.equipes[0].id }])}
+          className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          + Ajouter une correspondance
+        </button>
+        <button
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await enregistrerCorrespondances(lignes.filter((l) => l.groupe.trim()));
+              await onEnregistre();
+            } finally {
+              setBusy(false);
+            }
+          }}
+          className="rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-900 disabled:opacity-40 dark:bg-slate-200 dark:text-slate-900"
+        >
+          Enregistrer
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * La bascule d'équipe de l'administrateur de plateforme.
+ *
+ * Elle n'ouvre AUCUN droit : le serveur revérifie à chaque requête que le demandeur est
+ * bien administrateur de plateforme, et ignore purement et simplement la demande de tout
+ * autre compte. Ce n'est donc pas une porte, c'est une télécommande.
+ *
+ * Le rechargement complet est voulu : l'application entière — données, réglages, rapport
+ * — porte l'équipe servie, et la basculer sans repartir de zéro laisserait des morceaux
+ * de l'équipe précédente à l'écran.
+ */
+function BasculeEquipe({ equipes }: { equipes: Equipe[] }) {
+  const courante = getEquipeRegardee();
+  return (
+    <div className="rounded-lg border border-violet-200 bg-violet-50 p-2.5 dark:border-violet-500/40 dark:bg-violet-500/10">
+      <div className="text-xs font-medium text-violet-800 dark:text-violet-300">Regarder une autre équipe</div>
+      <p className="mt-1 text-[11px] text-violet-700/80 dark:text-violet-300/70">
+        Pour dépanner sans vous faire créer un compte dans chaque équipe. Tout ce que vous ferez sera écrit dans l'équipe
+        choisie — le nom affiché en haut de l'écran dit toujours laquelle.
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <select
+          value={courante ?? ''}
+          onChange={(e) => {
+            setEquipeRegardee(e.target.value || null);
+            window.location.reload();
+          }}
+          className="rounded-md border border-violet-200 bg-white px-2 py-1 text-xs dark:border-violet-500/40 dark:bg-slate-900 dark:text-slate-100"
+        >
+          <option value="">Mon équipe</option>
+          {equipes.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.nom}
+            </option>
+          ))}
+        </select>
+        {courante && <span className="text-[11px] text-violet-700 dark:text-violet-300">Vous regardez une équipe qui n'est pas la vôtre.</span>}
+      </div>
+    </div>
   );
 }

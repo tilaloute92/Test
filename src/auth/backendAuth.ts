@@ -19,6 +19,10 @@ export interface BackendUser {
    *  des administrateurs est extensible, et deux définitions divergentes afficheraient des
    *  commandes que le serveur refuserait ensuite. */
   isAdmin?: boolean;
+  /** L'équipe à laquelle la personne est rattachée. `null` quand aucune ne l'est : avec
+   *  plusieurs équipes, l'application le dit au lieu d'en montrer une au hasard. */
+  equipe?: string | null;
+  equipeNom?: string | null;
 }
 
 export interface LdapConfig {

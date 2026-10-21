@@ -1,3 +1,4 @@
+import { enTeteEquipe } from './equipeCourante';
 /**
  * Client de l'envoi du programme du jour — voir server/src/routes/mail.js.
  *
@@ -41,7 +42,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api/mail${path}`, {
     ...init,
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    headers: { 'Content-Type': 'application/json', ...enTeteEquipe(), ...(init?.headers ?? {}) },
     // Un relais SMTP lent ne doit pas faire échouer l'envoi au bout de 6 s comme les appels
     // de données : on laisse nettement plus de temps ici.
     signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -166,7 +167,7 @@ export async function fetchDocumentReunion(payload: unknown): Promise<string> {
   const res = await fetch('/api/mail/rapport-reunion/document', {
     method: 'POST',
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...enTeteEquipe() },
     body: JSON.stringify({ payload }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });

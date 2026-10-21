@@ -10,6 +10,7 @@
  * (voir `syncWrite` dans src/store/useStore.ts).
  */
 
+import { enTeteEquipe } from './equipeCourante';
 import type { Absence, Copil, JournalEntry, Period, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
 import type { AgregatMeteo } from './meteoVote';
 import type { Recurrence } from './recurrences';
@@ -35,6 +36,11 @@ export interface ServerStatus {
   initialized: boolean;
   /** Le serveur ne contient aucune donnée métier. */
   isEmpty: boolean;
+  /** L'équipe RÉELLEMENT servie — celle de la session, ou celle que l'administrateur de
+   *  plateforme regarde. C'est elle que l'écran doit nommer : le nom porté par la session
+   *  désigne l'équipe de la personne, pas celle qu'elle a sous les yeux. */
+  equipe?: string;
+  equipeNom?: string;
 }
 
 export type SnapshotResponse =
@@ -59,7 +65,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api/data${path}`, {
     ...init,
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    // `enTeteEquipe()` est vide sauf quand l'administrateur de plateforme regarde une
+    // autre équipe (voir equipeCourante.ts). Le droit est revérifié côté serveur.
+    headers: { 'Content-Type': 'application/json', ...enTeteEquipe(), ...(init?.headers ?? {}) },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const data = await res.json().catch(() => ({}));

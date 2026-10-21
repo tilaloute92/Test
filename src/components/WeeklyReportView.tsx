@@ -19,7 +19,20 @@ import { cleSemaine, resultatMeteo } from '../lib/meteoVote';
 import { useSeuilPresence } from '../hooks/useSeuilPresence';
 import { useRecurrences } from '../hooks/useRecurrences';
 
-const TEAM_LABEL = 'Équipe Infrastructure & Réseau';
+/**
+ * Le nom de l'équipe en titre du rapport.
+ *
+ * C'était une constante du code — « Équipe Infrastructure & Réseau » — ce qui ne tenait
+ * que tant qu'il n'y avait qu'une équipe. Il vient désormais du serveur, qui sait quelle
+ * équipe il sert. Le repli ne vaut que pour le mode autonome, où il n'y a ni serveur ni
+ * équipes : le nom y est celui du poste, et personne d'autre ne lit ce rapport.
+ */
+const TEAM_LABEL_DEFAUT = 'Équipe Infrastructure & Réseau';
+
+function nomEquipeCourante(): string {
+  const w = window as unknown as { __suiviSession?: { equipeNom?: string | null } | null };
+  return w.__suiviSession?.equipeNom || TEAM_LABEL_DEFAUT;
+}
 
 /**
  * Rapport de réunion d'équipe.
@@ -83,11 +96,11 @@ export function WeeklyReportView() {
   }, [members]);
 
   const construirePayload = ({ mot, pointsRetires }: { mot: string; pointsRetires: string[] }) =>
-    buildReunionPayload({ report, members, teamLabel: TEAM_LABEL, auteur, mot, pointsRetires, meteo });
+    buildReunionPayload({ report, members, teamLabel: nomEquipeCourante(), auteur, mot, pointsRetires, meteo });
 
   const copierMarkdown = async () => {
     try {
-      await navigator.clipboard.writeText(buildMarkdownReport(report.hebdo, TEAM_LABEL, members, meteo, report.notes));
+      await navigator.clipboard.writeText(buildMarkdownReport(report.hebdo, nomEquipeCourante(), members, meteo, report.notes));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -100,7 +113,7 @@ export function WeeklyReportView() {
     setErreur(null);
     setBusy('pptx');
     try {
-      await exportWeeklyReportPptx({ report: report.hebdo, members, teamLabel: TEAM_LABEL, meteo, notes: report.notes });
+      await exportWeeklyReportPptx({ report: report.hebdo, members, teamLabel: nomEquipeCourante(), meteo, notes: report.notes });
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     } finally {
@@ -126,7 +139,7 @@ export function WeeklyReportView() {
       } else {
         const noeud = document.getElementById('document-reunion');
         if (!noeud) throw new Error('Passez sur la vue Réunion ou Synthèse avant de télécharger le document.');
-        html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Réunion d'équipe — ${TEAM_LABEL}</title><style>@page{size:A4;margin:12mm}body{margin:0;padding:16px;background:#f1f5f9}</style></head><body>${noeud.outerHTML}</body></html>`;
+        html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Réunion d'équipe — ${nomEquipeCourante()}</title><style>@page{size:A4;margin:12mm}body{margin:0;padding:16px;background:#f1f5f9}</style></head><body>${noeud.outerHTML}</body></html>`;
       }
       const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
       const a = document.createElement('a');
@@ -147,7 +160,7 @@ export function WeeklyReportView() {
         <div>
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Rapport de réunion</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            {TEAM_LABEL} · {libelleSemaine(report.semaineEcoulee, report.genereLe).prefixe.toLowerCase()} : {formatWeekRange(report.semaineEcoulee)}
+            {nomEquipeCourante()} · {libelleSemaine(report.semaineEcoulee, report.genereLe).prefixe.toLowerCase()} : {formatWeekRange(report.semaineEcoulee)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -218,11 +231,11 @@ export function WeeklyReportView() {
 
       {vue === 'reunion' && (
         <div className="overflow-x-auto rounded-xl bg-slate-200/60 p-4 print:overflow-visible print:bg-white print:p-0 dark:bg-slate-800">
-          <ReunionDocument report={report} members={members} teamLabel={TEAM_LABEL} auteur={auteur} meteo={meteo} />
+          <ReunionDocument report={report} members={members} teamLabel={nomEquipeCourante()} auteur={auteur} meteo={meteo} />
         </div>
       )}
-      {vue === 'projection' && <ReunionProjection report={report} members={members} teamLabel={TEAM_LABEL} meteo={meteo} />}
-      {vue === 'synthese' && <ReunionSynthese report={report} members={members} teamLabel={TEAM_LABEL} auteur={auteur} meteo={meteo} />}
+      {vue === 'projection' && <ReunionProjection report={report} members={members} teamLabel={nomEquipeCourante()} meteo={meteo} />}
+      {vue === 'synthese' && <ReunionSynthese report={report} members={members} teamLabel={nomEquipeCourante()} auteur={auteur} meteo={meteo} />}
 
       {envoiOuvert && (
         <SendReunionModal
