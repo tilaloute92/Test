@@ -57,6 +57,7 @@ import { fetchServiceConfig, saveServiceConfig } from '../lib/serverSync';
 import { fetchMailConfig, saveMailConfig, sendTestMail, verifyMailRelay, type MailConfig } from '../lib/mailApi';
 import {
   criteresDepuisUrl,
+  detecterChampsGlpi,
   fetchGlpiConfig,
   saveGlpiConfig,
   testGlpi,
@@ -1528,6 +1529,7 @@ function GlpiCard() {
   const [correspondances, setCorrespondances] = useState('');
   const [etat, setEtat] = useState<'' | 'enregistrement' | 'ok' | 'essai'>('');
   const [essai, setEssai] = useState<GlpiTest | null>(null);
+  const [champsLus, setChampsLus] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
 
   const appliquer = (c: GlpiConfig) => {
@@ -1596,6 +1598,31 @@ function GlpiCard() {
     }
   };
 
+  /** Les numéros de champ lus sur l'instance plutôt que recopiés d'une documentation :
+   *  ils dépendent de la version et des plugins, et un numéro faux ne lève aucune erreur
+   *  — il compte simplement autre chose, de façon parfaitement plausible. */
+  const detecterChamps = async () => {
+    setErreur(null);
+    setChampsLus(null);
+    try {
+      const r = await detecterChampsGlpi(valeurs());
+      if (!r.ok) {
+        setErreur(r.error ?? 'Lecture des champs impossible.');
+        return;
+      }
+      if (r.statut) setChampStatut(String(r.statut.id));
+      if (r.technicien) setChampTechnicien(String(r.technicien.id));
+      setChampsLus(
+        [
+          r.statut ? `« ${r.statut.nom} » = ${r.statut.id}` : 'champ « statut » introuvable',
+          r.technicien ? `« ${r.technicien.nom} » = ${r.technicien.id}` : 'champ « technicien » introuvable',
+        ].join(' · ') + ` (${r.nombreDeChamps} champs lus sur l'instance)`
+      );
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const enregistrer = async () => {
     setErreur(null);
     setEtat('enregistrement');
@@ -1636,8 +1663,13 @@ function GlpiCard() {
         <summary className="cursor-pointer font-medium">Ce qu'il faut créer dans GLPI (5 minutes, une seule fois)</summary>
         <ol className="mt-2 list-decimal space-y-1 pl-4">
           <li>
-            <em>Configuration → Générale → API</em>&nbsp;: activer l'API REST, puis <strong>ajouter un client API</strong>
-            — il fournit le <strong>jeton d'application</strong>. Restreignez sa plage d'adresses IP à celle de ce serveur.
+            <em>Configuration → Générale → API</em>&nbsp;: activer l'API REST, et <strong>autoriser la connexion par
+            jeton externe</strong> — c'est l'option qui permet d'ouvrir une session avec un jeton plutôt qu'un mot de
+            passe. Désactivée, l'instance refuse la connexion avec un message peu parlant.
+          </li>
+          <li>
+            Sur la même page, <strong>ajouter un client API</strong> — il fournit le <strong>jeton d'application</strong>.
+            Restreignez sa plage d'adresses IP à celle de ce serveur.
           </li>
           <li>
             Créer un <strong>compte de service en lecture seule</strong> (profil «&nbsp;Observateur&nbsp;» sur l'entité
@@ -1648,9 +1680,8 @@ function GlpiCard() {
             <strong>jeton utilisateur</strong>.
           </li>
           <li>
-            Les numéros de champ ci-dessous sont ceux de GLPI&nbsp;10 (12&nbsp;= statut, 5&nbsp;= technicien attribué).
-            Ils dépendent de la version&nbsp;: <code>GET /apirest.php/listSearchOptions/Ticket</code> donne la liste
-            exacte de votre instance.
+            L'adresse se termine par <code>/apirest.php</code>, et «&nbsp;Lire les numéros dans GLPI&nbsp;» les relève
+            sur votre instance plutôt que de les recopier.
           </li>
         </ol>
       </details>
@@ -1704,6 +1735,15 @@ function GlpiCard() {
             inputMode="numeric"
           />
         </label>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button onClick={() => void detecterChamps()} className="btn-ghost">
+          Lire les numéros dans GLPI
+        </button>
+        <span className="min-w-0 flex-1 text-xs text-slate-400">
+          {champsLus ?? 'Ces deux numéros dépendent de la version de GLPI et des plugins : faites-les lire sur l’instance plutôt que de les recopier.'}
+        </span>
       </div>
 
       {/* Recopier des numéros de champ à la main donne un compteur plausible et faux. Le

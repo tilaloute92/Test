@@ -3,7 +3,7 @@ import { requireAuth } from '../auth/session.js';
 import { requireReferent } from '../auth/admin.js';
 import { equipeCourante } from '../auth/equipeCourante.js';
 import { getConfig, pourAffichage, setConfig, verifierCriteres } from '../glpi/config.js';
-import { BUCKETS, etat, historique, oublierCache, tester } from '../glpi/compteur.js';
+import { BUCKETS, detecterChamps, etat, historique, oublierCache, tester } from '../glpi/compteur.js';
 import { criteresDepuisUrl } from '../glpi/rechercheUrl.js';
 
 /**
@@ -54,34 +54,64 @@ glpiRouter.put('/config', requireReferent, (req, res) => {
  * sans être enregistrées : on ne range pas dans la configuration de l'équipe un jeton
  * dont on ne sait pas encore s'il fonctionne.
  */
-glpiRouter.post('/test', requireReferent, async (req, res) => {
+/**
+ * La configuration à ESSAYER : les valeurs saisies à l'écran, complétées par celles déjà
+ * enregistrées, et jamais écrites sur disque — on ne range pas dans la configuration de
+ * l'équipe un jeton dont on ne sait pas encore s'il fonctionne. Un jeton laissé vide à
+ * l'écran est celui déjà en place : la page ne les affiche pas, elle ne peut donc pas les
+ * renvoyer.
+ */
+function configDEssai(req) {
   const enregistre = getConfig(req.equipe);
   const corps = req.body ?? {};
-  let criteres;
-  try {
-    criteres = corps.criteres === undefined ? enregistre.criteres : verifierCriteres(corps.criteres);
-  } catch (erreur) {
-    return res.status(400).json({ ok: false, error: erreur.message });
-  }
-  const cfg = {
+  const criteres = corps.criteres === undefined ? enregistre.criteres : verifierCriteres(corps.criteres);
+  const texte = (valeur, defaut) => (typeof valeur === 'string' && valeur.trim() ? valeur.trim() : defaut);
+  return {
     ...enregistre,
-    // Jeton laissé vide à l'écran = celui déjà enregistré : la page ne les affiche pas,
-    // elle ne peut donc pas les renvoyer pour un essai.
-    url: typeof corps.url === 'string' && corps.url.trim() ? corps.url.trim() : enregistre.url,
-    appToken: typeof corps.appToken === 'string' && corps.appToken.trim() ? corps.appToken.trim() : enregistre.appToken,
-    userToken: typeof corps.userToken === 'string' && corps.userToken.trim() ? corps.userToken.trim() : enregistre.userToken,
+    url: texte(corps.url, enregistre.url),
+    appToken: texte(corps.appToken, enregistre.appToken),
+    userToken: texte(corps.userToken, enregistre.userToken),
     champStatut: Number(corps.champStatut) || enregistre.champStatut,
     champTechnicien: Number(corps.champTechnicien) || enregistre.champTechnicien,
     criteres,
   };
-  if (!cfg.url || !cfg.appToken || !cfg.userToken) {
-    return res.status(400).json({ ok: false, error: "L'adresse de GLPI et les deux jetons sont nécessaires pour l'essai." });
+}
+
+const RACCORDEMENT_INCOMPLET = "L'adresse de GLPI et les deux jetons sont nécessaires pour interroger l'instance.";
+
+glpiRouter.post('/test', requireReferent, async (req, res) => {
+  let cfg;
+  try {
+    cfg = configDEssai(req);
+  } catch (erreur) {
+    return res.status(400).json({ ok: false, error: erreur.message });
   }
+  if (!cfg.url || !cfg.appToken || !cfg.userToken) return res.status(400).json({ ok: false, error: RACCORDEMENT_INCOMPLET });
   try {
     res.json(await tester(req.equipe, cfg, req.user?.sub));
   } catch (erreur) {
     // Un essai qui échoue est un résultat d'essai, pas une panne du serveur : 200 avec le
     // motif, que la page affiche tel quel.
+    res.json({ ok: false, error: erreur.message });
+  }
+});
+
+/**
+ * Les numéros de champ, lus sur l'instance. Recopier ceux d'une documentation est le
+ * moyen le plus sûr d'obtenir un compteur faux et plausible : les numéros dépendent de
+ * la version et des plugins, et aucun message d'erreur ne signale une erreur de numéro.
+ */
+glpiRouter.post('/champs', requireReferent, async (req, res) => {
+  let cfg;
+  try {
+    cfg = configDEssai(req);
+  } catch (erreur) {
+    return res.status(400).json({ ok: false, error: erreur.message });
+  }
+  if (!cfg.url || !cfg.appToken || !cfg.userToken) return res.status(400).json({ ok: false, error: RACCORDEMENT_INCOMPLET });
+  try {
+    res.json(await detecterChamps(cfg));
+  } catch (erreur) {
     res.json({ ok: false, error: erreur.message });
   }
 });

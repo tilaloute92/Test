@@ -1,6 +1,14 @@
 import { readJsonEquipe, writeJsonEquipe } from '../dataStore.js';
 import { estConfigure, getConfig } from './config.js';
-import { avecFiltre, compter, GlpiError, identifiantUtilisateur, initSession, killSession } from './client.js';
+import {
+  avecFiltre,
+  compter,
+  GlpiError,
+  identifiantUtilisateur,
+  initSession,
+  killSession,
+  optionsDeRecherche,
+} from './client.js';
 
 /**
  * Le relevé : combien de tickets, dans quel état, et combien pour la personne connectée.
@@ -252,4 +260,29 @@ function noterHistorique(equipe, releve) {
 export function historique(equipe, jours = 14) {
   const lignes = readJsonEquipe(equipe, HISTORIQUE_FILE, []);
   return (Array.isArray(lignes) ? lignes : []).slice(-jours);
+}
+
+/**
+ * Les deux numéros de champ, lus sur l'instance plutôt que devinés.
+ *
+ * On ne cherche pas un numéro connu d'avance : on cherche la COLONNE que le champ
+ * désigne. `status` sur la table des tickets, et le champ dont la clé de liaison est
+ * `users_id_assign` — le technicien attribué. Cette identification-là ne bouge pas d'une
+ * version à l'autre, alors que les numéros, si.
+ */
+export async function detecterChamps(cfg) {
+  const session = await initSession(cfg);
+  try {
+    const options = await optionsDeRecherche(session, 'Ticket');
+    const statut = options.find((o) => o.champ === 'status' && o.table === 'glpi_tickets');
+    const technicien = options.find((o) => o.lien === 'users_id_assign');
+    return {
+      ok: true,
+      statut: statut ? { id: statut.id, nom: statut.nom } : null,
+      technicien: technicien ? { id: technicien.id, nom: technicien.nom } : null,
+      nombreDeChamps: options.length,
+    };
+  } finally {
+    await killSession(session);
+  }
 }

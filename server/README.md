@@ -227,14 +227,18 @@ fichier que le reste du dossier de données, car **ce fichier contient deux jeto
 }
 ```
 
-Côté GLPI : *Configuration → Générale → API* (activer l'API REST, créer un client API →
-`App-Token`, restreindre sa plage d'IP), puis un compte de service en lecture seule dont
-les *Clés d'accès distantes* fournissent le `user_token`. Le compteur ne voit que ce que
-le profil de ce compte autorise.
+Éprouvé contre **GLPI 10.0.x** (`apirest.php`). Côté GLPI : *Configuration → Générale →
+API* — activer l'API REST, **autoriser la connexion par jeton externe** (sans quoi
+`initSession` est refusé), créer un client API → `App-Token`, restreindre sa plage d'IP.
+Puis un compte de service en lecture seule dont les *Clés d'accès distantes* fournissent
+le `user_token`. Le compteur ne voit que ce que le profil de ce compte autorise.
 
-Les numéros de champ `12` (statut) et `5` (technicien attribué) sont ceux de GLPI 10 ;
-ils dépendent de la version et des plugins. `GET /apirest.php/listSearchOptions/Ticket`
-donne la liste exacte d'une instance.
+Les numéros de champ `12` (statut) et `5` (technicien attribué) sont les valeurs usuelles
+de GLPI 10, mais ils dépendent de la version et des plugins — et un numéro faux ne lève
+aucune erreur, il compte simplement autre chose. `POST /api/glpi/champs` les **relève sur
+l'instance** (via `listSearchOptions/Ticket`) en cherchant la colonne plutôt que le
+numéro : `status` sur `glpi_tickets`, et le champ dont la clé de liaison est
+`users_id_assign`. C'est ce que fait le bouton « Lire les numéros dans GLPI ».
 
 Routes (`/api/glpi`, session requise ; le réglage exige d'être référent de l'équipe) :
 
@@ -243,6 +247,7 @@ Routes (`/api/glpi`, session requise ; le réglage exige d'être référent de l
 | `GET /tickets` | membre | Le relevé : total, répartition par état, nombre personnel, date du relevé, erreur éventuelle. |
 | `GET /config` · `PUT /config` | référent | Le raccordement, jetons masqués en lecture (`appTokenSet`, `userTokenSet`). |
 | `POST /test` | référent | Essai immédiat avec les valeurs saisies, **sans les enregistrer**. |
+| `POST /champs` | référent | Relève les numéros de champ sur l'instance (`listSearchOptions/Ticket`). |
 | `POST /criteres-depuis-url` | référent | Extrait les critères d'une URL de recherche GLPI collée. |
 | `GET /historique` | référent | Les relevés quotidiens archivés (`glpi-historique.json`, 400 jours). |
 

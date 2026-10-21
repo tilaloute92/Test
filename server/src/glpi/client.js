@@ -171,3 +171,30 @@ export async function identifiantUtilisateur(session, login) {
   const exact = liste.find((u) => String(u?.name ?? '').toLowerCase() === login.toLowerCase());
   return exact ? Number(exact.id) : null;
 }
+
+/**
+ * Les options de recherche de GLPI pour un type d'objet : la correspondance entre un
+ * numéro de champ et ce qu'il désigne.
+ *
+ * C'est la seule source fiable des numéros à employer. Ils varient d'une version à
+ * l'autre et avec les plugins installés, et un numéro faux ne lève aucune erreur — il
+ * compte autre chose, de façon parfaitement plausible. Autant les lire sur l'instance
+ * plutôt que de les recopier d'une documentation.
+ */
+export async function optionsDeRecherche(session, itemtype = 'Ticket') {
+  const corps = await appel(`${session.url}/listSearchOptions/${itemtype}`, enTetes(session));
+  if (!corps || typeof corps !== 'object') throw new GlpiError("GLPI n'a pas renvoyé la liste des champs de recherche.");
+  const options = [];
+  for (const [cle, valeur] of Object.entries(corps)) {
+    // Les entrées non numériques sont les intitulés de groupes (« Caractéristiques »…).
+    if (!/^\d+$/.test(cle) || !valeur || typeof valeur !== 'object') continue;
+    options.push({
+      id: Number(cle),
+      nom: String(valeur.name ?? ''),
+      table: String(valeur.table ?? ''),
+      champ: String(valeur.field ?? ''),
+      lien: String(valeur.linkfield ?? ''),
+    });
+  }
+  return options;
+}

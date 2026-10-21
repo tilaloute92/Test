@@ -92,5 +92,17 @@ export const saveGlpiConfig = (cfg: GlpiConfigInput) =>
 
 export const testGlpi = (cfg: GlpiConfigInput) => request<GlpiTest>('/test', { method: 'POST', body: JSON.stringify(cfg) });
 
+export interface GlpiChamps {
+  ok: boolean;
+  error?: string;
+  statut?: { id: number; nom: string } | null;
+  technicien?: { id: number; nom: string } | null;
+  nombreDeChamps?: number;
+}
+
+/** Lit les numéros de champ sur l'instance : ils dépendent de la version et des plugins. */
+export const detecterChampsGlpi = (cfg: GlpiConfigInput) =>
+  request<GlpiChamps>('/champs', { method: 'POST', body: JSON.stringify(cfg) });
+
 export const criteresDepuisUrl = (url: string) =>
   request<{ criteres: unknown[] }>('/criteres-depuis-url', { method: 'POST', body: JSON.stringify({ url }) });
