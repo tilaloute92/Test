@@ -36,8 +36,8 @@ function escapeHtml(value) {
  * Ce que contient le programme d'une personne pour une date donnée. Renvoie null si la
  * personne n'a ni adresse mail, ni rien à annoncer — on n'envoie pas de message vide.
  */
-export function buildProgramme(member, iso) {
-  const { tasks, planningSlots, absences } = getSnapshot();
+export function buildProgramme(equipe, member, iso) {
+  const { tasks, planningSlots, absences } = getSnapshot(equipe);
   const byId = new Map(tasks.map((t) => [t.id, t]));
 
   const dayAbsence = absences.find((a) => a.memberId === member.id && a.date === iso && a.period === 'jour');

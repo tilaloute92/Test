@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../auth/session.js';
-import { requireAdmin } from '../auth/admin.js';
+import { requireAdmin, requireReferent } from '../auth/admin.js';
+import { equipeCourante } from '../auth/equipeCourante.js';
 import * as store from '../businessData.js';
 import { getServiceConfig, setServiceConfig } from '../serviceConfig.js';
 import { agregat as meteoAgregat, deposer as meteoDeposer, estLundiIso, modifier as meteoModifier } from '../meteoVotes.js';
@@ -11,6 +12,9 @@ export const dataRouter = Router();
 // accessibles qu'à des utilisateurs authentifiés (compte local, LDAP ou SSO vérifié côté
 // serveur) — voir README.md, section « Mode client/serveur ».
 dataRouter.use(requireAuth);
+// Puis l'équipe : posée une fois ici, lue partout ensuite via `req.equipe`. Voir
+// auth/equipeCourante.js — c'est le point unique du cloisonnement.
+dataRouter.use(equipeCourante);
 
 function actorOf(req) {
   return req.user?.name || req.user?.sub || 'inconnu';
@@ -45,14 +49,14 @@ function respondToUpdate(res, result, notFoundMessage) {
  */
 dataRouter.get('/', (req, res) => {
   const since = Number(req.query.since);
-  if (Number.isFinite(since) && since === store.getVersion()) {
-    return res.json({ unchanged: true, ...store.getStatus() });
+  if (Number.isFinite(since) && since === store.getVersion(req.equipe)) {
+    return res.json({ unchanged: true, equipe: req.equipe, equipeNom: req.equipeNom, ...store.getStatus(req.equipe) });
   }
-  res.json({ unchanged: false, ...store.getSnapshot() });
+  res.json({ unchanged: false, equipe: req.equipe, equipeNom: req.equipeNom, ...store.getSnapshot(req.equipe) });
 });
 
 /** État seul (version, mise en service, vacuité) — sans transférer les données. */
-dataRouter.get('/status', (_req, res) => res.json(store.getStatus()));
+dataRouter.get('/status', (req, res) => res.json(store.getStatus(req.equipe)));
 
 /**
  * Mise en service du serveur, une seule fois, par une seule personne :
@@ -64,7 +68,7 @@ dataRouter.get('/status', (_req, res) => res.json(store.getStatus()));
  * l'équipe par le contenu d'un seul navigateur.
  */
 dataRouter.post('/initialize', (req, res) => {
-  const result = store.initialize(req.body?.snapshot, actorOf(req));
+  const result = store.initialize(req.equipe, req.body?.snapshot, actorOf(req));
   if (result.status === 'already') {
     return res.status(409).json({ error: 'Le serveur a déjà été mis en service — opération refusée pour ne rien écraser.' });
   }
@@ -72,24 +76,24 @@ dataRouter.post('/initialize', (req, res) => {
 });
 
 // --- Membres ---
-dataRouter.post('/members', (req, res) => res.json(store.addMember(req.body)));
+dataRouter.post('/members', (req, res) => res.json(store.addMember(req.equipe, req.body)));
 dataRouter.patch('/members/:id', (req, res) => {
-  const updated = store.updateMember(req.params.id, req.body);
+  const updated = store.updateMember(req.equipe, req.params.id, req.body);
   if (!updated) return res.status(404).json({ error: 'Membre introuvable.' });
   res.json(updated);
 });
 dataRouter.delete('/members/:id', (req, res) => {
-  store.removeMember(req.params.id);
+  store.removeMember(req.equipe, req.params.id);
   res.json({ ok: true });
 });
 
 // --- Tâches ---
-dataRouter.post('/tasks', (req, res) => res.json(store.addTask(req.body, actorOf(req))));
+dataRouter.post('/tasks', (req, res) => res.json(store.addTask(req.equipe, req.body, actorOf(req))));
 dataRouter.patch('/tasks/:id', (req, res) =>
-  respondToUpdate(res, store.updateTask(req.params.id, req.body, actorOf(req), baseUpdatedAtOf(req)), 'Tâche introuvable.')
+  respondToUpdate(res, store.updateTask(req.equipe, req.params.id, req.body, actorOf(req), baseUpdatedAtOf(req)), 'Tâche introuvable.')
 );
 dataRouter.delete('/tasks/:id', (req, res) => {
-  store.removeTask(req.params.id);
+  store.removeTask(req.equipe, req.params.id);
   res.json({ ok: true });
 });
 
@@ -97,41 +101,41 @@ dataRouter.delete('/tasks/:id', (req, res) => {
 dataRouter.put('/planning-slots', (req, res) => {
   const { memberId, date, period, taskId } = req.body || {};
   if (!memberId || !date || !period) return res.status(400).json({ error: 'memberId, date et period sont requis.' });
-  res.json(store.setPlanningSlot(memberId, date, period, taskId ?? null));
+  res.json(store.setPlanningSlot(req.equipe, memberId, date, period, taskId ?? null));
 });
 
 // --- Temps saisi ---
-dataRouter.post('/time-entries', (req, res) => res.json(store.addTimeEntry(req.body)));
+dataRouter.post('/time-entries', (req, res) => res.json(store.addTimeEntry(req.equipe, req.body)));
 dataRouter.delete('/time-entries/:id', (req, res) => {
-  store.removeTimeEntry(req.params.id);
+  store.removeTimeEntry(req.equipe, req.params.id);
   res.json({ ok: true });
 });
 
 // --- Absences ---
-dataRouter.post('/absences', (req, res) => res.json(store.addAbsence(req.body)));
-dataRouter.post('/absences/bulk', (req, res) => res.json(store.addAbsencesBulk(req.body?.items)));
+dataRouter.post('/absences', (req, res) => res.json(store.addAbsence(req.equipe, req.body)));
+dataRouter.post('/absences/bulk', (req, res) => res.json(store.addAbsencesBulk(req.equipe, req.body?.items)));
 dataRouter.delete('/absences/:id', (req, res) => {
-  store.removeAbsence(req.params.id);
+  store.removeAbsence(req.equipe, req.params.id);
   res.json({ ok: true });
 });
 
 // --- Feuille de route (FDR) ---
-dataRouter.post('/roadmap-items', (req, res) => res.json(store.addRoadmapItem(req.body, actorOf(req))));
+dataRouter.post('/roadmap-items', (req, res) => res.json(store.addRoadmapItem(req.equipe, req.body, actorOf(req))));
 dataRouter.patch('/roadmap-items/:id', (req, res) =>
-  respondToUpdate(res, store.updateRoadmapItem(req.params.id, req.body, actorOf(req), baseUpdatedAtOf(req)), 'Initiative introuvable.')
+  respondToUpdate(res, store.updateRoadmapItem(req.equipe, req.params.id, req.body, actorOf(req), baseUpdatedAtOf(req)), 'Initiative introuvable.')
 );
 dataRouter.delete('/roadmap-items/:id', (req, res) => {
-  store.removeRoadmapItem(req.params.id);
+  store.removeRoadmapItem(req.equipe, req.params.id);
   res.json({ ok: true });
 });
 
 // --- COPIL (comités de pilotage) ---
-dataRouter.post('/copils', (req, res) => res.json(store.addCopil(req.body, actorOf(req))));
+dataRouter.post('/copils', (req, res) => res.json(store.addCopil(req.equipe, req.body, actorOf(req))));
 dataRouter.patch('/copils/:id', (req, res) =>
-  respondToUpdate(res, store.updateCopil(req.params.id, req.body, actorOf(req), baseUpdatedAtOf(req)), 'COPIL introuvable.')
+  respondToUpdate(res, store.updateCopil(req.equipe, req.params.id, req.body, actorOf(req), baseUpdatedAtOf(req)), 'COPIL introuvable.')
 );
 dataRouter.delete('/copils/:id', (req, res) => {
-  store.removeCopil(req.params.id);
+  store.removeCopil(req.equipe, req.params.id);
   res.json({ ok: true });
 });
 
@@ -145,18 +149,18 @@ dataRouter.post('/journal-entries', (req, res) => {
   const items = req.body?.items;
   if (!Array.isArray(items)) return res.status(400).json({ error: 'items attendu.' });
   if (items.length > 50) return res.status(400).json({ error: 'Cinquante entrées au maximum par envoi.' });
-  res.json(store.addJournalEntries(items));
+  res.json(store.addJournalEntries(req.equipe, items));
 });
 
 dataRouter.patch('/journal-entries/:id', (req, res) => {
-  const result = store.updateJournalNote(req.params.id, req.body?.texte);
+  const result = store.updateJournalNote(req.equipe, req.params.id, req.body?.texte);
   if (!result) return res.status(404).json({ error: 'Entrée introuvable.' });
   if (result.error) return res.status(400).json({ error: result.error });
   res.json(result);
 });
 
 dataRouter.delete('/journal-entries/:id', (req, res) => {
-  store.removeJournalEntry(req.params.id);
+  store.removeJournalEntry(req.equipe, req.params.id);
   res.json({ ok: true });
 });
 
@@ -165,12 +169,12 @@ dataRouter.delete('/journal-entries/:id', (req, res) => {
 // Lecture ouverte à toute session : l'alerte doit s'afficher pour tout le monde. Écriture
 // réservée à l'administrateur, comme le reste de la configuration — abaisser le seuil
 // ferait taire une alerte pour toute l'équipe.
-dataRouter.get('/service-config', (_req, res) => res.json(getServiceConfig()));
+dataRouter.get('/service-config', (req, res) => res.json(getServiceConfig(req.equipe)));
 
-dataRouter.put('/service-config', requireAdmin, (req, res) => {
+dataRouter.put('/service-config', requireReferent, (req, res) => {
   try {
     res.json(
-      setServiceConfig({
+      setServiceConfig(req.equipe, {
         seuilPresence: req.body?.seuilPresence,
         meteoCloture: req.body?.meteoCloture,
         recurrences: req.body?.recurrences,
@@ -209,14 +213,14 @@ function repondreVote(res, action) {
 
 dataRouter.get('/meteo/:semaine', (req, res) => {
   const semaine = semaineDe(req, res);
-  if (semaine) res.json(meteoAgregat(semaine, req.user.sub));
+  if (semaine) res.json(meteoAgregat(req.equipe, semaine, req.user.sub));
 });
 
 dataRouter.post('/meteo/:semaine', (req, res) => {
   const semaine = semaineDe(req, res);
   if (semaine) {
     repondreVote(res, () =>
-      meteoDeposer({ semaine, username: req.user.sub, niveau: req.body?.niveau, mot: req.body?.mot })
+      meteoDeposer({ equipe: req.equipe, semaine, username: req.user.sub, niveau: req.body?.niveau, mot: req.body?.mot })
     );
   }
 });
@@ -225,7 +229,7 @@ dataRouter.patch('/meteo/:semaine', (req, res) => {
   const semaine = semaineDe(req, res);
   if (semaine) {
     repondreVote(res, () =>
-      meteoModifier({ semaine, username: req.user.sub, id: req.body?.id, niveau: req.body?.niveau, mot: req.body?.mot })
+      meteoModifier({ equipe: req.equipe, semaine, username: req.user.sub, id: req.body?.id, niveau: req.body?.niveau, mot: req.body?.mot })
     );
   }
 });

@@ -1,4 +1,5 @@
-import { readJson, writeJson } from '../dataStore.js';
+import { readJsonEquipe, writeJsonEquipe } from '../dataStore.js';
+import { listerEquipes } from '../equipes.js';
 import { getMailConfig } from './mailConfig.js';
 import { isMailConfigured } from './transport.js';
 import { sendDailyProgrammes } from './send.js';
@@ -11,17 +12,22 @@ import { toISODate } from './dailyProgramme.js';
  * La date du dernier envoi est écrite sur disque, si bien qu'un redémarrage du service en
  * pleine journée ne renvoie pas les messages du matin — la protection tient au fichier, pas
  * à la mémoire du processus.
+ *
+ * UN ÉTAT PAR ÉQUIPE, et c'est indispensable : le fichier ne retenait qu'une seule date
+ * d'envoi. La première équipe servie à 7 h 45 marquait la journée comme faite, et les
+ * autres ne recevaient jamais rien — un défaut invisible tant qu'il n'y avait qu'une
+ * équipe, total dès la deuxième.
  */
 
 const STATE_FILE = 'mail-state.json';
 const MINUTE = 60 * 1000;
 
-function readState() {
-  return readJson(STATE_FILE, { lastSentDate: null, lastRunAt: null, lastResults: [] });
+function readState(equipe) {
+  return readJsonEquipe(equipe, STATE_FILE, { lastSentDate: null, lastRunAt: null, lastResults: [] });
 }
 
-export function getMailState() {
-  return readState();
+export function getMailState(equipe) {
+  return readState(equipe);
 }
 
 function isDue(now, state) {
@@ -39,19 +45,27 @@ function isDue(now, state) {
   return now.getHours() > h || (now.getHours() === h && now.getMinutes() >= m);
 }
 
-async function tick() {
-  if (!isMailConfigured()) return;
-  const state = readState();
+async function tickEquipe(equipe) {
+  const state = readState(equipe.id);
   if (!isDue(new Date(), state)) return;
   try {
-    const { date, results } = await sendDailyProgrammes({});
-    writeJson(STATE_FILE, { lastSentDate: date, lastRunAt: new Date().toISOString(), lastResults: results });
+    const { date, results } = await sendDailyProgrammes({ equipe: equipe.id });
+    writeJsonEquipe(equipe.id, STATE_FILE, { lastSentDate: date, lastRunAt: new Date().toISOString(), lastResults: results });
     const envoyes = results.filter((r) => r.status === 'envoye').length;
-    console.log(`[mail] Programme du jour envoyé à ${envoyes} personne(s) pour le ${date}.`);
+    console.log(`[mail] ${equipe.nom} : programme du jour envoyé à ${envoyes} personne(s) pour le ${date}.`);
   } catch (error) {
     // On n'écrit pas lastSentDate : la tentative sera refaite à la minute suivante, ce qui
     // rattrape une coupure passagère du relais sans intervention.
-    console.error(`[mail] Envoi automatique en échec : ${error.message}`);
+    console.error(`[mail] ${equipe.nom} : envoi automatique en échec — ${error.message}`);
+  }
+}
+
+async function tick() {
+  if (!isMailConfigured()) return;
+  // Chaque équipe a son propre état d'envoi : l'échec de l'une ne prive pas les autres,
+  // et la réussite de l'une ne fait pas croire la journée faite pour toutes.
+  for (const equipe of listerEquipes()) {
+    await tickEquipe(equipe);
   }
 }
 

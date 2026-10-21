@@ -1,6 +1,12 @@
-import { readJson, readText, removeText, writeJson, writeText } from '../dataStore.js';
+import { readJsonEquipe, readText, removeText, writeJsonEquipe, writeText } from '../dataStore.js';
 
-const FILE = 'config.json';
+/**
+ * PAR ÉQUIPE. Les destinataires extérieurs et l'historique des envois appartiennent à
+ * l'équipe qui rapporte : la direction destinataire du rapport réseau n'est pas forcément
+ * celle du rapport applicatif, et personne ne doit lire les envois d'une autre équipe.
+ */
+
+const FILE = 'rapport-reunion.json';
 const CLE = 'rapportReunion';
 
 /**
@@ -25,34 +31,34 @@ const MAX_ENVOIS = 30;
  * (voir auth/admin.js) et réécrit en entier au moindre changement de réglage. La trace
  * reste exactement la même pour qui la consulte ; c'est son rangement qui change.
  */
-const fichierDocument = (id) => `envoi-${id}.html`;
+const fichierDocument = (equipe, id) => `envoi-${equipe}-${id}.html`;
 
-function lire() {
-  const stocke = readJson(FILE, {})[CLE] ?? {};
+function lire(equipe) {
+  const stocke = readJsonEquipe(equipe, FILE, {})[CLE] ?? {};
   return {
     destinatairesExternes: Array.isArray(stocke.destinatairesExternes) ? stocke.destinatairesExternes : [],
     envois: Array.isArray(stocke.envois) ? stocke.envois : [],
   };
 }
 
-function ecrire(etat) {
-  const tout = readJson(FILE, {});
+function ecrire(equipe, etat) {
+  const tout = readJsonEquipe(equipe, FILE, {});
   tout[CLE] = etat;
-  writeJson(FILE, tout);
+  writeJsonEquipe(equipe, FILE, tout);
   return etat;
 }
 
-export function getReunionConfig() {
-  const { destinatairesExternes, envois } = lire();
+export function getReunionConfig(equipe) {
+  const { destinatairesExternes, envois } = lire(equipe);
   return { destinatairesExternes, dernierEnvoi: envois[0] ?? null };
 }
 
 /** Adresses extérieures à l'équipe. Réservé à l'administrateur côté route : ajouter une
  *  adresse, c'est décider qui reçoit l'activité de l'équipe. */
-export function setDestinatairesExternes(adresses) {
-  const etat = lire();
+export function setDestinatairesExternes(equipe, adresses) {
+  const etat = lire(equipe);
   const propres = [...new Set(adresses.map((a) => String(a).trim()).filter(Boolean))];
-  return ecrire({ ...etat, destinatairesExternes: propres }).destinatairesExternes;
+  return ecrire(equipe, { ...etat, destinatairesExternes: propres }).destinatairesExternes;
 }
 
 /**
@@ -60,8 +66,8 @@ export function setDestinatairesExternes(adresses) {
  * seul exemplaire qui ne sera jamais recalculé, donc le seul qui dira encore dans six mois
  * ce qu'on avait annoncé.
  */
-export function enregistrerEnvoi({ par, objet, destinataires, resultats, document }) {
-  const etat = lire();
+export function enregistrerEnvoi(equipe, { par, objet, destinataires, resultats, document }) {
+  const etat = lire(equipe);
   const id = `${Date.now()}`;
   const envoi = {
     id,
@@ -73,25 +79,25 @@ export function enregistrerEnvoi({ par, objet, destinataires, resultats, documen
     echecs: resultats.filter((r) => r.statut === 'echec').length,
     taille: document ? document.length : 0,
   };
-  if (document) writeText(fichierDocument(id), document);
+  if (document) writeText(fichierDocument(equipe, id), document);
 
   const envois = [envoi, ...etat.envois];
   // Les documents des envois sortis de la liste n'ont plus personne pour les ouvrir :
   // les laisser sur le disque ferait grossir le dossier sans fin.
   for (const vieux of envois.slice(MAX_ENVOIS)) {
     try {
-      removeText(fichierDocument(vieux.id));
+      removeText(fichierDocument(equipe, vieux.id));
     } catch {
       // Un fichier déjà absent n'est pas une erreur : la trace, elle, est bien retirée.
     }
   }
-  ecrire({ ...etat, envois: envois.slice(0, MAX_ENVOIS) });
+  ecrire(equipe, { ...etat, envois: envois.slice(0, MAX_ENVOIS) });
   return envoi;
 }
 
 /** Liste des traces, sans les documents — ils sont dans des fichiers à part. */
-export function listerEnvois() {
-  return lire().envois.map(({ document, ...reste }) => ({
+export function listerEnvois(equipe) {
+  return lire(equipe).envois.map(({ document, ...reste }) => ({
     ...reste,
     // `document` subsiste sur les traces écrites par les versions précédentes : on en
     // garde la taille, et `lireEnvoi` sait encore le servir.
@@ -99,10 +105,10 @@ export function listerEnvois() {
   }));
 }
 
-export function lireEnvoi(id) {
-  const envoi = lire().envois.find((e) => e.id === id);
+export function lireEnvoi(equipe, id) {
+  const envoi = lire(equipe).envois.find((e) => e.id === id);
   if (!envoi) return null;
   // Trace d'avant le rangement en fichiers : le document y est encore en ligne.
-  const document = envoi.document ?? readText(fichierDocument(envoi.id));
+  const document = envoi.document ?? readText(fichierDocument(equipe, envoi.id));
   return { ...envoi, document };
 }

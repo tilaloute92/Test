@@ -1,4 +1,5 @@
 import { getSnapshot, purgeRecords } from './businessData.js';
+import { listerEquipes } from './equipes.js';
 
 /**
  * Purge automatique des éléments périmés : tâches terminées et absences passées de plus de
@@ -91,12 +92,12 @@ export function findExpired(snapshot, now, days = RETENTION_ACTIVITE_JOURS, jour
 }
 
 /** Applique la purge et renvoie le compte de ce qui a été retiré. */
-export function purgeExpired(now = new Date(), days = RETENTION_ACTIVITE_JOURS) {
-  const expired = findExpired(getSnapshot(), now, days);
+export function purgeExpired(equipe, now = new Date(), days = RETENTION_ACTIVITE_JOURS) {
+  const expired = findExpired(getSnapshot(equipe), now, days);
   if (expired.total === 0) {
     return { ...counts(expired), purged: false, cutoff: expired.cutoff, cutoffAbsences: expired.cutoffAbsences };
   }
-  purgeRecords({
+  purgeRecords(equipe, {
     taskIds: expired.tasks.map((t) => t.id),
     absenceIds: expired.absences.map((a) => a.id),
     timeEntryIds: expired.timeEntries.map((e) => e.id),
@@ -119,16 +120,20 @@ function counts(expired) {
  */
 export function startRetentionScheduler() {
   const run = () => {
-    try {
-      const r = purgeExpired();
-      if (r.purged) {
-        console.log(
-          `[purge] ${r.tasks} tâche(s) terminée(s) et ${r.timeEntries} saisie(s) de temps antérieures au ${r.cutoff}, ` +
-            `${r.absences} absence(s) antérieure(s) au ${r.cutoffAbsences}.`
-        );
+    // Équipe par équipe : l'échec de l'une ne doit pas empêcher le nettoyage des autres,
+    // et chaque ligne de journal dit de laquelle il s'agit.
+    for (const equipe of listerEquipes()) {
+      try {
+        const r = purgeExpired(equipe.id);
+        if (r.purged) {
+          console.log(
+            `[purge] ${equipe.nom} : ${r.tasks} tâche(s) terminée(s) et ${r.timeEntries} saisie(s) de temps ` +
+              `antérieures au ${r.cutoff}, ${r.absences} absence(s) antérieure(s) au ${r.cutoffAbsences}.`
+          );
+        }
+      } catch (error) {
+        console.error(`[purge] ${equipe.nom} : échec — ${error.message}`);
       }
-    } catch (error) {
-      console.error(`[purge] Échec : ${error.message}`);
     }
   };
   console.log(

@@ -5,8 +5,28 @@ import { config } from './config.js';
 import { authRouter } from './routes/auth.js';
 import { dataRouter } from './routes/data.js';
 import { mailRouter } from './routes/mail.js';
+import { equipesRouter } from './routes/equipes.js';
 import { startMailScheduler } from './mail/scheduler.js';
 import { startRetentionScheduler } from './retention.js';
+import { listerEquipes, migrerSiBesoin, rattacherComptesSansEquipe } from './equipes.js';
+
+/**
+ * Migration vers la disposition multi-équipe, AVANT toute lecture de données.
+ *
+ * Les installations existantes ont leurs fichiers métier à la racine de `data/` ; ils
+ * passent dans `data/equipes/equipe-1/`. Joué une seule fois, silencieux quand il n'y a
+ * rien à faire, et placé ici — avant que le moindre module n'ouvre un fichier — parce
+ * qu'un déplacement à chaud laisserait un cache pointant sur un fichier disparu.
+ */
+const migration = migrerSiBesoin();
+if (migration.migre) {
+  console.log(`[équipes] Migration : ${migration.fichiers} fichier(s) déplacés vers l'équipe initiale.`);
+}
+// Joué à CHAQUE démarrage, et sans effet dès qu'il existe deux équipes : une installation
+// déjà migrée avant l'ajout de cette règle doit elle aussi voir ses comptes rattachés,
+// sans quoi la création de la deuxième équipe les mettrait tous dehors d'un coup.
+const rattaches = await rattacherComptesSansEquipe();
+if (rattaches > 0) console.log(`[équipes] ${rattaches} compte(s) local(aux) rattaché(s) à l'unique équipe.`);
 
 const app = express();
 
@@ -30,6 +50,7 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'client-serveur
 app.use('/api/auth', authRouter);
 app.use('/api/data', dataRouter);
 app.use('/api/mail', mailRouter);
+app.use('/api/equipes', equipesRouter);
 
 app.use((err, _req, res, _next) => {
   console.error(err);
@@ -38,6 +59,8 @@ app.use((err, _req, res, _next) => {
 
 const serveur = app.listen(config.port, '127.0.0.1', () => {
   console.log(`Serveur d'authentification démarré sur http://127.0.0.1:${config.port}`);
+  const equipes = listerEquipes();
+  console.log(`[équipes] ${equipes.length} équipe(s) : ${equipes.map((e) => `${e.nom} (${e.id})`).join(', ')}`);
   startMailScheduler();
   startRetentionScheduler();
 });

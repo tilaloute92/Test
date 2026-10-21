@@ -156,8 +156,8 @@ export function assainirPayload(payload) {
  * Résout la liste des destinataires : des membres de l'équipe (par identifiant, pour que
  * le navigateur n'ait pas à transmettre des adresses) et des adresses libres.
  */
-export function resoudreDestinataires({ memberIds = [], adresses = [] }) {
-  const { members } = getSnapshot();
+export function resoudreDestinataires(equipe, { memberIds = [], adresses = [] }) {
+  const { members } = getSnapshot(equipe);
   const cibles = [];
 
   for (const id of memberIds) {
@@ -185,14 +185,14 @@ export function resoudreDestinataires({ memberIds = [], adresses = [] }) {
   return cibles.slice(0, MAX_DESTINATAIRES);
 }
 
-export async function envoyerRapportReunion({ payload, destinataires, objet, joindreDocument = true, par }) {
+export async function envoyerRapportReunion({ equipe, payload, destinataires, objet, joindreDocument = true, par }) {
   if (!isMailConfigured()) {
     throw new Error("L'envoi de mail n'est pas configuré (Paramètres → Envoi de mail).");
   }
   const souci = verifierPayload(payload);
   if (souci) throw new Error(souci);
 
-  const cibles = resoudreDestinataires(destinataires ?? {});
+  const cibles = resoudreDestinataires(equipe, destinataires ?? {});
   const aEnvoyer = cibles.filter((c) => c.statut === 'a-envoyer');
   if (aEnvoyer.length === 0) {
     throw new Error("Aucun destinataire joignable : aucune adresse valide dans la sélection.");
@@ -225,11 +225,11 @@ export async function envoyerRapportReunion({ payload, destinataires, objet, joi
     );
   } catch (error) {
     resultats = cibles.map((c) => (c.statut === 'a-envoyer' ? { ...c, statut: 'echec', erreur: error.message } : c));
-    enregistrerEnvoi({ par, objet: sujet, destinataires: cibles.map((c) => c.email || c.nom), resultats, document });
+    enregistrerEnvoi(equipe, { par, objet: sujet, destinataires: cibles.map((c) => c.email || c.nom), resultats, document });
     throw error;
   }
 
-  const envoi = enregistrerEnvoi({
+  const envoi = enregistrerEnvoi(equipe, {
     par,
     objet: sujet,
     destinataires: cibles.map((c) => c.email || c.nom),

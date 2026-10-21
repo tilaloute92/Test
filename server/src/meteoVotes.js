@@ -1,5 +1,11 @@
 import crypto from 'node:crypto';
-import { readJson, writeJson } from './dataStore.js';
+import { readJsonEquipe, writeJsonEquipe } from './dataStore.js';
+
+/**
+ * PAR ÉQUIPE. Les voix étaient indexées par semaine seulement : deux équipes votant la
+ * même semaine auraient vu leurs voix fusionnées dans un agrégat unique, et chacune
+ * aurait lu la météo de l'autre. Les fichiers vivent donc dans le dossier de l'équipe.
+ */
 import { config } from './config.js';
 import { getServiceConfig } from './serviceConfig.js';
 import * as store from './businessData.js';
@@ -59,8 +65,9 @@ export function estLundiIso(valeur) {
  * Calculée ici et pas dans le navigateur : une horloge de poste mal réglée, ou avancée
  * exprès, rouvrirait sinon un vote clos.
  */
-export function fenetre(semaine) {
-  const { meteoCloture } = getServiceConfig();
+export function fenetre(equipe, semaine) {
+  // L'heure de clôture est un réglage de service : elle appartient à l'équipe.
+  const { meteoCloture } = getServiceConfig(equipe);
   const lundi = new Date(`${semaine}T00:00:00`);
   const ouverture = new Date(lundi);
   ouverture.setDate(ouverture.getDate() + (JOUR_OUVERTURE - 1));
@@ -70,8 +77,8 @@ export function fenetre(semaine) {
   return { ouverture, cloture, heureCloture: meteoCloture };
 }
 
-function etat(semaine, maintenant = new Date()) {
-  const { ouverture, cloture } = fenetre(semaine);
+function etat(equipe, semaine, maintenant = new Date()) {
+  const { ouverture, cloture } = fenetre(equipe, semaine);
   if (maintenant < ouverture) return 'a-venir';
   if (maintenant > cloture) return 'clos';
   return 'ouvert';
@@ -95,11 +102,11 @@ function melanger(liste) {
   return copie;
 }
 
-function lireVoix() {
-  return readJson(FICHIER_VOIX, {});
+function lireVoix(equipe) {
+  return readJsonEquipe(equipe, FICHIER_VOIX, {});
 }
-function lireJetons() {
-  return readJson(FICHIER_JETONS, {});
+function lireJetons(equipe) {
+  return readJsonEquipe(equipe, FICHIER_JETONS, {});
 }
 
 /** Efface les semaines trop anciennes, des deux fichiers, à chaque écriture. */
@@ -109,27 +116,27 @@ function elaguer(objet) {
   return objet;
 }
 
-function effectif() {
+function effectif(equipe) {
   // Le dénominateur, c'est l'équipe telle qu'elle est déclarée dans l'onglet Équipe — et
   // non le nombre de comptes, qui peut inclure un compte de service ou un prestataire.
-  return store.getSnapshot().members.length;
+  return store.getSnapshot(equipe).members.length;
 }
 
 /**
  * Ce que tout le monde a le droit de voir : des nombres, des mots sans auteur, et —
  * uniquement pour la personne qui demande — si elle a déjà voté.
  */
-export function agregat(semaine, username, maintenant = new Date()) {
-  const voix = lireVoix()[semaine] ?? [];
+export function agregat(equipe, semaine, username, maintenant = new Date()) {
+  const voix = lireVoix(equipe)[semaine] ?? [];
   const comptes = Object.fromEntries(NIVEAUX.map((n) => [n, 0]));
   for (const v of voix) if (comptes[v.niveau] !== undefined) comptes[v.niveau] += 1;
-  const { ouverture, cloture } = fenetre(semaine);
-  const e = etat(semaine, maintenant);
+  const { ouverture, cloture } = fenetre(equipe, semaine);
+  const e = etat(equipe, semaine, maintenant);
   return {
     semaine,
     voix: comptes,
     total: voix.length,
-    effectif: effectif(),
+    effectif: effectif(equipe),
     // Mots remélangés à la lecture : deux lectures successives ne donnent pas le même
     // ordre, donc l'ordre n'apprend rien sur qui a écrit quoi.
     mots: melanger(voix.map((v) => v.mot).filter(Boolean)),
@@ -137,7 +144,7 @@ export function agregat(semaine, username, maintenant = new Date()) {
     ouvert: e === 'ouvert',
     ouvertureIso: ouverture.toISOString(),
     clotureIso: cloture.toISOString(),
-    aVote: (lireJetons()[semaine] ?? []).includes(jeton(username, semaine)),
+    aVote: (lireJetons(equipe)[semaine] ?? []).includes(jeton(username, semaine)),
   };
 }
 
@@ -153,10 +160,10 @@ function verifierMot(mot) {
   return texte;
 }
 
-export function deposer({ semaine, username, niveau, mot }) {
+export function deposer({ equipe, semaine, username, niveau, mot }) {
   verifierNiveau(niveau);
   const texte = verifierMot(mot);
-  const e = etat(semaine);
+  const e = etat(equipe, semaine);
   if (e !== 'ouvert') {
     throw Object.assign(
       new Error(e === 'clos' ? 'Le vote de cette semaine est clos.' : "Le vote de cette semaine n'est pas encore ouvert."),
@@ -164,23 +171,23 @@ export function deposer({ semaine, username, niveau, mot }) {
     );
   }
 
-  const jetons = lireJetons();
+  const jetons = lireJetons(equipe);
   const liste = jetons[semaine] ?? [];
   const empreinte = jeton(username, semaine);
   if (liste.includes(empreinte)) {
     throw Object.assign(new Error('Vous avez déjà voté cette semaine.'), { statut: 409 });
   }
 
-  const voixTout = lireVoix();
+  const voixTout = lireVoix(equipe);
   const id = crypto.randomBytes(16).toString('hex');
   voixTout[semaine] = melanger([...(voixTout[semaine] ?? []), { id, niveau, mot: texte }]);
   // Les voix d'abord : si le serveur s'arrête entre les deux écritures, la voix est
   // comptée sans que le jeton le soit — la personne pourrait voter deux fois. L'inverse
   // perdrait une voix sans recours. Entre les deux, on préfère le risque réversible.
-  writeJson(FICHIER_VOIX, elaguer(voixTout));
+  writeJsonEquipe(equipe, FICHIER_VOIX, elaguer(voixTout));
   jetons[semaine] = melanger([...liste, empreinte]);
-  writeJson(FICHIER_JETONS, elaguer(jetons));
-  return { id, ...agregat(semaine, username) };
+  writeJsonEquipe(equipe, FICHIER_JETONS, elaguer(jetons));
+  return { id, ...agregat(equipe, semaine, username) };
 }
 
 /**
@@ -189,18 +196,18 @@ export function deposer({ semaine, username, niveau, mot }) {
  * déposé cette voix — ou avoir eu accès au navigateur de la personne, auquel cas le vote
  * n'est plus le sujet.
  */
-export function modifier({ semaine, username, id, niveau, mot }) {
+export function modifier({ equipe, semaine, username, id, niveau, mot }) {
   verifierNiveau(niveau);
   const texte = verifierMot(mot);
-  if (etat(semaine) !== 'ouvert') {
+  if (etat(equipe, semaine) !== 'ouvert') {
     throw Object.assign(new Error('Le vote de cette semaine est clos : votre voix reste telle quelle.'), { statut: 409 });
   }
-  const voixTout = lireVoix();
+  const voixTout = lireVoix(equipe);
   const liste = voixTout[semaine] ?? [];
   const index = liste.findIndex((v) => v.id === id);
   if (index < 0) throw Object.assign(new Error('Voix introuvable.'), { statut: 404 });
   liste[index] = { id, niveau, mot: texte };
   voixTout[semaine] = melanger(liste);
-  writeJson(FICHIER_VOIX, voixTout);
-  return { id, ...agregat(semaine, username) };
+  writeJsonEquipe(equipe, FICHIER_VOIX, voixTout);
+  return { id, ...agregat(equipe, semaine, username) };
 }

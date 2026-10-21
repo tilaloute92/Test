@@ -275,7 +275,9 @@ export async function verifyLdapLogin(username, password, journal) {
     const name = premiereValeur(entry, cfg.displayNameAttribute) || username;
     const email = premiereValeur(entry, cfg.mailAttribute) || undefined;
     journal?.push({ etape: 'attributs', ok: true, detail: `Nom affiché : ${name}${email ? ` · ${email}` : ''}` });
-    return { username, name, email };
+    // Les groupes servent aussi à rattacher la personne à son équipe : l'annuaire fait
+    // autorité, et c'est à la connexion qu'on les a sous la main (voir appartenance.js).
+    return { username, name, email, memberOf };
   } catch (err) {
     // 49 = identifiants invalides. Toute autre erreur est une panne, pas un refus.
     if (err?.code === 49) {

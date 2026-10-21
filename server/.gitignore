@@ -10,4 +10,12 @@ data/mail-state.json
 # indéfiniment et permettrait de les recouper d'une semaine sur l'autre.
 data/meteo-votes.json
 data/meteo-jetons.json
+# Depuis le multi-équipe, les données vivent dans data/equipes/<id>/ : les motifs
+# ci-dessus, écrits pour des fichiers à la racine, ne les attrapaient plus. Tout le
+# dossier est donc exclu, et les trois fichiers d'administration avec lui.
+data/equipes/
+data/equipes.json
+data/appartenances.json
+# Documents des rapports réellement envoyés : contenu d'équipe, propre à l'installation.
+data/envoi-*.html
 *.log

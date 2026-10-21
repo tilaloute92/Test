@@ -5,6 +5,8 @@ import { verifyLdapLogin, getPublicLdapConfig, setLdapConfig, testLdap } from '.
 import { verifySsoToken } from '../auth/ssoAuth.js';
 import { issueSession, clearSession, requireAuth, currentUser } from '../auth/session.js';
 import { isAdminUsername, requireAdmin } from '../auth/admin.js';
+import { equipeEffective, noterAppartenanceLdap } from '../auth/appartenance.js';
+import { nomEquipe } from '../equipes.js';
 
 export const authRouter = Router();
 
@@ -18,6 +20,11 @@ async function sessionPayload(username, name, method) {
     // liste peut être étendue dans data/config.json, et deux définitions divergentes
     // afficheraient des boutons que le serveur refuserait ensuite.
     isAdmin: isAdminUsername(username),
+    // L'équipe de la personne, pour que l'application sache où elle écrit et l'affiche en
+    // permanence. `null` = aucune affectation : l'application le dit au lieu de montrer
+    // les données d'une équipe au hasard.
+    equipe: equipeEffective(username),
+    equipeNom: equipeEffective(username) ? nomEquipe(equipeEffective(username)) : null,
     defaultPassword: await usesDefaultPassword(),
   };
 }
@@ -48,6 +55,10 @@ authRouter.post('/ldap', loginLimiter, async (req, res) => {
   try {
     const user = await verifyLdapLogin(username, password);
     if (!user) return res.status(401).json({ error: 'Identifiant ou mot de passe incorrect.' });
+    // L'annuaire est prioritaire sur la table tenue à la main : s'il permet de conclure,
+    // il réécrit l'appartenance. Sinon il ne touche à rien — une affectation manuelle est
+    // précisément là pour les comptes qu'aucun groupe ne désigne.
+    noterAppartenanceLdap(user.username, user.memberOf);
     issueSession(res, { ...user, method: 'ldap' });
     res.json(await sessionPayload(user.username, user.name, 'ldap'));
   } catch (err) {

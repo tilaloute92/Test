@@ -20,6 +20,45 @@ import { readJson } from '../dataStore.js';
 const BUILT_IN_ADMIN = 'admin';
 const CONFIG_FILE = 'config.json';
 
+/**
+ * TROIS RÔLES depuis le passage au multi-équipe :
+ *
+ * - ADMINISTRATEUR DE PLATEFORME : crée les équipes, affecte les gens, règle le relais
+ *   SMTP et l'annuaire. Il est seul à pouvoir basculer d'une équipe à l'autre. C'est
+ *   l'ancien « admin », dont le périmètre ne change pas — il s'élargit aux équipes.
+ * - RÉFÉRENT D'ÉQUIPE : règle ce qui appartient à SON équipe — seuil de présence, météo,
+ *   créneaux récurrents, destinataires du rapport. Il ne voit rien des autres.
+ * - MEMBRE : saisit, comme avant.
+ *
+ * Les référents sont déclarés dans config.json, clé `referents` : { "<equipe>": ["qui"] }.
+ */
+
+/** Les référents déclarés pour une équipe. */
+export function listerReferents(equipe) {
+  const tout = readJson(CONFIG_FILE, {})?.referents;
+  const liste = tout && typeof tout === 'object' ? tout[equipe] : null;
+  return Array.isArray(liste) ? liste.filter((v) => typeof v === 'string' && v.trim()).map((n) => n.trim().toLowerCase()) : [];
+}
+
+export function estReferent(username, equipe) {
+  if (!username || !equipe) return false;
+  if (isAdminUsername(username)) return true;
+  return listerReferents(equipe).includes(String(username).toLowerCase());
+}
+
+/**
+ * Middleware : exige d'être référent de l'équipe courante, ou administrateur de
+ * plateforme. À placer APRÈS requireAuth et le middleware d'équipe.
+ */
+export function requireReferent(req, res, next) {
+  if (!estReferent(req.user?.sub, req.equipe)) {
+    return res.status(403).json({
+      error: "Réservé au référent de l'équipe et à l'administrateur de la plateforme.",
+    });
+  }
+  next();
+}
+
 export function listAdmins() {
   const extra = readJson(CONFIG_FILE, {})?.admins;
   const noms = Array.isArray(extra) ? extra.filter((v) => typeof v === 'string' && v.trim()) : [];
@@ -42,8 +81,12 @@ export function isAdminUsername(username) {
 export function requireAdmin(req, res, next) {
   if (!isAdminUsername(req.user?.sub)) {
     return res.status(403).json({
-      error: "Réservé au compte administrateur. Seul « admin » peut modifier la configuration de l'application.",
+      error:
+        "Réservé à l'administrateur de la plateforme. Seul « admin » peut modifier la configuration de l'application et gérer les équipes.",
     });
   }
   next();
 }
+
+/** Nom explicite du même garde, là où c'est bien de la plateforme qu'il s'agit. */
+export { requireAdmin as requirePlateforme };

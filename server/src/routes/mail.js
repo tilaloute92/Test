@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../auth/session.js';
-import { requireAdmin } from '../auth/admin.js';
+import { requireAdmin, requireReferent } from '../auth/admin.js';
+import { equipeCourante } from '../auth/equipeCourante.js';
 import { getPublicMailConfig, setMailConfig } from '../mail/mailConfig.js';
 import { sendMail, verifyMail } from '../mail/transport.js';
 import { sendDailyProgrammes } from '../mail/send.js';
@@ -15,9 +16,10 @@ export const mailRouter = Router();
 
 // L'envoi de mail agit au nom de l'équipe : il exige une session, comme les données métier.
 mailRouter.use(requireAuth);
+mailRouter.use(equipeCourante);
 
-mailRouter.get('/status', (_req, res) => {
-  const state = getMailState();
+mailRouter.get('/status', (req, res) => {
+  const state = getMailState(req.equipe);
   const cfg = getPublicMailConfig();
   res.json({
     configured: cfg.configured,
@@ -99,9 +101,9 @@ mailRouter.post('/verify', async (_req, res) => {
  */
 mailRouter.get('/preview', (req, res) => {
   const iso = req.query.date || toISODate(new Date());
-  const { members } = getSnapshot();
+  const { members } = getSnapshot(req.equipe);
   const previews = members.map((m) => {
-    const programme = buildProgramme(m, iso);
+    const programme = buildProgramme(req.equipe, m, iso);
     return {
       memberId: m.id,
       name: m.name,
@@ -116,7 +118,7 @@ mailRouter.get('/preview', (req, res) => {
 mailRouter.post('/daily-programme', async (req, res) => {
   try {
     const { date, memberIds } = req.body || {};
-    res.json(await sendDailyProgrammes({ date, memberIds }));
+    res.json(await sendDailyProgrammes({ equipe: req.equipe, date, memberIds }));
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -129,8 +131,8 @@ mailRouter.post('/daily-programme', async (req, res) => {
 // application et src/mail/reunionReport.js ici.
 
 /** Liste des destinataires extérieurs enregistrés, et trace du dernier envoi. */
-mailRouter.get('/rapport-reunion/config', (_req, res) => {
-  res.json(getReunionConfig());
+mailRouter.get('/rapport-reunion/config', (req, res) => {
+  res.json(getReunionConfig(req.equipe));
 });
 
 /**
@@ -138,12 +140,12 @@ mailRouter.get('/rapport-reunion/config', (_req, res) => {
  * adresse, c'est décider qui reçoit l'activité de l'équipe. Déclencher un envoi vers la
  * liste existante reste ouvert à tous — c'est l'usage normal.
  */
-mailRouter.put('/rapport-reunion/config', requireAdmin, (req, res) => {
+mailRouter.put('/rapport-reunion/config', requireReferent, (req, res) => {
   const adresses = Array.isArray(req.body?.destinatairesExternes) ? req.body.destinatairesExternes : [];
   if (adresses.length > 50) return res.status(400).json({ error: 'Cinquante adresses extérieures au maximum.' });
   const invalide = adresses.find((a) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(a).trim()));
   if (invalide) return res.status(400).json({ error: `Adresse invalide : ${invalide}` });
-  res.json({ destinatairesExternes: setDestinatairesExternes(adresses) });
+  res.json({ destinatairesExternes: setDestinatairesExternes(req.equipe, adresses) });
 });
 
 /**
@@ -168,7 +170,7 @@ mailRouter.post('/rapport-reunion/document', (req, res) => {
 /** Qui recevrait quoi, sans envoyer : la fenêtre d'envoi s'en sert pour annoncer les
  *  personnes sans adresse AVANT le clic, et non par un échec après. */
 mailRouter.post('/rapport-reunion/apercu', (req, res) => {
-  res.json({ destinataires: resoudreDestinataires(req.body?.destinataires ?? {}) });
+  res.json({ destinataires: resoudreDestinataires(req.equipe, req.body?.destinataires ?? {}) });
 });
 
 mailRouter.post('/rapport-reunion', async (req, res) => {
@@ -176,6 +178,7 @@ mailRouter.post('/rapport-reunion', async (req, res) => {
     const { payload, destinataires, objet, joindreDocument } = req.body || {};
     res.json(
       await envoyerRapportReunion({
+        equipe: req.equipe,
         payload,
         destinataires,
         objet,
@@ -190,12 +193,12 @@ mailRouter.post('/rapport-reunion', async (req, res) => {
 
 /** Historique : ce qui est RÉELLEMENT parti, document compris. Un rapport se recalcule,
  *  un envoi non — c'est la seule trace de ce qu'on avait annoncé. */
-mailRouter.get('/rapport-reunion/envois', (_req, res) => {
-  res.json({ envois: listerEnvois() });
+mailRouter.get('/rapport-reunion/envois', (req, res) => {
+  res.json({ envois: listerEnvois(req.equipe) });
 });
 
 mailRouter.get('/rapport-reunion/envois/:id', (req, res) => {
-  const envoi = lireEnvoi(req.params.id);
+  const envoi = lireEnvoi(req.equipe, req.params.id);
   if (!envoi) return res.status(404).json({ error: 'Envoi inconnu.' });
   res.set(EN_TETES_DOCUMENT).type('html').send(envoi.document || '<p>Document non conservé.</p>');
 });

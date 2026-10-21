@@ -1,6 +1,13 @@
-import { readJson, writeJson } from './dataStore.js';
+import { readJsonEquipe, writeJsonEquipe } from './dataStore.js';
 
-const FILE = 'config.json';
+/**
+ * PAR ÉQUIPE. Le seuil de présence, l'heure de clôture du vote météo et les créneaux
+ * récurrents sont des règles de SERVICE : l'équipe réseau n'a pas la réunion de l'équipe
+ * applicative, ni forcément le même seuil. Elles vivent donc dans le dossier de l'équipe,
+ * `data/equipes/<id>/service.json`, et non dans la configuration commune.
+ */
+
+const FILE = 'service.json';
 const CLE = 'service';
 
 /**
@@ -49,8 +56,8 @@ function recurrenceValide(r) {
   );
 }
 
-export function getServiceConfig() {
-  const stocke = readJson(FILE, {})[CLE] ?? {};
+export function getServiceConfig(equipe) {
+  const stocke = readJsonEquipe(equipe, FILE, {})[CLE] ?? {};
   const brut = Number(stocke.seuilPresence);
   const heure = Number(stocke.meteoCloture);
   return {
@@ -68,8 +75,8 @@ export function getServiceConfig() {
   };
 }
 
-export function setServiceConfig({ seuilPresence, meteoCloture, recurrences }) {
-  const tout = readJson(FILE, {});
+export function setServiceConfig(equipe, { seuilPresence, meteoCloture, recurrences }) {
+  const tout = readJsonEquipe(equipe, FILE, {});
   const prochain = { ...(tout[CLE] ?? {}) };
 
   if (seuilPresence !== undefined) {
@@ -105,6 +112,6 @@ export function setServiceConfig({ seuilPresence, meteoCloture, recurrences }) {
   }
 
   tout[CLE] = prochain;
-  writeJson(FILE, tout);
-  return getServiceConfig();
+  writeJsonEquipe(equipe, FILE, tout);
+  return getServiceConfig(equipe);
 }
