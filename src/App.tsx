@@ -26,6 +26,7 @@ import { useServerSync } from './hooks/useServerSync';
 import { useConfirm } from './components/ConfirmProvider';
 import { countArchived, readLocalArchive } from './lib/localArchive';
 import type { AccountInfo } from '@azure/msal-browser';
+import { prenomDe } from './lib/identity';
 
 export type Tab =
   | 'myday'
@@ -653,7 +654,7 @@ function App() {
                 />
               )}
               <span className="truncate" title={authGate.displayName}>
-                {authGate.displayName.split(' ')[0]}
+                {prenomDe(authGate.displayName)}
               </span>
               <button onClick={authGate.logout} className="shrink-0 text-slate-400 hover:text-violet-600 hover:underline dark:hover:text-violet-400">
                 Déconnexion

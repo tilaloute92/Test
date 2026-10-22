@@ -10,7 +10,7 @@ import { formatDuree, heuresRecurrentes } from '../lib/recurrences';
 import { useRecurrences } from '../hooks/useRecurrences';
 import { entriesFor, placeEntries } from '../lib/dayAllocation';
 import { PERIOD_RANGES, formatHour } from '../lib/hours';
-import { resolveMember, setStoredMemberId } from '../lib/identity';
+import { prenomDe, resolveMember, setStoredMemberId } from '../lib/identity';
 import { cibleDuJour, libelleTempsOccupe } from '../lib/workload';
 import { joursIncomplets } from '../lib/saisieEnRetard';
 import type { Period, ProjectTask, TeamMember } from '../types';
@@ -243,7 +243,7 @@ function MaJournee({
       <div className="flex flex-wrap items-center gap-3">
         <Avatar name={member.name} color={member.color} initials={member.initials} size={40} />
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold text-slate-900 dark:text-white">Bonjour {member.name.split(' ').slice(-1)[0]}</h1>
+          <h1 className="truncate text-lg font-semibold text-slate-900 dark:text-white">Bonjour {prenomDe(member.name)}</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
             {formatDateLong(aujourdhui)} · <span className="tabular-nums">{libelleTempsOccupe(occupe, cible, 'sur')}</span>
             {recurrentes > 0 && <span className="text-indigo-600 dark:text-indigo-300"> · dont {formatDuree(recurrentes)} récurrent</span>}

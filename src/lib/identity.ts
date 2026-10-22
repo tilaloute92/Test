@@ -122,3 +122,42 @@ export function auteurCourant(members: TeamMember[]): string {
   const { member } = resolveMember(members, session);
   return member?.name ?? session?.name ?? session?.username ?? '';
 }
+
+/**
+ * Le prénom, pour s'adresser à quelqu'un : « Bonjour Richard ».
+ *
+ * L'écran disait « Bonjour VEGETA » — il prenait le DERNIER mot du nom affiché. Le jeu
+ * de démonstration, où tout le monde s'appelle « A. Virgo », masquait la faute : le
+ * dernier mot y est effectivement le nom d'usage. Sur un annuaire réel, c'est le nom de
+ * famille qu'on sert à la place du prénom, tous les matins.
+ *
+ * Il n'existe pas de règle sûre pour découper un nom : on applique donc une convention
+ * largement suivie dans les annuaires d'entreprise français — LE NOM DE FAMILLE EST EN
+ * CAPITALES — et on prend le premier mot qui n'en est pas un.
+ *
+ *   « Richard VEGETA »      → Richard
+ *   « VEGETA Richard »      → Richard      (l'ordre inverse est tout aussi courant)
+ *   « Jean-Pierre DUPONT »  → Jean-Pierre
+ *   « A. Virgo »            → Virgo        (une initiale ne se dit pas à l'oral)
+ *   « J.-P. MARTIN »        → MARTIN       (idem, et il ne reste que le nom)
+ *   « VEGETA RICHARD »      → VEGETA       (tout en capitales : rien ne les distingue)
+ *
+ * Le dernier cas est assumé : aucune heuristique ne peut le trancher, et il vaut mieux
+ * un nom de famille qu'un découpage inventé. La vraie correction serait de lire
+ * `givenName` dans l'annuaire — à faire le jour où les fiches d'équipe porteront le
+ * prénom séparément.
+ */
+export function prenomDe(nomComplet: string): string {
+  const mots = String(nomComplet ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (mots.length === 0) return '';
+  // Une initiale ne se prononce pas : le point d'abréviation la trahit (« A. »,
+  // « J.-P. »), comme une lettre seule.
+  const estInitiale = (m: string) => m.includes('.') || m.replace(/[-']/g, '').length <= 1;
+  const parlants = mots.filter((m) => !estInitiale(m));
+  if (parlants.length === 0) return mots[0];
+  // Un mot entièrement en capitales est, par convention, le nom de famille.
+  return parlants.find((m) => m !== m.toLocaleUpperCase('fr-FR')) ?? parlants[0];
+}
