@@ -426,7 +426,7 @@ Il nomme désormais le coupable :
           PID 7412 · grafana-server · C:\Program Files\GrafanaLabs\grafana\bin\grafana-server.exe
 ```
 
-Le journal du service le dit aussi : `C:\services\suivi-infra\logs\service.log`.
+Le journal du service le dit aussi : `C:\services\suivi-infra\service.log`.
 
 Deux issues. Arrêter ou reconfigurer l'autre programme, ou **déplacer ce service** :
 

@@ -254,14 +254,14 @@ if ($WithService) {
 
             if ($occupants.Count -eq 0) {
                 Write-Host "      Rien n'écoute sur le port $ServicePort : le service n'est pas démarré." -ForegroundColor Yellow
-                Write-Host "      Journal : $ServicePath\logs\service.log (ses dernières lignes disent pourquoi Node s'arrête)." -ForegroundColor Yellow
+                Write-Host "      Journal : $ServicePath\service.log (ses dernières lignes disent pourquoi Node s'arrête)." -ForegroundColor Yellow
                 Write-Host '      Relancer : Start-ScheduledTask -TaskName SuiviInfraAuth   (ou Restart-Service SuiviInfraAuth)' -ForegroundColor Yellow
             } else {
                 $notre = $occupants | Where-Object {
                     try { $_.Path -and $_.Path.StartsWith($ServicePath, 'OrdinalIgnoreCase') } catch { $false }
                 }
                 if ($notre) {
-                    Write-Host "      Le service écoute bien sur $ServicePort mais ne répond pas : consultez $ServicePath\logs\service.log." -ForegroundColor Yellow
+                    Write-Host "      Le service écoute bien sur $ServicePort mais ne répond pas : consultez $ServicePath\service.log." -ForegroundColor Yellow
                 } else {
                     Write-Host ''
                     Write-Host "      >>> LE PORT $ServicePort EST PRIS PAR UN AUTRE PROGRAMME <<<" -ForegroundColor Red

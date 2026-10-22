@@ -334,7 +334,7 @@ if ($sain) {
     Write-Host 'Ouvrez l''application et verifiez le contenu avant de supprimer quoi que ce soit.' -ForegroundColor Green
 } else {
     Write-Ko "Le service ne repond pas sur le port $port apres 15 s"
-    Write-Info "Journal : $(Join-Path $ServicePath 'logs\service.log')"
+    Write-Info "Journal : $(Join-Path $ServicePath 'service.log')"
     Write-Info 'Le service refuse de demarrer sur un fichier de donnees illisible : le'
     Write-Info 'journal nomme le fichier en cause.'
     if ($archive) { Write-Info "Retour en arriere : remettre les fichiers de $archive dans $dataDir" }

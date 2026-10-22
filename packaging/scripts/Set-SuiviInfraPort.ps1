@@ -211,7 +211,7 @@ if ($sain) {
     Write-Host "contrôleront le port 4000 et annonceront un échec qui n'en est pas un." -ForegroundColor Gray
 } else {
     Write-Ko "Le service ne répond toujours pas sur $NewPort après 20 s"
-    Write-Info "Journal : $(Join-Path $ServicePath 'logs\service.log') — ses dernières lignes disent pourquoi."
+    Write-Info "Journal : $(Join-Path $ServicePath 'service.log') — ses dernières lignes disent pourquoi."
     Write-Info "Pour revenir en arrière : .\Set-SuiviInfraPort.ps1 -NewPort $ancien"
 }
 Write-Host ''
