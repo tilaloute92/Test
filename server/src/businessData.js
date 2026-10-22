@@ -156,7 +156,7 @@ export function initialize(equipe, payload, actor) {
       touched.push(name);
     }
   }
-  esp.meta = { ...meta, initialized: true, initializedAt: new Date().toISOString(), initializedBy: actor };
+  esp.meta = { ...esp.meta, initialized: true, initializedAt: new Date().toISOString(), initializedBy: actor };
   // `persist` incrémente la version et réécrit esp.meta, y compris quand aucune collection n'est
   // touchée (mise en service à vide) : les autres navigateurs doivent voir le changement.
   persist(esp, ...touched);

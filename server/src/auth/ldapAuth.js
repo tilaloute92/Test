@@ -250,8 +250,14 @@ export async function verifyLdapLogin(username, password, journal) {
       }
     }
 
+    // LU DANS TOUS LES CAS, et pas seulement quand un groupe est exigé : les groupes
+    // servent aussi à rattacher la personne à son équipe, et la valeur est renvoyée plus
+    // bas. Déclarée dans le `if` ci-dessous, elle n'existait pas à la ligne du `return`
+    // dès que le groupe obligatoire était laissé vide — c'est-à-dire dans le cas le plus
+    // courant : toute connexion LDAP échouait alors sur « memberOf is not defined ».
+    const memberOf = litAttribut(entry, 'memberOf');
+
     if (cfg.requiredGroup) {
-      const memberOf = litAttribut(entry, 'memberOf');
       const membre = appartientAuGroupe(memberOf, cfg.requiredGroup);
       // Distinguer « pas membre » de « l'annuaire ne dit pas de quoi il est membre » :
       // les deux refusent l'accès, mais la seconde n'est pas un problème de droits et se
