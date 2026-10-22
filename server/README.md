@@ -204,6 +204,30 @@ le relit en novembre. Les trente derniers sont gardés, au-delà les plus ancien
 Déclenchement **à la demande uniquement** : il n'y a pas d'équivalent de `DAILY_MAIL_AT` pour
 le rapport de réunion. Rien ne part sans un clic, après relecture et choix des destinataires.
 
+## Référent du jour
+
+Le tour de garde : une personne par jour prend ce qui arrive. Collection `referents`
+(fichier `data/equipes/<id>/business-referents.json`), une entrée par journée :
+
+```json
+{ "id": "rj…", "date": "2026-10-26", "memberId": "m1" }
+```
+
+| Route | Ce qu'elle fait |
+|---|---|
+| `PUT /api/data/referents/:date` | Désigne (corps `{ "memberId": "…" }`). **La date est la clé** : la désignation précédente est remplacée, jamais doublée. |
+| `DELETE /api/data/referents/:date` | Retire le référent de ce jour. |
+
+Le serveur **ne vérifie pas** que la personne est disponible ce jour-là, et c'est
+délibéré : l'absence peut être déclarée après coup, et refuser ici ferait disparaître la
+désignation sans que personne ne le voie. La règle est appliquée là où on la lit —
+l'écran du planning ne propose que les personnes disponibles, et le jour désigné devenu
+intenable passe en rouge, dans l'application comme dans le rapport (voir
+`src/lib/referents.ts`).
+
+Le mail du programme du jour porte la mention « vous êtes référent » dans son **objet** :
+c'est ce qu'on lit sur un téléphone sans ouvrir le message.
+
 ## Compteur de tickets GLPI
 
 Le serveur interroge GLPI et sert un relevé mis en cache ; le navigateur ne parle jamais

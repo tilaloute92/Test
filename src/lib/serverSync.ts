@@ -11,7 +11,7 @@
  */
 
 import { enTeteEquipe } from './equipeCourante';
-import type { Absence, Copil, JournalEntry, Period, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
+import type { Absence, Copil, JournalEntry, Period, PlanningSlot, ProjectTask, ReferentJour, RoadmapItem, TeamMember, TimeEntry } from '../types';
 import type { AgregatMeteo } from './meteoVote';
 import type { Recurrence } from './recurrences';
 import type { WeatherLevel } from './weeklyReport';
@@ -26,6 +26,7 @@ export interface SharedCollections {
   roadmapItems: RoadmapItem[];
   copils: Copil[];
   journalEntries: JournalEntry[];
+  referents: ReferentJour[];
 }
 
 /** État du serveur, sans les données — renvoyé aussi par les réponses complètes. */
@@ -136,6 +137,12 @@ export const syncRemoveTimeEntry = (id: string) => request<{ ok: boolean }>(`/ti
 export const syncAddAbsence = (absence: Absence) => request<Absence>('/absences', { method: 'POST', body: JSON.stringify(absence) });
 export const syncAddAbsencesBulk = (items: Absence[]) => request<Absence[]>('/absences/bulk', { method: 'POST', body: JSON.stringify({ items }) });
 export const syncRemoveAbsence = (id: string) => request<{ ok: boolean }>(`/absences/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+// Référent du jour : la DATE est la clé, pas un identifiant — un jour n'a qu'un référent.
+export const syncSetReferent = (date: string, memberId: string) =>
+  request<ReferentJour>(`/referents/${encodeURIComponent(date)}`, { method: 'PUT', body: JSON.stringify({ memberId }) });
+export const syncClearReferent = (date: string) =>
+  request<{ ok: boolean }>(`/referents/${encodeURIComponent(date)}`, { method: 'DELETE' });
 
 export const syncAddRoadmapItem = (item: RoadmapItem) => request<RoadmapItem>('/roadmap-items', { method: 'POST', body: JSON.stringify(item) });
 export const syncUpdateRoadmapItem = (id: string, patch: Partial<RoadmapItem>, baseUpdatedAt?: string) =>

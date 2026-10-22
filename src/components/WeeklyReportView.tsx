@@ -51,7 +51,7 @@ const VUES = ['reunion', 'projection', 'synthese'] as const;
 type Vue = (typeof VUES)[number];
 
 export function WeeklyReportView() {
-  const { members, tasks, timeEntries, absences, planningSlots, roadmapItems, journalEntries } = useStore();
+  const { members, tasks, timeEntries, absences, planningSlots, roadmapItems, journalEntries, referents } = useStore();
   const [weekOffset, setWeekOffset] = useState(0);
   const [vue, setVue] = useViewMode<Vue>('rapport-reunion', VUES, 'reunion');
   const [copied, setCopied] = useState(false);
@@ -76,10 +76,11 @@ export function WeeklyReportView() {
         planningSlots,
         roadmapItems,
         journalEntries,
+        referents,
         seuilPresence,
         recurrences,
       }),
-    [debutMs, members, tasks, timeEntries, absences, planningSlots, roadmapItems, journalEntries, seuilPresence, recurrences]
+    [debutMs, members, tasks, timeEntries, absences, planningSlots, roadmapItems, journalEntries, referents, seuilPresence, recurrences]
   );
 
   // Qui signe le document. Le choix mémorisé dans « Ma journée » sert de source : il a

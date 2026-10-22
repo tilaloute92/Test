@@ -43,6 +43,9 @@ export interface BackupPayload {
    *  raison : refuser un fichier de l'an dernier parce qu'il manque un champ apparu
    *  depuis reviendrait à perdre la sauvegarde au moment précis où l'on en a besoin. */
   journalEntries?: StoreState['journalEntries'];
+  /** Optionnel pour la même raison que le journal : une sauvegarde d'avant le tour de
+   *  garde reste parfaitement restaurable. */
+  referents?: StoreState['referents'];
 }
 
 const DATA_KEYS = [
@@ -57,6 +60,7 @@ const DATA_KEYS = [
   'roadmapItems',
   'copils',
   'journalEntries',
+  'referents',
 ] as const;
 
 /**
@@ -250,6 +254,6 @@ export function importBackupPayload(data: BackupPayload): boolean {
   // Une sauvegarde antérieure au journal n'en contient pas : on le vide explicitement
   // plutôt que de laisser en place les entrées de l'état courant, qui se rattacheraient
   // alors à des tâches venues d'un autre instantané.
-  useStore.setState({ journalEntries: [], ...data });
+  useStore.setState({ journalEntries: [], referents: [], ...data });
   return true;
 }

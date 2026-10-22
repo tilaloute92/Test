@@ -121,6 +121,9 @@ export function ReunionDocument({ report, members, teamLabel, auteur, pointsReti
         <SousTitre>Qui travaille sur quoi, demi-journée par demi-journée</SousTitre>
         <Grille report={report} />
 
+        <Section n={num.referents} titre="Référent du jour" apres="semaine prochaine" />
+        <TourDeGarde report={report} />
+
         <Section n={num.absences} titre="Absences" />
         <ListeAbsences report={report} members={members} />
 
@@ -866,6 +869,51 @@ function Demi({ code, weekend }: { code: CodeCreneau; weekend: boolean }) {
 }
 
 // ------------------------------------------------------------------ Absences
+
+/**
+ * Le tour de garde de la semaine suivante.
+ *
+ * C'est la seule section du document qui appelle une DÉCISION séance tenante : un jour
+ * sans personne se comble en une phrase, devant tout le monde. D'où les jours manquants
+ * écrits en rouge plutôt qu'une case vide, et la ligne de rotation en dessous — « qui en
+ * a fait le plus » est la question qui suit immédiatement.
+ */
+function TourDeGarde({ report }: { report: MeetingReport }) {
+  const { jours, rotation } = report.referents;
+  const trous = jours.filter((j) => !j.membre || j.indisponible);
+  return (
+    <>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <tbody>
+          {jours.map((j) => (
+            <tr key={j.iso} style={{ breakInside: 'avoid' }}>
+              <td style={{ ...td, width: 170 }}>{j.date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</td>
+              <td style={{ ...td, color: j.membre && !j.indisponible ? ENCRE : '#b45309', fontWeight: 500 }}>
+                {!j.membre
+                  ? 'à désigner'
+                  : j.indisponible
+                    ? `${j.membre.name} — absent${j.motif ? ` (${j.motif})` : ''}, à remplacer`
+                    : j.membre.name}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {trous.length > 0 && (
+        <div style={{ marginTop: 8, fontSize: 12.5, color: '#b91c1c' }}>
+          {trous.length === 1
+            ? `${trous[0].date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric' })} n'a pas de référent : à désigner pendant la réunion.`
+            : `${trous.length} jours sans référent : à désigner pendant la réunion.`}
+        </div>
+      )}
+      {rotation.length > 0 && (
+        <div style={{ marginTop: 8, fontSize: 11.5, color: ENCRE3 }}>
+          Rotation du mois : {rotation.map((r) => `${r.membre.name} ${r.jours} j`).join(' · ')}.
+        </div>
+      )}
+    </>
+  );
+}
 
 function ListeAbsences({ report, members }: { report: MeetingReport; members: TeamMember[] }) {
   // Les absences arrivent jour par jour : les regrouper par personne et par type évite

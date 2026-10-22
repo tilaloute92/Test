@@ -31,7 +31,7 @@ import { readJsonEquipe, writeJsonEquipe } from './dataStore.js';
  * ici, et les compteurs de version ci-dessous supposent explicitement un seul processus.
  */
 
-const COLLECTIONS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils', 'journalEntries'];
+const COLLECTIONS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils', 'journalEntries', 'referents'];
 const META_FILE = 'business-meta.json';
 
 /**
@@ -132,6 +132,7 @@ export function getSnapshot(equipe) {
     roadmapItems: esp.cache.roadmapItems,
     copils: esp.cache.copils,
     journalEntries: esp.cache.journalEntries,
+    referents: esp.cache.referents,
     ...getStatus(equipe),
   };
 }
@@ -423,6 +424,35 @@ export function removeAbsence(equipe, id) {
   const esp = espace(equipe);
   esp.cache.absences = esp.cache.absences.filter((a) => a.id !== id);
   persist(esp, 'absences');
+}
+
+// --- Référent du jour ---
+/**
+ * UN SEUL par jour : la date est la clé. Désigner quelqu'un remplace la désignation
+ * précédente plutôt que d'en ajouter une seconde — à deux référents, chacun suppose que
+ * l'autre a pris.
+ *
+ * Le serveur ne vérifie PAS que la personne est disponible ce jour-là. Ce n'est pas un
+ * oubli : l'absence peut être déclarée après coup, et refuser ici reviendrait à perdre la
+ * désignation sans que personne ne le voie. Le jour est signalé comme non couvert là où
+ * on le lit — l'écran du planning et le rapport de réunion (voir src/lib/referents.ts).
+ */
+export function setReferent(equipe, payload) {
+  const esp = espace(equipe);
+  const date = String(payload?.date ?? '');
+  const memberId = String(payload?.memberId ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Date de référent invalide.');
+  if (!memberId) throw new Error('Référent sans personne désignée.');
+  const item = { id: idOrNext(payload, 'rj'), date, memberId };
+  esp.cache.referents = [...esp.cache.referents.filter((r) => r.date !== date), item];
+  persist(esp, 'referents');
+  return item;
+}
+
+export function clearReferent(equipe, date) {
+  const esp = espace(equipe);
+  esp.cache.referents = esp.cache.referents.filter((r) => r.date !== date);
+  persist(esp, 'referents');
 }
 
 // --- Feuille de route (FDR) ---

@@ -27,6 +27,19 @@ export const SEUIL_PRESENCE_DEFAUT = 0.5;
  */
 export const TYPES_INDISPONIBLES: AbsenceType[] = ['conge', 'formation', 'autre'];
 
+/**
+ * Les libellés des natures d'absence. Ils vivent ICI, à côté de la règle qui dit
+ * lesquelles retirent quelqu'un du service : écrire « conge » à l'écran parce que le
+ * libellé habitait un autre module est une faute qu'on ne voit qu'une fois en production.
+ */
+export const ETIQUETTES_ABSENCE: Record<AbsenceType, string> = {
+  conge: 'Congés',
+  formation: 'Formation',
+  teletravail: 'Télétravail',
+  astreinte: 'Astreinte',
+  autre: 'Absence',
+};
+
 export interface PresenceJour {
   date: Date;
   iso: string;

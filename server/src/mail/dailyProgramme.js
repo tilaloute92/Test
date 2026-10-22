@@ -28,6 +28,24 @@ function formatLong(iso) {
   return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+/**
+ * Les natures d'absence, en toutes lettres. Le message partait avec le code brut de la
+ * base — « Absent(e) toute la journée — conge » — qui n'a de sens que pour qui a lu le
+ * modèle de données. Les mêmes libellés qu'à l'écran (voir src/lib/presence.ts) ; ils
+ * sont recopiés ici parce que le serveur ne partage pas de code avec le navigateur.
+ */
+const ETIQUETTES_ABSENCE = {
+  conge: 'Congés',
+  formation: 'Formation',
+  teletravail: 'Télétravail',
+  astreinte: 'Astreinte',
+  autre: 'Absence',
+};
+
+function libelleAbsence(a) {
+  return a.label || ETIQUETTES_ABSENCE[a.type] || a.type;
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
@@ -37,7 +55,7 @@ function escapeHtml(value) {
  * personne n'a ni adresse mail, ni rien à annoncer — on n'envoie pas de message vide.
  */
 export function buildProgramme(equipe, member, iso) {
-  const { tasks, planningSlots, absences } = getSnapshot(equipe);
+  const { tasks, planningSlots, absences, referents } = getSnapshot(equipe);
   const byId = new Map(tasks.map((t) => [t.id, t]));
 
   const dayAbsence = absences.find((a) => a.memberId === member.id && a.date === iso && a.period === 'jour');
@@ -55,25 +73,37 @@ export function buildProgramme(equipe, member, iso) {
     .sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'))
     .slice(0, 8);
 
-  const rienAAnnoncer = !dayAbsence && creneaux.every((c) => !c.task && !c.absence) && ouvertes.length === 0;
+  // Le tour de garde : la personne doit savoir AVANT d'ouvrir l'application que ce qui
+  // arrive aujourd'hui est pour elle. C'est l'information la plus périssable du message,
+  // d'où sa place en tête plutôt qu'en pied.
+  const estReferent = (referents ?? []).some((r) => r.date === iso && r.memberId === member.id);
+
+  const rienAAnnoncer = !dayAbsence && !estReferent && creneaux.every((c) => !c.task && !c.absence) && ouvertes.length === 0;
   if (rienAAnnoncer) return null;
 
-  return { member, iso, dayAbsence, creneaux, ouvertes };
+  return { member, iso, dayAbsence, creneaux, ouvertes, estReferent };
 }
 
 export function renderSubject(programme) {
-  return `Programme du ${formatLong(programme.iso)} — ${programme.member.name}`;
+  // Mentionné dans l'OBJET : c'est ce qu'on lit sur un téléphone sans ouvrir le message,
+  // et c'est la seule ligne qui change la façon dont la journée se passe.
+  const garde = programme.estReferent ? ' — vous êtes référent' : '';
+  return `Programme du ${formatLong(programme.iso)} — ${programme.member.name}${garde}`;
 }
 
 export function renderText(programme) {
   const lines = [`Programme du ${formatLong(programme.iso)}`, `${programme.member.name} — ${programme.member.role}`, ''];
 
+  if (programme.estReferent) {
+    lines.push("** Vous êtes le référent du jour : les demandes et les incidents qui arrivent sont pour vous. **", '');
+  }
+
   if (programme.dayAbsence) {
-    lines.push(`Absent(e) toute la journée — ${programme.dayAbsence.label || programme.dayAbsence.type}`, '');
+    lines.push(`Absent(e) toute la journée — ${libelleAbsence(programme.dayAbsence)}`, '');
   } else {
     for (const c of programme.creneaux) {
       lines.push(`${c.hours}  ${c.label} (${c.nature})`);
-      if (c.absence) lines.push(`    Absent(e) — ${c.absence.label || c.absence.type}`);
+      if (c.absence) lines.push(`    Absent(e) — ${libelleAbsence(c.absence)}`);
       else if (c.task) lines.push(`    ${c.task.title}${c.task.project ? ` [${c.task.project}]` : ''} — ${c.task.type}, priorité ${c.task.priority}`);
       else lines.push('    Non planifié');
       lines.push('');
@@ -96,12 +126,12 @@ export function renderHtml(programme) {
   const e = escapeHtml;
   const creneaux = programme.dayAbsence
     ? `<p style="margin:0 0 16px;padding:12px;background:#f1f5f9;border-radius:8px;color:#475569">
-         Absent(e) toute la journée — ${e(programme.dayAbsence.label || programme.dayAbsence.type)}
+         Absent(e) toute la journée — ${e(libelleAbsence(programme.dayAbsence))}
        </p>`
     : programme.creneaux
         .map((c) => {
           const contenu = c.absence
-            ? `<span style="color:#64748b">Absent(e) — ${e(c.absence.label || c.absence.type)}</span>`
+            ? `<span style="color:#64748b">Absent(e) — ${e(libelleAbsence(c.absence))}</span>`
             : c.task
               ? `<strong>${e(c.task.title)}</strong>${c.task.project ? ` <span style="color:#64748b">[${e(c.task.project)}]</span>` : ''}
                  <br><span style="color:#64748b;font-size:13px">${e(c.task.type)} · priorité ${e(c.task.priority)}</span>`
@@ -134,6 +164,14 @@ export function renderHtml(programme) {
   <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px">
     <h1 style="margin:0 0 4px;font-size:18px">Programme du ${e(formatLong(programme.iso))}</h1>
     <p style="margin:0 0 20px;color:#64748b;font-size:14px">${e(programme.member.name)} — ${e(programme.member.role)}</p>
+    ${
+      programme.estReferent
+        ? `<p style="margin:0 0 18px;padding:12px 14px;background:#f5f3ff;border:1px solid #ddd6fe;border-left:3px solid #7c3aed;border-radius:8px;color:#4c1d95;font-size:14px">
+             <strong>Vous êtes le référent du jour.</strong><br>
+             <span style="color:#5b21b6;font-size:13px">Les demandes et les incidents qui arrivent sont pour vous — vos collègues restent sur leur programme.</span>
+           </p>`
+        : ''
+    }
     ${programme.dayAbsence ? creneaux : `<table style="width:100%;border-collapse:collapse">${creneaux}</table>`}
     ${ouvertes}
     <p style="margin:24px 0 0;color:#94a3b8;font-size:12px">Suivi Infra &amp; Réseau — message automatique, ne pas répondre.</p>

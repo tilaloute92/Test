@@ -136,6 +136,7 @@ function construireEcrans(report: MeetingReport, members: TeamMember[], meteo: R
     ecrans.push({ titre: 'Notes', contenu: <EcranNotes report={report} /> });
   }
   ecrans.push({ titre: 'Deux semaines', contenu: <EcranSujets report={report} /> });
+  ecrans.push({ titre: 'Référent du jour', contenu: <EcranReferents report={report} /> });
   ecrans.push({ titre: 'Absences', contenu: <EcranAbsences report={report} /> });
 
   // Un écran vide projeté devant l'équipe est pire qu'un écran en moins : les sections
@@ -372,6 +373,49 @@ function EcranSujets({ report }: { report: MeetingReport }) {
         ))}
       </div>
     </>
+  );
+}
+
+/**
+ * Le tour de garde, projeté. C'est l'écran sur lequel on s'arrête pour décider : les
+ * jours sans personne sont en rouge et en gros, parce que c'est ce qu'on vient combler.
+ */
+function EcranReferents({ report }: { report: MeetingReport }) {
+  const { jours, rotation } = report.referents;
+  return (
+    <div>
+      <Titre>Référent du jour — semaine prochaine</Titre>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginTop: 10 }}>
+        {jours.map((j) => {
+          const manque = !j.membre || j.indisponible;
+          return (
+            <div
+              key={j.iso}
+              style={{
+                border: `2px solid ${manque ? '#fca5a5' : '#e2e8f0'}`,
+                background: manque ? '#fef2f2' : '#fff',
+                borderRadius: 12,
+                padding: '14px 10px',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: 14, color: ENCRE3, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                {j.date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })}
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 600, marginTop: 8, color: manque ? '#b91c1c' : ENCRE }}>
+                {j.membre ? j.membre.name : 'à désigner'}
+              </div>
+              {j.indisponible && <div style={{ fontSize: 13, color: '#b91c1c', marginTop: 4 }}>absent — à remplacer</div>}
+            </div>
+          );
+        })}
+      </div>
+      {rotation.length > 0 && (
+        <div style={{ fontSize: 15, color: ENCRE2, marginTop: 16 }}>
+          Ce mois-ci : {rotation.map((r) => `${r.membre.name} ${r.jours} j`).join(' · ')}
+        </div>
+      )}
+    </div>
   );
 }
 

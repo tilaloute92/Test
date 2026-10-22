@@ -177,6 +177,15 @@ export interface PayloadAbsence {
   quand: string;
 }
 
+/** Une journée du tour de garde, mise à plat pour le rendu serveur. */
+export interface PayloadReferent {
+  jour: string;
+  qui: string | null;
+  /** Désigné mais absent : la journée n'est pas couverte pour autant. */
+  manque: boolean;
+  motif: string | null;
+}
+
 export interface PayloadCharge {
   nom: string;
   pourcent: number;
@@ -213,6 +222,8 @@ export interface ReunionPayload {
   semaines: PayloadSemaine[];
   grille: PayloadGrille;
   absences: PayloadAbsence[];
+  /** Le tour de garde de la semaine suivante, et la rotation du mois en une phrase. */
+  referents: { jours: PayloadReferent[]; rotation: string };
   charge: PayloadCharge[];
   fdr?: PayloadFdr;
   /** Mot d'introduction saisi dans la fenêtre d'envoi. */
@@ -420,6 +431,16 @@ export function buildReunionPayload(opts: {
         cases: l.creneaux.map((c) => ({ couleur: couleurCode(c), libelle: libelleCode(c) })),
       })),
       legende: ordreLegende.filter((c) => presents.has(c)).map((c) => ({ couleur: couleurCode(c), libelle: libelleCode(c) })),
+    },
+
+    referents: {
+      jours: report.referents.jours.map((j) => ({
+        jour: j.date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }),
+        qui: j.membre?.name ?? null,
+        manque: !j.membre || j.indisponible,
+        motif: j.indisponible ? (j.motif ?? 'absent') : null,
+      })),
+      rotation: report.referents.rotation.map((r) => `${r.membre.name} ${r.jours} j`).join(' · '),
     },
 
     absences: [...groupes.values()].map((g) => ({

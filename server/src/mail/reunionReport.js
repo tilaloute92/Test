@@ -145,7 +145,7 @@ function corpsDocument(p, { mot = '', piedPage = '' } = {}) {
   // Les numéros viennent de l'application (voir numeroterSections), ils ne sont pas
   // recalculés ici : deux numérotations écrites séparément divergent d'un cran le jour où
   // une section devient facultative. Le repli ne sert qu'aux anciens envois rejoués.
-  const num = p.sections ?? { points: 1, incidents: 2, projets: 3, retards: 4, autres: 0, sujets: 5, absences: 6, charge: 7, fdr: 8 };
+  const num = p.sections ?? { points: 1, incidents: 2, projets: 3, retards: 4, autres: 0, sujets: 5, referents: 6, absences: 7, charge: 8, fdr: 9 };
   return `${enTete(p)}
   <div style="padding:20px 28px 28px">
     ${
@@ -170,6 +170,7 @@ function corpsDocument(p, { mot = '', piedPage = '' } = {}) {
     ${sujets(p)}
     ${sousTitre('Qui travaille sur quoi, demi-journée par demi-journée')}
     ${grille(p)}
+    ${num.referents ? section(num.referents, 'Référent du jour', 'semaine prochaine') + referents(p) : ''}
     ${section(num.absences, 'Absences')}
     ${absences(p)}
     ${section(num.charge, 'Charge par personne')}
@@ -571,6 +572,40 @@ function grille(p) {
   </table></div>`;
 }
 
+/**
+ * Le tour de garde de la semaine suivante.
+ *
+ * Un envoi d'avant cette section n'en contient pas : on ne rend rien plutôt que cinq
+ * lignes vides, qui laisseraient croire que personne n'était désigné.
+ */
+function referents(p) {
+  const r = p.referents;
+  if (!r || !Array.isArray(r.jours) || r.jours.length === 0) return vide("Aucun tour de garde renseigné pour la semaine prochaine.");
+  const trous = r.jours.filter((j) => j.manque);
+  return `<table style="width:100%;border-collapse:collapse">
+    ${r.jours
+      .map(
+        (j) => `<tr>
+          <td style="${TD};width:190px">${e(j.jour)}</td>
+          <td style="${TD};${j.manque ? 'color:#b45309;font-weight:500' : `color:${ENCRE};font-weight:500`}">${
+            !j.qui ? 'à désigner' : j.manque ? `${e(j.qui)} — absent${j.motif ? ` (${e(j.motif)})` : ''}, à remplacer` : e(j.qui)
+          }</td>
+        </tr>`
+      )
+      .join('')}
+  </table>
+  ${
+    trous.length > 0
+      ? `<div style="margin-top:8px;font-size:12.5px;color:#b91c1c">${
+          trous.length === 1
+            ? `${e(trous[0].jour)} n'a pas de référent : à désigner pendant la réunion.`
+            : `${trous.length} jours sans référent : à désigner pendant la réunion.`
+        }</div>`
+      : ''
+  }
+  ${r.rotation ? `<div style="margin-top:8px;font-size:11.5px;color:${ENCRE3}">Rotation du mois : ${e(r.rotation)}.</div>` : ''}`;
+}
+
 function absences(p) {
   if (!p.absences.length) return vide('Aucune absence prévue sur les deux semaines.');
   return `<table style="width:100%;border-collapse:collapse">
@@ -735,6 +770,16 @@ export function renderText(p) {
     l.push(`  ${s.label} — planning rempli à ${s.remplissage} %`);
     if (s.sujets.length === 0) l.push("    (rien de planifié ni d'échu)");
     for (const x of s.sujets) l.push(`    - ${x.titre} — ${x.qui}, ${x.quand}${x.reserve ? ` (! ${x.reserve})` : ''}`);
+  }
+  l.push('');
+  l.push('RÉFÉRENT DU JOUR (semaine prochaine)');
+  if (!p.referents || !p.referents.jours || p.referents.jours.length === 0) {
+    l.push('  (non renseigné)');
+  } else {
+    for (const r of p.referents.jours) {
+      l.push(`  - ${r.jour} : ${!r.qui ? 'à désigner' : r.manque ? `${r.qui} — absent, à remplacer` : r.qui}`);
+    }
+    if (p.referents.rotation) l.push(`  Rotation du mois : ${p.referents.rotation}`);
   }
   l.push('');
   l.push('ABSENCES');

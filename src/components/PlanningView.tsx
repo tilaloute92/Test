@@ -9,6 +9,7 @@ import { isAbsent } from '../lib/workload';
 import { getTaskById } from '../lib/selectors';
 import { Avatar, Card, ModeSwitcher, PrintButton, PrintHeader, TaskTypeBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
+import { ReferentJourCard } from './ReferentJourCard';
 import { useViewMode } from '../hooks/useViewMode';
 import type { Absence, Period, PlanningSlot, ProjectTask, TaskType, TeamMember, TimeEntry } from '../types';
 
@@ -101,6 +102,11 @@ export function PlanningView() {
           <PrintButton />
         </div>
       </div>
+
+      {/* Le tour de garde du jour, au-dessus du planning : c'est la même question — qui
+          fait quoi, quel jour — et c'est le vendredi, devant cet écran, qu'on comble les
+          trous de la semaine suivante. */}
+      <ReferentJourCard />
 
       {mode === 'grille' && (
       <>

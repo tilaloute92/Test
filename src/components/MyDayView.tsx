@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { MeteoVoteCard } from './MeteoVoteCard';
 import { GlpiTicketsCard } from './GlpiTicketsCard';
+import { BandeauReferentDuJour } from './ReferentJourCard';
 import { Avatar, Card, PriorityBadge, TaskTypeBadge } from './ui';
 import { formatDateLong, toISODate } from '../lib/date';
 import { absencesToday, hoursLoggedToday } from '../lib/selectors';
@@ -272,6 +273,8 @@ function MaJournee({
           </p>
         </Card>
       )}
+
+      <BandeauReferentDuJour memberId={member.id} onOuvrirPlanning={() => onNavigate('planning')} />
 
       {/* Le jeudi et le vendredi seulement : la tuile se montre d'elle-même pendant la
           fenêtre de vote, et ne rend rien le reste du temps. */}

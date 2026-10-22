@@ -160,6 +160,9 @@ export function ReunionSynthese({
               </>
             )}
 
+            <Titre style={{ marginTop: 14 }}>Référent du jour — semaine prochaine</Titre>
+            <TourDeGarde report={report} />
+
             <Titre style={{ marginTop: 14 }}>Absences à venir</Titre>
             <Absences report={report} />
           </div>
@@ -223,6 +226,26 @@ function Titre({ children, style }: { children: React.ReactNode; style?: React.C
 
 function Rien({ texte }: { texte: string }) {
   return <div style={{ fontSize: 12.5, color: ENCRE3, marginBottom: 6 }}>{texte}</div>;
+}
+
+/** Une ligne par jour, tenue serrée : la synthèse tient sur une page. */
+function TourDeGarde({ report }: { report: MeetingReport }) {
+  const { jours } = report.referents;
+  return (
+    <div style={{ fontSize: 12, color: ENCRE2, lineHeight: 1.6 }}>
+      {jours.map((j) => {
+        const manque = !j.membre || j.indisponible;
+        return (
+          <span key={j.iso} style={{ marginRight: 10, whiteSpace: 'nowrap' }}>
+            <span style={{ color: ENCRE3 }}>{j.date.toLocaleDateString('fr-FR', { weekday: 'short' })}</span>{' '}
+            <span style={{ color: manque ? '#b91c1c' : ENCRE, fontWeight: 500 }}>
+              {j.membre ? j.membre.name.split(' ').slice(-1)[0] : 'à désigner'}
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 function Absences({ report }: { report: MeetingReport }) {

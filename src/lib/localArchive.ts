@@ -14,7 +14,7 @@
  * plus tard qu'il manque quelque chose.
  */
 
-import type { Absence, Copil, JournalEntry, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
+import type { Absence, Copil, JournalEntry, PlanningSlot, ProjectTask, ReferentJour, RoadmapItem, TeamMember, TimeEntry } from '../types';
 
 const ARCHIVE_KEY = 'infra-team-tracker:donnees-locales-archivees';
 
@@ -29,6 +29,7 @@ export interface ArchivedCollections {
   /** Absent des archives faites avant l'arrivée du journal : une archive ancienne reste
    *  restaurable, elle rend simplement des fils vides. */
   journalEntries?: JournalEntry[];
+  referents?: ReferentJour[];
 }
 
 export interface LocalArchive {
@@ -36,7 +37,7 @@ export interface LocalArchive {
   data: ArchivedCollections;
 }
 
-const KEYS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils', 'journalEntries'] as const;
+const KEYS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils', 'journalEntries', 'referents'] as const;
 
 function looksLikeCollections(value: unknown): value is ArchivedCollections {
   if (!value || typeof value !== 'object') return false;

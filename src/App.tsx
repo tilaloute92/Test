@@ -403,9 +403,10 @@ function FirstRunScreen({ onInitialized, nomEquipe }: { onInitialized: () => voi
     setError(null);
     try {
       await initializeServer(
-        // Une archive faite avant l'arrivée du journal n'en contient pas : on complète
-        // plutôt que de refuser la reprise, qui ferait perdre tout le reste.
-        kind === 'reprise' && archive ? { journalEntries: [], ...archive.data } : undefined
+        // Une archive faite avant l'arrivée du journal ou des référents n'en contient
+        // pas : on complète plutôt que de refuser la reprise, qui ferait perdre tout le
+        // reste.
+        kind === 'reprise' && archive ? { journalEntries: [], referents: [], ...archive.data } : undefined
       );
       onInitialized();
     } catch (err) {

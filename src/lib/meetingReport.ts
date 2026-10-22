@@ -4,7 +4,9 @@ import { computeWeeklyReport, type WeeklyReport } from './weeklyReport';
 import { isAbsent } from './workload';
 import { avancementProjet } from './avancement';
 import { jourCourt, pourcent, presenceJours, SEUIL_PRESENCE_DEFAUT } from './presence';
-import type { Absence, AbsenceType, JournalEntry, PlanningSlot, ProjectTask, TeamMember, TimeEntry } from '../types';
+export { ETIQUETTES_ABSENCE } from './presence';
+import { etatSemaine, joursDeGarde, joursNonPourvus, moisDe, rotation, type JourReferent, type PartRotation } from './referents';
+import type { Absence, AbsenceType, JournalEntry, PlanningSlot, ProjectTask, ReferentJour, TeamMember, TimeEntry } from '../types';
 
 /**
  * Rapport de réunion d'équipe.
@@ -66,13 +68,6 @@ export const COULEUR_ABSENCE: Record<AbsenceType, string> = {
   autre: '#d9f99d',
 };
 
-export const ETIQUETTES_ABSENCE: Record<AbsenceType, string> = {
-  conge: 'Congés',
-  formation: 'Formation',
-  teletravail: 'Télétravail',
-  astreinte: 'Astreinte',
-  autre: 'Absence',
-};
 
 /**
  * Les numéros des sections du document de réunion. Une seule section est facultative —
@@ -94,6 +89,9 @@ export function numeroterSections(avecAutres: boolean) {
     // ce qu'aucun d'eux ne portait.
     autres: avecAutres ? suivant() : 0,
     sujets: suivant(),
+    // Le tour de garde est tourné vers la semaine suivante, comme les sujets : il se lit
+    // juste après, et juste avant les absences — dont il dépend.
+    referents: suivant(),
     absences: suivant(),
     charge: suivant(),
     fdr: suivant(),
@@ -605,6 +603,8 @@ export function construirePoints(opts: {
   absences: Absence[];
   seuilPresence: number;
   aujourdhui: Date;
+  /** Le tour de garde de la semaine suivante, pour signaler les jours sans personne. */
+  referentsSemaineSuivante?: JourReferent[];
 }): PointAborder[] {
   const { rapport, projets, semaines, tasks, members, absences, seuilPresence, aujourdhui } = opts;
   const points: PointAborder[] = [];
@@ -686,7 +686,27 @@ export function construirePoints(opts: {
     });
   }
 
+  // 7. Les jours sans référent la semaine prochaine. C'est le point le plus simple à
+  //    traiter de tout l'ordre du jour — il se règle en une phrase, devant tout le monde,
+  //    et c'est exactement pour cela qu'il doit y figurer : hors réunion, personne ne se
+  //    désigne de lui-même.
+  const trous = joursNonPourvus(opts.referentsSemaineSuivante ?? []);
+  if (trous.length > 0) {
+    points.push({
+      id: 'referents-manquants',
+      texte:
+        trous.length === 1
+          ? `${jourLong(trous[0].date)} n'a pas de référent : qui prend ?`
+          : `${trous.length} jours sans référent la semaine prochaine (${trous.map((j) => jourCourt(j.date)).join(', ')}) : qui prend ?`,
+      source: 'tour de garde',
+    });
+  }
+
   return points;
+}
+
+function jourLong(d: Date): string {
+  return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
 // ------------------------------------------------------------------- Le rapport
@@ -706,6 +726,9 @@ export interface MeetingReport {
   /** Les notes écrites dans le journal pendant la semaine, groupées par sujet. */
   notes: GroupeNotes[];
   points: PointAborder[];
+  /** Le tour de garde de la SEMAINE SUIVANTE — celle qu'on organise en réunion — et la
+   *  rotation du mois en cours, qui dit si la charge est partagée. */
+  referents: { jours: JourReferent[]; rotation: PartRotation[] };
   genereLe: Date;
 }
 
@@ -721,6 +744,9 @@ export function computeMeetingReport(opts: {
   /** Journal des tâches : seules les notes écrites dans la semaine sont reprises.
    *  Omis, le rapport n'en montre aucune plutôt que d'en inventer. */
   journalEntries?: JournalEntry[];
+  /** Le tour de garde. Omis, la section annonce une semaine à organiser plutôt que de
+   *  faire croire qu'elle est vide. */
+  referents?: ReferentJour[];
   /** Seuil en vigueur pour le service (voir src/lib/presence.ts). */
   seuilPresence?: number;
   /** Créneaux récurrents du service (voir src/lib/recurrences.ts). */
@@ -754,6 +780,11 @@ export function computeMeetingReport(opts: {
   const semaines = construireSujets({ semaines: [s1, s2], tasks, members, planningSlots, absences, aujourdhui: maintenant });
   const joursAVenir = [...s1, ...s2];
   const grille = construireGrille({ jours: joursAVenir, members, tasks, planningSlots, absences });
+  // Le tour de garde porte sur s1 — la semaine SUIVANTE. C'est celle qu'on organise en
+  // réunion ; celle qui s'achève n'est plus organisable.
+  const tourDeGarde = etatSemaine(joursDeGarde(s1), opts.referents ?? [], members, absences);
+  const mois = moisDe(maintenant);
+
   const points = construirePoints({
     rapport: hebdo,
     projets,
@@ -763,10 +794,23 @@ export function computeMeetingReport(opts: {
     absences,
     seuilPresence,
     aujourdhui: maintenant,
+    referentsSemaineSuivante: tourDeGarde,
   });
 
   // getWorkingDaysOfWeek renvoie lundi → dimanche : l'index 0 est donc lundi.
   const dateReunion = semaineEcoulee[(JOUR_REUNION + 6) % 7];
 
-  return { semaineEcoulee, dateReunion, semaines, joursAVenir, grille, hebdo, projets, notes, points, genereLe: maintenant };
+  return {
+    semaineEcoulee,
+    dateReunion,
+    semaines,
+    joursAVenir,
+    grille,
+    hebdo,
+    projets,
+    notes,
+    points,
+    referents: { jours: tourDeGarde, rotation: rotation(opts.referents ?? [], members, mois.debut, mois.fin) },
+    genereLe: maintenant,
+  };
 }

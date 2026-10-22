@@ -119,6 +119,21 @@ dataRouter.delete('/absences/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// --- Référent du jour ---
+// La date est la clé, d'où le PUT sur la date plutôt qu'un POST qui créerait un second
+// enregistrement pour le même jour.
+dataRouter.put('/referents/:date', (req, res) => {
+  try {
+    res.json(store.setReferent(req.equipe, { date: req.params.date, memberId: req.body?.memberId }));
+  } catch (erreur) {
+    res.status(400).json({ error: erreur.message });
+  }
+});
+dataRouter.delete('/referents/:date', (req, res) => {
+  store.clearReferent(req.equipe, req.params.date);
+  res.json({ ok: true });
+});
+
 // --- Feuille de route (FDR) ---
 dataRouter.post('/roadmap-items', (req, res) => res.json(store.addRoadmapItem(req.equipe, req.body, actorOf(req))));
 dataRouter.patch('/roadmap-items/:id', (req, res) =>

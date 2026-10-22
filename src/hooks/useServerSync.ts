@@ -87,6 +87,9 @@ export function useServerSync(): ServerSyncState {
             roadmapItems: res.roadmapItems,
             copils: res.copils,
             journalEntries: res.journalEntries,
+            // Un serveur plus ancien que cette version ne connaît pas les référents : on
+            // sert une liste vide plutôt que de laisser `undefined` traverser l'écran.
+            referents: res.referents ?? [],
           });
         }
         setHydrated(true);

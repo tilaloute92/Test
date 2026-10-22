@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Absence, ApiConnection, ApiRequestLog, AuthSettings, Copil, JournalEntry, PlanningSlot, ProjectTask, RoadmapItem, TeamMember, TimeEntry } from '../types';
+import type { Absence, ApiConnection, ApiRequestLog, AuthSettings, Copil, JournalEntry, PlanningSlot, ProjectTask, ReferentJour, RoadmapItem, TeamMember, TimeEntry } from '../types';
 import {
   absences as seedAbsences,
   apiConnections as seedApiConnections,
@@ -30,6 +30,7 @@ import {
   syncAddRoadmapItem,
   syncAddTask,
   syncAddTimeEntry,
+  syncClearReferent,
   syncRemoveAbsence,
   syncRemoveCopil,
   syncRemoveJournalEntry,
@@ -38,6 +39,7 @@ import {
   syncRemoveTask,
   syncRemoveTimeEntry,
   syncSetPlanningSlot,
+  syncSetReferent,
   syncUpdateCopil,
   syncUpdateJournalNote,
   syncUpdateMember,
@@ -67,6 +69,7 @@ export interface SharedSnapshot {
   roadmapItems: RoadmapItem[];
   copils: Copil[];
   journalEntries: JournalEntry[];
+  referents: ReferentJour[];
 }
 
 export interface StoreState extends SharedSnapshot {
@@ -107,6 +110,10 @@ export interface StoreState extends SharedSnapshot {
   ) => void;
   removeAbsence: (id: string) => void;
 
+  /** Désigne le référent d'une journée, ou le retire avec `null`. Un seul par jour :
+   *  désigner remplace. */
+  setReferentJour: (date: string, memberId: string | null) => void;
+
   addApiConnection: (connection: Omit<ApiConnection, 'id'>) => void;
   updateApiConnection: (id: string, patch: Partial<ApiConnection>) => void;
   removeApiConnection: (id: string) => void;
@@ -140,8 +147,8 @@ export interface StoreState extends SharedSnapshot {
 // d'une session à l'autre (et d'un navigateur à l'autre en mode client/serveur).
 const nextId = (prefix: string) => makeId(prefix);
 
-/** Les 8 collections partagées, dans l'ordre de SharedSnapshot — utilisé par la persistance. */
-const SHARED_KEYS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils', 'journalEntries'] as const;
+/** Les 9 collections partagées, dans l'ordre de SharedSnapshot — utilisé par la persistance. */
+const SHARED_KEYS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils', 'journalEntries', 'referents'] as const;
 
 const emptyCollections = (): SharedSnapshot => ({
   members: [],
@@ -152,6 +159,7 @@ const emptyCollections = (): SharedSnapshot => ({
   roadmapItems: [],
   copils: [],
   journalEntries: [],
+  referents: [],
 });
 
 const seedCollections = (): SharedSnapshot => ({
@@ -163,6 +171,10 @@ const seedCollections = (): SharedSnapshot => ({
   roadmapItems: seedRoadmapItems,
   copils: seedCopils,
   journalEntries: seedJournalEntries,
+  // Aucun référent de départ : c'est un tour de garde que l'équipe se donne, pas une
+  // donnée d'exemple. Une semaine pré-remplie donnerait l'illusion d'une organisation
+  // décidée par l'application.
+  referents: [],
 });
 
 /**
@@ -417,6 +429,18 @@ export const useStore = create<StoreState>()(
       removeAbsence: (id) => {
         set((s) => ({ absences: s.absences.filter((a) => a.id !== id) }));
         syncWrite('suppression absence', syncRemoveAbsence(id));
+      },
+
+      setReferentJour: (date, memberId) => {
+        if (!memberId) {
+          set((s) => ({ referents: s.referents.filter((r) => r.date !== date) }));
+          syncWrite('retrait du référent', syncClearReferent(date));
+          return;
+        }
+        // Un seul par jour : la désignation précédente est remplacée, jamais doublée.
+        const item: ReferentJour = { id: nextId('rj'), date, memberId };
+        set((s) => ({ referents: [...s.referents.filter((r) => r.date !== date), item] }));
+        syncWrite('référent du jour', syncSetReferent(date, memberId));
       },
 
       addApiConnection: (connection) =>

@@ -126,6 +126,26 @@ export interface Absence {
   label?: string;
 }
 
+/**
+ * Le référent du jour : la personne qui prend ce qui arrive — demandes, incidents,
+ * sollicitations — pendant que les autres restent sur leur programme.
+ *
+ * UN SEUL PAR JOUR, et c'est le fond du dispositif : si deux personnes « prennent »,
+ * personne ne prend. La date est la clé — il n'existe jamais deux enregistrements pour
+ * le même jour.
+ *
+ * À NE PAS CONFONDRE avec le RÉFÉRENT D'ÉQUIPE (voir server/src/auth/admin.js), qui est
+ * un droit de configuration et non un tour de garde. Les deux mots se ressemblent, les
+ * deux notions n'ont aucun rapport : l'une dit qui règle les paramètres de l'équipe,
+ * l'autre qui décroche aujourd'hui.
+ */
+export interface ReferentJour {
+  id: string;
+  /** AAAA-MM-JJ. Unique : la journée est la clé. */
+  date: string;
+  memberId: string;
+}
+
 export type ApiAuthType = 'none' | 'bearer' | 'apiKey' | 'basic';
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
