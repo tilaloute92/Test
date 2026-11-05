@@ -36,12 +36,12 @@ export function HaPanel() {
         <div className="flex items-end justify-between">
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Robustesse</h2>
-            <p className="text-[11px] text-slate-400">Analyse du schéma courant</p>
+            <p className="text-[11px] text-slate-500">Analyse du schéma courant</p>
           </div>
           <div className="text-right">
             <div className="text-2xl font-bold tabular-nums" style={{ color: LEVEL_COLOR[report.level] }}>
               {report.score}
-              <span className="text-sm font-medium text-slate-400">/100</span>
+              <span className="text-sm font-medium text-slate-500">/100</span>
             </div>
             <div className="text-[11px] font-semibold" style={{ color: LEVEL_COLOR[report.level] }}>
               {report.level}
@@ -114,7 +114,7 @@ export function HaPanel() {
 
       <section>
         <h2 className="pb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Modèles haute dispo</h2>
-        <p className="pb-2 text-[11px] leading-snug text-slate-400">
+        <p className="pb-2 text-[11px] leading-snug text-slate-500">
           Blocs prêts à l'emploi, déjà décrits (grappe, rôles, VIP, battement de cœur).
           Ils arrivent au centre de la vue.
         </p>
@@ -219,7 +219,7 @@ function GrappesSection() {
             >
               <span className="flex items-baseline justify-between gap-2">
                 <span className="text-[12px] font-semibold text-slate-700">{grappe.nom}</span>
-                <span className="text-[10.5px] text-slate-400">{grappe.membres.length} membres</span>
+                <span className="text-[10.5px] text-slate-500">{grappe.membres.length} membres</span>
               </span>
               <span className="block text-[11px] leading-snug">
                 {grappe.divergent ? (
@@ -248,11 +248,11 @@ function GrappesSection() {
                       ))}
                   </span>
                 ) : (
-                  <span className="text-slate-400">Mécanisme non documenté</span>
+                  <span className="text-slate-500">Mécanisme non documenté</span>
                 )}
               </span>
               {grappe.mecanisme && (
-                <span className="block text-[10.5px] text-slate-400">
+                <span className="block text-[10.5px] text-slate-500">
                   Bascule : {grappe.mecanisme.bascule}
                 </span>
               )}

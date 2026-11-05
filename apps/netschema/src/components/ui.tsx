@@ -188,7 +188,7 @@ export function Menu({
         }`}
       >
         {label}
-        <span className="text-[9px] text-slate-400">▾</span>
+        <span className="text-[9px] text-slate-500">▾</span>
       </button>
       {ouvert && (
         <div

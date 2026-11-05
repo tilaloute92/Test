@@ -190,7 +190,7 @@ export function DiscoveryView() {
                           </span>
                         </td>
                         <td className="px-3 py-1.5 text-slate-500">{node.ip ?? '—'}</td>
-                        <td className="px-3 py-1.5 text-slate-400">{node.model ?? node.notes ?? '—'}</td>
+                        <td className="px-3 py-1.5 text-slate-500">{node.model ?? node.notes ?? '—'}</td>
                       </tr>
                     )
                   })}

@@ -92,7 +92,7 @@ export function UsersDialog() {
         <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3">
           <h2 className="flex-1 text-[14px] font-semibold text-slate-900">Comptes</h2>
           <span className="text-[12px] text-slate-500">{comptes.length} compte(s)</span>
-          <button type="button" onClick={() => setOuvert(false)} className="text-[18px] text-slate-400 hover:text-slate-700">
+          <button type="button" onClick={() => setOuvert(false)} className="text-[18px] text-slate-600 hover:text-slate-900">
             ×
           </button>
         </div>
@@ -117,7 +117,7 @@ export function UsersDialog() {
                   <tr key={compte.id} className="border-b border-slate-100 last:border-0">
                     <td className="px-4 py-2">
                       <span className="font-medium text-slate-800">{compte.username}</span>
-                      {soiMeme && <span className="pl-2 text-[11px] text-slate-400">(vous)</span>}
+                      {soiMeme && <span className="pl-2 text-[11px] text-slate-500">(vous)</span>}
                       {compte.displayName !== compte.username && (
                         <span className="block text-[11px] text-slate-500">{compte.displayName}</span>
                       )}
@@ -164,7 +164,7 @@ export function UsersDialog() {
                           type="button"
                           disabled={soiMeme || occupe}
                           onClick={() => void agir(() => api.updateUser(compte.username, { disabled: !compte.disabled }))}
-                          className="text-[11.5px] text-slate-500 hover:text-slate-800 disabled:opacity-40"
+                          className="text-[11.5px] text-slate-600 hover:text-slate-900 disabled:opacity-40"
                         >
                           {compte.disabled ? 'Réactiver' : 'Désactiver'}
                         </button>
@@ -175,7 +175,7 @@ export function UsersDialog() {
                             const mot = window.prompt(`Nouveau mot de passe pour « ${compte.username} »`)
                             if (mot) void agir(() => api.updateUser(compte.username, { password: mot }))
                           }}
-                          className="text-[11.5px] text-slate-500 hover:text-slate-800 disabled:opacity-40"
+                          className="text-[11.5px] text-slate-600 hover:text-slate-900 disabled:opacity-40"
                         >
                           Mot de passe
                         </button>

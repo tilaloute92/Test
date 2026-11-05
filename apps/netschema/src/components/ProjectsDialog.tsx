@@ -43,11 +43,11 @@ export function ProjectsDialog() {
       >
         <header className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
           <h2 className="text-[14px] font-semibold text-slate-800">Schémas du serveur</h2>
-          <span className="text-[12px] text-slate-400">{projects.length} document(s)</span>
+          <span className="text-[12px] text-slate-500">{projects.length} document(s)</span>
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="ml-auto rounded px-2 text-[18px] leading-none text-slate-400 hover:bg-slate-100"
+            className="ml-auto rounded px-2 text-[18px] leading-none text-slate-500 hover:bg-slate-100"
             title="Fermer"
           >
             ×
@@ -56,7 +56,7 @@ export function ProjectsDialog() {
 
         <ul className="max-h-[50vh] overflow-y-auto">
           {projects.length === 0 && (
-            <li className="px-4 py-6 text-center text-[13px] text-slate-400">
+            <li className="px-4 py-6 text-center text-[13px] text-slate-500">
               Aucun schéma pour l’instant. Créez-en un ci-dessous.
             </li>
           )}

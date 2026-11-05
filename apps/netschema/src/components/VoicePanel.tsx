@@ -187,7 +187,7 @@ export function VoicePanel() {
         <button
           type="button"
           onClick={() => setVoiceOpen(false)}
-          className="ml-auto rounded px-1.5 text-[16px] leading-none text-slate-400 hover:bg-slate-100"
+          className="ml-auto rounded px-1.5 text-[16px] leading-none text-slate-500 hover:bg-slate-100"
           title="Fermer"
         >
           ×
@@ -214,11 +214,11 @@ export function VoicePanel() {
             <p className="text-[12px] font-medium text-slate-700">
               {listening ? 'À l’écoute…' : supported ? 'Micro en pause' : 'Dictée indisponible sur ce navigateur'}
             </p>
-            <p className="truncate text-[11px] text-slate-400">
+            <p className="truncate text-[11px] text-slate-500">
               {interim || (supported ? 'Dites par exemple « ajoute un pare-feu ».' : 'Tapez la commande ci-dessous.')}
             </p>
             {listening && (
-              <p className="text-[10px] text-slate-400">
+              <p className="text-[10px] text-slate-500">
                 Parlez d’une traite : la commande part après une courte pause.
               </p>
             )}
@@ -270,7 +270,7 @@ export function VoicePanel() {
           <ul className="max-h-40 overflow-y-auto rounded-lg border border-slate-100">
             {history.map((entry) => (
               <li key={entry.id} className="border-b border-slate-50 px-2 py-1.5 last:border-0">
-                <p className="text-[11px] text-slate-400">« {entry.transcript} »</p>
+                <p className="text-[11px] text-slate-500">« {entry.transcript} »</p>
                 <p className={`text-[12px] ${entry.ok ? 'text-emerald-700' : 'text-red-600'}`}>{entry.message}</p>
                 {entry.suggestions && entry.suggestions.length > 0 && (
                   <p className="pt-0.5 text-[11px] text-slate-500">
@@ -301,7 +301,7 @@ export function VoicePanel() {
           <div className="max-h-56 overflow-y-auto pt-1.5">
             {VOICE_EXAMPLE_GROUPS.map((group) => (
               <div key={group.title} className="pb-2">
-                <p className="pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <p className="pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                   {group.title}
                 </p>
                 <ul className="flex flex-col gap-0.5">

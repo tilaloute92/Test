@@ -145,7 +145,7 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
         className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[13px] text-slate-500 transition hover:bg-slate-50"
       >
         Rechercher
-        <kbd className="rounded border border-slate-200 bg-slate-50 px-1 text-[10px] text-slate-400">Ctrl K</kbd>
+        <kbd className="rounded border border-slate-200 bg-slate-50 px-1 text-[10px] text-slate-500">Ctrl K</kbd>
       </button>
 
       <Separator />
@@ -280,7 +280,7 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
           title={paletteOpen ? 'Masquer la palette (bandeau de gauche)' : 'Afficher la palette'}
           onClick={() => store().setPanelOpen('palette', !paletteOpen)}
           className={`rounded-md px-2 py-1 text-[12.5px] font-medium transition ${
-            paletteOpen ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            paletteOpen ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           ▤ Palette
@@ -290,7 +290,7 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
           title={inspectorOpen ? 'Masquer l’inspecteur (bandeau de droite)' : 'Afficher l’inspecteur'}
           onClick={() => store().setPanelOpen('inspecteur', !inspectorOpen)}
           className={`rounded-md px-2 py-1 text-[12.5px] font-medium transition ${
-            inspectorOpen ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            inspectorOpen ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           Inspecteur ▤
@@ -313,7 +313,7 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
             title={item.hint}
             onClick={() => store().setViewMode(item.id as ViewMode)}
             className={`rounded-md px-2.5 py-1 text-[12.5px] font-medium transition ${
-              viewMode === item.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+              viewMode === item.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             {item.label}
@@ -417,7 +417,7 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
             }}
           />
           Haute dispo
-          <span className="tabular-nums text-slate-400">{report.score}</span>
+          <span className="tabular-nums text-slate-500">{report.score}</span>
         </button>
 
         <Separator />

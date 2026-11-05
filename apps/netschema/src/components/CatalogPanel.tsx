@@ -133,7 +133,7 @@ export function CatalogPanel() {
             <li key={pack.id} className="rounded-lg border border-slate-200 px-2 py-1.5">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="truncate text-[12px] font-semibold text-slate-700">{pack.title}</span>
-                <span className="shrink-0 text-[10px] text-slate-400">v{pack.version}</span>
+                <span className="shrink-0 text-[10px] text-slate-500">v{pack.version}</span>
               </div>
               <p className="text-[11px] text-slate-500">{pack.devices.length} types</p>
               {locals.has(pack.id) && (
@@ -173,7 +173,7 @@ export function CatalogPanel() {
               event.target.value = ''
             }}
           />
-          <p className="text-[11px] leading-snug text-slate-400">
+          <p className="text-[11px] leading-snug text-slate-500">
             Les lots déposés dans le dossier <code>catalog/</code> livré avec l’application sont
             chargés au démarrage : mettre à jour le catalogue ne demande aucune recompilation.
           </p>

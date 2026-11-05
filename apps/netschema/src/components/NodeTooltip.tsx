@@ -25,7 +25,7 @@ function Row({ label, value }: { label: string; value?: string }) {
   if (!value) return null
   return (
     <div className="flex gap-2 text-[11.5px] leading-snug">
-      <span className="w-24 shrink-0 text-slate-400">{label}</span>
+      <span className="w-24 shrink-0 text-slate-500">{label}</span>
       <span className="min-w-0 flex-1 break-words font-medium text-slate-800">{value}</span>
     </div>
   )
@@ -159,7 +159,7 @@ export function NodeTooltip({
       )}
 
       <div className="mt-2 border-t border-slate-100 pt-1.5">
-        <p className="pb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+        <p className="pb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
           {voisins.length > 0 ? `Liaisons (${voisins.length})` : 'Aucune liaison'}
         </p>
         <div className="flex flex-col gap-0.5">
@@ -171,7 +171,7 @@ export function NodeTooltip({
             </div>
           ))}
           {voisins.length > 6 && (
-            <p className="pt-0.5 text-[11px] text-slate-400">et {voisins.length - 6} autre(s)…</p>
+            <p className="pt-0.5 text-[11px] text-slate-500">et {voisins.length - 6} autre(s)…</p>
           )}
         </div>
       </div>

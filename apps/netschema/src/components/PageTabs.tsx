@@ -113,7 +113,7 @@ export function PageTabs() {
                   </span>
                 )}
                 {page.pageName ?? `Schéma ${index + 1}`}
-                <span className="text-[10.5px] text-slate-400">
+                <span className="text-[10.5px] text-slate-500">
                   {courante ? equipementsCourants : page.nodes.length}
                 </span>
               </button>
@@ -194,9 +194,9 @@ export function PageTabs() {
         +
       </button>
 
-      <span className="ml-auto flex-none pr-1 text-[11.5px] text-slate-500">
+      <span className="ml-auto flex-none pr-1 text-[11.5px] text-slate-600">
         {pages.length} page{pages.length > 1 ? 's' : ''}
-        {pageLocked && <span className="pl-2 text-amber-600">« {pageName} » verrouillée</span>}
+        {pageLocked && <span className="pl-2 text-amber-700">« {pageName} » verrouillée</span>}
       </span>
     </div>
   )
@@ -225,7 +225,7 @@ function MenuItem({
       }`}
     >
       {label}
-      {hint && <span className="text-[11px] text-slate-400">{hint}</span>}
+      {hint && <span className="text-[11px] text-slate-500">{hint}</span>}
     </button>
   )
 }

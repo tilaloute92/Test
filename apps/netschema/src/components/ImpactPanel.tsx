@@ -89,7 +89,7 @@ export function ImpactPanel() {
                 <button
                   type="button"
                   onClick={() => store().togglePanne(item.type, item.id)}
-                  className="shrink-0 text-[11px] text-slate-400 hover:text-slate-700"
+                  className="shrink-0 text-[11px] text-slate-600 hover:text-slate-900"
                 >
                   rétablir
                 </button>
@@ -208,11 +208,11 @@ export function ImpactPanel() {
             {rapport.fragiles.slice(0, 12).map((item) => (
               <li key={item.id} className="truncate text-[12px] text-slate-700">
                 <span className="text-amber-600">●</span> {item.nom}
-                {item.dependDe && <span className="text-slate-400"> — via {item.dependDe}</span>}
+                {item.dependDe && <span className="text-slate-500"> — via {item.dependDe}</span>}
               </li>
             ))}
             {rapport.fragiles.length > 12 && (
-              <li className="text-[11.5px] text-slate-400">et {rapport.fragiles.length - 12} autre(s)…</li>
+              <li className="text-[11.5px] text-slate-500">et {rapport.fragiles.length - 12} autre(s)…</li>
             )}
           </ul>
         </div>
@@ -251,7 +251,7 @@ export function ImpactPanel() {
         </ul>
       </div>
 
-      <p className="text-[11px] leading-relaxed text-slate-400">
+      <p className="text-[11px] leading-relaxed text-slate-500">
         Méthode : joignabilité depuis les points de référence ({rapport.racines.length} équipement(s) —
         accès opérateur et périmètre), sur les liaisons de transport uniquement ; un VLAN n’est
         transporté que s’il est autorisé aux <b>deux</b> extrémités du trunk ; un lien en état

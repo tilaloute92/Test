@@ -95,15 +95,15 @@ function PaletteDialog({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
                   <span className="h-[18px] w-[18px] shrink-0 rounded bg-slate-100" />
                 )}
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                {item.hint && <span className="shrink-0 text-[11px] text-slate-400">{item.hint}</span>}
+                {item.hint && <span className="shrink-0 text-[11px] text-slate-500">{item.hint}</span>}
               </button>
             </li>
           ))}
           {items.length === 0 && (
-            <li className="px-4 py-6 text-center text-[13px] text-slate-400">Aucun résultat.</li>
+            <li className="px-4 py-6 text-center text-[13px] text-slate-500">Aucun résultat.</li>
           )}
         </ul>
-        <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+        <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-500">
           ↑ ↓ pour naviguer · Entrée pour valider · Échap pour fermer
         </p>
       </div>

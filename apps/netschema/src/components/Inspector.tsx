@@ -101,7 +101,7 @@ export function Inspector() {
             type="button"
             onClick={() => setPanel(id)}
             className={`flex min-w-[52px] flex-1 items-center justify-center gap-1 rounded-md px-1.5 py-1.5 text-[11px] font-medium transition ${
-              panel === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              panel === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             {label}
@@ -131,7 +131,7 @@ export function Inspector() {
         {nodes.length === 0 && link && <LinkForm linkId={link.id} />}
         {nodes.length === 0 && !link && annotation && <AnnotationForm annotation={annotation} />}
         {nodes.length === 0 && !link && !annotation && (
-          <p className="text-[12px] leading-relaxed text-slate-400">
+          <p className="text-[12px] leading-relaxed text-slate-500">
             Sélectionnez un équipement ou une liaison pour en modifier les propriétés.
             Maj+clic pour une sélection multiple.
           </p>
@@ -147,15 +147,15 @@ export function Inspector() {
       <section>
         <SectionTitle>Schéma</SectionTitle>
         <dl className="grid grid-cols-2 gap-y-1 text-[12px] text-slate-600">
-          <dt className="text-slate-400">Équipements</dt>
+          <dt className="text-slate-500">Équipements</dt>
           <dd className="text-right font-medium">{diagram.nodes.length}</dd>
-          <dt className="text-slate-400">Liaisons</dt>
+          <dt className="text-slate-500">Liaisons</dt>
           <dd className="text-right font-medium">{diagram.links.length}</dd>
-          <dt className="text-slate-400">Zones</dt>
+          <dt className="text-slate-500">Zones</dt>
           <dd className="text-right font-medium">
             {new Set(diagram.nodes.map((n) => n.zone?.trim()).filter(Boolean)).size}
           </dd>
-          <dt className="text-slate-400">Positions figées</dt>
+          <dt className="text-slate-500">Positions figées</dt>
           <dd className="text-right font-medium">{diagram.nodes.filter((n) => n.pinned).length}</dd>
         </dl>
       </section>
@@ -213,10 +213,10 @@ function DocumentForm() {
       <button
         type="button"
         onClick={() => setOuvert(!ouvert)}
-        className="flex w-full items-center justify-between pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-700"
+        className="flex w-full items-center justify-between pb-2 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:text-slate-900"
       >
         Document
-        <span className="text-slate-300">{ouvert ? '−' : '+'}</span>
+        <span className="text-slate-500">{ouvert ? '−' : '+'}</span>
       </button>
 
       <div className="flex flex-col gap-2">
@@ -371,7 +371,7 @@ function AnnotationForm({ annotation }: { annotation: Annotation }) {
           </Field>
         </div>
       )}
-      <p className="text-[11px] leading-relaxed text-slate-400">
+      <p className="text-[11px] leading-relaxed text-slate-500">
         Double-cliquez l’annotation sur le plan pour en saisir le texte ; la poignée du coin la
         redimensionne. Elle suit le document et part dans tous les exports.
       </p>
@@ -405,7 +405,7 @@ function NodeForm({ node }: { node: NetNode }) {
       <Field label="Matériel (base constructeurs)">
         <ModelPicker node={node} onPick={set} alignKind />
       </Field>
-      {node.vendor && <p className="-mt-1 text-[11px] text-slate-400">Constructeur : {node.vendor}</p>}
+      {node.vendor && <p className="-mt-1 text-[11px] text-slate-500">Constructeur : {node.vendor}</p>}
       <div className="grid grid-cols-2 gap-2">
         <Field label="Zone">
           <TextInput value={node.zone ?? ''} onChange={(zone) => set({ zone })} placeholder="DMZ…" />
@@ -455,7 +455,7 @@ function NodeForm({ node }: { node: NetNode }) {
           options={RANK_OPTIONS}
         />
       </Field>
-      <p className="-mt-1 text-[11px] text-slate-400">
+      <p className="-mt-1 text-[11px] text-slate-500">
         Couche appliquée : {rankOf(node.kind, node.rank)} — {LAYER_LABELS[rankOf(node.kind, node.rank)]}
       </p>
       <Field label="Notes">
@@ -561,7 +561,7 @@ function CouleurGrappeField({ cluster }: { cluster: string }) {
             onChange={(event) => setClusterColor(cluster, event.target.value.toLowerCase())}
             className="h-0 w-0 opacity-0"
           />
-          {!libre && <span className="text-[13px] leading-none text-slate-400">+</span>}
+          {!libre && <span className="text-[13px] leading-none text-slate-500">+</span>}
         </label>
       </div>
     </Field>
@@ -933,7 +933,7 @@ function LinkForm({ linkId }: { linkId: string }) {
   return (
     <div className="flex flex-col gap-2.5">
       <p className="text-[13px] font-medium text-slate-700">
-        {nameOf(link.from)} <span className="text-slate-400">→</span> {nameOf(link.to)}
+        {nameOf(link.from)} <span className="text-slate-500">→</span> {nameOf(link.to)}
       </p>
       <Field label="Type de liaison">
         <Select value={link.kind} onChange={(kind) => set({ kind: kind as LinkKind })} options={LINK_OPTIONS} />
@@ -983,12 +983,12 @@ function LinkForm({ linkId }: { linkId: string }) {
               />
             </Field>
           </div>
-          <p className="text-[11px] leading-snug text-slate-400">
+          <p className="text-[11px] leading-snug text-slate-500">
             {link.waypoints?.length
               ? `${link.waypoints.length} point(s) de passage. Glissez-les pour ajuster, double-cliquez pour en retirer un.`
               : 'Tirez le trait — ou une poignée claire au milieu d’un segment — pour poser un point de passage.'}
           </p>
-          <p className="text-[11px] leading-snug text-slate-400">
+          <p className="text-[11px] leading-snug text-slate-500">
             {link.attachA || link.attachB
               ? `Accroche libre ${link.attachA && link.attachB ? 'aux deux extrémités' : link.attachA ? 'au départ' : 'à l’arrivée'} : la liaison arrive à l’endroit choisi sur la boîte.`
               : 'Glissez une extrémité (carré vert) sur un équipement : seize repères apparaissent tout autour de la boîte — coins, milieux et quarts de chaque côté. Alt enfoncé pour se poser entre deux ; double-clic sur la poignée pour revenir à l’accroche automatique.'}
@@ -1260,10 +1260,10 @@ function ReadabilityForm() {
                       }`}
                     >
                       <span className="min-w-0 truncate">
-                        <span className="text-[10px] text-slate-400">{TYPE_LABEL[group.type]} · </span>
+                        <span className="text-[10px] text-slate-500">{TYPE_LABEL[group.type]} · </span>
                         {group.label}
                       </span>
-                      <span className="shrink-0 text-[10px] text-slate-400">
+                      <span className="shrink-0 text-[10px] text-slate-500">
                         {active ? 'replié' : group.count}
                       </span>
                     </button>
@@ -1322,7 +1322,7 @@ function LayoutForm() {
             options={VIEW_MODES.map((item) => ({ value: item.id, label: item.label }))}
           />
         </Field>
-        <p className="-mt-1 text-[11px] leading-snug text-slate-400">{modeDefinition(viewMode).hint}</p>
+        <p className="-mt-1 text-[11px] leading-snug text-slate-500">{modeDefinition(viewMode).hint}</p>
         {viewMode === 'logique' && (
           <>
             <Field label="Lecture logique">
@@ -1332,7 +1332,7 @@ function LayoutForm() {
                 options={VUES_LOGIQUES.map((item) => ({ value: item.value, label: item.label }))}
               />
             </Field>
-            <p className="-mt-1 text-[11px] leading-snug text-slate-400">
+            <p className="-mt-1 text-[11px] leading-snug text-slate-500">
               {VUES_LOGIQUES.find((item) => item.value === vueLogique)?.hint}
             </p>
           </>

@@ -173,7 +173,7 @@ export function DossierView() {
                 <div key={ligne.libelle}>
                   <div className="flex justify-between text-[11.5px] text-slate-600">
                     <span>{ligne.libelle}</span>
-                    <span className="tabular-nums text-slate-400">
+                    <span className="tabular-nums text-slate-500">
                       {ligne.renseignes}/{ligne.total}
                     </span>
                   </div>
@@ -211,11 +211,11 @@ export function DossierView() {
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-2 text-[12.5px] font-medium text-slate-800">
                       {constat.titre}
-                      <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-normal text-slate-500">
+                      <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-normal text-slate-600">
                         {constat.categorie}
                       </span>
                       {constat.page && (
-                        <span className="text-[10.5px] font-normal text-slate-400">{constat.page}</span>
+                        <span className="text-[10.5px] font-normal text-slate-500">{constat.page}</span>
                       )}
                     </p>
                     <p className="text-[12px] leading-snug text-slate-500">{constat.detail}</p>
@@ -301,12 +301,12 @@ export function DossierView() {
                           >
                             {SENS_LABELS[difference.sens]}
                           </span>
-                          <span className="pl-2 text-[11px] text-slate-400">{difference.cible}</span>
+                          <span className="pl-2 text-[11px] text-slate-500">{difference.cible}</span>
                         </td>
                         <td className="px-3 py-2 text-slate-700">
                           {difference.nom}
                           {difference.page && (
-                            <span className="pl-1.5 text-[11px] text-slate-400">{difference.page}</span>
+                            <span className="pl-1.5 text-[11px] text-slate-500">{difference.page}</span>
                           )}
                         </td>
                         <td className="px-3 py-2 text-slate-500">

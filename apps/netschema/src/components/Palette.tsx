@@ -58,7 +58,7 @@ export function Palette() {
           placeholder="Rechercher : k8s, waf, sd-wan…"
           className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
         />
-        <p className="pt-1.5 text-[11px] leading-snug text-slate-400">
+        <p className="pt-1.5 text-[11px] leading-snug text-slate-500">
           {query.trim()
             ? `${results?.length ?? 0} type(s) trouvé(s)`
             : `${total} types — glissez sur le plan ou cliquez`}
@@ -71,7 +71,7 @@ export function Palette() {
             <DeviceButton key={device.id} device={device} onAdd={addAtViewportCenter} showFamily />
           ))}
           {results.length === 0 && (
-            <p className="px-1 py-3 text-[12px] text-slate-400">
+            <p className="px-1 py-3 text-[12px] text-slate-500">
               Aucun type ne correspond. Vous pouvez en créer un dans l’onglet Catalogue.
             </p>
           )}
@@ -84,10 +84,10 @@ export function Palette() {
               <button
                 type="button"
                 onClick={() => toggle(group.title)}
-                className="flex w-full items-center justify-between px-1 py-1 text-[11px] font-semibold text-slate-400 hover:text-slate-600"
+                className="flex w-full items-center justify-between px-1 py-1 text-[11px] font-semibold text-slate-500 hover:text-slate-600"
               >
                 {group.title}
-                <span className="text-slate-300">{open ? '−' : `+${group.devices.length}`}</span>
+                <span className="text-slate-500">{open ? '−' : `+${group.devices.length}`}</span>
               </button>
               {open && (
                 <div className="flex flex-col gap-1 pb-1">
@@ -102,7 +102,7 @@ export function Palette() {
       )}
 
       <section className="mt-4 border-t border-slate-100 px-4 py-4">
-        <h3 className="pb-2 text-[11px] font-semibold text-slate-400">Légende des liaisons</h3>
+        <h3 className="pb-2 text-[11px] font-semibold text-slate-500">Légende des liaisons</h3>
         <ul className="flex flex-col gap-1.5">
           {(Object.keys(LINKS) as LinkKind[]).map((kind) => {
             const meta = LINKS[kind]
@@ -125,10 +125,10 @@ export function Palette() {
             )
           })}
         </ul>
-        <p className="mt-2 text-[11px] leading-snug text-slate-400">
+        <p className="mt-2 text-[11px] leading-snug text-slate-500">
           Pointillés larges = liaison de secours.
         </p>
-        <h3 className="pt-3 pb-1.5 text-[11px] font-semibold text-slate-400">Conventions HA</h3>
+        <h3 className="pt-3 pb-1.5 text-[11px] font-semibold text-slate-500">Conventions HA</h3>
         <ul className="flex flex-col gap-1 text-[11px] leading-snug text-slate-500">
           <li>
             <span className="font-semibold text-emerald-700">ACTIF</span> /{' '}
@@ -185,7 +185,7 @@ function DeviceButton({
       </span>
       <span className="min-w-0">
         <span className="block truncate">{device.label}</span>
-        {showFamily && <span className="block truncate text-[10px] text-slate-400">{device.family}</span>}
+        {showFamily && <span className="block truncate text-[10px] text-slate-500">{device.family}</span>}
       </span>
     </button>
   )

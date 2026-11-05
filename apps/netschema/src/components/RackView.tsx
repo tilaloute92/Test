@@ -98,7 +98,7 @@ export function RackView() {
                   }`}
                 >
                   <span className="block text-[13px] font-semibold text-slate-700">{occupancy.rack.name}</span>
-                  <span className="block text-[11px] text-slate-500">
+                  <span className="block text-[11px] text-slate-600">
                     {[occupancy.rack.site, occupancy.rack.room].filter(Boolean).join(' · ') || 'Site non précisé'}
                   </span>
                   <span className="mt-1 block h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
@@ -110,7 +110,7 @@ export function RackView() {
                       }}
                     />
                   </span>
-                  <span className="block pt-0.5 text-[10px] text-slate-400">
+                  <span className="block pt-0.5 text-[10px] text-slate-600">
                     {occupancy.usedUnits}/{occupancy.rack.units} U · {occupancy.freeUnits} U libres
                     {occupancy.powerW > 0 ? ` · ${occupancy.powerW} W` : ''}
                   </span>
@@ -189,7 +189,7 @@ export function RackView() {
                 </svg>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[12px] text-slate-700">{node.name}</span>
-                  <span className="block text-[10px] text-slate-400">
+                  <span className="block text-[10px] text-slate-500">
                     {meta.label} · {heightOf(node)} U
                   </span>
                 </span>

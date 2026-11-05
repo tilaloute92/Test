@@ -99,7 +99,7 @@ export function AssistantPanel() {
               className={`rounded-t-lg px-3 py-1.5 text-[13px] font-medium transition ${
                 onglet === id
                   ? 'bg-white text-slate-900 ring-1 ring-slate-200 ring-offset-0'
-                  : 'text-slate-500 hover:text-slate-800'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               {label}
@@ -124,7 +124,7 @@ export function AssistantPanel() {
                 Analyser la demande
               </Btn>
               <Btn onClick={() => setTexte(EXEMPLE_ASSISTANT)}>Reprendre l’exemple</Btn>
-              <span className="text-[11.5px] text-slate-400">
+              <span className="text-[11.5px] text-slate-500">
                 Une ligne ou une virgule par groupe d’équipements. « deux pare-feu Fortinet en
                 grappe actif/passif, zone DMZ »
               </span>
@@ -182,7 +182,7 @@ export function AssistantPanel() {
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] font-medium text-slate-800">{suggestion.titre}</p>
                       <p className="text-[12px] leading-snug text-slate-500">{suggestion.detail}</p>
-                      <p className="pt-0.5 text-[11px] text-slate-400">
+                      <p className="pt-0.5 text-[11px] text-slate-500">
                         {suggestion.operations.length} modification(s)
                       </p>
                     </div>
@@ -220,7 +220,7 @@ export function AssistantPanel() {
             {figees && (
               <div className="flex items-center gap-2 pt-1">
                 <Btn onClick={() => { setFigees(null); setAppliquees([]) }}>Réanalyser le schéma</Btn>
-                <span className="text-[11.5px] text-slate-400">
+                <span className="text-[11.5px] text-slate-500">
                   {nouvelles > 0
                     ? `${nouvelles} nouvelle(s) proposition(s) depuis vos corrections.`
                     : 'Liste figée pendant les corrections.'}
@@ -231,7 +231,7 @@ export function AssistantPanel() {
         )}
 
         <footer className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-3">
-          <p className="text-[11.5px] text-slate-400">
+          <p className="text-[11.5px] text-slate-500">
             Un plan appliqué s’annule d’un seul <kbd className="rounded border border-slate-200 bg-slate-50 px-1">Ctrl+Z</kbd>.
           </p>
           <div className="flex gap-2">

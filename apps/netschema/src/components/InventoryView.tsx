@@ -289,7 +289,7 @@ export function InventoryView() {
           </tbody>
         </table>
         {rows.length === 0 && (
-          <p className="p-8 text-center text-[13px] text-slate-400">
+          <p className="p-8 text-center text-[13px] text-slate-500">
             Aucun équipement ne correspond aux filtres.
           </p>
         )}
@@ -327,7 +327,7 @@ function BarreRemplissage({
   if (lignes.length === 0) return null
   if (selection.length < 2) {
     return (
-      <p className="border-b border-slate-100 px-4 py-1.5 text-[11.5px] text-slate-400">
+      <p className="border-b border-slate-100 px-4 py-1.5 text-[11.5px] text-slate-500">
         Clic pour sélectionner une ligne, Ctrl+clic pour en ajouter, Maj+clic pour une plage —
         puis remplissez une colonne pour toute la sélection d’un coup.{' '}
         <button type="button" onClick={surTout} className="font-medium text-blue-700 hover:underline">
@@ -423,7 +423,7 @@ function Cellule({
         onFocus={ouvrir}
         className={`block w-full cursor-text rounded border border-transparent px-1 py-0.5 hover:border-slate-200 ${
           aligne === 'droite' ? 'text-right' : ''
-        } ${valeur ? '' : 'text-slate-300'}`}
+        } ${valeur ? '' : 'text-slate-500'}`}
       >
         {valeur || '—'}
       </span>
@@ -517,7 +517,7 @@ function CelluleModele({ node, onChange }: { node: NetNode; onChange: (patch: Pa
         onClick={() => setEdition(true)}
         onFocus={() => setEdition(true)}
         className={`block w-full cursor-text rounded border border-transparent px-1 py-0.5 hover:border-slate-200 ${
-          node.model ? '' : 'text-slate-300'
+          node.model ? '' : 'text-slate-500'
         }`}
       >
         {node.model || '—'}

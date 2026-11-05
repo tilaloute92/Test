@@ -76,7 +76,7 @@ export function ModelPicker({ node, onPick, compact, alignKind }: Props) {
                 <span className="text-[12px] text-slate-800">
                   <span className="font-semibold">{item.vendor}</span> — {item.model}
                 </span>
-                <span className="text-[10.5px] text-slate-400">
+                <span className="text-[10.5px] text-slate-500">
                   {[
                     deviceMeta(item.kind).label,
                     item.heightU ? `${item.heightU} U` : null,

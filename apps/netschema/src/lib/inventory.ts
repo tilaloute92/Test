@@ -1,5 +1,9 @@
 import { deviceMeta } from './catalog'
+import { STATUS_COLORS } from './palette'
 import type { AssetStatus, Diagram, NetNode } from '../types'
+
+// Les couleurs d'état vivent avec la palette, qui est vérifiée par un test de contraste.
+export { STATUS_COLORS }
 
 export const STATUS_LABELS: Record<AssetStatus, string> = {
   production: 'En production',
@@ -8,12 +12,6 @@ export const STATUS_LABELS: Record<AssetStatus, string> = {
   retire: 'Retiré',
 }
 
-export const STATUS_COLORS: Record<AssetStatus, string> = {
-  production: '#059669',
-  stock: '#2563eb',
-  maintenance: '#d97706',
-  retire: '#94a3b8',
-}
 
 export interface InventoryColumn {
   key: string

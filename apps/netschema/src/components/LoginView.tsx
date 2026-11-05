@@ -37,7 +37,7 @@ export function LoginView() {
           <span className="rounded-md bg-white/10 px-2 py-1 text-[11px] font-bold tracking-wide text-white">
             NETSCHEMA
           </span>
-          <span className="text-[13px] text-slate-400">Schémas d’infrastructure réseau</span>
+          <span className="text-[13px] text-slate-500">Schémas d’infrastructure réseau</span>
         </div>
 
         <form onSubmit={submit} className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-2xl">
@@ -87,7 +87,7 @@ export function LoginView() {
             {busy ? 'Connexion…' : 'Se connecter'}
           </button>
 
-          <p className="pt-1 text-[11px] leading-relaxed text-slate-400">
+          <p className="pt-1 text-[11px] leading-relaxed text-slate-500">
             Vos identifiants sont ceux du serveur NetSchema. En cas d’oubli, un administrateur
             réinitialise le mot de passe depuis le serveur.
           </p>

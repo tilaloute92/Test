@@ -50,7 +50,7 @@ function Shortcuts({ rows }: { rows: [string, string][] }) {
             <td className="w-44 py-1.5 pr-3 align-top">
               {keys.split(' + ').map((key, index) => (
                 <span key={key}>
-                  {index > 0 && <span className="px-1 text-slate-400">+</span>}
+                  {index > 0 && <span className="px-1 text-slate-500">+</span>}
                   <Keys>{key}</Keys>
                 </span>
               ))}
@@ -1802,7 +1802,7 @@ deux onduleurs`}</pre>
           <div className="grid gap-2.5 sm:grid-cols-2">
             {VOICE_EXAMPLE_GROUPS.map((group) => (
               <div key={group.title} className="rounded-xl border border-slate-200 bg-white p-2.5">
-                <p className="pb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <p className="pb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                   {group.title}
                 </p>
                 <ul className="flex flex-col gap-0.5">
@@ -2092,7 +2092,7 @@ deux onduleurs`}</pre>
   return (
     <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-slate-50">
       <aside className="hidden w-60 shrink-0 flex-col gap-1 overflow-y-auto border-r border-slate-200 bg-white p-3 lg:flex">
-        <p className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        <p className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Guide
         </p>
         {sections.map((section) => (
@@ -2111,7 +2111,7 @@ deux onduleurs`}</pre>
           <header className="flex flex-col gap-2">
             <h1 className="flex items-baseline gap-2 text-[20px] font-semibold text-slate-900">
               Guide d'utilisation de NetSchema
-              <span className="text-[12px] font-medium text-slate-400">version {APP_VERSION}</span>
+              <span className="text-[12px] font-medium text-slate-500">version {APP_VERSION}</span>
             </h1>
             <p className="text-[13px] leading-relaxed text-slate-600">
               Comment dessiner, documenter et contrôler une infrastructure : les gestes, les
@@ -2142,7 +2142,7 @@ deux onduleurs`}</pre>
             </section>
           ))}
 
-          <p className="pb-6 text-[12px] text-slate-400">
+          <p className="pb-6 text-[12px] text-slate-500">
             Une question sans réponse ici ? Le fichier <code>README.md</code> du dépôt détaille
             l'installation, le collecteur réseau et le format des paquets de catalogue.
           </p>

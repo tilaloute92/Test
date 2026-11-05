@@ -1,4 +1,5 @@
 import { BUILTIN_PACKS, FAMILY_ORDER, type CatalogPack, type DeviceDef } from './catalogData'
+import { PALETTE } from './palette'
 import { bestMatch } from './speech'
 import { registerModels } from './vendors'
 import type { HaRole, LinkKind } from '../types'
@@ -27,17 +28,6 @@ export const LAYER_LABELS: Record<number, string> = {
   8: 'Énergie & environnement',
 }
 
-const PALETTE: Record<number, { accent: string; fill: string }> = {
-  0: { accent: '#475569', fill: '#f1f5f9' },
-  1: { accent: '#7c3aed', fill: '#f5f3ff' },
-  2: { accent: '#dc2626', fill: '#fef2f2' },
-  3: { accent: '#2563eb', fill: '#eff6ff' },
-  4: { accent: '#0891b2', fill: '#ecfeff' },
-  5: { accent: '#059669', fill: '#ecfdf5' },
-  6: { accent: '#d97706', fill: '#fffbeb' },
-  7: { accent: '#64748b', fill: '#f8fafc' },
-  8: { accent: '#a16207', fill: '#fefce8' },
-}
 
 const registry = new Map<string, DeviceMeta>()
 const packs = new Map<string, CatalogPack>()

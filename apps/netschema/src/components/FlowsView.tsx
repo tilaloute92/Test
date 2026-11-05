@@ -238,7 +238,7 @@ export function FlowsView() {
                   </Cellule>
                   <td className="px-3 py-2">
                     {constats.length === 0 ? (
-                      <span className="text-[11.5px] text-emerald-600">Rien à signaler</span>
+                      <span className="text-[11.5px] text-emerald-700">Rien à signaler</span>
                     ) : (
                       <ul className="flex flex-col gap-1">
                         {constats.map((constat, index) => (
@@ -255,7 +255,7 @@ export function FlowsView() {
                       </ul>
                     )}
                     {chemins && chemins.chemins.length > 0 && (
-                      <p className="pt-1 text-[11px] text-slate-400">
+                      <p className="pt-1 text-[11px] text-slate-500">
                         Chemin : {chemins.chemins[0].etapes.map((etape) => etape.node.name).join(' → ')}
                       </p>
                     )}
@@ -266,7 +266,7 @@ export function FlowsView() {
                       disabled={locked}
                       onClick={() => removeFlow(flow.id)}
                       title="Supprimer ce flux"
-                      className="rounded-md px-2 py-1 text-[13px] text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
+                      className="rounded-md px-2 py-1 text-[13px] text-slate-500 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
                     >
                       ✕
                     </button>
@@ -276,7 +276,7 @@ export function FlowsView() {
             })}
             {rapport.controles.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-[12.5px] text-slate-400">
+                <td colSpan={9} className="px-3 py-8 text-center text-[12.5px] text-slate-500">
                   Aucun flux documenté. « Proposer d’après le schéma » établit une première
                   matrice à partir des zones reliées ; « Importer (CSV) » reprend une matrice
                   existante.
@@ -380,7 +380,7 @@ function TraceurDeChemin() {
             </option>
           ))}
         </select>
-        <span className="text-slate-400">→</span>
+        <span className="text-slate-500">→</span>
         <select
           value={arrivee}
           onChange={(event) => setVers(event.target.value)}
@@ -432,12 +432,12 @@ function TraceurDeChemin() {
                 </span>
                 <span className="text-[11.5px] text-slate-500">{chemin.sauts} saut(s)</span>
                 {chemin.filtrage.length > 0 && (
-                  <span className="text-[11.5px] text-emerald-600">
+                  <span className="text-[11.5px] text-emerald-700">
                     Filtrage : {chemin.filtrage.map((node) => node.name).join(', ')}
                   </span>
                 )}
                 {chemin.goulot && (
-                  <span className="text-[11.5px] text-amber-600">
+                  <span className="text-[11.5px] text-amber-700">
                     Maillon le plus lent : {chemin.goulot.debit}
                   </span>
                 )}
@@ -447,7 +447,7 @@ function TraceurDeChemin() {
                 {chemin.etapes.map((etape) => (
                   <li key={etape.node.id} className="flex items-center gap-1.5">
                     {etape.link && (
-                      <span className="text-[11px] text-slate-400">
+                      <span className="text-[11px] text-slate-500">
                         —{etape.link.speed ? ` ${etape.link.speed} ` : ' '}→
                       </span>
                     )}

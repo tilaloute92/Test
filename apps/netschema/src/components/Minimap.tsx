@@ -171,12 +171,12 @@ export function Minimap({ nodes, links, selection, view, canvasSize, setView, on
       style={{ width: LARGEUR }}
     >
       <div className="flex items-center justify-between border-b border-slate-100 px-2 py-1">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Vue d’ensemble</span>
+        <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Vue d’ensemble</span>
         <button
           type="button"
           onClick={onClose}
           title="Masquer la minicarte"
-          className="rounded px-1 text-[13px] leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          className="rounded px-1 text-[13px] leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-600"
         >
           ×
         </button>

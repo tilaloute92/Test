@@ -103,14 +103,14 @@ export function VlanPanel() {
               title={view.hint}
               onClick={() => setOsi(view.value)}
               className={`flex-1 rounded-md px-1 py-1.5 text-[11px] font-medium transition ${
-                osi === view.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                osi === view.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               {view.label}
             </button>
           ))}
         </div>
-        <p className="pt-1.5 text-[11px] leading-snug text-slate-400">
+        <p className="pt-1.5 text-[11px] leading-snug text-slate-500">
           {osi === 'all' ? 'Toutes les couches sont affichées.' : LAYER_LABELS_OSI[osi]} — les
           libellés des liaisons s’adaptent : ports et débits en L1, VLAN et agrégats en L2,
           sous-réseaux et routage en L3.
@@ -217,7 +217,7 @@ export function VlanPanel() {
                   </p>
                 ))}
                 {rapport.avertissements.length > 5 && (
-                  <p className="pt-0.5 text-slate-400">
+                  <p className="pt-0.5 text-slate-500">
                     … et {rapport.avertissements.length - 5} autre(s).
                   </p>
                 )}
@@ -366,7 +366,7 @@ function VlanRow({
             {USAGES_VLAN[usage].court}
           </span>
         )}
-        <span className="shrink-0 text-[10px] text-slate-400">{vlan.subnet ?? '—'}</span>
+        <span className="shrink-0 text-[10px] text-slate-500">{vlan.subnet ?? '—'}</span>
         <span
           className="shrink-0 rounded bg-slate-100 px-1 text-[10px] font-medium text-slate-500"
           title={`${portee.equipements} équipement(s) dans ce domaine de diffusion${
@@ -410,7 +410,7 @@ function VlanRow({
           </Field>
           <p className="text-[11px] leading-snug text-slate-500">{USAGES_VLAN[usage].detail}</p>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] text-slate-500">
               {portee.equipements} équipement(s), {portee.liaisons} liaison(s)
               {portee.parTrunk > 0 ? ` — dont ${portee.parTrunk} atteint(s) par trunk` : ''}
             </span>

@@ -129,7 +129,7 @@ export function DuplicateDialog() {
                   />
                 </Field>
               </div>
-              <p className="pt-2 text-[11px] leading-snug text-slate-400">
+              <p className="pt-2 text-[11px] leading-snug text-slate-500">
                 Sans règle, le numéro terminal est incrémenté : SW-ACC-01 devient SW-ACC-02.
               </p>
             </div>
@@ -189,7 +189,7 @@ export function DuplicateDialog() {
                   ))}
                 </ul>
                 {apercu.noms.length > 12 && (
-                  <p className="px-3 py-1.5 text-[11.5px] text-slate-400">
+                  <p className="px-3 py-1.5 text-[11.5px] text-slate-500">
                     … et {apercu.noms.length - 12} autre(s).
                   </p>
                 )}
@@ -207,7 +207,7 @@ export function DuplicateDialog() {
         </div>
 
         <footer className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-3">
-          <p className="text-[11.5px] text-slate-400">
+          <p className="text-[11.5px] text-slate-500">
             Une duplication s’annule d’un seul{' '}
             <kbd className="rounded border border-slate-200 bg-slate-50 px-1">Ctrl+Z</kbd>.
           </p>
