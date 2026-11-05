@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useHandler } from '../lib/useHandler'
 import { LinkHandles } from './LinkHandles'
+
+/**
+ * Nombre d'équipements au-delà duquel une page devient pénible à manipuler.
+ * Valeur mesurée, pas choisie : voir le commentaire de l'avertissement plus bas.
+ */
+const SEUIL_PAGE_CHARGEE = 800
 import { LinkShape, type PlacedLabel } from './LinkShape'
 import { LinkTooltip } from './LinkTooltip'
 import { AnnotationShape } from './AnnotationShape'
@@ -2439,6 +2445,22 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
           setView={useDiagram.getState().setView}
           onClose={() => useDiagram.getState().setPanelOpen('minicarte', false)}
         />
+      )}
+
+      {/*
+        Page trop chargée : mesuré sur le build de production, un redessin complet coûte
+        110 ms à 29 équipements, 247 ms à 300, 618 ms à 800, puis 2 783 ms à 2 000, et le
+        placement automatique 3,4 s à ce dernier palier. Le seuil est posé là où la courbe
+        se casse, et l'application dit quoi faire : le document a des pages, c'est leur
+        raison d'être. Le banc qui produit ces chiffres est dans tools/banc/, pour que le
+        seuil se revérifie au lieu de se croire.
+      */}
+      {diagram.nodes.length > SEUIL_PAGE_CHARGEE && (
+        <div className="pointer-events-none absolute bottom-14 right-4 max-w-[320px] rounded-lg bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800 shadow-sm ring-1 ring-amber-200">
+          {diagram.nodes.length} équipements sur cette page : l’affichage et le placement
+          automatique ralentissent nettement au-delà de {SEUIL_PAGE_CHARGEE}. Répartissez-les
+          sur plusieurs pages (onglet « + » en bas).
+        </div>
       )}
 
       {(display.hiddenNodes > 0 ||
