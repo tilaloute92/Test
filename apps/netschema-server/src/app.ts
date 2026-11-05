@@ -20,6 +20,7 @@ import {
 import { ROLES, UserStore, publicUser, type Role, type User } from './auth/users.ts'
 import { AuditLog } from './store/audit.ts'
 import { DiagramStore, checkDiagram } from './store/diagrams.ts'
+import { version as versionDe } from './store/files.ts'
 
 /**
  * Application web et API.
@@ -349,6 +350,36 @@ export function createApp(services: Services) {
       username: req.user!.username,
     })
     res.json({ version: result.version, updatedAt: result.record.updatedAt, updatedBy: result.record.updatedBy })
+  })
+
+  /**
+   * Versions antérieures d'un schéma.
+   *
+   * Lisible par tout compte authentifié, comme le schéma lui-même : qui peut lire le
+   * courant peut lire ce qu'il était hier. La restauration, elle, passe par l'écriture
+   * normale — le client récupère une version et l'enregistre — ce qui lui fait traverser
+   * la validation, le verrou et le journal, au lieu d'ouvrir une seconde porte d'écriture.
+   */
+  api.get('/diagrams/:id/historique', requireAuth, (req, res) => {
+    const id = String(req.params.id ?? '')
+    if (!diagrams.get(id)) {
+      res.status(404).json({ error: 'Schéma introuvable.' })
+      return
+    }
+    res.json({ versions: diagrams.historique(id) })
+  })
+
+  api.get('/diagrams/:id/historique/:at', requireAuth, (req, res) => {
+    const id = String(req.params.id ?? '')
+    const at = String(req.params.at ?? '')
+    const record = diagrams.versionAnterieure(id, at)
+    if (!record) {
+      res.status(404).json({ error: 'Version introuvable.' })
+      return
+    }
+    // Même forme que GET /diagrams/:id : le client peut l'enregistrer tel quel pour
+    // restaurer, sans traitement particulier.
+    res.json({ ...record, version: versionDe(record.diagram) })
   })
 
   api.delete('/diagrams/:id', requireAuth, requireRole('admin'), (req, res) => {

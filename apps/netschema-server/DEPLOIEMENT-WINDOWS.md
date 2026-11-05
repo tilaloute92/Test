@@ -520,23 +520,66 @@ navigation privée — la réponse doit être **401**, pas la liste des schémas
 
 ## 9. Exploitation
 
+### Deux protections différentes, à ne pas confondre
+
+**L'historique interne** garde les vingt dernières versions de chaque schéma, dans
+`C:\ProgramData\NetSchema\data\historique`. Il protège de l'erreur humaine : un import mal
+réglé, un placement automatique appliqué à la mauvaise page, une suppression regrettée. Il
+est automatique, il n'y a rien à activer. La dernière version est aussi copiée juste avant
+une suppression — c'est le moment où l'on en a le plus besoin.
+
+**La sauvegarde** protège d'autre chose : le disque qui lâche, le rançongiciel, la machine
+perdue. Elle doit donc sortir du serveur. L'historique ne la remplace pas, puisqu'il vit
+dans le même dossier.
+
 ### Sauvegarde
 
-Tout tient dans `C:\ProgramData\NetSchema\data` : comptes, schémas, secret de session,
-journal. Une copie planifiée de ce dossier suffit ; restaurer consiste à le remettre en place,
-service arrêté. Les écritures étant atomiques, la copie peut se faire service en marche.
+Tout tient dans `C:\ProgramData\NetSchema\data` : comptes, schémas, historique, secret de
+session, journal. Les écritures étant atomiques, la copie peut se faire service en marche.
+
+Le script fourni crée une archive horodatée, garde les quatorze plus récentes, et relit
+l'archive pour vérifier qu'elle contient bien `users.json` — une sauvegarde qu'on ne sait
+pas relire ne sauvegarde rien.
+
+```powershell
+cd C:\Apps\NetSchema\deploy\windows
+
+# Une fois, pour vérifier que la destination est accessible :
+.\Sauvegarder-NetSchema.ps1 -Destination \\nas\sauvegardes\netschema
+
+# Puis tous les soirs :
+.\Sauvegarder-NetSchema.ps1 -Destination \\nas\sauvegardes\netschema -Planifier
+```
+
+Indiquez une destination **hors du serveur**. Une archive posée sur le même disque ne sert
+à rien le jour où c'est le disque qui lâche.
+
+Si vous préférez vos propres outils, un simple miroir fait aussi l'affaire :
 
 ```powershell
 robocopy C:\ProgramData\NetSchema\data \\sauvegarde\netschema\$(Get-Date -f yyyy-MM-dd) /MIR /R:2 /W:5
 ```
 
-Restauration :
+Restauration — dans les deux cas, service arrêté :
 
 ```powershell
 Stop-Service NetSchema
+# Depuis une archive du script :
+Expand-Archive \\nas\sauvegardes\netschema\netschema-20260915-214000.zip `
+  -DestinationPath C:\ProgramData\NetSchema\data -Force
+# Ou depuis un miroir robocopy :
 robocopy \\sauvegarde\netschema\2026-09-15 C:\ProgramData\NetSchema\data /MIR
 Start-Service NetSchema
 ```
+
+Testez une restauration au moins une fois, sur un serveur de rechange. Une sauvegarde
+jamais restaurée est une hypothèse, pas une protection.
+
+### Journal d'audit
+
+`audit.log` tourne tout seul au-delà de 5 Mo — environ 30 000 événements. Quatre
+générations sont gardées (`audit.log.1` à `audit.log.4`), les plus anciennes disparaissent.
+Rien à planifier.
 
 ### Mise à jour
 
@@ -667,7 +710,9 @@ est là pour essayer, ou pour un poste unique.
 
 - **Certificat** : renouvellement et remplacement des fichiers PEM (ou du binding IIS). Notez
   la date d'expiration dès aujourd'hui.
-- **Sauvegarde** : le dossier de données, testée au moins une fois par une vraie restauration.
+- **Sauvegarde** : le dossier de données, vers une destination hors du serveur, testée au
+  moins une fois par une vraie restauration. `Sauvegarder-NetSchema.ps1 -Planifier` s'en
+  charge ; l'historique interne des schémas ne la remplace pas, il vit dans le même dossier.
 - **Comptes** : ils sont locaux au serveur. Un raccordement à l'annuaire d'entreprise
   (LDAP/Entra ID) n'est pas fourni ; l'authentification est isolée dans `src/auth/` si vous
   souhaitez l'ajouter plus tard.

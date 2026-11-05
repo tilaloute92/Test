@@ -56,6 +56,7 @@ for (const fichier of [
   '3-Diagnostic.cmd',
   'Installer-NetSchema.ps1',
   'Configurer-HTTPS.ps1',
+  'Sauvegarder-NetSchema.ps1',
   'Start-NetSchema.ps1',
   'web.config',
   'netschema.env.example',

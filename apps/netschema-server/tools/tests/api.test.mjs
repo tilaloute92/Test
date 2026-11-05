@@ -342,6 +342,58 @@ describe('comptes', () => {
   })
 })
 
+describe('historique des schémas par l’API', () => {
+  it('rend les versions antérieures, et seulement à un compte authentifié', async () => {
+    const chef = makeClient()
+    await chef.call('/api/session')
+    await chef.call('/api/login', { method: 'POST', body: { username: 'chef', password: PASSWORD } })
+
+    const cree = await chef.call('/api/diagrams', {
+      method: 'POST',
+      body: { title: 'Cœur', diagram: { nodes: [{ id: 'n1', kind: 'switch', name: 'SW-1' }], links: [] } },
+    })
+    assert.equal(cree.status, 201)
+    const id = cree.body.id
+
+    const modifie = await chef.call(`/api/diagrams/${id}`, {
+      method: 'PUT',
+      body: { diagram: { nodes: [{ id: 'n2', kind: 'router', name: 'RTR-1' }], links: [] }, title: 'Cœur v2' },
+    })
+    assert.equal(modifie.status, 200)
+
+    const liste = await chef.call(`/api/diagrams/${id}/historique`)
+    assert.equal(liste.status, 200)
+    assert.equal(liste.body.versions.length, 1)
+    assert.equal(liste.body.versions[0].by, 'chef')
+
+    const ancienne = await chef.call(`/api/diagrams/${id}/historique/${encodeURIComponent(liste.body.versions[0].at)}`)
+    assert.equal(ancienne.status, 200)
+    assert.equal(ancienne.body.diagram.nodes[0].name, 'SW-1', 'c’est bien la version d’avant')
+    assert.equal(typeof ancienne.body.version, 'string', 'même forme que GET /diagrams/:id')
+
+    // Un visiteur non connecté n'y accède pas plus qu'au schéma lui-même.
+    const anonyme = makeClient()
+    await anonyme.call('/api/session')
+    assert.equal((await anonyme.call(`/api/diagrams/${id}/historique`)).status, 401)
+  })
+
+  it('refuse un horodatage forgé et un schéma inconnu', async () => {
+    const chef = makeClient()
+    await chef.call('/api/session')
+    await chef.call('/api/login', { method: 'POST', body: { username: 'chef', password: PASSWORD } })
+    const cree = await chef.call('/api/diagrams', {
+      method: 'POST',
+      body: { title: 'Cible', diagram: { nodes: [], links: [] } },
+    })
+    const id = cree.body.id
+    for (const forge of ['..%2F..%2Fusers', 'tout', '2026-01-01']) {
+      const refus = await chef.call(`/api/diagrams/${id}/historique/${forge}`)
+      assert.equal(refus.status, 404, `« ${forge} » doit être refusé`)
+    }
+    assert.equal((await chef.call('/api/diagrams/inconnu/historique')).status, 404)
+  })
+})
+
 describe('durcissement', () => {
   it('annonce une politique de permissions restrictive', async () => {
     const client = makeClient()

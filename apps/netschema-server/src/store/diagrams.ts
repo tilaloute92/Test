@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { ensureDir, pathInside, readJson, safeId, version, writeJsonAtomic } from './files.ts'
 
@@ -112,12 +112,109 @@ function total(diagram: Record<string, unknown>, champ: 'nodes' | 'links'): numb
   }, 0)
 }
 
+/**
+ * Nombre de versions précédentes gardées par schéma.
+ *
+ * Le verrou optimiste empêche deux personnes de s'écraser sans le savoir, mais il ne
+ * protège de rien quand on s'écrase soi-même : un import mal réglé, un placement
+ * automatique appliqué à la mauvaise page, un « tout supprimer » suivi d'un enregistrement.
+ * Sans copie, c'est définitif. Vingt versions couvrent largement le temps qu'il faut pour
+ * s'apercevoir de l'erreur, et coûtent quelques mégaoctets.
+ */
+const VERSIONS_GARDEES = 20
+
+export interface VersionAnterieure {
+  /** Horodatage du fichier, qui sert aussi de nom. */
+  at: string
+  by: string
+  /** Empreinte du contenu, la même que celle du verrou optimiste. */
+  version: string
+  octets: number
+}
+
 export class DiagramStore {
   private readonly dir: string
+  private readonly histoDir: string
 
   constructor(dataDir: string) {
     this.dir = resolve(dataDir, 'diagrams')
+    this.histoDir = resolve(dataDir, 'historique')
     ensureDir(this.dir)
+    ensureDir(this.histoDir)
+  }
+
+  /** Dossier d'historique d'un schéma, créé à la première écriture. */
+  private histoDe(id: string): string | null {
+    const safe = safeId(id)
+    if (!safe) return null
+    const dossier = pathInside(this.histoDir, safe)
+    if (!dossier) return null
+    mkdirSync(dossier, { recursive: true })
+    return dossier
+  }
+
+  /**
+   * Range la version actuelle avant de l'écraser, puis élague.
+   *
+   * Un échec ici ne doit jamais empêcher l'enregistrement : mieux vaut un schéma
+   * enregistré sans copie qu'un schéma perdu parce que la copie a échoué.
+   */
+  private archiver(id: string, record: DiagramRecord): void {
+    try {
+      const dossier = this.histoDe(id)
+      if (!dossier) return
+      const nom = `${record.updatedAt.replace(/[:.]/g, '-')}.json`
+      const cible = pathInside(dossier, nom)
+      if (!cible) return
+      writeJsonAtomic(cible, record)
+      const fichiers = readdirSync(dossier).filter((f) => f.endsWith('.json')).sort()
+      for (const vieux of fichiers.slice(0, Math.max(0, fichiers.length - VERSIONS_GARDEES))) {
+        const chemin = pathInside(dossier, vieux)
+        if (chemin) rmSync(chemin, { force: true })
+      }
+    } catch {
+      /* l'enregistrement prime sur sa copie */
+    }
+  }
+
+  /** Versions gardées d'un schéma, de la plus récente à la plus ancienne. */
+  historique(id: string): VersionAnterieure[] {
+    const safe = safeId(id)
+    if (!safe) return []
+    const dossier = pathInside(this.histoDir, safe)
+    if (!dossier || !existsSync(dossier)) return []
+    const sorties: VersionAnterieure[] = []
+    for (const nom of readdirSync(dossier).filter((f) => f.endsWith('.json'))) {
+      const chemin = pathInside(dossier, nom)
+      if (!chemin) continue
+      const record = readJson<DiagramRecord | null>(chemin, null)
+      if (!record?.id) continue
+      sorties.push({
+        at: record.updatedAt,
+        by: record.updatedBy,
+        version: version(record.diagram),
+        octets: statSync(chemin).size,
+      })
+    }
+    return sorties.sort((a, b) => b.at.localeCompare(a.at))
+  }
+
+  /**
+   * Contenu d'une version gardée, désignée par son horodatage.
+   *
+   * L'horodatage vient du client : on n'accepte que la forme exacte produite à
+   * l'archivage. `pathInside` garderait déjà le chemin dans le dossier, mais une valeur
+   * rejetée tôt vaut mieux qu'une valeur rattrapée tard.
+   */
+  versionAnterieure(id: string, at: string): DiagramRecord | null {
+    const nom = at.replace(/[:.]/g, '-')
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/.test(nom)) return null
+    const dossier = this.histoDe(id)
+    if (!dossier) return null
+    const chemin = pathInside(dossier, `${nom}.json`)
+    if (!chemin || !existsSync(chemin)) return null
+    const record = readJson<DiagramRecord | null>(chemin, null)
+    return record?.id ? record : null
   }
 
   private fileOf(id: string): string | null {
@@ -198,6 +295,8 @@ export class DiagramStore {
     }
     const file = this.fileOf(id)
     if (!file) return null
+    // La version qu'on remplace est rangée d'abord : après l'écriture, elle n'existe plus.
+    this.archiver(id, current.record)
     writeJsonAtomic(file, record)
     return { ok: true, version: version(record.diagram), record }
   }
@@ -205,7 +304,18 @@ export class DiagramStore {
   remove(id: string): boolean {
     const file = this.fileOf(id)
     if (!file || !existsSync(file)) return false
+    // Dernière copie avant la suppression : c'est le moment où l'on en a le plus besoin.
+    const actuel = this.get(id)
+    if (actuel) this.archiver(id, actuel.record)
     rmSync(file)
     return true
+  }
+
+  /** Efface aussi l'historique : réservé à une suppression définitive assumée. */
+  removeHistory(id: string): void {
+    const safe = safeId(id)
+    if (!safe) return
+    const dossier = pathInside(this.histoDir, safe)
+    if (dossier && existsSync(dossier)) rmSync(dossier, { recursive: true, force: true })
   }
 }
