@@ -45,6 +45,21 @@ for (const fichier of ['package.json', 'package-lock.json']) {
 // Le script de fabrication n'a rien à faire dans le paquet livré.
 rmSync(join(etape, 'serveur/tools/creer-paquet.mjs'), { force: true })
 
+/*
+  Le collecteur voyage avec le serveur.
+
+  Il tourne sur le poste d'administration, pas dans le service, mais c'est le même serveur
+  qui héberge l'un et l'autre dans la plupart des installations — et Collecter-NetSchema.ps1
+  le cherche à cet emplacement. Aucune dépendance npm : trois fichiers et des exemples.
+*/
+mkdirSync(join(etape, 'collector'), { recursive: true })
+for (const fichier of ['netschema-collect.mjs', 'snmp-topologie.mjs', 'reconciliation.mjs']) {
+  cpSync(join(racineWeb, 'tools/collector', fichier), join(etape, 'collector', fichier))
+}
+cpSync(join(racineWeb, 'tools/collector/exemples'), join(etape, 'collector/exemples'), {
+  recursive: true,
+})
+
 console.log('→ Dépendances de production')
 lancer('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], join(etape, 'serveur'))
 
@@ -57,6 +72,7 @@ for (const fichier of [
   'Installer-NetSchema.ps1',
   'Configurer-HTTPS.ps1',
   'Sauvegarder-NetSchema.ps1',
+  'Collecter-NetSchema.ps1',
   'Start-NetSchema.ps1',
   'web.config',
   'netschema.env.example',

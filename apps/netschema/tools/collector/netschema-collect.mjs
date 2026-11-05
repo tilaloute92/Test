@@ -21,6 +21,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { readdirSync, existsSync } from 'node:fs'
 import { lireEquipement, verserDansSchema } from './snmp-topologie.mjs'
+import { fusionner, resumerFusion, sansEcart } from './reconciliation.mjs'
 
 const HELP = `Collecteur NetSchema
 
@@ -34,9 +35,29 @@ const HELP = `Collecteur NetSchema
   --from <fichier...>      Relit des relevés déjà pris (nmap XML, LLDP/CDP, ARP)
   --title <texte>          Titre du schéma produit
   --out <fichier>          Fichier de sortie (défaut : netschema-decouverte.json)
+
+  --fusion <fichier>       Repose la collecte sur un schéma existant au lieu d'en créer un
+                           neuf : les positions, sites, zones, notes, VLAN, baies et
+                           annotations sont conservés ; les ports, débits, agrégats et
+                           liaisons sont repris du relevé. Rien n'est supprimé.
+  --rapport                N'écrit rien : affiche seulement ce que la fusion changerait.
+                           Code de sortie : 0 aucun écart, 3 des écarts sans disparition,
+                           4 une disparition — à regarder avant d'appliquer.
+  --retirer-liens-absents  Avec --fusion : retire les liaisons dont les deux extrémités ont
+                           répondu mais que le relevé ne voit plus. À n'utiliser qu'après
+                           avoir lu le rapport.
   --help                   Affiche cette aide
 
-Le fichier produit s'ouvre dans NetSchema avec « Ouvrir… ».`
+Le fichier produit s'ouvre dans NetSchema avec « Ouvrir… ».
+
+Collecte répétée — la façon normale de s'en servir :
+
+  # Première fois
+  node netschema-collect.mjs --walk captures/ --out site.json
+
+  # Les fois suivantes : on regarde d'abord, on applique ensuite
+  node netschema-collect.mjs --walk captures/ --fusion site.json --rapport
+  node netschema-collect.mjs --walk captures/ --fusion site.json --out site.json`
 
 // ─── Arguments ───────────────────────────────────────────────────────────────
 
@@ -44,6 +65,7 @@ function parseArgs(argv) {
   const options = {
     subnets: [], from: [], out: 'netschema-decouverte.json', title: 'Découverte réseau',
     community: null, topologie: false, walk: null,
+    fusion: null, rapport: false, retirerLiensAbsents: false,
   }
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
@@ -52,6 +74,9 @@ function parseArgs(argv) {
     else if (arg === '--snmp-community') options.community = argv[++i]
     else if (arg === '--topologie') options.topologie = true
     else if (arg === '--walk') options.walk = argv[++i]
+    else if (arg === '--fusion') options.fusion = argv[++i]
+    else if (arg === '--rapport') options.rapport = true
+    else if (arg === '--retirer-liens-absents') options.retirerLiensAbsents = true
     else if (arg === '--title') options.title = argv[++i]
     else if (arg === '--out') options.out = argv[++i]
     else if (arg === '--from') {
@@ -417,9 +442,81 @@ function main() {
     snmpTopologie(diagram, options.community)
   } else if (options.community) snmpDetails(diagram, options.community)
 
+  if (options.fusion) {
+    terminerParFusion(diagram, options)
+    return
+  }
+
+  if (options.rapport) {
+    console.log('\n--rapport n’a de sens qu’avec --fusion : sans schéma existant, tout est nouveau.')
+    process.exit(2)
+  }
+
   writeFileSync(options.out, diagram.toFile(), 'utf8')
   console.log(`\n${diagram.nodes.length} équipement(s) et ${diagram.links.length} liaison(s) → ${options.out}`)
   console.log('Ouvrez ce fichier dans NetSchema avec « Ouvrir… », puis lancez le placement automatique.')
+}
+
+/**
+ * Repose la collecte sur un schéma existant.
+ *
+ * Séparé du reste parce que c'est le chemin qu'on emprunte le plus souvent : la première
+ * collecte n'a lieu qu'une fois, les suivantes toute l'année. Le rapport se lit avant
+ * d'écrire, et c'est lui qui permet de refuser une fusion annonçant trente disparitions
+ * parce que la communauté SNMP a expiré.
+ */
+function terminerParFusion(diagram, options) {
+  if (!existsSync(options.fusion)) {
+    console.error(`Schéma introuvable : ${options.fusion}`)
+    process.exit(2)
+  }
+  let existant
+  try {
+    const brut = JSON.parse(readFileSync(options.fusion, 'utf8'))
+    existant = brut?.diagram ?? brut
+    if (!Array.isArray(existant?.nodes)) throw new Error('pas de liste « nodes »')
+  } catch (error) {
+    console.error(`${options.fusion} n’est pas un schéma NetSchema lisible : ${error.message}`)
+    process.exit(2)
+  }
+
+  const collecte = { nodes: diagram.nodes, links: diagram.links }
+  const { document, rapport } = fusionner(existant, collecte, {
+    retirerLiensAbsents: options.retirerLiensAbsents,
+  })
+
+  console.log(`\n→ Fusion avec ${options.fusion}`)
+  console.log(resumerFusion(rapport))
+
+  if (options.rapport) {
+    console.log('\n--rapport : rien n’a été écrit.')
+    if (!sansEcart(rapport)) {
+      console.log(`Pour appliquer : relancez la même commande avec --out ${options.fusion}`)
+    }
+    /*
+      Code de sortie, pour qu'une collecte planifiée décide sans relire le texte :
+        0  aucun écart ;
+        3  des écarts, mais rien n'a disparu — on peut appliquer sans réveiller personne ;
+        4  quelque chose a disparu — cela demande un œil humain.
+      Un relevé où tout s'est volatilisé est presque toujours une communauté SNMP expirée,
+      pas un parc démonté.
+    */
+    const disparitions = rapport.equipementsAbsents.length + rapport.liaisonsAbsentes.length
+    process.exit(sansEcart(rapport) ? 0 : disparitions > 0 ? 4 : 3)
+  }
+
+  if (rapport.equipementsAbsents.length > 0 && !options.retirerLiensAbsents) {
+    console.log(
+      `\n${rapport.equipementsAbsents.length} équipement(s) n’ont pas répondu : ils sont ` +
+      'conservés et annotés, pas supprimés. Vérifiez la communauté SNMP et la joignabilité ' +
+      'avant de conclure qu’ils ont quitté le parc.',
+    )
+  }
+
+  writeFileSync(options.out, JSON.stringify({ version: 1, diagram: document }, null, 2), 'utf8')
+  console.log(
+    `\n${document.nodes.length} équipement(s) et ${document.links.length} liaison(s) → ${options.out}`,
+  )
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main()

@@ -205,8 +205,66 @@ node tools/collector/netschema-collect.mjs --from exemples/lldp.txt exemples/nma
 ```
 
 En SNMP, il relève le nom système, la description et la table LLDP distante de chaque hôte
-trouvé. Les exemples de `tools/collector/exemples/` servent à essayer la chaîne complète sans
-toucher à un réseau réel.
+trouvé. Avec `--topologie`, il lit en plus les interfaces (nom, débit, description), les
+agrégats par `ifStackTable` — vendeur-neutre — et le domaine vPC : le schéma sort alors avec
+les ports des deux côtés, les débits réels et les port-channels déjà formés.
+
+Les exemples de `tools/collector/exemples/` servent à essayer la chaîne complète sans toucher
+à un réseau réel.
+
+#### Recollecter sans perdre son travail
+
+Une collecte unique ne sert à rien : on en refait une le mois suivant, et celle-là doit se
+poser sur le schéma qu'on a passé une heure à ranger. C'est ce que fait `--fusion`.
+
+```bash
+# Première fois
+node tools/collector/netschema-collect.mjs --walk captures/ --out site.json
+
+# Les fois suivantes : on regarde d'abord…
+node tools/collector/netschema-collect.mjs --walk captures/ --fusion site.json --rapport
+
+# …on applique ensuite
+node tools/collector/netschema-collect.mjs --walk captures/ --fusion site.json --out site.json
+```
+
+Deux règles commandent la fusion.
+
+**La collecte ne décide que de ce que SNMP lui a dit.** Elle est maîtresse des ports, des
+débits, des agrégats et des voisinages. Elle ne sait rien des positions, des sites, des zones,
+des notes, des VLAN, des baies, des annotations ni du cartouche — elle n'y touche donc pas.
+Le type d'équipement non plus, dès lors qu'il a été choisi à la main : une boîte reclassée
+« serveur » à chaque passage ferait abandonner la collecte automatique en deux mois.
+
+**Rien ne disparaît en silence.** Un équipement absent du relevé n'est pas un équipement
+retiré du parc : c'est peut-être une communauté SNMP changée, une maintenance, un pare-feu
+qui bloque le 161. Il est conservé et annoté « Non revu lors de la dernière collecte », et
+c'est l'exploitant qui tranche. Les liaisons suivent la même règle, avec une garde de plus :
+une liaison n'est déclarée disparue que si **ses deux extrémités** ont répondu ce jour-là.
+Sans cela, interroger un seul équipement sur dix effacerait tout le reste du schéma.
+`--retirer-liens-absents` les retire vraiment, à n'utiliser qu'après avoir lu le rapport.
+
+Le rapport affiche les disparitions en premier, parce que ce sont elles qui doivent faire
+hésiter :
+
+```
+Équipements non revus (1)
+    SW-ACC-B2 (10.20.0.14)
+Liaisons ajoutées (1)
+    SW-CORE-01 Ethernet1/4 ↔ SW-ACC-B2 Gi1/0/48
+Liaisons mises à jour (1)
+    SW-CORE-01 ↔ SW-ACC-A1 : speed 1 Gb/s → 10 Gb/s
+```
+
+Relancer la même collecte deux fois ne produit aucun écart : c'est la propriété qui rend la
+collecte planifiée tenable.
+
+#### Collecte planifiée
+
+Sous Windows, `apps/netschema-server/deploy/windows/Collecter-NetSchema.ps1 -Planifier`
+installe une tâche qui recollecte toutes les nuits, écrit le rapport dans un journal et
+n'applique la fusion que si elle n'annonce aucune disparition. Les écarts qui méritent un
+œil humain restent donc en attente au lieu d'être appliqués à trois heures du matin.
 
 ## Importer un schéma draw.io
 

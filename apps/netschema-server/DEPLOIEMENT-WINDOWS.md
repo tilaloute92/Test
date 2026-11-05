@@ -581,6 +581,31 @@ jamais restaurée est une hypothèse, pas une protection.
 générations sont gardées (`audit.log.1` à `audit.log.4`), les plus anciennes disparaissent.
 Rien à planifier.
 
+### Collecte SNMP planifiée
+
+Le paquet contient le collecteur dans `C:\Apps\NetSchema\collector`. Il tourne sur le poste
+d'administration — c'est de là qu'on peut interroger les équipements — et produit, ou met à
+jour, un schéma NetSchema.
+
+```powershell
+cd C:\Apps\NetSchema\deploy\windows
+
+# Une fois, pour vérifier les chemins et la joignabilité :
+.\Collecter-NetSchema.ps1 -Captures C:\NetSchema\captures -Schema C:\NetSchema\site.json
+
+# Puis toutes les nuits :
+.\Collecter-NetSchema.ps1 -Captures C:\NetSchema\captures -Schema C:\NetSchema\site.json -Planifier
+```
+
+La règle qui gouverne la tâche : **un ajout s'applique tout seul, une disparition non.** Un
+équipement absent du relevé est presque toujours une communauté SNMP expirée, une maintenance
+ou un pare-feu qui bloque le 161 — pas un parc démonté. Dans ce cas le rapport est écrit dans
+`collecte.log` et rien n'est appliqué, jusqu'à ce qu'un humain ait regardé.
+
+Le schéma est copié avant chaque écriture (`site.json.AAAAMMJJ-HHMMSS.avant`), et la fusion
+ne touche jamais aux positions, sites, zones, notes, VLAN, baies, annotations ni au
+cartouche : la collecte ne décide que de ce que SNMP lui a dit.
+
 ### Mise à jour
 
 ```powershell
