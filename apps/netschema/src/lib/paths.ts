@@ -206,14 +206,24 @@ function analyserChemin(noeuds: NetNode[], liens: NetLink[]): CheminReseau {
     })
   }
 
-  // Goulot d'étranglement : le maillon le plus lent du chemin, quand les débits sont saisis.
+  /*
+    Goulot d'étranglement.
+
+    Signalé seulement s'il en existe un : sur un trajet entièrement à 10 Gb/s, annoncer
+    « maillon le plus lent : 10 Gb/s » est exact et parfaitement inutile — la ligne
+    apparaît toujours, donc plus personne ne la lit, et le jour où elle dit 1 Gb/s elle
+    passe inaperçue. Il faut donc au moins deux débits lisibles et différents.
+  */
   let goulot: CheminReseau['goulot']
-  let minimum = Number.POSITIVE_INFINITY
-  for (const link of liens) {
-    const debit = debitEnMbps(link.speed)
-    if (debit !== null && debit < minimum) {
-      minimum = debit
-      goulot = { link, debit: link.speed ?? '' }
+  const debits = liens
+    .map((link) => ({ link, mbps: debitEnMbps(link.speed) }))
+    .filter((entree): entree is { link: NetLink; mbps: number } => entree.mbps !== null)
+  if (debits.length >= 2) {
+    const minimum = Math.min(...debits.map((entree) => entree.mbps))
+    const maximum = Math.max(...debits.map((entree) => entree.mbps))
+    if (minimum < maximum) {
+      const plusLent = debits.find((entree) => entree.mbps === minimum)
+      if (plusLent) goulot = { link: plusLent.link, debit: plusLent.link.speed ?? '' }
     }
   }
 

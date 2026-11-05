@@ -72,9 +72,18 @@ export interface Agregat {
   masque: boolean
 }
 
-/** Nom du bundle côté `noeud` pour cette liaison, ou `undefined` s'il n'en porte pas. */
+/**
+ * Nom du bundle côté `noeud` pour cette liaison, ou `undefined` s'il n'en porte pas.
+ *
+ * Un équipement étranger à la liaison ne reçoit rien : la fonction répondait auparavant le
+ * nom commun à n'importe qui, ce qui contredisait son propre contrat. Aucun appelant n'en
+ * dépendait — tous passent déjà une extrémité réelle — mais un jour l'un d'eux aurait
+ * rapproché deux faisceaux qui n'ont rien à voir, et le schéma aurait annoncé une
+ * redondance imaginaire.
+ */
 export function nomAgregat(link: NetLink, noeud: string): string | undefined {
-  const propre = link.from === noeud ? link.lagA : link.to === noeud ? link.lagB : undefined
+  if (link.from !== noeud && link.to !== noeud) return undefined
+  const propre = link.from === noeud ? link.lagA : link.lagB
   const valeur = (propre ?? link.lag ?? '').trim()
   return valeur || undefined
 }
