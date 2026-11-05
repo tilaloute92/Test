@@ -85,7 +85,7 @@ const BASE: CatalogPack = {
     { id: 'loadbalancer', label: 'Répartiteur de charge', rank: 2, icon: 'load-balancer', family: SEC, infrastructure: true, critical: true, aliases: ['load balancer', 'lb', 'adc', 'répartition'] },
     { id: 'core-switch', label: 'Switch cœur', rank: 3, icon: 'switch-core', family: SW, infrastructure: true, critical: true, aliases: ['core', 'cœur', 'commutateur'] },
     { id: 'switch', label: 'Switch distribution', rank: 4, icon: 'switch', family: SW, infrastructure: true, critical: true, aliases: ['distribution', 'commutateur'] },
-    { id: 'access-switch', label: 'Switch accès', rank: 5, icon: 'switch', family: ACCESS, infrastructure: true, aliases: ['accès', 'access', 'poe'] },
+    { id: 'access-switch', label: 'Switch accès', rank: 5, icon: 'switch', family: ACCESS, infrastructure: true, aliases: ['accès', 'access', 'poe', 'commutateur'] },
     { id: 'wifi', label: 'Borne Wi-Fi', rank: 5, icon: 'wifi', family: ACCESS, infrastructure: true, aliases: ['ap', 'borne', 'wlan', 'sans fil'] },
     { id: 'server', label: 'Serveur', rank: 6, icon: 'server', family: COMPUTE, aliases: ['srv', 'vm', 'machine'] },
     { id: 'hypervisor', label: 'Nœud hyperviseur', rank: 6, icon: 'hypervisor', family: COMPUTE, critical: true, aliases: ['esxi', 'vmware', 'proxmox', 'hyper-v', 'kvm'] },

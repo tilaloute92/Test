@@ -83,6 +83,14 @@ export function InventoryView() {
         if (rack === '__none' && node.rack) return false
         if (rack && rack !== '__none' && node.rack !== rack) return false
         if (!q) return true
+        const meta = deviceMeta(node.kind)
+        /*
+          Le catalogue porte déjà, pour chaque type, les mots par lesquels on le désigne
+          vraiment : « commutateur » pour un switch, « pare-feu » pour un firewall, « rtr »
+          pour un routeur. La recherche ne regardait que le libellé, si bien que « switch »
+          trouvait les lignes et « commutateur » aucune. On interroge la même table que le
+          reste de l'application plutôt que d'en tenir une seconde, qui divergerait.
+        */
         const haystack = [
           node.name,
           node.ip,
@@ -91,7 +99,12 @@ export function InventoryView() {
           node.vendor,
           node.assetTag,
           node.owner,
-          deviceMeta(node.kind).label,
+          node.site,
+          node.zone,
+          node.rack,
+          meta.label,
+          meta.family,
+          ...(meta.aliases ?? []),
         ]
           .filter(Boolean)
           .join(' ')

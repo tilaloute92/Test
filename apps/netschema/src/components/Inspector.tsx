@@ -1212,6 +1212,8 @@ function ReadabilityForm() {
   const diagram = useDiagram((s) => s.diagram)
   const detail = useDiagram((s) => s.detail)
   const setDetail = useDiagram((s) => s.setDetail)
+  const dureeClignotement = useDiagram((s) => s.dureeClignotement)
+  const setDureeClignotement = useDiagram((s) => s.setDureeClignotement)
   const collapsed = useDiagram((s) => s.collapsed)
   const toggleCollapse = useDiagram((s) => s.toggleCollapse)
   const setCollapsed = useDiagram((s) => s.setCollapsed)
@@ -1223,6 +1225,25 @@ function ReadabilityForm() {
     <section>
       <SectionTitle>Lisibilité</SectionTitle>
       <div className="flex flex-col gap-2.5">
+        {/*
+          Durée du clignotement : le temps que le repère tient après « Montrer sur le
+          schéma », et pendant lequel les liaisons coupées d'une analyse d'impact battent.
+          Qui va ensuite chercher un câble en salle a besoin qu'il dure ; qui vérifie d'un
+          coup d'œil n'en veut pas davantage. Le réglage reste sur le poste.
+
+          Il était rangé sous « Mise en page », entre deux espacements du placement
+          automatique, où il n'avait rien à faire : il ne déplace rien, il règle ce qu'on
+          voit.
+        */}
+        <Field label={`Durée du clignotement — ${dureeClignotement} s`}>
+          <Slider
+            value={dureeClignotement}
+            min={CLIGNOTEMENT_MIN}
+            max={CLIGNOTEMENT_MAX}
+            step={5}
+            onChange={setDureeClignotement}
+          />
+        </Field>
         <Field label="Niveau de détail">
           <Select
             value={detail}
@@ -1281,8 +1302,6 @@ function ReadabilityForm() {
 function LayoutForm() {
   const layout = useDiagram((s) => s.layout)
   const setLayout = useDiagram((s) => s.setLayout)
-  const dureeClignotement = useDiagram((s) => s.dureeClignotement)
-  const setDureeClignotement = useDiagram((s) => s.setDureeClignotement)
   const applyAutoLayout = useDiagram((s) => s.applyAutoLayout)
   const linkStyle = useDiagram((s) => s.linkStyle)
   const setDisplay = useDiagram((s) => s.setDisplay)
@@ -1367,21 +1386,6 @@ function LayoutForm() {
         </Field>
         <Field label={`Espacement entre couches — ${layout.layerGap} px`}>
           <Slider value={layout.layerGap} min={40} max={220} step={4} onChange={(layerGap) => setLayout({ layerGap })} />
-        </Field>
-        {/*
-          Durée du clignotement : le temps que le repère tient après « Montrer sur le
-          schéma », et pendant lequel les liaisons coupées d'une analyse d'impact battent.
-          Qui va ensuite chercher un câble en salle a besoin qu'il dure ; qui vérifie d'un
-          coup d'œil n'en veut pas davantage. Le réglage reste sur le poste.
-        */}
-        <Field label={`Durée du clignotement — ${dureeClignotement} s`}>
-          <Slider
-            value={dureeClignotement}
-            min={CLIGNOTEMENT_MIN}
-            max={CLIGNOTEMENT_MAX}
-            step={5}
-            onChange={setDureeClignotement}
-          />
         </Field>
         <Checkbox
           checked={layout.groupBySite}
