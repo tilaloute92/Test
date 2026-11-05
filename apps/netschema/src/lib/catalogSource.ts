@@ -161,6 +161,32 @@ export function customDevices(): DeviceDef[] {
   return readUserPacks().find((pack) => pack.id === CUSTOM_PACK_ID)?.devices ?? []
 }
 
+/**
+ * Explique pourquoi une source distante n'a pas répondu.
+ *
+ * Le cas le plus fréquent n'est pas une panne : servie par le service NetSchema,
+ * l'application est soumise à une politique de sécurité de contenu qui n'autorise les
+ * requêtes que vers sa propre origine. Le navigateur refuse alors l'appel avant même de
+ * l'émettre, et `fetch` ne rejette qu'avec un « Failed to fetch » muet. Dire ce qui bloque,
+ * et comment le débloquer, vaut mieux que de recopier ce message.
+ */
+function messageSourceDistante(url: string, error: unknown): string {
+  const detail = error instanceof Error ? error.message : 'erreur inconnue'
+  let distante = false
+  try {
+    distante = new URL(url, window.location.href).origin !== window.location.origin
+  } catch {
+    return `Source de catalogue « ${url} » : adresse invalide.`
+  }
+  if (!distante) return `Source de catalogue injoignable (${detail}).`
+  return (
+    `Source de catalogue « ${url} » injoignable (${detail}). ` +
+    'Si l’application est servie par le service NetSchema, sa politique de sécurité ' +
+    'n’autorise que sa propre origine : déposez les lots dans le dossier « catalog » à côté ' +
+    'de l’application, ou autorisez cette adresse avec NETSCHEMA_CATALOG_ORIGINS sur le serveur.'
+  )
+}
+
 async function fetchPacks(baseUrl: string): Promise<CatalogPack[]> {
   const base = baseUrl.replace(/\/+$/, '')
   const response = await fetch(`${base}/index.json`, { cache: 'no-cache' })
@@ -223,9 +249,7 @@ export async function bootstrapCatalog(): Promise<CatalogReport> {
     } catch (error) {
       // Une source absente n'est pas une erreur à signaler : seule une source
       // configurée explicitement mérite un message.
-      if (source.origin === 'distant') {
-        errors.push(`Source distante injoignable (${error instanceof Error ? error.message : 'erreur'}).`)
-      }
+      if (source.origin === 'distant') errors.push(messageSourceDistante(source.url, error))
     }
   }
 

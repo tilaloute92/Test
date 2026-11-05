@@ -12,7 +12,7 @@
     "start": "node dist/index.js",
     "dev": "node --watch --experimental-strip-types src/index.ts",
     "user": "node tools/netschema-user.mjs",
-    "test": "node --test tools/tests/*.test.mjs"
+    "test": "tsc -b && node --test tools/tests/*.test.mjs"
   },
   "dependencies": {
     "compression": "^1.8.1",

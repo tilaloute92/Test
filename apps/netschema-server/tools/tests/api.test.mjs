@@ -363,6 +363,16 @@ describe('durcissement', () => {
     assert.equal(typeof corps.error, 'string')
   })
 
+  it('survit à un cookie mal encodé au lieu de condamner le navigateur', async () => {
+    // Une séquence de pourcentage invalide faisait lever decodeURIComponent sur chaque
+    // requête : le navigateur porteur du cookie recevait 500 partout, page d'accueil
+    // comprise, sans aucun moyen de se reconnecter pour l'effacer.
+    for (const cookie of ['netschema_sid=%', 'netschema_csrf=100%', 'netschema_sid=%E0%A4%A']) {
+      const reponse = await fetch(`${base}/api/session`, { headers: { cookie } })
+      assert.equal(reponse.status, 200, `cookie « ${cookie} » : réponse ${reponse.status}`)
+    }
+  })
+
   it('refuse une écriture dont le jeton anti-CSRF vient d’une autre session', async () => {
     const chef = makeClient()
     await chef.call('/api/session')

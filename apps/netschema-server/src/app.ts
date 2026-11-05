@@ -71,7 +71,9 @@ export function createApp(services: Services) {
           styleSrcAttr: ["'unsafe-inline'"],
           imgSrc: ["'self'", 'data:', 'blob:'],
           fontSrc: ["'self'", 'data:'],
-          connectSrc: ["'self'"],
+          // L'application n'appelle qu'elle-même, sauf dépôt de catalogue déclaré
+          // explicitement par l'administrateur (NETSCHEMA_CATALOG_ORIGINS).
+          connectSrc: ["'self'", ...config.catalogOrigins],
           objectSrc: ["'none'"],
           frameAncestors: ["'none'"],
           baseUri: ["'self'"],

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -36,6 +36,35 @@ function envBool(name: string, fallback: boolean): boolean {
   return raw === '1' || raw === 'true' || raw === 'oui' || raw === 'yes'
 }
 
+/**
+ * Liste d'origines, séparées par des virgules ou des espaces.
+ *
+ * Seules des origines complètes sont acceptées (« https://depot.interne:8443 »), jamais un
+ * chemin ni un joker : une directive de sécurité de contenu trop large ne protège plus de
+ * rien, et une faute de frappe doit se voir au démarrage plutôt qu'en production.
+ */
+function envOrigins(name: string): string[] {
+  const raw = env(name)
+  if (!raw) return []
+  const origines: string[] = []
+  for (const morceau of raw.split(/[\s,;]+/).filter(Boolean)) {
+    let url: URL
+    try {
+      url = new URL(morceau)
+    } catch {
+      throw new Error(`${name} : « ${morceau} » n'est pas une adresse valide (attendu https://hote[:port]).`)
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new Error(`${name} : « ${morceau} » doit commencer par http:// ou https://.`)
+    }
+    if (url.pathname !== '/' || url.search || url.hash) {
+      throw new Error(`${name} : indiquez une origine seule, sans chemin (« ${url.origin} »).`)
+    }
+    if (!origines.includes(url.origin)) origines.push(url.origin)
+  }
+  return origines
+}
+
 function absolute(value: string): string {
   return isAbsolute(value) ? value : resolve(packageRoot, value)
 }
@@ -47,19 +76,42 @@ function absolute(value: string): string {
  * dans le dossier de données : redémarrer le service ne déconnecte pas tout le monde, et
  * personne n'a à inventer un secret à la main pour une première mise en route.
  */
+const SECRET_MIN_LENGTH = 32
+
 function resolveSecret(dataDir: string): string {
   const provided = env('NETSCHEMA_SESSION_SECRET')
   if (provided) {
-    if (provided.length < 32) {
-      throw new Error('NETSCHEMA_SESSION_SECRET doit faire au moins 32 caractères.')
+    if (provided.length < SECRET_MIN_LENGTH) {
+      throw new Error(`NETSCHEMA_SESSION_SECRET doit faire au moins ${SECRET_MIN_LENGTH} caractères.`)
     }
     return provided
   }
+
   const file = resolve(dataDir, 'session-secret.key')
-  if (existsSync(file)) return readFileSync(file, 'utf8').trim()
+  if (existsSync(file)) {
+    const stored = readFileSync(file, 'utf8').trim()
+    // Un fichier vide ou tronqué — disque plein, copie interrompue, restauration partielle —
+    // donnerait une clé de signature vide ou devinable : toutes les sessions deviendraient
+    // forgeables. On refuse de démarrer plutôt que d'ouvrir silencieusement la porte, et on
+    // dit quoi faire : supprimer le fichier en régénère un, au prix d'une reconnexion.
+    if (stored.length < SECRET_MIN_LENGTH) {
+      throw new Error(
+        `Le secret de session ${file} est vide ou tronqué (${stored.length} caractères, ` +
+          `${SECRET_MIN_LENGTH} attendus au minimum).\n` +
+          'Supprimez ce fichier pour en régénérer un — chacun devra se reconnecter — ou ' +
+          'fournissez NETSCHEMA_SESSION_SECRET.',
+      )
+    }
+    return stored
+  }
+
   const secret = randomBytes(48).toString('base64url')
   mkdirSync(dataDir, { recursive: true })
-  writeFileSync(file, secret, { encoding: 'utf8', mode: 0o600 })
+  // Écriture en deux temps : une coupure pendant l'écriture laisserait sinon un fichier
+  // à moitié rempli, que le prochain démarrage prendrait pour un secret valide.
+  const temporaire = `${file}.${randomBytes(6).toString('hex')}.tmp`
+  writeFileSync(temporaire, secret, { encoding: 'utf8', mode: 0o600 })
+  renameSync(temporaire, file)
   return secret
 }
 
@@ -90,6 +142,12 @@ export interface Config {
   secureCookies: boolean
   /** Taille maximale d'un schéma envoyé, en octets. */
   maxBodyBytes: number
+  /**
+   * Origines supplémentaires autorisées pour les appels sortants du navigateur
+   * (`connect-src`). Sert à une seule chose : un dépôt de catalogue d'équipements hébergé
+   * ailleurs sur le réseau interne. Vide par défaut — l'application n'appelle qu'elle-même.
+   */
+  catalogOrigins: string[]
   /** Tentatives de connexion autorisées par fenêtre de 15 minutes et par adresse. */
   loginAttempts: number
   /** Nombre d'échecs consécutifs avant blocage temporaire d'un compte. */
@@ -121,6 +179,7 @@ export function loadConfig(): Config {
     trustProxy: envBool('NETSCHEMA_TRUST_PROXY', false),
     secureCookies: envBool('NETSCHEMA_SECURE_COOKIES', https),
     maxBodyBytes: envNumber('NETSCHEMA_MAX_BODY_BYTES', 8 * 1024 * 1024),
+    catalogOrigins: envOrigins('NETSCHEMA_CATALOG_ORIGINS'),
     loginAttempts: envNumber('NETSCHEMA_LOGIN_ATTEMPTS', 10),
     lockAfterFailures: envNumber('NETSCHEMA_LOCK_AFTER_FAILURES', 10),
     lockMinutes: envNumber('NETSCHEMA_LOCK_MINUTES', 15),

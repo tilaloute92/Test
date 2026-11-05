@@ -69,6 +69,30 @@ function csrfToken(): string {
   return match?.[1] ? decodeURIComponent(match[1]) : ''
 }
 
+/**
+ * Message de repli quand la réponse n'est pas celle de l'API.
+ *
+ * Entre le navigateur et le service peuvent s'intercaler un proxy d'entreprise, IIS, un
+ * portail d'authentification : tous répondent en HTML. `JSON.parse` échouait alors sur un
+ * « Unexpected token < » incompréhensible pour qui installe l'application. On nomme ce qui
+ * s'est réellement passé, avec le code HTTP, qui est la seule information utile au support.
+ */
+function erreurHorsApi(status: number, texte: string): ApiError {
+  const debut = texte.trim().slice(0, 80)
+  if (status === 0) return new ApiError(0, 'Serveur injoignable. Vérifiez qu’il est démarré.')
+  if (status === 401 || status === 403) {
+    return new ApiError(status, 'Session expirée ou accès refusé. Rechargez la page pour vous reconnecter.')
+  }
+  if (status >= 500) {
+    return new ApiError(status, `Le serveur a répondu une erreur ${status}. Consultez son journal.`)
+  }
+  return new ApiError(
+    status,
+    `Réponse inattendue du serveur (HTTP ${status})${debut ? ` : « ${debut}… »` : ''}. ` +
+      'Un proxy ou un portail d’authentification s’intercale peut-être.',
+  )
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = init.method ?? 'GET'
   const headers = new Headers(init.headers)
@@ -76,14 +100,21 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   // Le jeton du cookie, répété en en-tête : c'est ce qu'une page tierce ne peut pas faire.
   if (!['GET', 'HEAD'].includes(method)) headers.set('X-CSRF-Token', csrfToken())
 
-  const response = await fetch(`/api${path}`, {
-    ...init,
-    headers,
-    credentials: 'same-origin',
-  })
+  let response: Response
+  try {
+    response = await fetch(`/api${path}`, { ...init, headers, credentials: 'same-origin' })
+  } catch {
+    // Coupure réseau, service arrêté, certificat refusé : fetch rejette sans réponse.
+    throw new ApiError(0, 'Serveur injoignable. Vérifiez la connexion réseau et le service NetSchema.')
+  }
 
   const text = await response.text()
-  const payload = text ? (JSON.parse(text) as Record<string, unknown>) : {}
+  let payload: Record<string, unknown>
+  try {
+    payload = text ? (JSON.parse(text) as Record<string, unknown>) : {}
+  } catch {
+    throw erreurHorsApi(response.status, text)
+  }
   if (!response.ok) {
     throw new ApiError(
       response.status,

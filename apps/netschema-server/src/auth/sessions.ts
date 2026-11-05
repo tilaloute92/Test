@@ -71,6 +71,16 @@ export function newCsrfToken(): string {
   return randomBytes(24).toString('base64url')
 }
 
+/**
+ * Lecture de l'en-tête Cookie.
+ *
+ * Un cookie est une donnée venue du client : il peut contenir n'importe quoi, y compris une
+ * séquence de pourcentage invalide que `decodeURIComponent` refuse en levant une exception.
+ * Comme cette fonction est appelée sur chaque requête, avant même la page d'accueil, laisser
+ * l'exception remonter condamnerait le navigateur concerné à une erreur 500 permanente, sans
+ * moyen de se reconnecter pour effacer le cookie fautif. On garde donc la valeur brute quand
+ * le décodage échoue.
+ */
 export function cookies(req: Request): Record<string, string> {
   const header = req.headers.cookie
   if (!header) return {}
@@ -80,7 +90,12 @@ export function cookies(req: Request): Record<string, string> {
     if (index < 0) continue
     const name = part.slice(0, index).trim()
     const value = part.slice(index + 1).trim()
-    if (name) jar[name] = decodeURIComponent(value)
+    if (!name) continue
+    try {
+      jar[name] = decodeURIComponent(value)
+    } catch {
+      jar[name] = value
+    }
   }
   return jar
 }
