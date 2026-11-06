@@ -90,6 +90,7 @@ export function useServerSync(): ServerSyncState {
             // Un serveur plus ancien que cette version ne connaît pas les référents : on
             // sert une liste vide plutôt que de laisser `undefined` traverser l'écran.
             referents: res.referents ?? [],
+            chargeArchive: res.chargeArchive ?? [],
           });
         }
         setHydrated(true);

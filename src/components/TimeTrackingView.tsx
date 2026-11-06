@@ -22,7 +22,7 @@ const FENETRES = [
 ] as const;
 
 export function TimeTrackingView() {
-  const { members, tasks, timeEntries, absences, removeTimeEntry } = useStore();
+  const { members, tasks, timeEntries, absences, chargeArchive, removeTimeEntry } = useStore();
   const confirm = useConfirm();
   const [weekOffset, setWeekOffset] = useState(0);
   const [memberFilter, setMemberFilter] = useState('Tous');
@@ -137,7 +137,7 @@ export function TimeTrackingView() {
       {/* L'historique est hors du sélecteur de fenêtre : il a le sien (3/6/12 mois), et il
           répond à une autre question que le reste de l'onglet — non pas « qu'avons-nous
           fait cette semaine », mais « la part de MCO augmente-t-elle depuis six mois ». */}
-      <ChargeHistoryCard timeEntries={timeEntries} tasks={tasks} members={members} absences={absences} />
+      <ChargeHistoryCard timeEntries={timeEntries} tasks={tasks} members={members} absences={absences} chargeArchive={chargeArchive} />
 
       {mode !== 'personne' && (
         <GroupesCard groupes={groupes} members={members} mode={mode} fenetre={FENETRES.find((f) => f.cle === fenetre)?.label ?? ''} />

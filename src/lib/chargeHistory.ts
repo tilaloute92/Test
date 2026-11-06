@@ -1,5 +1,6 @@
 import { PERIOD_HOURS, toISODate } from './date';
-import type { Absence, ProjectTask, TaskType, TeamMember, TimeEntry } from '../types';
+import { cutoffDate, RETENTION_ACTIVITE_JOURS } from './retention';
+import type { Absence, MoisArchive, ProjectTask, TaskType, TeamMember, TimeEntry } from '../types';
 
 /**
  * Historique de la charge, mois par mois.
@@ -28,6 +29,11 @@ export interface MoisCharge {
   total: number;
   /** Capacité de l'équipe sur le mois, absences déduites. */
   capacite: number;
+  /** Le mois vient du relevé mensuel du serveur et non des saisies, parce que celles-ci
+   *  ont été purgées depuis (voir server/src/chargeArchive.js). */
+  issuDuReleve?: boolean;
+  /** Relevé pris alors qu'une partie des saisies avait déjà disparu : chiffre plancher. */
+  partiel?: boolean;
 }
 
 const MOIS_COURTS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
@@ -73,6 +79,11 @@ export function historiqueCharge(opts: {
   tasks: ProjectTask[];
   members: TeamMember[];
   absences: Absence[];
+  /** Le relevé mensuel du serveur, pour les mois dont les saisies ont été purgées. */
+  archive?: MoisArchive[];
+  /** Durée de conservation en vigueur, pour savoir à partir de quand les saisies
+   *  vivantes ne sont plus fiables. */
+  retentionJours?: number;
   /** Injectable pour les tests ; par défaut aujourd'hui. */
   maintenant?: Date;
 }): MoisCharge[] {
@@ -108,6 +119,30 @@ export function historiqueCharge(opts: {
     for (const n of NATURES) m.heures[n] = Math.round(m.heures[n] * 10) / 10;
     m.heuresSansTache = Math.round(m.heuresSansTache * 10) / 10;
     m.total = Math.round(m.total * 10) / 10;
+  }
+
+  /**
+   * LES MOIS SORTIS DE LA FENÊTRE DE RÉTENTION viennent du relevé, pas des saisies.
+   *
+   * Dès que la limite de purge entre dans un mois, ses saisies vivantes ne sont plus
+   * qu'un reste : les lire donnerait une charge qui s'effondre à mesure qu'on remonte
+   * dans le temps — exactement le mensonge que le relevé existe pour éviter. On ne
+   * remplace que si le serveur a bien arrêté ce mois-là ; sinon on laisse ce qu'on a,
+   * faute de mieux.
+   */
+  const limite = cutoffDate(maintenant, opts.retentionJours ?? RETENTION_ACTIVITE_JOURS);
+  const releves = new Map((opts.archive ?? []).map((l) => [l.mois, l]));
+  for (const m of mois) {
+    const cle = cleMois(toISODate(m.debut));
+    const releve = releves.get(cle);
+    if (!releve || toISODate(m.debut) >= limite) continue;
+    for (const n of NATURES) m.heures[n] = releve.heures[n] ?? 0;
+    m.heures.Demande = releve.heures.Demande ?? 0;
+    m.heuresSansTache = releve.heuresSansTache;
+    m.total = releve.total;
+    m.capacite = releve.capacite;
+    m.issuDuReleve = true;
+    m.partiel = Boolean(releve.partiel);
   }
 
   return mois;

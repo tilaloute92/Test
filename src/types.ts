@@ -146,6 +146,26 @@ export interface ReferentJour {
   memberId: string;
 }
 
+/**
+ * Un mois de charge arrêté, tel que le serveur l'a relevé avant de purger les tâches de
+ * ce mois-là (voir server/src/chargeArchive.js).
+ *
+ * C'est ce qui permet à l'historique 3/6/12 mois de survivre à une rétention courte :
+ * les données vivantes décrivent les mois récents, ce relevé les mois sortis de la
+ * fenêtre. On ne garde que ce que le graphique montre — pas le détail par tâche.
+ */
+export interface MoisArchive {
+  /** « AAAA-MM ». */
+  mois: string;
+  heures: Record<TaskType, number>;
+  heuresSansTache: number;
+  total: number;
+  capacite: number;
+  /** Des saisies avaient déjà été purgées au moment du relevé : chiffre plancher. */
+  partiel?: boolean;
+  arreteLe?: string;
+}
+
 export type ApiAuthType = 'none' | 'bearer' | 'apiKey' | 'basic';
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 

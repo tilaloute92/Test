@@ -33,6 +33,9 @@ import { readJsonEquipe, writeJsonEquipe } from './dataStore.js';
 
 const COLLECTIONS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils', 'journalEntries', 'referents'];
 const META_FILE = 'business-meta.json';
+/** Le relevé mensuel de la charge — voir chargeArchive.js. Ce n'est pas une collection
+ *  métier : personne ne l'édite, le serveur seul l'écrit, et il survit à la purge. */
+const ARCHIVE_FILE = 'charge-archive.json';
 
 /**
  * Combien d'espaces d'équipe restent chargés en mémoire.
@@ -59,6 +62,7 @@ function espace(equipe) {
   if (!esp) {
     esp = { equipe, cache: {}, meta: null };
     for (const name of COLLECTIONS) esp.cache[name] = readJsonEquipe(equipe, `business-${name}.json`, []);
+    esp.archive = readJsonEquipe(equipe, ARCHIVE_FILE, []);
     esp.meta = readJsonEquipe(equipe, META_FILE, { version: 0, initialized: false, initializedAt: null, initializedBy: null });
     espaces.set(equipe, esp);
     // Map conserve l'ordre d'insertion : la première clé est la plus anciennement chargée.
@@ -133,6 +137,7 @@ export function getSnapshot(equipe) {
     copils: esp.cache.copils,
     journalEntries: esp.cache.journalEntries,
     referents: esp.cache.referents,
+    chargeArchive: esp.archive,
     ...getStatus(equipe),
   };
 }
@@ -424,6 +429,21 @@ export function removeAbsence(equipe, id) {
   const esp = espace(equipe);
   esp.cache.absences = esp.cache.absences.filter((a) => a.id !== id);
   persist(esp, 'absences');
+}
+
+// --- Relevé mensuel de la charge (voir chargeArchive.js) ---
+export function getChargeArchive(equipe) {
+  return espace(equipe).archive;
+}
+
+/** Écrit le relevé et incrémente la version : sans cela, les navigateurs ne verraient le
+ *  nouveau mois qu'à la prochaine modification de données, c'est-à-dire par hasard. */
+export function setChargeArchive(equipe, lignes) {
+  const esp = espace(equipe);
+  esp.archive = lignes;
+  writeJsonEquipe(equipe, ARCHIVE_FILE, lignes);
+  persist(esp);
+  return esp.archive;
 }
 
 // --- Référent du jour ---

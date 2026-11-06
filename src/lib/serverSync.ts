@@ -11,7 +11,7 @@
  */
 
 import { enTeteEquipe } from './equipeCourante';
-import type { Absence, Copil, JournalEntry, Period, PlanningSlot, ProjectTask, ReferentJour, RoadmapItem, TeamMember, TimeEntry } from '../types';
+import type { Absence, Copil, JournalEntry, MoisArchive, Period, PlanningSlot, ProjectTask, ReferentJour, RoadmapItem, TeamMember, TimeEntry } from '../types';
 import type { AgregatMeteo } from './meteoVote';
 import type { Recurrence } from './recurrences';
 import type { WeatherLevel } from './weeklyReport';
@@ -27,6 +27,8 @@ export interface SharedCollections {
   copils: Copil[];
   journalEntries: JournalEntry[];
   referents: ReferentJour[];
+  /** Produit par le serveur, jamais écrit par le navigateur — voir types.ts. */
+  chargeArchive: MoisArchive[];
 }
 
 /** État du serveur, sans les données — renvoyé aussi par les réponses complètes. */

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Absence, ApiConnection, ApiRequestLog, AuthSettings, Copil, JournalEntry, PlanningSlot, ProjectTask, ReferentJour, RoadmapItem, TeamMember, TimeEntry } from '../types';
+import type { Absence, ApiConnection, ApiRequestLog, AuthSettings, Copil, JournalEntry, MoisArchive, PlanningSlot, ProjectTask, ReferentJour, RoadmapItem, TeamMember, TimeEntry } from '../types';
 import {
   absences as seedAbsences,
   apiConnections as seedApiConnections,
@@ -70,6 +70,9 @@ export interface SharedSnapshot {
   copils: Copil[];
   journalEntries: JournalEntry[];
   referents: ReferentJour[];
+  /** Relevé mensuel de la charge, produit par le serveur. En lecture seule ici : aucune
+   *  action du navigateur ne l'écrit, il arrive avec l'instantané. */
+  chargeArchive: MoisArchive[];
 }
 
 export interface StoreState extends SharedSnapshot {
@@ -147,8 +150,8 @@ export interface StoreState extends SharedSnapshot {
 // d'une session à l'autre (et d'un navigateur à l'autre en mode client/serveur).
 const nextId = (prefix: string) => makeId(prefix);
 
-/** Les 9 collections partagées, dans l'ordre de SharedSnapshot — utilisé par la persistance. */
-const SHARED_KEYS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils', 'journalEntries', 'referents'] as const;
+/** Les collections partagées, dans l'ordre de SharedSnapshot — utilisé par la persistance. */
+const SHARED_KEYS = ['members', 'tasks', 'planningSlots', 'timeEntries', 'absences', 'roadmapItems', 'copils', 'journalEntries', 'referents', 'chargeArchive'] as const;
 
 const emptyCollections = (): SharedSnapshot => ({
   members: [],
@@ -160,6 +163,7 @@ const emptyCollections = (): SharedSnapshot => ({
   copils: [],
   journalEntries: [],
   referents: [],
+  chargeArchive: [],
 });
 
 const seedCollections = (): SharedSnapshot => ({
@@ -175,6 +179,9 @@ const seedCollections = (): SharedSnapshot => ({
   // donnée d'exemple. Une semaine pré-remplie donnerait l'illusion d'une organisation
   // décidée par l'application.
   referents: [],
+  // Le relevé mensuel n'existe qu'en mode client/serveur : c'est le serveur qui arrête
+  // les mois, et lui seul tourne quand personne n'a l'application ouverte.
+  chargeArchive: [],
 });
 
 /**

@@ -407,7 +407,7 @@ function FirstRunScreen({ onInitialized, nomEquipe }: { onInitialized: () => voi
         // Une archive faite avant l'arrivée du journal ou des référents n'en contient
         // pas : on complète plutôt que de refuser la reprise, qui ferait perdre tout le
         // reste.
-        kind === 'reprise' && archive ? { journalEntries: [], referents: [], ...archive.data } : undefined
+        kind === 'reprise' && archive ? { journalEntries: [], referents: [], chargeArchive: [], ...archive.data } : undefined
       );
       onInitialized();
     } catch (err) {

@@ -1885,8 +1885,7 @@ function RetentionCard({ confirm }: { confirm: ConfirmFn }) {
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
           Deux durées, parce que ces données n'ont pas la même utilité dans le temps. Les{' '}
           <strong>tâches terminées</strong> et leurs saisies de temps sont gardées{' '}
-          <strong>{RETENTION_ACTIVITE_JOURS} jours</strong> — treize mois, soit la fenêtre de 12 mois de l'historique de
-          charge plus une marge : c'est la mémoire de l'équipe, elle doit couvrir ce que l'application prétend montrer. Les{' '}
+          <strong>{RETENTION_ACTIVITE_JOURS} jours</strong> — treize mois : c'est la mémoire de l'équipe. Les{' '}
           <strong>absences</strong> sont supprimées <strong>{RETENTION_ABSENCES_JOURS} jours</strong> après leur date : ce
           sont des données personnelles, sans usage une fois la date passée. Une tâche dont le{' '}
           <strong>journal contient au moins une note</strong> n'est jamais purgée : quelqu'un a pris la peine de
@@ -1900,6 +1899,12 @@ function RetentionCard({ confirm }: { confirm: ConfirmFn }) {
           s'affichent plus nulle part. Ce sont des heures de travail réelles — c'est la conséquence la plus lourde de cette purge.
         </li>
         <li>• Une tâche terminée <strong>sans date d'achèvement</strong> n'est jamais purgée : aucune date fiable, donc aucun risque pris.</li>
+        <li>
+          • <strong>L'historique de charge ne dépend plus de cette durée.</strong> Chaque mois clos est relevé —
+          heures par nature, total, capacité — <em>avant</em> la purge, et ce relevé-là ne se purge pas. Le graphique
+          3/6/12 mois lit les saisies pour les mois récents et le relevé pour les plus anciens ; il dit lesquels.
+          Raccourcir la conservation ne vide donc plus le graphique, seul le détail par tâche disparaît.
+        </li>
         <li>• Les créneaux de planning qui visaient une tâche purgée sont vidés, pas supprimés.</li>
         <li>
           • {mode === 'serveur'

@@ -112,7 +112,15 @@ export function TasksView() {
   const confirm = useConfirm();
   const [typeFilter, setTypeFilter] = useState<TaskType | 'Tous'>('Tous');
   const [assigneeFilter, setAssigneeFilter] = useState<string>('Tous');
-  const [statusFilter, setStatusFilter] = useState<TaskStatus | 'Tous'>('Tous');
+  /**
+   * La liste s'ouvre sur les tâches OUVERTES, pas sur tout.
+   *
+   * Les tâches terminées restent treize mois en base (voir src/lib/retention.ts), ce qui
+   * est voulu — c'est la mémoire de l'équipe. Mais les afficher d'office allongeait la
+   * liste de tout ce qui est fini, et donnait à penser que rien n'est jamais nettoyé. On
+   * les montre quand on les demande : « Tous » ou « Terminé » sont à un clic.
+   */
+  const [statusFilter, setStatusFilter] = useState<TaskStatus | 'Tous' | 'ouvertes'>('ouvertes');
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
@@ -140,14 +148,21 @@ export function TasksView() {
     const retenues = tasks
       .filter((t) => typeFilter === 'Tous' || t.type === typeFilter)
       .filter((t) => assigneeFilter === 'Tous' || t.assigneeIds.includes(assigneeFilter))
-      .filter((t) => statusFilter === 'Tous' || t.status === statusFilter)
+      // Le Kanban fait exception : sa colonne « Terminé » est une de ses trois colonnes,
+      // la vider d'office n'aurait aucun sens. Il montre donc tout, sauf si l'on choisit
+      // explicitement un statut.
+      .filter((t) => {
+        if (statusFilter === 'Tous') return true;
+        if (statusFilter === 'ouvertes') return mode === 'kanban' || t.status !== 'termine';
+        return t.status === statusFilter;
+      })
       .filter(
         (t) =>
           t.title.toLowerCase().includes(search.toLowerCase()) ||
           (t.project ?? '').toLowerCase().includes(search.toLowerCase())
       );
     return sortTasks(retenues, sort, members, spentByTask);
-  }, [tasks, typeFilter, assigneeFilter, statusFilter, search, sort, members, spentByTask]);
+  }, [tasks, typeFilter, assigneeFilter, statusFilter, search, sort, members, spentByTask, mode]);
 
   const toggleAssignee = async (t: ProjectTask, m: TeamMember) => {
     const has = t.assigneeIds.includes(m.id);
@@ -270,7 +285,12 @@ export function TasksView() {
           className="min-w-40 flex-1 rounded-md border border-slate-200 px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
         />
         <Select value={typeFilter} onChange={setTypeFilter} options={['Tous', 'MCO', 'Demande', 'Incident', 'Projet']} />
-        <Select value={statusFilter} onChange={setStatusFilter} options={['Tous', 'a_faire', 'en_cours', 'en_attente', 'termine']} labels={statusLabelMap} />
+        <Select
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={['ouvertes', 'Tous', 'a_faire', 'en_cours', 'en_attente', 'termine']}
+          labels={statusLabelMap}
+        />
         <select
           value={assigneeFilter}
           onChange={(e) => setAssigneeFilter(e.target.value)}
@@ -784,6 +804,7 @@ function TaskEcheancier({ tasks, members, spentByTask, activite, setEditingTask 
 }
 
 const statusLabelMap: Record<string, string> = {
+  ouvertes: 'Ouvertes',
   Tous: 'Tous statuts',
   a_faire: 'À faire',
   en_cours: 'En cours',

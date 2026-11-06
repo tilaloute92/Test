@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { historiqueCharge, NATURES, totauxFenetre, type MoisCharge } from '../lib/chargeHistory';
 import { COULEUR_NATURE } from '../lib/meetingReport';
 import { Card } from './ui';
-import type { Absence, ProjectTask, TeamMember, TimeEntry } from '../types';
+import type { Absence, MoisArchive, ProjectTask, TeamMember, TimeEntry } from '../types';
 
 /**
  * Historique de la charge sur 3, 6 ou 12 mois.
@@ -27,21 +27,25 @@ export function ChargeHistoryCard({
   tasks,
   members,
   absences,
+  chargeArchive,
 }: {
   timeEntries: TimeEntry[];
   tasks: ProjectTask[];
   members: TeamMember[];
   absences: Absence[];
+  /** Relevé mensuel du serveur, pour les mois dont les saisies ont été purgées. */
+  chargeArchive?: MoisArchive[];
 }) {
   const [nbMois, setNbMois] = useState<3 | 6 | 12>(6);
   const [tableau, setTableau] = useState(false);
   const [survol, setSurvol] = useState<number | null>(null);
 
   const mois = useMemo(
-    () => historiqueCharge({ nbMois, timeEntries, tasks, members, absences }),
-    [nbMois, timeEntries, tasks, members, absences]
+    () => historiqueCharge({ nbMois, timeEntries, tasks, members, absences, archive: chargeArchive }),
+    [nbMois, timeEntries, tasks, members, absences, chargeArchive]
   );
   const totaux = useMemo(() => totauxFenetre(mois), [mois]);
+  const releves = mois.filter((m) => m.issuDuReleve);
 
   // Juste ce qu'il faut pour que la plus haute colonne tienne : arrondir au cran supérieur
   // AVEC marge ajoutait un palier entier de vide en haut, dont la graduation venait se
@@ -208,6 +212,18 @@ export function ChargeHistoryCard({
           </div>
         </div>
       )}
+
+      {/* Dire d'où viennent les mois anciens. Un chiffre reconstitué d'un relevé et un
+          chiffre calculé sur les saisies ne se valent pas : le premier ne se détaille
+          plus par tâche, et c'est ce qu'on découvre en cliquant dessus. */}
+      {releves.length > 0 && (
+        <p className="mt-3 text-[11px] text-slate-400">
+          {releves.length === 1 ? 'Le mois de' : 'Les mois de'} {releves.map((m) => m.label).join(', ')}{' '}
+          {releves.length === 1 ? 'vient' : 'viennent'} du relevé mensuel : leurs tâches ont été purgées, les totaux ont
+          été arrêtés avant.
+          {releves.some((m) => m.partiel) && ' Certains sont partiels — des saisies avaient déjà disparu au moment du relevé.'}
+        </p>
+      )}
     </Card>
   );
 }
@@ -216,6 +232,9 @@ function DetailMois({ m }: { m: MoisCharge }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
       <span className="font-medium text-slate-800 dark:text-slate-100">{m.label}</span>
+      {m.issuDuReleve && (
+        <span className="text-[11px] text-slate-400">relevé mensuel{m.partiel ? ', partiel' : ''}</span>
+      )}
       {NATURES.map((n) => (
         <span key={n} className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
           <span aria-hidden className="h-2 w-2 rounded-sm" style={{ background: COULEUR_NATURE[n] }} />

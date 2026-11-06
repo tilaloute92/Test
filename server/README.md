@@ -204,6 +204,36 @@ le relit en novembre. Les trente derniers sont gardés, au-delà les plus ancien
 Déclenchement **à la demande uniquement** : il n'y a pas d'équivalent de `DAILY_MAIL_AT` pour
 le rapport de réunion. Rien ne part sans un clic, après relecture et choix des destinataires.
 
+## Relevé mensuel de la charge
+
+`data/equipes/<id>/charge-archive.json`, une ligne par mois clos :
+
+```json
+{ "mois": "2026-10", "heures": { "Projet": 67, "Incident": 41, "MCO": 65, "Demande": 1.5 },
+  "heuresSansTache": 24, "total": 198.5, "capacite": 737, "partiel": false, "arreteLe": "2026-11-06T10:54:12Z" }
+```
+
+À quoi ça sert : l'historique de charge se calcule sur les saisies de temps, qui partent
+avec leur tâche à la purge. Sans relevé, raccourcir la conservation vide le graphique par
+la gauche et affiche un effondrement de la charge qui n'a jamais eu lieu. Le relevé casse
+ce lien — la durée de conservation redevient un choix d'organisation.
+
+Trois règles, dans `src/chargeArchive.js` :
+
+1. **Le relevé passe AVANT la purge**, dans le même tour du planificateur (toutes les
+   heures). L'inverse archiverait ce qui reste.
+2. **Un mois archivé n'est jamais recalculé.** Son relevé a été pris quand les données
+   étaient complètes ; le refaire après une purge le ferait rétrécir.
+3. **Un mois sans la moindre saisie n'est pas archivé.** Un zéro gelé empêcherait une
+   saisie faite en retard de compter.
+
+`partiel: true` marque un mois rattrapé après coup — serveur arrêté plusieurs mois — dont
+une partie des saisies avait déjà pu être purgée : le chiffre est un plancher, et
+l'application l'écrit à côté du mois plutôt que de le présenter comme les autres.
+
+Le relevé voyage dans l'instantané (`chargeArchive`) et l'écrire incrémente la version,
+sans quoi les navigateurs ne verraient le nouveau mois qu'à la prochaine modification.
+
 ## Référent du jour
 
 Le tour de garde : une personne par jour prend ce qui arrive. Collection `referents`

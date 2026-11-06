@@ -1,4 +1,5 @@
-import { getSnapshot, purgeRecords } from './businessData.js';
+import { getChargeArchive, getSnapshot, purgeRecords, setChargeArchive } from './businessData.js';
+import { fusionner, relevesAAjouter } from './chargeArchive.js';
 import { listerEquipes } from './equipes.js';
 
 /**
@@ -118,12 +119,37 @@ function counts(expired) {
  * contrairement à l'envoi de mail : repasser n'a aucun effet de bord, puisque la règle porte
  * sur l'état des données et non sur un événement à ne pas rejouer.
  */
+/**
+ * Le relevé du mois écoulé, AVANT la purge et dans le même passage.
+ *
+ * L'ordre n'est pas indifférent : archiver après avoir purgé reviendrait à archiver ce
+ * qui reste. Renvoie le nombre de mois nouvellement arrêtés.
+ */
+export function archiverCharge(equipe, now = new Date(), days = RETENTION_ACTIVITE_JOURS) {
+  const nouveaux = relevesAAjouter(getSnapshot(equipe), getChargeArchive(equipe), {
+    now,
+    cutoff: cutoffDate(now, days),
+  });
+  if (nouveaux.length === 0) return [];
+  setChargeArchive(equipe, fusionner(getChargeArchive(equipe), nouveaux));
+  return nouveaux;
+}
+
 export function startRetentionScheduler() {
   const run = () => {
     // Équipe par équipe : l'échec de l'une ne doit pas empêcher le nettoyage des autres,
     // et chaque ligne de journal dit de laquelle il s'agit.
     for (const equipe of listerEquipes()) {
       try {
+        // D'abord le relevé du mois clos, ensuite la purge : l'inverse archiverait ce qui
+        // reste après suppression.
+        const arretes = archiverCharge(equipe.id);
+        for (const m of arretes) {
+          console.log(
+            `[charge] ${equipe.nom} : ${m.mois} arrêté à ${m.total} h sur ${m.capacite} h de capacité` +
+              `${m.partiel ? ' (relevé partiel : des saisies avaient déjà été purgées)' : ''}.`
+          );
+        }
         const r = purgeExpired(equipe.id);
         if (r.purged) {
           console.log(
