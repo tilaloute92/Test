@@ -11,6 +11,7 @@ import type { Absence, Period, PlanningSlot, ProjectTask, TaskStatus, TeamMember
 import { useModalDismiss } from './Modal';
 import { placeEntries } from '../lib/dayAllocation';
 import { accepteNature, periodNatureTitle, PERIOD_RANGES } from '../lib/hours';
+import { filtrerBudgetAtteint } from '../lib/budgetTache';
 import { ETIQUETTES_ABSENCE } from '../lib/meetingReport';
 import {
   formatDuree,
@@ -464,6 +465,13 @@ function SlotEditor({
   const memberTasks = tasks.filter(
     (t) => t.assigneeIds.includes(member.id) && accepteNature(period, t.type) && t.status !== 'termine'
   );
+  /**
+   * La liste d'AFFECTATION retire les tâches dont la charge estimée est déjà consommée
+   * (voir budgetTache.ts). La liste de SAISIE, elle, garde tout : c'est là qu'on déclare
+   * ce qui s'est réellement passé, et masquer une tâche en dépassement ferait simplement
+   * atterrir ses heures ailleurs.
+   */
+  const { proposees: affectables, masquees } = filtrerBudgetAtteint(memberTasks, timeEntries, planningSlots, slot?.taskId ?? null);
   const entries = recentEntriesFor(member.id, period);
 
   // Les créneaux récurrents de cette demi-journée (voir src/lib/recurrences.ts), AVEC
@@ -560,12 +568,17 @@ function SlotEditor({
         }}
       >
         <option value="">— Non planifié —</option>
-        {memberTasks.map((t) => (
+        {affectables.map((t) => (
           <option key={t.id} value={t.id}>
             {t.title}
           </option>
         ))}
       </select>
+      {masquees.length > 0 && (
+        <p className="mt-1 text-[11px] text-slate-400">
+          {masquees.length} tâche(s) non proposée(s) : charge estimée déjà consommée.
+        </p>
+      )}
 
       {task && (
         <div className="mt-2 space-y-2">

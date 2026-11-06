@@ -10,6 +10,7 @@ import { getTaskById } from '../lib/selectors';
 import { Avatar, Card, ModeSwitcher, PrintButton, PrintHeader, TaskTypeBadge } from './ui';
 import { useConfirm } from './ConfirmProvider';
 import { ReferentJourCard } from './ReferentJourCard';
+import { filtrerBudgetAtteint } from '../lib/budgetTache';
 import { useViewMode } from '../hooks/useViewMode';
 import type { Absence, Period, PlanningSlot, ProjectTask, TaskType, TeamMember, TimeEntry } from '../types';
 
@@ -60,6 +61,7 @@ export function PlanningView() {
   const [weekIndex, setWeekIndex] = useState(0);
   const seuil = useSeuilPresence();
   const [selected, setSelected] = useState<SelectedCell | null>(null);
+  const [montrerBudgetAtteint, setMontrerBudgetAtteint] = useState(false);
   const [mode, setMode] = useViewMode<PlanningViewMode>('planning', PLANNING_VIEW_MODES, 'grille');
   const [personId, setPersonId] = useState<string>(members[0]?.id ?? '');
   const currentWeek = weeks[weekIndex];
@@ -71,9 +73,14 @@ export function PlanningView() {
   const selectedTask = getTaskById(tasks, selectedSlot?.taskId);
   // Même règle que l'onglet Activité du jour — elle vit dans src/lib/hours.ts, et pas en
   // double ici : on pouvait auparavant planifier une chose sur un écran et pas sur l'autre.
-  const eligibleTasks = selected
+  const candidates = selected
     ? tasks.filter((t) => t.assigneeIds.includes(selected.memberId) && accepteNature(selected.period, t.type) && t.status !== 'termine')
     : [];
+  // Les tâches dont le budget est consommé ne sont plus proposées — voir budgetTache.ts.
+  // `montrerBudgetAtteint` les ramène : une estimation est une estimation, et il faut
+  // bien pouvoir programmer le dépassement quand il est décidé.
+  const { proposees, masquees } = filtrerBudgetAtteint(candidates, timeEntries, planningSlots, selectedSlot?.taskId ?? null);
+  const eligibleTasks = montrerBudgetAtteint ? candidates : proposees;
 
   return (
     <div className="space-y-4">
@@ -211,6 +218,7 @@ export function PlanningView() {
               {eligibleTasks.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.title}
+                  {masquees.some((m) => m.id === t.id) ? ' — charge estimée atteinte' : ''}
                 </option>
               ))}
             </select>
@@ -222,9 +230,23 @@ export function PlanningView() {
               Fermer
             </button>
           </div>
-          {eligibleTasks.length === 0 && (
+          {eligibleTasks.length === 0 && masquees.length === 0 && (
             <p className="mt-2 text-xs text-slate-400">
               Aucune tâche {selected.period === 'matin' ? 'MCO/incident' : 'projet'} ouverte assignée à {selectedMember.name}. Créez-en une dans l'onglet Tâches.
+            </p>
+          )}
+          {/* Les tâches retirées sont ANNONCÉES, jamais escamotées : une liste qui raccourcit
+              sans rien dire laisse chercher une tâche qu'on sait assignée. */}
+          {masquees.length > 0 && (
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              {masquees.length} tâche(s) non proposée(s) — charge estimée déjà consommée
+              {eligibleTasks.length === 0 && ' (aucune autre tâche disponible)'}.{' '}
+              <button
+                onClick={() => setMontrerBudgetAtteint((v) => !v)}
+                className="font-medium text-violet-600 underline-offset-2 hover:underline dark:text-violet-400"
+              >
+                {montrerBudgetAtteint ? 'les masquer à nouveau' : 'les afficher quand même'}
+              </button>
             </p>
           )}
         </Card>
