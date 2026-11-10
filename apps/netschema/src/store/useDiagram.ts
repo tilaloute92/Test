@@ -172,6 +172,25 @@ function oublierVoix() {
 }
 export const GRID = 20
 
+/**
+ * Largeur du plan que le panneau vocal recouvre, à gauche, tant qu'il est ouvert.
+ *
+ * Celui qui dicte regarde le plan et le panneau en même temps : un équipement posé derrière
+ * le panneau est, pour lui, un équipement qui n'est pas apparu. Le cadrage et le suivi des
+ * ajouts tiennent donc cette bande pour invisible.
+ *
+ * Le panneau s'ouvre sur la palette — on ne glisse pas d'équipements pendant qu'on dicte —
+ * et ne déborde sur le plan que de ce qui dépasse d'elle : peu quand elle est ouverte, toute
+ * sa largeur quand elle est repliée (le plan a alors gagné la place de la palette). Sur un
+ * plan trop étroit pour céder cette bande, on ne réserve rien.
+ */
+const DEBORD_PANNEAU_VOCAL = { paletteOuverte: 190, paletteRepliee: 420 }
+function bandeMasquee(etat: { voiceOpen: boolean; paletteOpen: boolean; canvasSize: { width: number } }): number {
+  if (!etat.voiceOpen) return 0
+  const bande = etat.paletteOpen ? DEBORD_PANNEAU_VOCAL.paletteOuverte : DEBORD_PANNEAU_VOCAL.paletteRepliee
+  return etat.canvasSize.width - bande >= 600 ? bande : 0
+}
+
 export interface ViewState {
   zoom: number
   tx: number
@@ -2090,10 +2109,11 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     const montrer = (noeuds: NetNode[]) => {
       const { view, canvasSize } = get()
       if (canvasSize.width <= 0 || canvasSize.height <= 0) return
+      const masque = bandeMasquee(get())
       const visible = (node: NetNode) => {
         const x = node.x * view.zoom + view.tx
         const y = node.y * view.zoom + view.ty
-        return x >= 0 && y >= 0 && x + NODE_W * view.zoom <= canvasSize.width && y + NODE_H * view.zoom <= canvasSize.height
+        return x >= masque && y >= 0 && x + NODE_W * view.zoom <= canvasSize.width && y + NODE_H * view.zoom <= canvasSize.height
       }
       const courants = noeuds.flatMap((node) => get().diagram.nodes.find((item) => item.id === node.id) ?? [])
       if (courants.some((node) => !visible(node))) get().fitView()
@@ -3914,14 +3934,17 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     if (get().showLayerLabels) bounds.minX -= diagram.layerColors ? 230 : 120
     const width = bounds.maxX - bounds.minX
     const height = bounds.maxY - bounds.minY
+    // Panneau vocal ouvert : on cadre dans ce qu'il laisse voir.
+    const masque = bandeMasquee(get())
+    const largeur = canvasSize.width - masque
     const zoom = Math.min(
       2,
-      Math.max(0.15, Math.min((canvasSize.width - padding * 2) / width, (canvasSize.height - padding * 2) / height)),
+      Math.max(0.15, Math.min((largeur - padding * 2) / width, (canvasSize.height - padding * 2) / height)),
     )
     set({
       view: {
         zoom,
-        tx: canvasSize.width / 2 - ((bounds.minX + bounds.maxX) / 2) * zoom,
+        tx: masque + largeur / 2 - ((bounds.minX + bounds.maxX) / 2) * zoom,
         ty: canvasSize.height / 2 - ((bounds.minY + bounds.maxY) / 2) * zoom,
       },
     })

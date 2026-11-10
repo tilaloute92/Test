@@ -13,7 +13,10 @@ import { beforeEach, describe, it } from 'node:test'
 const { useDiagram } = await import('../../src/store/useDiagram.ts')
 const { ARCHITECTURES, trouverArchitecture } = await import('../../src/lib/architectures.ts')
 const { analyserDescription } = await import('../../src/lib/assistant.ts')
-const { NODE_W, NODE_H } = await import('../../src/lib/layout.ts')
+const { NODE_W, NODE_H } = await import('../../src/types.ts')
+// Sans ces deux nombres, tous les contrôles de recouvrement ci-dessous passeraient à vide.
+assert.equal(typeof NODE_W, 'number')
+assert.equal(typeof NODE_H, 'number')
 
 const magasin = () => useDiagram.getState()
 const dire = (phrase) => magasin().runVoiceCommand(phrase)
@@ -193,5 +196,65 @@ describe('un ajout se range là où on l’aurait posé', () => {
   it('une couche en amont se pose au-dessus', () => {
     ok('ajoute deux routeurs')
     for (const n of duType('router')) assert.ok(n.y < 0, `${n.name} au-dessus du pare-feu`)
+  })
+})
+
+describe('ce qu’on dicte reste sous les yeux', () => {
+  /** Position à l'écran du bord gauche d'un équipement. */
+  const aLEcran = (n) => n.x * magasin().view.zoom + magasin().view.tx
+  /** Ce que le panneau recouvre du plan : peu sur la palette ouverte, tout sans elle. */
+  const bande = () => (magasin().paletteOpen ? 190 : 420)
+
+  beforeEach(() => {
+    magasin().newDiagram()
+    magasin().setCanvasSize(1300, 900)
+    magasin().setVoiceOpen(true)
+  })
+
+  it('une architecture dictée se cadre à côté du panneau vocal, pas dessous', () => {
+    ok('monte une architecture trois tiers')
+    for (const n of schema().nodes) assert.ok(aLEcran(n) >= bande(), `${n.name} à x=${Math.round(aLEcran(n))}`)
+    magasin().setVoiceOpen(false)
+  })
+
+  it('un équipement posé derrière le panneau fait recadrer', () => {
+    ok('monte une architecture trois tiers')
+    ok('ajoute trois serveurs')
+    for (const n of duType('server')) {
+      assert.ok(aLEcran(n) >= bande(), `${n.name} à x=${Math.round(aLEcran(n))}`)
+      assert.ok(aLEcran(n) + NODE_W * magasin().view.zoom <= 1300, `${n.name} dans le cadre`)
+    }
+    magasin().setVoiceOpen(false)
+  })
+
+  it('panneau fermé, le schéma se centre sur tout le plan', () => {
+    const centre = () => {
+      const xs = schema().nodes.map((n) => aLEcran(n) + (NODE_W * magasin().view.zoom) / 2)
+      return (Math.min(...xs) + Math.max(...xs)) / 2
+    }
+    magasin().setVoiceOpen(false)
+    ok('monte une architecture trois tiers')
+    const ferme = centre()
+    assert.ok(ferme > 500 && ferme < 800, `à peu près au milieu du plan (${Math.round(ferme)})`)
+    magasin().setVoiceOpen(true)
+    magasin().fitView()
+    // Le centre se décale d'à peu près la moitié de la bande masquée.
+    const decalage = centre() - ferme
+    assert.ok(decalage > bande() / 2 - 60 && decalage < bande() / 2 + 60, `décalé de ${Math.round(decalage)} px vers la droite`)
+
+    // Palette repliée, le panneau déborde de toute sa largeur.
+    magasin().setPanelOpen('palette', false)
+    magasin().fitView()
+    for (const n of schema().nodes) assert.ok(aLEcran(n) >= 420, `${n.name} à x=${Math.round(aLEcran(n))}`)
+    magasin().setPanelOpen('palette', true)
+
+    // Sur un plan étroit, rien n'est réservé : le schéma garde toute la place.
+    magasin().setCanvasSize(700, 600)
+    magasin().fitView()
+    const etroitOuvert = centre()
+    magasin().setVoiceOpen(false)
+    magasin().fitView()
+    assert.equal(Math.round(etroitOuvert), Math.round(centre()), 'plan étroit : le panneau ne décale rien')
+    magasin().setVoiceOpen(false)
   })
 })

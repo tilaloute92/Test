@@ -45,7 +45,6 @@ export function VoicePanel() {
   const dictee = useDiagram((s) => s.dicteeVocale)
   const attente = useDiagram((s) => s.attenteVocale)
   const demandeEcoute = useDiagram((s) => s.demandeEcoute)
-  const paletteOuverte = useDiagram((s) => s.paletteOpen)
 
   const [listening, setListening] = useState(false)
   const [interim, setInterim] = useState('')
@@ -206,11 +205,10 @@ export function VoicePanel() {
       : 'Dictée indisponible sur ce navigateur'
 
   return (
-    <div
-      className={`fixed bottom-4 z-50 w-96 max-w-[92vw] overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-slate-200 ${
-        paletteOuverte ? 'left-[260px]' : 'left-4'
-      }`}
-    >
+    // Posé sur la palette, dont on n'a pas l'usage pendant qu'on dicte : le plan reste dégagé.
+    // Le magasin connaît ce débord (`bandeMasquee`) et cadre le schéma à côté.
+    // Au-dessus de la barre des pages, qu'il ne doit pas recouvrir : on change de page en dictant.
+    <div className="fixed bottom-14 left-4 z-50 w-96 max-w-[92vw] overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-slate-200">
       <header className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
         <h2 className="text-[13px] font-semibold text-slate-800">Commande vocale</h2>
         <button
