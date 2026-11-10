@@ -123,8 +123,14 @@ function prefixeDe(kind: string): string {
 function nommer(base: string, combien: number, pris: Set<string>): string[] {
   const noms: string[] = []
   if (combien === 1) {
-    // Un équipement unique ne se numérote que s'il a déjà un homonyme.
-    if (!pris.has(base.toLowerCase())) {
+    /*
+      Un équipement unique ne se numérote que s'il a déjà de la famille : un homonyme, ou
+      une série en cours. Ajouter un pare-feu à un schéma qui porte déjà « FW-01 » donnait
+      « FW », qui se lit comme un troisième type d'équipement et non comme le second.
+    */
+    const prefixe = `${base.toLowerCase()}-`
+    const serie = [...pris].some((nom) => nom.startsWith(prefixe) && /^\d+$/.test(nom.slice(prefixe.length)))
+    if (!serie && !pris.has(base.toLowerCase())) {
       pris.add(base.toLowerCase())
       return [base]
     }
@@ -156,10 +162,30 @@ interface Groupe {
   clause: string
 }
 
-/** Découpe la demande en propositions : une par groupe d'équipements. */
+/**
+ * Mots qui ouvrent un nouveau groupe d'équipements : un article ou une quantité.
+ * « et trois hyperviseurs », « et une paire de pare-feu », « et 4 serveurs ».
+ */
+const DEBUT_DE_GROUPE =
+  '(?:une?|des|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|onze|douze|quinze|vingt|plusieurs|quelques|\\d{1,2})\\s'
+
+/**
+ * Découpe la demande en propositions : une par groupe d'équipements.
+ *
+ * La virgule ne suffit pas. On dit « quatre switches d'accès et trois hyperviseurs », et
+ * tant que « et » n'était pas une coupure, la proposition entière ne donnait qu'un seul
+ * type : les hyperviseurs disparaissaient, sans même figurer dans les fragments non compris
+ * — la phrase d'exemple de ce module y perdait quatre équipements sur douze. On coupe donc
+ * sur « et » quand ce qui suit commence par une quantité, et seulement là : « actif et
+ * passif » ou « zone A et B » ne sont pas des énumérations.
+ */
 function clauses(texte: string): string[] {
+  const coupure = new RegExp(
+    `[,;\\n]+|\\bpuis\\b|\\bavec ensuite\\b|\\bainsi qu[e']\\s*|\\bet\\s+(?=${DEBUT_DE_GROUPE})`,
+    'i',
+  )
   return texte
-    .split(/[,;\n]+|\bpuis\b|\bavec ensuite\b/i)
+    .split(coupure)
     .map((morceau) => morceau.trim())
     .filter((morceau) => morceau.length > 2)
 }
@@ -176,6 +202,9 @@ function quantite(normalise: string): number {
     // Un nombre à trois chiffres est presque toujours un modèle (« PA-450 ») : on l'ignore.
     if (valeur >= 1 && valeur <= 60) return valeur
   }
+  // « un cœur redondé », « un pare-feu doublé » : personne ne dit « deux » dans ces
+  // tournures, et pourtant c'est bien de deux équipements qu'il s'agit.
+  if (/\b(redond\w*|double[es]?|en double|haute disponibilite|en ha)\b/.test(normalise)) return 2
   return 1
 }
 
@@ -320,11 +349,21 @@ function analyserClause(
   const site = valeurApres(clause, /\bsite\s+([^,;]+)/i)
   const nomDemande = valeurApres(clause, /\b(?:nomm[ée]s?|appel[ée]s?|nom)\s+([^,;]+)/i)
 
-  const groupe = /\b(grappe|cluster|ha|haute disponibilite|redond)/.test(normalise) && combien > 1
   const actifActif = /\bactif[\s/-]*actif\b|\bactifs?\b(?!\s*[/-]?\s*passif)/.test(normalise)
   const actifPassif = /\bactif[\s/-]*passif\b/.test(normalise)
   const temoin = /\bt[ée]moin\b|\bquorum\b|\barbitre\b/.test(prepareSpeech(clause)) ||
     /\bt[ée]moin\b|\bquorum\b/i.test(clause)
+  /*
+    Une grappe se dit de bien des façons, et pas toujours par son nom. « Une paire de
+    pare-feu » est une paire haute disponibilité ; « trois hyperviseurs avec témoin » en est
+    une aussi, puisqu'un témoin de quorum n'arbitre rien d'autre qu'une grappe. Exiger le mot
+    « grappe » faisait disparaître le témoin demandé sans le signaler.
+  */
+  const groupe =
+    combien > 1 &&
+    (/\b(grappe|cluster|ha|haute disponibilite|redond\w*|paire|duo|couple|mlag|vpc|vss|stack|pile)\b/.test(normalise) ||
+      temoin ||
+      actifPassif)
 
   const base = nomDemande ?? prefixeDe(kind)
   const noms = nommer(base, combien, pris)
@@ -404,7 +443,20 @@ function lienDeGrappe(kind: string): LinkKind {
  * premier groupe créé se raccroche à ce qui le précède dans les couches — ajouter « quatre
  * switches d'accès » à un schéma qui a déjà une distribution les y raccorde.
  */
-export function analyserDescription(texte: string, diagram: Diagram): PlanAssistant {
+export interface OptionsAssistant {
+  /**
+   * Raccorder ce qui est créé — entre groupes, et au schéma existant. Vrai par défaut.
+   * À faux, les grappes gardent leur lien de synchronisation, qui fait partie de ce qu'elles
+   * sont ; seuls les raccordements entre couches sont laissés à celui qui dicte.
+   */
+  raccorder?: boolean
+}
+
+export function analyserDescription(
+  texte: string,
+  diagram: Diagram,
+  options: OptionsAssistant = {},
+): PlanAssistant {
   const pris = new Set(diagram.nodes.map((node) => node.name.trim().toLowerCase()))
   const grappesPrises = new Set(
     diagram.nodes.map((node) => node.cluster?.trim().toLowerCase()).filter(Boolean) as string[],
@@ -575,13 +627,29 @@ export function analyserDescription(texte: string, diagram: Diagram): PlanAssist
   const PRIORITE_AMONT = ['core-switch', 'spine', 'leaf', 'switch', 'access-switch']
 
   /**
+   * Un équipement peut-il en raccorder d'autres ?
+   *
+   * La couche ne suffit pas à le dire : une borne Wi-Fi partage celle des switches d'accès,
+   * un serveur précède les postes. Sans ce filtre, « trois serveurs et dix postes » câblait
+   * les postes sur les serveurs, et des serveurs ajoutés avec des bornes se retrouvaient
+   * branchés sur les bornes.
+   */
+  const peutPorter = (kind: string): boolean => {
+    const rang = rankOf(kind, null)
+    if (rang <= 4) return true
+    return ['access-switch', 'leaf', 'industrial-switch'].includes(kind)
+  }
+
+  /**
    * Groupe auquel raccorder celui-ci.
    *
    * Le rang seul ne suffit pas : un serveur se raccorde au cœur ou à la distribution, pas au
    * switch d'accès du bâtiment, même si celui-ci est juste au-dessus de lui dans les couches.
    */
   const amontDe = (groupe: Groupe, position: number): Groupe | undefined => {
-    const superieurs = ordonnes.slice(0, position).filter((autre) => autre.rang < groupe.rang)
+    const superieurs = ordonnes
+      .slice(0, position)
+      .filter((autre) => autre.rang < groupe.rang && peutPorter(autre.kind))
     if (superieurs.length === 0) return undefined
     if (groupe.rang >= 6) {
       for (const kind of PRIORITE_AMONT) {
@@ -592,7 +660,7 @@ export function analyserDescription(texte: string, diagram: Diagram): PlanAssist
     return superieurs[superieurs.length - 1]
   }
 
-  for (const [index, groupe] of ordonnes.entries()) {
+  for (const [index, groupe] of options.raccorder === false ? [] : ordonnes.entries()) {
     // L'énergie ne se raccorde pas comme le reste : elle alimente, elle ne transporte pas.
     if (groupe.rang >= 8) {
       const pdu = ordonnes.find((autre) => autre.kind === 'pdu' && autre !== groupe)
@@ -621,12 +689,19 @@ export function analyserDescription(texte: string, diagram: Diagram): PlanAssist
       relier(groupe, precedent.noms, precedent.kind)
       continue
     }
-    if (index > 0) continue
-    // Premier groupe : on l'accroche à ce que le schéma contient déjà au-dessus.
-    const rangsSuperieurs = [...existantsParRang.keys()].filter((rang) => rang < groupe.rang).sort((a, b) => b - a)
-    const voisins = rangsSuperieurs.length > 0 ? (existantsParRang.get(rangsSuperieurs[0]) ?? []) : []
-    if (voisins.length > 0) {
+    /*
+      Aucun amont parmi ce qu'on crée : on s'accroche à ce que le schéma contient déjà
+      au-dessus. Cela valait pour le premier groupe seulement, si bien qu'« ajoute deux
+      bornes et quatre serveurs » raccordait les bornes et laissait les serveurs en l'air.
+    */
+    const rangsSuperieurs = [...existantsParRang.keys()]
+      .filter((rang) => rang < groupe.rang)
+      .sort((a, b) => b - a)
+    for (const rang of rangsSuperieurs) {
+      const voisins = (existantsParRang.get(rang) ?? []).filter((node) => peutPorter(node.kind))
+      if (voisins.length === 0) continue
       relier(groupe, voisins.slice(0, 2).map((node) => node.name), voisins[0].kind)
+      break
     }
   }
 
