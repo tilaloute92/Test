@@ -1210,6 +1210,9 @@ const EDITING_INTENTS = new Set<VoiceIntent['type']>([
   'dictation',
   'annotationRemove',
   'flow',
+  'flowRemove',
+  'annotationEdit',
+  'rackEdit',
   // Les commandes de page ne sont pas gardées ici : un verrou porte sur une page, il ne doit
   // pas empêcher d'en créer une autre ni d'aller la voir. Le magasin refuse de lui seul de
   // renommer ou de supprimer une page verrouillée.
@@ -1272,13 +1275,22 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
   },
   {
     title: 'Corriger',
-    examples: ['Annule', 'Oups', 'Annule 3 fois', 'Rétablis', 'Supprime la dernière note', 'Supprime tout'],
+    examples: [
+      'Annule',
+      'Oups',
+      'Annule 3 fois',
+      'Rétablis',
+      'Modifie la dernière note : migration reportée en avril',
+      'Supprime la dernière note',
+      'Supprime tout',
+    ],
   },
   {
     title: 'Flux, chemins, panneaux',
     examples: [
       'Autorise le flux HTTPS de SRV-APP-01 vers FW-01',
       'Refuse le flux SSH de la zone Bureaux vers la zone Serveurs',
+      'Supprime le dernier flux',
       'Montre le chemin entre SW-ACC-A1 et FW-01',
       'Clignotement 45 secondes',
       'Ferme la palette',
@@ -1295,6 +1307,7 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'Renomme la zone DMZ en Périmètre',
       'Renomme la couche Accès en Étage 2',
       'Duplique la page',
+      'Déplace la page à gauche',
       'Verrouille le schéma',
     ],
   },
@@ -1373,6 +1386,8 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
     title: 'Parc et baies',
     examples: [
       'crée la baie A3 de 42 U',
+      'renomme la baie A3 en B3',
+      'la baie A1 fait 47 U',
       'supprime la baie PRA',
       "Ouvre l'inventaire",
       'Montre les baies',
@@ -1387,6 +1402,7 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
     examples: [
       'déduis les mécanismes de haute disponibilité',
       'déduis les VLAN du schéma',
+      'suis les VLAN le long des trunks',
     ],
   },
   {

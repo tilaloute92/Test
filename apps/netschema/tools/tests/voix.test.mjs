@@ -658,6 +658,60 @@ describe('ce que la voix n’atteignait pas', () => {
     assert.equal((schema().flows ?? [])[0]?.action, 'refuse')
   })
 
+  it('retirer un flux de la matrice', () => {
+    ok('autorise le flux HTTPS de SW-ACC-01 vers FW-01')
+    ok('refuse le flux SSH de la zone Bureaux vers la zone Serveurs')
+    assert.equal(schema().flows[1].from, 'Bureaux', 'le mot « zone » ne fait pas partie du nom')
+    ok('supprime le flux de la zone Bureaux vers la zone Serveurs')
+    assert.deepEqual(schema().flows.map((f) => f.service), ['HTTPS'])
+    ok('supprime le dernier flux')
+    assert.equal(schema().flows.length, 0)
+    assert.equal(dire('supprime le dernier flux').ok, false, 'rien à retirer : c’est dit')
+    assert.equal(schema().nodes.length, 6, 'aucun équipement n’a été touché')
+  })
+
+  it('corriger le texte d’une note', () => {
+    ok('note : migration prévue en mars')
+    ok('modifie la dernière note : migration reportée en avril')
+    assert.deepEqual(schema().annotations.map((a) => a.text), ['Migration reportée en avril'])
+  })
+
+  it('renommer et redimensionner une baie', () => {
+    ok('crée la baie A1 de 42 U')
+    ok('renomme la baie A1 en B7')
+    assert.deepEqual(schema().racks.map((r) => r.name), ['B7'])
+    ok('la baie B7 fait 47 U')
+    assert.equal(schema().racks[0].units, 47)
+    assert.equal(schema().nodes.length, 6, '« renomme la baie » ne renomme pas un équipement')
+  })
+
+  it('ne rétrécit pas une baie sous ce qu’elle contient', () => {
+    ok('crée la baie A1 de 42 U')
+    ok('implante SW-CORE-01 dans la baie A1')
+    magasin().updateNode(noeud('SW-CORE-01').id, { rackUnit: 30, heightU: 2 })
+    const r = dire('la baie A1 fait 20 U')
+    assert.equal(r.ok, false)
+    assert.equal(schema().racks[0].units, 42)
+  })
+
+  it('changer l’ordre des pages', () => {
+    ok('ajoute une page Agence')
+    const noms = () => magasin().pagesCompletes().map((p) => p.pageName)
+    const avant = noms()
+    assert.equal(magasin().activePage, 1)
+    ok('déplace la page à gauche')
+    assert.deepEqual(noms(), [avant[1], avant[0]])
+    assert.equal(dire('déplace la page à gauche').ok, false, 'déjà la première')
+    magasin().removePage(magasin().activePage)
+  })
+
+  it('le suivi des VLAN le long des trunks', () => {
+    ok('ne suis plus les VLAN')
+    assert.equal(magasin().vlanPropagation, false)
+    ok('suis les VLAN')
+    assert.equal(magasin().vlanPropagation, true)
+  })
+
   it('supprimer la dernière note', () => {
     ok('note : à vérifier')
     ok('supprime la dernière note')

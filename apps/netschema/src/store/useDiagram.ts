@@ -3384,6 +3384,95 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         }
       }
 
+      case 'flowRemove': {
+        const flux = get().diagram.flows ?? []
+        if (flux.length === 0) return { ok: false, message: 'La matrice de flux est vide.' }
+        const dire = (item: FlowDef) => `${item.service ? `${item.service} ` : ''}${item.from} → ${item.to}`
+        if (intent.which === 'last') {
+          const dernier = flux[flux.length - 1]
+          get().removeFlow(dernier.id)
+          return { ok: true, message: `Flux ${dire(dernier)} retiré de la matrice.` }
+        }
+        let vises = flux
+        if (intent.which !== 'all') {
+          // Même lecture des extrémités qu'à la création : sans « zone », sans casse ni accent.
+          const cle = (texte: string) => plain(texte.replace(/^(?:la |le |l['’])?(?:zone|site)\s+/i, ''))
+          const [de, vers] = [cle(intent.from ?? ''), cle(intent.to ?? '')]
+          vises = flux.filter(
+            (item) =>
+              cle(item.from) === de &&
+              cle(item.to) === vers &&
+              (!intent.service || plain(item.service ?? '') === plain(intent.service)),
+          )
+          if (vises.length === 0) {
+            return { ok: false, message: `Aucun flux de ${intent.from} vers ${intent.to} dans la matrice.` }
+          }
+        }
+        for (const item of vises) get().removeFlow(item.id)
+        return {
+          ok: true,
+          message: vises.length === 1 ? `Flux ${dire(vises[0])} retiré de la matrice.` : `${vises.length} flux retirés de la matrice.`,
+        }
+      }
+
+      case 'annotationEdit': {
+        const notes = (get().diagram.annotations ?? []).filter((item) => item.kind === 'note')
+        const derniere = notes[notes.length - 1]
+        if (!derniere) return { ok: false, message: 'Aucune note sur le plan : dites « note : … » pour en poser une.' }
+        get().updateAnnotation(derniere.id, { text: intent.text })
+        return { ok: true, message: `Note réécrite : « ${intent.text} »` }
+      }
+
+      case 'vlanPropagation': {
+        get().setVlanPropagation(intent.on)
+        return {
+          ok: true,
+          message: intent.on
+            ? 'Les VLAN sont suivis le long des trunks.'
+            : 'Les VLAN ne sont plus suivis : seul ce qui est écrit compte.',
+        }
+      }
+
+      case 'pageMove': {
+        const { activePage } = get()
+        const combien = get().pagesCompletes().length
+        const cible = activePage + intent.direction
+        if (cible < 0 || cible >= combien) {
+          return { ok: false, message: `La page est déjà ${intent.direction < 0 ? 'la première' : 'la dernière'}.` }
+        }
+        get().movePage(activePage, intent.direction)
+        return { ok: true, message: `Page déplacée en position ${cible + 1} sur ${combien}.` }
+      }
+
+      case 'rackEdit': {
+        const baies = get().diagram.racks ?? []
+        const voulue = plain(intent.rack)
+        const baie =
+          baies.find((item) => plain(item.name) === voulue) ?? bestMatch(intent.rack, baies, (item) => item.name)?.item
+        if (!baie) return { ok: false, message: `Aucune baie « ${intent.rack} ».` }
+        if (intent.name) {
+          if (baies.some((item) => item.id !== baie.id && plain(item.name) === plain(intent.name ?? ''))) {
+            return { ok: false, message: `La baie « ${intent.name} » existe déjà.` }
+          }
+          get().updateRack(baie.id, { name: intent.name })
+          return { ok: true, message: `Baie ${baie.name} renommée ${intent.name}.` }
+        }
+        const unites = intent.units ?? baie.units
+        if (unites < 1 || unites > 60) return { ok: false, message: 'Une baie fait entre 1 et 60 U.' }
+        // Rétrécir une baie sous un équipement implanté le laisserait hors de la baie.
+        const plusHaut = Math.max(
+          0,
+          ...get()
+            .diagram.nodes.filter((node) => node.rack === baie.id && node.rackUnit)
+            .map((node) => (node.rackUnit ?? 0) + (node.heightU ?? 1) - 1),
+        )
+        if (unites < plusHaut) {
+          return { ok: false, message: `La baie ${baie.name} est occupée jusqu’au U ${plusHaut} : elle ne peut pas descendre à ${unites} U.` }
+        }
+        get().updateRack(baie.id, { units: unites })
+        return { ok: true, message: `Baie ${baie.name} : ${unites} U.` }
+      }
+
       case 'panel': {
         get().setPanelOpen(intent.panel, intent.open)
         const noms = { palette: 'Palette', inspecteur: 'Inspecteur', minicarte: 'Mini-carte' }

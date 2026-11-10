@@ -118,6 +118,16 @@ export type VoiceIntent =
       number?: number
     }
   | { type: 'duplicate'; target?: string; copies?: number }
+  /** Retirer des lignes de la matrice de flux : la dernière, toutes, ou celles d'un couple. */
+  | { type: 'flowRemove'; which?: 'last' | 'all'; from?: string; to?: string; service?: string }
+  /** Réécrire le texte de la dernière note posée sur le plan. */
+  | { type: 'annotationEdit'; text: string }
+  /** Suivre ou non les VLAN le long des trunks dans les vues logiques. */
+  | { type: 'vlanPropagation'; on: boolean }
+  /** Déplacer la page ouverte d'un rang parmi les onglets. */
+  | { type: 'pageMove'; direction: -1 | 1 }
+  /** Renommer une baie ou changer sa hauteur utile. */
+  | { type: 'rackEdit'; rack: string; name?: string; units?: number }
   | { type: 'duplicateSeries' }
   | { type: 'clipboard'; action: 'copy' | 'cut' | 'paste' }
   | { type: 'delete'; target?: string; all?: boolean }

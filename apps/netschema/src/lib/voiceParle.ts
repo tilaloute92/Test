@@ -318,6 +318,62 @@ export const REGLES_PARLEES: Rule[] = [
       : null
   },
 
+  // « modifie la dernière note : … » — le texte est remplacé.
+  (t, raw) => {
+    const corrige = t.match(
+      /^(?:modifie|change|corrige|remplace|reecris)\s+(?:la\s+)?(?:derniere\s+)?(?:note|annotation|remarque)\s*(?::|en|par)\s*(.+)$/,
+    )
+    return corrige ? { type: 'annotationEdit', text: phrase(brut(raw, t, corrige[1], true)) } : null
+  },
+
+  // ── Flux : retirer ─────────────────────────────────────────────────────────
+  (t, raw) => {
+    const verbe = '(?:supprime|efface|enleve|retire)'
+    if (new RegExp(`^${verbe}\\s+(?:le\\s+)?dernier\\s+flux$`).test(t)) return { type: 'flowRemove', which: 'last' }
+    if (new RegExp(`^${verbe}\\s+(?:tous\\s+les|les)\\s+flux$`).test(t)) return { type: 'flowRemove', which: 'all' }
+    const couple = t.match(
+      new RegExp(`^${verbe}\\s+(?:le\\s+|les\\s+)?flux\\s+(?:(\\S+)\\s+)?(?:de|depuis|entre)\\s+(.+?)\\s+(?:vers|a|au|et)\\s+(.+)$`),
+    )
+    if (!couple) return null
+    return {
+      type: 'flowRemove',
+      from: cleanName(brut(raw, t, couple[2])),
+      to: cleanName(brut(raw, t, couple[3], true)),
+      service: couple[1] ? brut(raw, t, couple[1]).toUpperCase() : undefined,
+    }
+  },
+
+  // ── Suivi des VLAN le long des trunks ──────────────────────────────────────
+  (t) => {
+    if (/^(?:ne\s+(?:suis|propage)\s+plus\s+les\s+vlans?|arrete\s+de\s+(?:suivre|propager)\s+les\s+vlans?|desactive\s+(?:la\s+)?propagation\s+des\s+vlans?)$/.test(t)) {
+      return { type: 'vlanPropagation', on: false }
+    }
+    return /^(?:(?:suis|propage)\s+les\s+vlans?(?:\s+le\s+long\s+des\s+trunks)?|active\s+(?:la\s+)?propagation\s+des\s+vlans?)$/.test(t)
+      ? { type: 'vlanPropagation', on: true }
+      : null
+  },
+
+  // ── Ordre des pages ────────────────────────────────────────────────────────
+  // Avant « déplace X à droite », qui prendrait « la page » pour un équipement.
+  (t) => {
+    const cote = t.match(/^(?:deplace|decale|pousse|bouge)\s+(?:la\s+|cette\s+)?page\s+(?:vers\s+|a\s+|sur\s+)?(?:la\s+)?(gauche|droite)$/)
+    if (cote) return { type: 'pageMove', direction: cote[1] === 'gauche' ? -1 : 1 }
+    const sens = t.match(/^(avance|recule)\s+(?:la\s+|cette\s+)?page$/)
+    return sens ? { type: 'pageMove', direction: sens[1] === 'recule' ? -1 : 1 } : null
+  },
+
+  // ── Baies : renommer, redimensionner ───────────────────────────────────────
+  (t, raw) => {
+    const renomme = t.match(/^(?:renomme|appelle)\s+la\s+baie\s+(.+?)\s+(?:en\s+)?(?:baie\s+)?(\S+)$/)
+    if (renomme && /\sen\s/.test(t)) {
+      return { type: 'rackEdit', rack: cleanName(brut(raw, t, renomme[1])), name: brut(raw, t, renomme[2], true) }
+    }
+    const hauteur =
+      t.match(/^(?:la\s+)?baie\s+(.+?)\s+(?:fait|mesure|compte|a)\s+(\d{1,2})\s*u$/) ??
+      t.match(/^(?:passe|mets|change)\s+la\s+baie\s+(.+?)\s+(?:a|en)\s+(\d{1,2})\s*u$/)
+    return hauteur ? { type: 'rackEdit', rack: cleanName(brut(raw, t, hauteur[1])), units: Number(hauteur[2]) } : null
+  },
+
   // ── Titre ──────────────────────────────────────────────────────────────────
   (t, raw) => {
     const titre =
