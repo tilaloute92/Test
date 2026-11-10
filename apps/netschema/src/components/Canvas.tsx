@@ -10,6 +10,7 @@ const SEUIL_PAGE_CHARGEE = 800
 import { LinkShape, type PlacedLabel } from './LinkShape'
 import { LinkTooltip } from './LinkTooltip'
 import { AnnotationShape } from './AnnotationShape'
+import { DepartVide } from './DepartVide'
 import { LegendShape } from './LegendShape'
 import { TitleBlockShape } from './TitleBlockShape'
 import { legendSize, titleBlockSize } from '../lib/layoutBlocks'
@@ -2481,14 +2482,7 @@ export function Canvas({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nul
         </div>
       )}
 
-      {diagram.nodes.length === 0 && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <p className="max-w-sm rounded-xl border border-dashed border-slate-300 bg-white/80 p-6 text-center text-sm text-slate-500">
-            Glissez un équipement depuis la palette de gauche, reliez-les en mode «&nbsp;Relier&nbsp;»,
-            puis lancez le placement automatique.
-          </p>
-        </div>
-      )}
+      {diagram.nodes.length === 0 && (diagram.annotations ?? []).length === 0 && <DepartVide />}
 
       {mode === 'connect' && (
         <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white shadow">

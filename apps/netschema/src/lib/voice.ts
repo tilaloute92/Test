@@ -12,8 +12,8 @@ import {
   type ToggleKey,
   type VoiceIntent,
 } from './voiceBase'
-import { nettoyerPhrase, resoudrePronoms } from './voiceGrammar'
-import { detecterConstruction, formaterNomEpele, REGLES_PARLEES } from './voiceParle'
+import { decouperCommandes, nettoyerPhrase, resoudrePronoms } from './voiceGrammar'
+import { detecterConstruction, eclaterAjouts, formaterNomEpele, REGLES_DE_REPLI, REGLES_PARLEES } from './voiceParle'
 import type { AssetStatus, HaRole, LinkShape, OsiView, ViewMode, ZOrder } from '../types'
 
 // Les intentions et les outils partagés vivent dans le socle ; on les réexporte pour que
@@ -246,7 +246,9 @@ function matchDevice(
       if (entry.device.id === garde.device.id) return entry.score > garde.score ? entry : garde
       return entry.words > garde.words ? entry : garde
     })
-  return { kind: chosen.device.id, label: chosen.device.label, ...nomDicte(rawWords, chosen.words) }
+  const nom = nomDicte(rawWords, chosen.words)
+  if (nom.incompris) return null
+  return { kind: chosen.device.id, label: chosen.device.label, name: nom.name, descriptif: nom.descriptif }
 }
 
 /**
@@ -261,14 +263,27 @@ function matchDevice(
  * web » s'appelle « Serveur web », pas « web ». Le marqueur `descriptif` le signale, pour
  * qu'un second « serveur web » soit numéroté plutôt que refusé comme homonyme.
  */
-function nomDicte(rawWords: string[], typeWords: number): { name?: string; descriptif?: boolean } {
+function nomDicte(
+  rawWords: string[],
+  typeWords: number,
+): { name?: string; descriptif?: boolean; incompris?: boolean } {
   const reste = rawWords.slice(typeWords)
   if (reste.length === 0) return {}
   const estUnCode = (mot: string) =>
     /^[a-zà-ÿ]$/i.test(mot) || (/[a-zà-ÿ]/i.test(mot) && (/\d/.test(mot) || /[A-ZÀ-Ý]/.test(mot)))
   for (let debut = 0; debut < reste.length; debut += 1) {
     const suite = reste.slice(debut).join(' ')
-    if (estUnCode(reste[debut]) || formaterNomEpele(suite) !== suite) return { name: suite }
+    if (formaterNomEpele(suite) !== suite) return { name: suite }
+    if (!estUnCode(reste[debut])) continue
+    /*
+      Un code suivi de plusieurs mots ordinaires n'est pas un nom : c'est une phrase dont la
+      suite n'a pas été comprise (« SRV-01 relit le haut cœur »). La prendre pour un nom
+      créerait l'équipement en avalant le reste ; on préfère ne pas comprendre.
+    */
+    const apres = reste.slice(debut + 1)
+    const ordinaires = apres.filter((mot) => !estUnCode(mot) && !/^\d+$/.test(mot))
+    if (/[\d-]/.test(reste[debut]) && ordinaires.length >= 2) return { incompris: true }
+    return { name: suite }
   }
   const entier = rawWords.join(' ')
   return { name: entier.charAt(0).toUpperCase() + entier.slice(1), descriptif: true }
@@ -723,8 +738,11 @@ const RULES: Rule[] = [
     // équipement que devant un article indéfini. « Mets SW-01 dans la zone DMZ » n'en crée pas.
     const match =
       t.match(
-        /^(?:ajoute|ajouter|rajoute|cree|creer|nouveau|nouvelle|pose|poser|insere|inserer)\s+(?:(?:un|une|le|la|les|des)\s+|l')?(.+)$/,
-      ) ?? t.match(/^(?:mets|place|installe|donne moi|il me faut)\s+(?:un|une)\s+(.+)$/)
+        /^(?:ajoute|ajouter|rajoute|cree|creer|nouveau|nouvelle|pose|poser|insere|inserer)\s+(?:(?:un|une|le|la|les|des)\s+|l')?(?:(?:autre|nouveau|nouvel|nouvelle|second|seconde|deuxieme|petit|petite|gros|grosse|grand|grande)\s+)?(.+)$/,
+      ) ??
+      t.match(
+        /^(?:mets|place|installe|donne moi|il me faut)\s+(?:un|une)\s+(?:(?:autre|nouveau|nouvel|nouvelle|second|seconde|deuxieme|petit|petite|gros|grosse|grand|grande)\s+)?(.+)$/,
+      )
     if (!match) return null
     const offset = t.length - match[1].length
     const { head, rawHead, values } = splitClauses(match[1], raw.slice(offset))
@@ -1018,6 +1036,8 @@ const RULES: Rule[] = [
     )
     return match ? { type: 'focus', name: cleanName(match[1]) } : null
   },
+
+  ...REGLES_DE_REPLI,
 ]
 
 /**
@@ -1060,18 +1080,59 @@ export function interpret(transcript: string): VoiceIntent | null {
   return null
 }
 
+/** Les commandes d'une phrase, une par une, telles qu'elles seront exécutées. */
+export function commandesDe(phrase: string): string[] {
+  return decouperCommandes(phrase).flatMap(eclaterAjouts)
+}
+
+/**
+ * Les phrases possibles, quand la reconnaissance a rendu la parole en plusieurs segments
+ * ayant chacun ses variantes.
+ *
+ * Les segments se rejoignent par une virgule : une pause dans la parole est une virgule
+ * dans la phrase. « Ajoute un serveur » … « relie-le au cœur » devient deux commandes, là
+ * où un simple espace les collait en une seule, au nom interminable ; et une énumération
+ * dite en deux temps reste une énumération. Dans un nom coupé par la reconnaissance, la
+ * virgule ne gêne pas : l'interprétation l'efface.
+ *
+ * Toutes les combinaisons des trois premières variantes sont proposées, les plus probables
+ * d'abord — celles qui s'écartent le moins du premier choix de la reconnaissance.
+ */
+export function phrasesPossibles(segments: string[][], maximum = 48): string[] {
+  const choix = segments.map((variantes) => variantes.filter((variante) => variante.trim()).slice(0, 3)).filter((variantes) => variantes.length > 0)
+  if (choix.length === 0) return []
+  let combinaisons: { mots: string[]; ecart: number }[] = [{ mots: [], ecart: 0 }]
+  for (const variantes of choix) {
+    combinaisons = combinaisons
+      .flatMap((combinaison) =>
+        variantes.map((variante, rang) => ({ mots: [...combinaison.mots, variante.trim()], ecart: combinaison.ecart + rang })),
+      )
+      // Le tri est stable : à écart égal, l'ordre de la reconnaissance est gardé.
+      .sort((a, b) => a.ecart - b.ecart)
+      .slice(0, maximum)
+  }
+  return [...new Set(combinaisons.map((combinaison) => combinaison.mots.join(', ')))]
+}
+
 /**
  * La reconnaissance vocale propose plusieurs transcriptions d'une même phrase. Plutôt que
- * de s'arrêter à la première, on retient la première qui donne une commande comprise : une
- * hésitation sur un mot ne fait plus échouer la phrase entière.
+ * de s'arrêter à la première, on retient la première dont toutes les commandes sont
+ * comprises ; à défaut, celle dont le début l'est. Une hésitation sur un mot ne fait plus
+ * échouer la phrase entière — et une phrase à trois commandes n'est plus jugée sur
+ * l'interprétation, forcément fausse, de la phrase prise en bloc.
  */
-export function interpretBest(alternatives: string[]): { transcript: string; intent: VoiceIntent | null } {
-  for (const alternative of alternatives) {
-    if (!alternative.trim()) continue
-    const intent = interpret(alternative)
-    if (intent) return { transcript: alternative, intent }
-  }
-  return { transcript: alternatives.find((item) => item.trim()) ?? '', intent: null }
+export function choisirTranscription(alternatives: string[]): string {
+  const dites = alternatives.filter((alternative) => alternative.trim())
+  const comprises = (phrase: string) => commandesDe(phrase).map((commande) => interpret(commande) !== null)
+  return (
+    dites.find((phrase) => {
+      const resultat = comprises(phrase)
+      return resultat.length > 0 && resultat.every(Boolean)
+    }) ??
+    dites.find((phrase) => comprises(phrase)[0] === true) ??
+    dites[0] ??
+    ''
+  )
 }
 
 /**
@@ -1160,6 +1221,71 @@ export function isEditingIntent(intent: VoiceIntent): boolean {
 
 export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
   {
+    title: 'Démarrer d’une phrase',
+    examples: [
+      'Monte une architecture trois tiers',
+      'Construis une agence',
+      'Ajoute deux switchs cœur, quatre switchs d’accès et trois serveurs',
+      'Ajoute trois switchs d’accès sans les relier',
+      'Ajoute une paire de pare-feu',
+      'Ouvre l’assistant de conception',
+    ],
+  },
+  {
+    title: 'Ajouter et relier',
+    examples: [
+      'Ajoute un pare-feu',
+      'Ajoute un switch d’accès SW-ACC-09 sous SW-CORE-01',
+      'Ajoute un serveur SRV-APP-01 avec IP 10.10.0.60 relié à SW-CORE-01',
+      'Relie SW-CORE-01 à FW-01 en fibre 10 giga',
+      'Relie tous les switchs d’accès aux deux cœurs',
+      'Double le lien entre SW-CORE-01 et SW-CORE-02',
+      'Agrège les liens entre SW-CORE-01 et SW-CORE-02 en Po1',
+      'Autorise les VLAN 10 et 20 entre SW-CORE-01 et SW-ACC-A1',
+      'Le port de SW-CORE-01 vers SW-ACC-A1 est Ethernet 1/1',
+      'Le lien entre SW-CORE-01 et SW-CORE-02 est en 40 giga',
+      'Supprime le lien entre SW-CORE-01 et FW-01',
+    ],
+  },
+  {
+    title: 'Enchaîner, sans répéter les noms',
+    examples: [
+      'Ajoute un serveur SRV-01, relie-le à SW-CORE-01 puis mets-le dans la zone Serveurs',
+      'Sélectionne tous les switchs d’accès et mets-les dans le VLAN 20',
+      'Relie-le à SW-CORE-02',
+      'Appelle-le FW-EDGE',
+      'Son adresse est 10.0.0.1',
+      'Passe-la en fibre',
+      'Monte-le un peu',
+    ],
+  },
+  {
+    title: 'Dicter du texte',
+    examples: [
+      'Note sur SW-CORE-01 : baie B12, port console 3',
+      'Ajoute à la note de SW-CORE-01 : contrat de maintenance jusqu’en 2027',
+      'Dictée sur SW-CORE-01',
+      'Fin de dictée',
+      'Note : migration prévue en mars',
+      'Le titre est Réseau du siège',
+    ],
+  },
+  {
+    title: 'Corriger',
+    examples: ['Annule', 'Oups', 'Annule 3 fois', 'Rétablis', 'Supprime la dernière note', 'Supprime tout'],
+  },
+  {
+    title: 'Flux, chemins, panneaux',
+    examples: [
+      'Autorise le flux HTTPS de SRV-APP-01 vers FW-01',
+      'Refuse le flux SSH de la zone Bureaux vers la zone Serveurs',
+      'Montre le chemin entre SW-ACC-A1 et FW-01',
+      'Clignotement 45 secondes',
+      'Ferme la palette',
+      'Ouvre l’inspecteur',
+    ],
+  },
+  {
     title: 'Pages',
     examples: [
       'Ajoute une page Agence Lyon',
@@ -1173,13 +1299,9 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
     ],
   },
   {
-    title: 'Construire',
+    title: 'Construire, en détail',
     examples: [
-      'Ouvre l’assistant de conception',
-      'Ajoute un pare-feu',
       'Ajoute un switch cœur SW-CORE-03 dans la zone Datacenter',
-      'Ajoute un serveur SRV-APP-01 avec IP 10.10.0.60 relié à SW-CORE-01',
-      'Relie SW-CORE-01 à FW-01 en fibre',
       'Change le type de SRV-APP-01 en nœud hyperviseur',
       'Supprime la liaison entre SW-CORE-01 et FW-01',
       'Liaison entre SW-CORE-01 et SW-DIST-BATA en fibre 10 Gb/s',
@@ -1234,7 +1356,6 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'Tracé courbe',
       'Réinitialise le tracé',
       'Accroches automatiques',
-      'Verrouille le schéma',
       'Déverrouille les étiquettes',
       'Mode présentation',
       'Vue technique',
@@ -1301,7 +1422,7 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
   },
   {
     title: 'Projet',
-    examples: ['Exporte en PNG', 'Enregistre le projet', 'Annule', 'Rétablis', 'Titre : Architecture agence'],
+    examples: ['Exporte en PNG', 'Enregistre le projet', 'Titre : Architecture agence'],
   },
 ]
 
@@ -1378,6 +1499,8 @@ export function createRecognizer(handlers: {
       if (transcript) alternatives.push(transcript)
     }
     if (alternatives.length === 0) return
+    // La réponse parlée sort des haut-parleurs et revient par le micro : on ne s'écoute pas.
+    if (estEcho(alternatives[0])) return
     handlers.onTranscript(alternatives, last.isFinal === true)
   }
 
@@ -1423,11 +1546,88 @@ export function createRecognizer(handlers: {
   }
 }
 
+/**
+ * Ce que l'application est en train de dire.
+ *
+ * Sans casque, la réponse parlée revient par le micro et se fait transcrire comme une
+ * commande. La plupart du temps c'est du bruit ; « Annulé. », lui, s'entend « annule » —
+ * et l'application annulait alors en boucle, se répondant à elle-même jusqu'à vider
+ * l'historique. On retient donc ce qui est dit et jusqu'à quand, pour l'ignorer à l'écoute.
+ */
+const parole = { jeton: 0, enCours: false, debut: 0, dureeMax: 0, fin: 0, dernier: '' }
+
+/** Note qu'une réponse commence à être dite. Renvoie le jeton à rendre à `finDeParole`. */
+export function debutDeParole(message: string, maintenant = Date.now()): number {
+  parole.jeton += 1
+  parole.enCours = true
+  parole.debut = maintenant
+  // Certains navigateurs ne signalent jamais la fin d'une réponse : sans plafond, le micro
+  // resterait sourd pour de bon. On compte large — 90 ms par caractère, 15 s au plus.
+  parole.dureeMax = Math.min(15000, 1500 + message.length * 90)
+  parole.dernier = normalizeSpeech(message)
+  return parole.jeton
+}
+
+/** Note que la réponse est finie — si c'est bien la dernière commencée. */
+export function finDeParole(jeton: number, maintenant = Date.now()) {
+  if (jeton !== parole.jeton || !parole.enCours) return
+  parole.enCours = false
+  parole.fin = maintenant
+}
+
+/**
+ * Ce que le micro vient d'entendre est-il la voix de l'application ?
+ *
+ * Oui pendant qu'elle parle et un court instant après (la fin d'une phrase traîne dans la
+ * transcription). Oui encore, quelques secondes durant, si ce qui est entendu se retrouve
+ * mot pour mot dans ce qu'elle vient de dire.
+ */
+export function estEcho(transcript: string, maintenant = Date.now()): boolean {
+  if (parole.enCours) {
+    if (maintenant - parole.debut < parole.dureeMax) return true
+    finDeParole(parole.jeton, parole.debut + parole.dureeMax)
+  }
+  if (!parole.dernier) return false
+  const depuis = maintenant - parole.fin
+  if (depuis < 700) return true
+  if (depuis > 6000) return false
+  const entendu = normalizeSpeech(transcript)
+  return entendu.length >= 4 && parole.dernier.includes(entendu)
+}
+
+/**
+ * Ce qu'on dit à voix haute n'est pas ce qu'on écrit : on y lit les pluriels, pas les
+ * parenthèses, et on ne récite pas quatorze noms d'équipements — pendant qu'elle parle,
+ * l'application n'écoute pas.
+ */
+export function versionParlee(message: string): string {
+  const texte = message
+    // « 1 liaison(s) posée(s) » se dit au singulier ; au-delà, au pluriel.
+    .replace(/(?<![\d.,])\b1\s+(?:[^\s.,:;]+\((?:s|es|e)\)\s*)+/g, (un) => un.replace(/\((?:s|es|e)\)/g, ''))
+    .replace(/\((s|e|es)\)/g, (_, lettres: string) => (lettres === 's' || lettres === 'es' ? lettres : ''))
+    // Une énumération de quatre éléments ou plus, après un deux-points.
+    .replace(/\s*:\s*[^.:]+(?:,\s*[^.:,]+){3,}(?=\.|$)/g, '')
+    .replace(/[«»]/g, '')
+    .replace(/→/g, 'vers')
+    .replace(/↔/g, 'et')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (texte.length <= 240) return texte
+  const coupe = texte.slice(0, 240)
+  const phrase = coupe.lastIndexOf('. ')
+  return phrase > 60 ? coupe.slice(0, phrase + 1) : `${coupe}…`
+}
+
 /** Réponse parlée, quand l'utilisateur l'a demandée. */
 export function speak(message: string, enabled: boolean) {
   if (!enabled || typeof window === 'undefined' || !('speechSynthesis' in window)) return
-  const utterance = new SpeechSynthesisUtterance(message)
+  const dit = versionParlee(message)
+  if (!dit) return
+  const utterance = new SpeechSynthesisUtterance(dit)
   utterance.lang = 'fr-FR'
   window.speechSynthesis.cancel()
+  const jeton = debutDeParole(dit)
+  utterance.onend = () => finDeParole(jeton)
+  utterance.onerror = () => finDeParole(jeton)
   window.speechSynthesis.speak(utterance)
 }

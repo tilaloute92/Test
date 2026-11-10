@@ -62,7 +62,7 @@ export type VoiceIntent =
     routeur, un pare-feu et deux cœurs », « un cœur redondé ». La description part telle
     quelle à l'assistant de conception, qui sait compter, nommer et raccorder.
   */
-  | { type: 'build'; description: string; raccorder: boolean }
+  | { type: 'build'; description: string; raccorder: boolean; /** Architecture de départ demandée par son nom. */ modele?: string }
   | { type: 'setKind'; target: string; kind: string; label: string }
   | { type: 'move'; target: string; direction: 'left' | 'right' | 'up' | 'down'; amount: number }
   | {

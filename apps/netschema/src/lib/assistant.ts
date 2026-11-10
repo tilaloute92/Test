@@ -20,7 +20,7 @@
  * tant que le plan n'est pas accepté.
  */
 
-import { deviceMeta, findDeviceScored, LAYER_LABELS, rankOf } from './catalog'
+import { deviceMeta, findDeviceScored, LAYER_LABELS, motsAvantLeType, rankOf } from './catalog'
 import { mecanismeHa, planDeDonneesEffectif, proposerMecanisme } from './haTech'
 import { suggestLinkKind } from './linkRules'
 import { prepareSpeech } from './speech'
@@ -172,7 +172,27 @@ interface Groupe {
   temoin?: boolean
   rang: number
   clause: string
+  /** Adresse dictée — pour un équipement seul, le seul cas où elle a un sens. */
+  ip?: string
+  /** Ce que la proposition disait et que l'assistant ne sait pas faire : à signaler, jamais à taire. */
+  restes: string[]
 }
+
+/**
+ * Un nom d'équipement, à sa forme : un code. Des capitales reliées par des tirets
+ * (« CORE-A », « FW-EDGE »), ou des lettres suivies d'un numéro (« FW-09 », « SRV-WEB-01 »,
+ * « sw1 »). Un constructeur (« Fortinet »), un sigle (« MLAG ») ou un débit (« 25G ») n'en
+ * sont pas.
+ */
+const CODE = /^(?:[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+|[A-Za-z][A-Za-z-]*-?\d+[A-Za-z0-9-]*)$/
+
+/** Compléments que l'ajout simple sait lire et que l'assistant ne lit pas. */
+const COMPLEMENTS_NON_LUS: RegExp[] = [
+  /\b(?:reli[ée]e?s?|connect[ée]e?s?|raccord[ée]e?s?|branch[ée]e?s?)\s+(?:[àa]|au|aux|sur|avec)\s+[^,;]+/i,
+  /\b(?:dans|en)\s+(?:la\s+)?baie\s+[^,;]+/i,
+  /(?<![-\w])(?:sous|au[- ]dessus de|[àa] droite de|[àa] gauche de|[àa] c[ôo]t[ée] de)\s+(?!r[ée]seau)[^,;]+/i,
+  /\bvlan\s+\d+[^,;]*/i,
+]
 
 /**
  * Mots qui ouvrent un nouveau groupe d'équipements : un article ou une quantité.
@@ -222,7 +242,7 @@ function quantite(normalise: string): number {
 
 /** Mots qui qualifient la demande sans désigner un type d'équipement. */
 const QUALIFICATIFS =
-  /\b(en|une|un|des|de|du|la|le|les|avec|et|paire|duo|couple|trio|grappe|cluster|ha|haute|disponibilite|redonde|redondes|redondee|redondees|actif|passif|actifs|passifs|temoin|quorum|zone|site|par|pour|dans|sur|nommes?|nommees?|appeles?|appelees?)\b/g
+  /\b(en|une|un|des|de|du|la|le|les|avec|et|paire|duo|couple|trio|grappe|cluster|ha|haute|disponibilite|redonde|redondes|redondee|redondees|actif|passif|actifs|passifs|temoin|quorum|zone|site|par|pour|dans|sur|nommes?|nommees?|appeles?|appelees?|autres?|nouveaux?|nouvel|nouvelles?|seconde?s?|deuxiemes?|petite?s?|gros|grosses?|grande?s?)\b/g
 
 /** Normalisation commune au catalogue : ligature, accents, casse. */
 function normaliser(valeur: string): string {
@@ -337,8 +357,55 @@ function analyserClause(
       temoin ||
       actifPassif)
 
-  const base = nomDemande ?? prefixeDe(kind)
-  const noms = nommer(base, combien, pris)
+  /*
+    Les noms dictés. « Un pare-feu FW-09 » porte son nom ; « deux cœurs nommés CORE-A et
+    CORE-B » en portent deux. Quand le compte y est, ce sont ces noms-là — sinon l'assistant
+    numérote, et ce qu'il n'a pas su placer figure dans les restes au lieu de disparaître.
+  */
+  const restes: string[] = []
+  // Un code qui suit « zone », « relié à » ou « dans la baie » désigne autre chose que
+  // l'équipement demandé : on l'écarte avant de chercher les noms.
+  const horsValeurs = COMPLEMENTS_NON_LUS.reduce((texte, motif) => texte.replace(motif, ' '), clause)
+    .replace(/\b(?:zone|site)\s+[^,;]+/gi, ' ')
+    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?:\/\d{1,2})?\b/g, ' ')
+  const codes = horsValeurs
+    .split(/[\s,;]+/)
+    .map((mot) => mot.replace(/^[«"'(]+|[»"').]+$/g, ''))
+    .filter((mot) => CODE.test(mot) && !vendorMark(undefined, mot))
+  const listeNommee = nomDemande
+    ?.split(/\s*,\s*|\s+et\s+/i)
+    .map((nom) => nom.trim())
+    .filter(Boolean)
+
+  let noms: string[]
+  if (listeNommee && listeNommee.length === combien && combien > 1) noms = listeNommee
+  else if (listeNommee && listeNommee.length === 1) noms = nommer(listeNommee[0], combien, pris)
+  else if (!nomDemande && codes.length === combien) noms = codes
+  else {
+    noms = nommer(prefixeDe(kind), combien, pris)
+    const nonPlaces = listeNommee ?? codes
+    if (nonPlaces.length > 0) {
+      restes.push(`${nonPlaces.join(', ')} : ${nonPlaces.length} nom(s) pour ${combien} équipement(s)`)
+    }
+  }
+  for (const nom of noms) pris.add(nom.toLowerCase())
+
+  // Un mot inconnu avant le type : pas un qualificatif, un mot en trop. On le signale.
+  const sansValeurs = normaliser(prepareSpeech(horsValeurs))
+    .replace(/\b\d+\b/g, ' ')
+    .replace(QUALIFICATIFS, ' ')
+    .split(/\s+/)
+    .filter((mot) => mot && !CODE.test(mot.toUpperCase()) && !noms.some((nom) => normaliser(nom) === mot))
+    .join(' ')
+  const parasites = motsAvantLeType(kind, sansValeurs).filter((mot) => !vendorMark(undefined, mot))
+  if (parasites.length > 0) restes.push(parasites.join(' '))
+
+  const adresse = clause.match(/\b(?:ip|adresse(?:\s+ip)?)\s+(\d{1,3}(?:\.\d{1,3}){3}(?:\/\d{1,2})?)/i)?.[1]
+  if (adresse && combien > 1) restes.push(`adresse ${adresse} : une adresse pour ${combien} équipements`)
+  for (const motif of COMPLEMENTS_NON_LUS) {
+    const trouve = clause.match(motif)
+    if (trouve) restes.push(trouve[0].trim())
+  }
 
   const roles = groupe
     ? noms.map((_, position) =>
@@ -377,6 +444,8 @@ function analyserClause(
     temoin,
     rang: rankOf(kind, null),
     clause: clause.trim(),
+    ip: adresse && combien === 1 ? adresse : undefined,
+    restes,
   }
 }
 
@@ -456,8 +525,10 @@ export function analyserDescription(
       continue
     }
     const groupe = analyserClause(clause, pris, grappesPrises)
-    if (groupe) groupes.push(groupe)
-    else ignores.push(clause.trim())
+    if (groupe) {
+      groupes.push(groupe)
+      ignores.push(...groupe.restes)
+    } else ignores.push(clause.trim())
   }
 
   if (groupes.length === 0) return { etapes: [], ignores, noeuds: 0, liaisons: 0 }
@@ -484,6 +555,7 @@ export function analyserDescription(
           site: groupe.site,
           cluster: groupe.cluster,
           role: groupe.roles?.[position],
+          ip: groupe.ip,
           dualPower: doubleAlimentable(groupe.kind) ? true : undefined,
         },
       })

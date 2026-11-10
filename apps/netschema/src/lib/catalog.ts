@@ -284,6 +284,27 @@ export function findDeviceScored(query: string): { device: DeviceMeta; score: nu
 }
 
 /**
+ * Les mots d'une demande que le type désigné n'explique pas, et qui le précèdent.
+ *
+ * En français le nom vient d'abord, ses qualificatifs ensuite : « serveur web », « routeur
+ * de périmètre ». Un mot inconnu placé *avant* le nom n'est donc pas un qualificatif — c'est
+ * un mot en trop, ou mal entendu (« à joute un pare-feu »). L'assistant s'en sert pour
+ * signaler ce qu'il a laissé de côté au lieu de l'avaler.
+ */
+export function motsAvantLeType(kind: string, demande: string): string[] {
+  const device = registry.get(kind)
+  if (!device) return []
+  const sac = [device.label, device.id.replace(/-/g, ' '), ...(device.aliases ?? [])].flatMap(motsSignificatifs)
+  // On compare les racines, on rend les mots tels qu'ils ont été dits.
+  const dits = vocabulaireCourant(normalize(demande))
+    .replace(/[’']/g, ' ')
+    .split(/[\s/(),]+/)
+    .filter((mot) => motsSignificatifs(mot).length > 0)
+  const premier = dits.findIndex((mot) => sac.some((autre) => memeMot(motsSignificatifs(mot)[0], autre)))
+  return premier <= 0 ? [] : dits.slice(0, premier)
+}
+
+/**
  * Racine approximative d'un mot : on retire le pluriel puis le « e » final. Appliquée des
  * deux côtés, elle fait correspondre « postes » à « poste », « switches » à « switch » et
  * « téléphones » à « téléphone » sans dictionnaire.

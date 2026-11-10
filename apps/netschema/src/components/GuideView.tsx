@@ -127,8 +127,10 @@ export function GuideView() {
           </P>
           <ol className="flex flex-col gap-2">
             <Step n={1}>
-              Posez les équipements : glissez-les depuis la palette de gauche, ou décrivez-les à
-              la voix (« ajoute un switch cœur SW-CORE-01 »).
+              Partez d'une <b>architecture type</b> : un plan vide en propose sept (petit site,
+              campus trois niveaux, salle serveurs spine-leaf…), posées, nommées et raccordées
+              d'un clic. Ou posez les équipements un à un : glissez-les depuis la palette, ou
+              dites-les (« ajoute deux switchs cœur et quatre switchs d'accès »).
             </Step>
             <Step n={2}>
               Reliez-les : touche <Keys>L</Keys> puis un clic sur chaque extrémité. Le type de
@@ -1739,15 +1741,110 @@ deux onduleurs`}</pre>
     {
       id: 'voix',
       title: 'Commande vocale',
-      keywords: 'voix vocal vocale micro microphone dictee dicter parler reconnaissance commandes phrases exemples chrome edge',
+      keywords: 'voix vocal vocale micro microphone dictee dicter parler reconnaissance commandes phrases exemples chrome edge f2 pronom enchainer note confirmation architecture',
       body: (
         <>
           <P>
-            Le bouton <b>Voix</b> (en haut à droite) ouvre le panneau de dictée. Tout ce qui se
-            fait à la souris se dit : créer, modifier, relier, supprimer, interroger, exporter.
-            Le même champ accepte les commandes <b>tapées</b> — utile sur Firefox, sans micro, ou
-            dans un local bruyant.
+            Le bouton <b>Voix</b> (en haut à droite) ou la touche <Keys>F2</Keys> ouvre le
+            panneau et allume le micro — <Keys>F2</Keys> à nouveau le coupe, où que soit le
+            curseur. Tout ce qui se fait à la souris se dit : créer, relier, renseigner,
+            annoter, supprimer, interroger, exporter. Le même champ accepte les commandes{' '}
+            <b>tapées</b> — utile sur Firefox, sans micro, ou dans un local bruyant.
           </P>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="pb-1.5 text-[12px] font-semibold text-slate-700">Parler comme on parle</p>
+            <List
+              items={[
+                <>
+                  <b>Pas besoin de réciter</b> : « euh, alors, tu peux ajouter un switch s'il te
+                  plaît » vaut « ajoute un switch ». Hésitations, politesse et infinitifs sont
+                  ignorés.
+                </>,
+                <>
+                  <b>Ne répétez pas les noms</b> : « relie-le au cœur », « appelle-le FW-EDGE »,
+                  « son adresse est 10.0.0.1 », « passe-la en fibre » désignent ce dont vous
+                  venez de parler — à défaut, la sélection.
+                </>,
+                <>
+                  <b>Enchaînez</b> : « ajoute un serveur SRV-01, relie-le à SW-ACC-01 puis
+                  mets-le dans la zone Serveurs ». Si une commande échoue, l'application
+                  s'arrête là et dit laquelle.
+                </>,
+                <>
+                  <b>Plusieurs équipements d'une phrase</b> : « ajoute deux switchs cœur, quatre
+                  switchs d'accès et trois serveurs » les crée, les nomme selon la convention
+                  du schéma (SW-ACC-03 après SW-ACC-02), les range avec leurs pairs et les
+                  raccorde à la couche du dessus — la réponse dit à quoi. Ajoutez « sans les
+                  relier » pour garder la main.
+                </>,
+                <>
+                  <b>Une architecture entière</b> : « monte une architecture trois tiers »,
+                  « construis une agence », « crée un réseau wifi ».
+                </>,
+                <>
+                  <b>Désignez par le type</b> : « le routeur », « aux deux cœurs », « tous les
+                  switchs d'accès ». S'il y en a plusieurs et que la phrase n'en veut qu'un,
+                  l'application nomme les candidats au lieu d'en choisir un.
+                </>,
+                <>
+                  <b>Dites où</b> : « ajoute un switch d'accès sous SW-CORE-01 », « à droite de
+                  FW-01 ».
+                </>,
+              ]}
+            />
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="pb-1.5 text-[12px] font-semibold text-slate-700">Dicter du texte</p>
+            <List
+              items={[
+                <>
+                  <b>Une note sur un équipement</b> : « note sur SW-CORE-01 : baie B12, port
+                  console 3 ». « Ajoute à la note de SW-CORE-01 : … » complète sans écraser.
+                </>,
+                <>
+                  <b>Une dictée continue</b> : « dictée sur SW-CORE-01 », puis parlez. Chaque
+                  phrase s'ajoute à la note au fil de l'eau, et les commandes sont suspendues —
+                  « relie » y est un mot comme un autre — jusqu'à « fin de dictée ». Le panneau
+                  l'affiche tant que la dictée est ouverte.
+                </>,
+                <>
+                  <b>Sur le plan</b> : « note : migration prévue en mars », « le titre est Réseau
+                  du siège ».
+                </>,
+              ]}
+            />
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="pb-1.5 text-[12px] font-semibold text-slate-700">Ce qui vous protège</p>
+            <List
+              items={[
+                <>
+                  <b>Une phrase, un cran d'annulation</b> : « annule » (ou « oups ») retire tout ce
+                  que la dernière phrase a fait, même si elle a posé huit liaisons. « Annule
+                  3 fois » remonte de trois phrases.
+                </>,
+                <>
+                  <b>Une confirmation avant les suppressions lourdes</b> : « supprime tout », ou
+                  plus de trois équipements d'un coup, attend un « oui ». Toute autre phrase
+                  abandonne.
+                </>,
+                <>
+                  <b>Rien n'est deviné</b> : un mot qui n'est pas un type du catalogue n'est pas
+                  rapproché de force du plus ressemblant. La commande est dite non comprise, et
+                  l'assistant liste ce qu'il a laissé de côté.
+                </>,
+                <>
+                  <b>Pas de doublons</b> : relier deux équipements déjà reliés ne pose pas de
+                  second brin (dites « double le lien » pour cela), et un nom déjà pris est
+                  refusé.
+                </>,
+                <>
+                  <b>L'application ne s'écoute pas</b> : pendant qu'elle répond à voix haute, le
+                  micro est ignoré. Décochez « réponse » pour enchaîner plus vite.
+                </>,
+              ]}
+            />
+          </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
             <p className="pb-1.5 text-[12px] font-semibold text-slate-700">
               Bien se faire comprendre
@@ -1755,8 +1852,8 @@ deux onduleurs`}</pre>
             <List
               items={[
                 <>
-                  <b>Dites la phrase d'une traite</b>, puis marquez une pause : la commande part
-                  après un court silence, ce qui évite qu'elle soit coupée en deux.
+                  <b>Marquez une pause en fin de phrase</b> : elle part après un court silence,
+                  ce qui évite qu'elle soit coupée en deux.
                 </>,
                 <>
                   <b>Épelez les sigles</b> : « S W core zéro un » est recollé en « SW-CORE-01 ».
@@ -1765,11 +1862,12 @@ deux onduleurs`}</pre>
                 <>
                   <b>Dites les nombres comme ils se lisent</b> : « dix point dix point zéro point
                   onze » devient <code>10.10.0.11</code>, « zéro deux » devient <code>02</code>,
-                  « slash vingt-quatre » devient <code>/24</code>.
+                  « slash vingt-quatre » devient <code>/24</code>, « 40 giga » devient{' '}
+                  <code>40 Gb/s</code>.
                 </>,
                 <>
-                  <b>Un mot de travers n'est pas grave</b> : « pare-fou », « switche », « postes
-                  de travail » retombent sur le bon type. Les noms d'équipements sont eux aussi
+                  <b>Un mot écorché n'est pas grave</b> : « pare-fou », « un suisse d'accès »,
+                  « relit » retombent sur le bon mot. Les noms d'équipements sont eux aussi
                   rapprochés du plus ressemblant.
                 </>,
                 <>
@@ -2053,9 +2151,18 @@ deux onduleurs`}</pre>
                 (icône dans la barre d'adresse). Sans micro, les commandes tapées font tout.
               </>,
               <>
-                <b>La dictée comprend mal</b> : parlez d'une traite, épelez les sigles, vérifiez
-                que la langue du navigateur est le français. Le panneau propose les commandes
-                proches quand il hésite.
+                <b>La dictée comprend mal</b> : marquez une pause en fin de phrase, épelez les
+                sigles, vérifiez que la langue du navigateur est le français. Le panneau propose
+                les commandes proches quand il hésite.
+              </>,
+              <>
+                <b>« Je ne sais pas de quel équipement vous parlez »</b> : « le », « la », « les »
+                reprennent le dernier équipement dont vous avez parlé, à défaut la sélection.
+                Nommez-le une fois, ou sélectionnez-le.
+              </>,
+              <>
+                <b>Les commandes ne partent plus</b> : une dictée est peut-être ouverte — le
+                panneau l'indique. Dites « fin de dictée ».
               </>,
               <>
                 <b>Un schéma disparu</b> : il vit dans le stockage local du navigateur — une

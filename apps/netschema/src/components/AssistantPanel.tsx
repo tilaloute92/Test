@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Btn } from './ui'
+import { ARCHITECTURES } from '../lib/architectures'
 import {
   analyserDescription,
   EXEMPLE_ASSISTANT,
@@ -54,11 +55,14 @@ export function AssistantPanel() {
   const appliquer = () => {
     if (!plan) return
     const operations = plan.etapes.flatMap((etape) => etape.operations)
+    const partiDeRien = useDiagram.getState().diagram.nodes.length === 0
     const { noeuds, liaisons } = useDiagram.getState().appliquerPlan(operations)
     useDiagram
       .getState()
       .notify(
-        `${noeuds} équipement(s) et ${liaisons} liaison(s) ajoutés. « Placement auto » range l’ensemble.`,
+        partiDeRien
+          ? `${noeuds} équipement(s) et ${liaisons} liaison(s) posés et rangés.`
+          : `${noeuds} équipement(s) et ${liaisons} liaison(s) ajoutés, chacun dans la rangée de ses pairs.`,
       )
     setPlan(null)
     setTexte('')
@@ -109,6 +113,24 @@ export function AssistantPanel() {
 
         {onglet === 'construire' ? (
           <div className="flex min-h-0 flex-1 flex-col gap-3 px-5 py-4">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11.5px] text-slate-500">Partir de :</span>
+              {ARCHITECTURES.map((architecture) => (
+                <button
+                  key={architecture.id}
+                  type="button"
+                  title={architecture.resume}
+                  onClick={() => {
+                    // Une ligne par groupe : c'est sous cette forme qu'on la retouche le mieux.
+                    setTexte(architecture.description.split(/,\s*/).join('\n'))
+                    setPlan(null)
+                  }}
+                  className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11.5px] text-slate-700 transition hover:border-blue-400 hover:bg-blue-50"
+                >
+                  {architecture.titre}
+                </button>
+              ))}
+            </div>
             <textarea
               value={texte}
               onChange={(event) => {

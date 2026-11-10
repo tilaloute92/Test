@@ -63,6 +63,27 @@ describe('créer', () => {
     }
   })
 
+  it('avec l’adjectif qu’on met devant sans y penser', () => {
+    for (const phrase of ['ajoute un autre serveur', 'ajoute un nouveau serveur', 'ajoute un second serveur', 'mets un petit serveur']) {
+      magasin().newDiagram()
+      ok(phrase)
+      assert.equal(duType('server').length, 1, `« ${phrase} »`)
+    }
+    // « un autre lien » reste une liaison, pas un équipement.
+    reseau()
+    ok('relie SW-CORE-01 à SW-CORE-02')
+    ok('ajoute un autre lien entre SW-CORE-01 et SW-CORE-02')
+    assert.equal(liens('SW-CORE-01', 'SW-CORE-02').length, 2)
+    assert.equal(schema().nodes.length, 6)
+  })
+
+  it('n’avale pas la suite d’une phrase dans le nom', () => {
+    // Créait un serveur nommé « SRV-01 relit le haut cœur ».
+    const r = dire('ajoute un serveur SRV-01 relit le haut cœur')
+    assert.equal(r.ok, false)
+    assert.equal(schema().nodes.length, 0)
+  })
+
   it('plusieurs d’un coup, du bon type', () => {
     // Créait une borne Wi-Fi 7 nommée « switchs cœur ».
     ok('ajoute deux switchs cœur')
@@ -90,6 +111,18 @@ describe('créer', () => {
     ok('ajoute un routeur et un pare-feu')
     assert.equal(duType('router').length, 1)
     assert.equal(duType('firewall').length, 1)
+  })
+
+  it('deux équipements nommés dans la même phrase gardent leur nom', () => {
+    ok('ajoute un pare-feu FW-09 et un routeur RTR-09')
+    assert.ok(noeud('FW-09') && noeud('RTR-09'), `noms : ${schema().nodes.map((n) => n.name).join(', ')}`)
+  })
+
+  it('chacun avec ses compléments', () => {
+    reseau()
+    ok('ajoute un serveur SRV-09 relié à SW-ACC-01 et un pare-feu FW-09')
+    assert.equal(liens('SRV-09', 'SW-ACC-01').length, 1)
+    assert.ok(noeud('FW-09'))
   })
 
   it('raccorde les ajouts multiples à la couche du dessus, et le dit', () => {
@@ -505,6 +538,23 @@ describe('corriger', () => {
     }
   })
 
+  it('une phrase à plusieurs commandes s’annule d’un seul coup', () => {
+    ok('ajoute un serveur SRV-01, relie-le à SW-ACC-01 puis mets-le dans la zone serveurs')
+    ok('annule')
+    assert.equal(noeud('SRV-01'), undefined, 'tout ce que la phrase a fait est défait')
+    assert.equal(schema().links.length, 0)
+    ok('rétablis')
+    assert.equal(liens('SRV-01', 'SW-ACC-01').length, 1, 'et se rétablit de même')
+    assert.match(noeud('SRV-01').zone ?? '', /serveurs/i)
+  })
+
+  it('ce qu’une phrase a fait avant d’échouer s’annule aussi d’un coup', () => {
+    dire('ajoute un serveur SRV-01 puis relie-le à SW-ACC-01 puis relie-le à INCONNU')
+    assert.equal(liens('SRV-01', 'SW-ACC-01').length, 1)
+    ok('annule')
+    assert.equal(noeud('SRV-01'), undefined)
+  })
+
   it('une énumération s’annule d’un seul coup', () => {
     ok('ajoute trois switchs d’accès')
     ok('annule')
@@ -645,5 +695,33 @@ describe('ce que la voix n’atteignait pas', () => {
     assert.equal(duType('core-switch').length, 2)
     assert.equal(duType('access-switch').length, 4)
     assert.ok(schema().links.length >= 8, `${schema().links.length} liaisons`)
+  })
+})
+
+describe('l’aide ne ment pas', () => {
+  /*
+    Les exemples du panneau sont cliquables et servent de suggestions quand une phrase n'est
+    pas comprise. Un exemple que l'application ne comprend pas elle-même est pire que pas
+    d'exemple : il apprend à dire ce qui ne marche pas.
+  */
+  it('chaque exemple affiché est une commande comprise', async () => {
+    const { VOICE_EXAMPLE_GROUPS, commandesDe, interpret } = await import('../../src/lib/voice.ts')
+    const incomprises = []
+    for (const groupe of VOICE_EXAMPLE_GROUPS) {
+      for (const exemple of groupe.examples) {
+        const commandes = commandesDe(exemple)
+        if (commandes.length === 0 || commandes.some((commande) => interpret(commande) === null)) {
+          incomprises.push(`${groupe.title} › ${exemple}`)
+        }
+      }
+    }
+    assert.deepEqual(incomprises, [])
+  })
+
+  it('aucun exemple n’est donné deux fois', async () => {
+    const { VOICE_EXAMPLES } = await import('../../src/lib/voice.ts')
+    const vus = new Set()
+    const doublons = VOICE_EXAMPLES.filter((exemple) => vus.size === vus.add(exemple.toLowerCase()).size)
+    assert.deepEqual(doublons, [])
   })
 })

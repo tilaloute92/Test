@@ -1,4 +1,6 @@
+import { trouverArchitecture, type ArchitectureDepart } from './architectures'
 import { analyserDescription } from './assistant'
+import { findDeviceScored } from './catalog'
 import { REPERE_LIAISON, REPERE_PRONOM } from './voiceGrammar'
 import {
   cleanName,
@@ -125,7 +127,38 @@ export function formaterNomEpele(nom: string): string {
 
 /** Ce qu'on crée avec « ajoute » et qui n'est pas un équipement. */
 const PAS_UN_EQUIPEMENT =
-  /^(?:a\s+la\s+note|dans\s+la\s+note)\b|^(?:une?\s+|la\s+|le\s+|l')?(?:note|annotation|remarque|commentaire|page|onglet|vlan|baie|flux|lien|liaison|cable|brin|modele|patron|gabarit|fleche|renvoi|cadre|deuxieme|second|seconde|autre|nouveau lien|nouvelle liaison)\b/
+  /^(?:a\s+la\s+note|dans\s+la\s+note)\b|^(?:une?\s+|la\s+|le\s+|l')?(?:note|annotation|remarque|commentaire|page|onglet|vlan|baie|flux|lien|liaison|cable|brin|modele|patron|gabarit|fleche|renvoi|cadre|(?:deuxieme|second|seconde|autre|nouveau|nouvelle|2e|2eme)\s+(?:lien|liaison|cable|brin))\b/
+
+/** Mots qui annoncent une architecture sans en nommer aucune. */
+const NOM_GENERIQUE = '(?:architecture|infrastructure|topologie|reseau|schema|maquette|modele|plan)'
+
+/** Ce qui peut accompagner le nom d'une architecture sans rien y changer. */
+const MOTS_NEUTRES = new Set(['de', "d'", 'en', 'type', 'un', 'une', 'le', 'la', 'avec', 'a', 'redonde', 'redondee', 'complet', 'complete', 'classique', 'standard', 'simple'])
+
+/**
+ * L'architecture de départ que la phrase demande, si elle ne demande que cela.
+ *
+ * « Monte une architecture trois tiers », « construis une agence », « crée un réseau
+ * wifi ». La phrase ne doit rien dire d'autre : « ajoute une borne wifi » parle d'une borne,
+ * pas du réseau Wi-Fi. Avec un verbe ordinaire et sans mot d'annonce, un nom qui est aussi
+ * un type du catalogue reste un équipement — « ajoute un wifi » pose une borne.
+ */
+function architectureDemandee(description: string, explicite: boolean): ArchitectureDepart | undefined {
+  const texte = normalizeSpeech(description).replace(/œ/g, 'oe')
+  const sansArticle = texte.replace(/^(?:une?|l'|le|la|mon|ma|notre)\s*/, '')
+  const sansAnnonce = sansArticle.replace(new RegExp(`^${NOM_GENERIQUE}\\s+(?:de type\\s+|type\\s+|de\\s+|d'|en\\s+|a\\s+)?`), '')
+  const annonce = sansAnnonce !== sansArticle
+  for (const candidat of [sansArticle, sansAnnonce]) {
+    const architecture = trouverArchitecture(candidat)
+    if (!architecture) continue
+    let reste = ` ${candidat} `
+    for (const mot of [...architecture.mots].sort((a, b) => b.length - a.length)) reste = reste.split(` ${mot} `).join(' ')
+    if (!reste.split(' ').filter(Boolean).every((mot) => MOTS_NEUTRES.has(mot))) continue
+    if (!explicite && !annonce && (findDeviceScored(candidat)?.score ?? 0) >= 0.8) continue
+    return architecture
+  }
+  return undefined
+}
 
 /**
  * Reconnaît une demande de construction et la confie à l'assistant de conception.
@@ -157,6 +190,11 @@ export function detecterConstruction(nettoye: string): VoiceIntent | null {
   if (/^(mets|place|pose)$/.test(verbe) && !/^(?:une?|des|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|\d+)\s/i.test(description)) {
     return null
   }
+
+  const architecture = architectureDemandee(description, explicite)
+  if (architecture) return { type: 'build', description: architecture.description, raccorder, modele: architecture.titre }
+  // « Construis une architecture », sans dire laquelle : l'assistant les présente toutes.
+  if (explicite && new RegExp(`^(?:une?\\s+|l')?${NOM_GENERIQUE}$`).test(normalizeSpeech(description))) return { type: 'assistant' }
 
   const vide = { title: '', nodes: [], links: [] }
   const plan = analyserDescription(description, vide)
@@ -460,6 +498,20 @@ export const REGLES_PARLEES: Rule[] = [
     }
   },
 
+  // Le même, dans l'ordre où on le lit sur l'équipement : « port Ethernet 1/1 sur A vers B ».
+  (t, raw) => {
+    const port = t.match(/^(?:le\s+)?port\s+(.+?)\s+(?:sur|de|du)\s+(.+?)\s+(?:vers|cote|pour|en direction de)\s+(.+)$/)
+    if (!port || /^(?:de|du|sur|cote)$/.test(port[1])) return null
+    const equipement = cleanName(brut(raw, t, port[2]))
+    return {
+      type: 'linkEdit',
+      from: equipement,
+      to: cleanName(brut(raw, t, port[3], true)),
+      patch: {},
+      port: { device: equipement, name: nomPort(brut(raw, t, port[1])) },
+    }
+  },
+
   // VLAN d'un trunk : « autorise les VLAN 10 et 20 entre A et B ».
   (t, raw) => {
     const vlans = t.match(
@@ -609,4 +661,23 @@ export const REGLES_PARLEES: Rule[] = [
     )
       ? { type: 'help' }
       : null,
+]
+
+/**
+ * Règles de dernier recours, essayées après toutes les autres.
+ *
+ * « X est un Y » est la phrase la plus naturelle pour dire ce qu'est un équipement — et la
+ * plus vague : elle ressemble à tout. Elle ne passe donc qu'en dernier, quand aucune règle
+ * plus précise n'a reconnu la phrase.
+ */
+export const REGLES_DE_REPLI: Rule[] = [
+  // « SW-CORE-01 est un Nexus 9300 » : un type du catalogue change le type, sinon c'est le modèle.
+  (t, raw) => {
+    const est = t.match(/^(.+?)\s+(?:est|c'est)\s+(?:un|une|du|de la)\s+(.+)$/)
+    if (!est) return null
+    const cible = cleanName(brut(raw, t, est[1]))
+    const type = findDeviceScored(est[2])
+    if (type && type.score >= 0.95) return { type: 'setKind', target: cible, kind: type.device.id, label: type.device.label }
+    return { type: 'setField', target: cible, field: 'model', value: brut(raw, t, est[2], true) }
+  },
 ]

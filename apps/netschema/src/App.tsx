@@ -105,6 +105,13 @@ export default function App() {
         if (useSession.getState().mode === 'server') void useSession.getState().save()
         return
       }
+      // F2 : le micro. Avant le filtre des champs de saisie — on dicte aussi depuis un champ,
+      // et F2 n'y écrit rien.
+      if (event.key === 'F2' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault()
+        useDiagram.getState().basculerEcoute()
+        return
+      }
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
       const store = useDiagram.getState()
       // Les raccourcis d'édition ne valent que dans le module schéma.

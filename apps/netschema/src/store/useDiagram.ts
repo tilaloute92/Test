@@ -21,6 +21,7 @@ import { collapsibleGroups, groupKey } from '../lib/derive'
 import { auditDiagram } from '../lib/ha'
 import { analyseImpact } from '../lib/impact'
 import { constructeurDe, proposerMecanisme } from '../lib/haTech'
+import { ARCHITECTURES } from '../lib/architectures'
 import { analyserDescription, nomPropose, type OperationPlan } from '../lib/assistant'
 import { cheminsEntre } from '../lib/paths'
 import {
@@ -459,6 +460,16 @@ interface DiagramStore {
   executerIntention: (intent: VoiceIntent) => { ok: boolean; message: string }
   /** Dictée en cours : l'équipement qui reçoit le texte, ou « plan » pour une note libre. */
   dicteeVocale: string | null
+  /** Une suppression attend un « oui » : le panneau propose alors les deux réponses. */
+  attenteVocale: boolean
+  /** Compteur de demandes d'écoute : le raccourci clavier l'incrémente, le panneau y répond. */
+  demandeEcoute: number
+  /** Ouvre le panneau vocal et bascule le micro — le geste du raccourci clavier. */
+  basculerEcoute: () => void
+  /** Pose une architecture de départ, comme si on en avait tapé la description dans l'assistant. */
+  poserArchitecture: (id: string) => { noeuds: number; liaisons: number }
+  /** Le travail de `runVoiceCommand`, sans la mise à jour de ce que montre le panneau. */
+  traiterPhraseVocale: (transcript: string) => { ok: boolean; message: string }
   /**
    * Duplique la sélection sur place. `decalage` place la copie ; 0/0 sert au glisser-copier,
    * où c'est le déplacement de la souris qui la positionne ensuite.
@@ -1680,14 +1691,16 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     let noeuds = 0
     let liaisons = 0
 
-    /*
-      Placement des nouveautés : une rangée par couche, sous le schéma existant. Le placement
-      automatique rangerait mieux, mais il déplacerait aussi ce que l'utilisateur a disposé à
-      la main — ce n'est pas à un assistant d'en décider.
-    */
-    const bornes = diagramBounds(etat.diagram.nodes)
-    const depart = etat.diagram.nodes.length === 0 ? 0 : bornes.maxY + 140
-    const occupation = new Map<number, number>()
+    const partiDeRien = etat.diagram.nodes.length === 0
+    const placeur = placeurParCouches(
+      etat.diagram.nodes,
+      etat.layout.direction,
+      operations.flatMap((operation) =>
+        operation.type === 'noeud' && !parNom.has(operation.nom.trim().toLowerCase())
+          ? [rankOf(operation.kind, operation.patch?.rank ?? null)]
+          : [],
+      ),
+    )
 
     const creer = (nom: string, kind: DeviceKind, patch?: Partial<NetNode>): string => {
       const cle = nom.trim().toLowerCase()
@@ -1699,18 +1712,9 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         }
         return existant
       }
-      const rang = rankOf(kind, patch?.rank ?? null)
-      const colonne = occupation.get(rang) ?? 0
-      occupation.set(rang, colonne + 1)
+      const position = placeur(rankOf(kind, patch?.rank ?? null))
       const id = uid('n')
-      nodes.push({
-        id,
-        kind,
-        name: nom,
-        x: Math.round(bornes.minX + colonne * (NODE_W + 60)),
-        y: Math.round(depart + rang * 150),
-        ...nettoyer(patch ?? {}),
-      })
+      nodes.push({ id, kind, name: nom, x: position.x, y: position.y, ...nettoyer(patch ?? {}) })
       parNom.set(cle, id)
       noeuds += 1
       return id
@@ -1741,7 +1745,16 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       }
     }
 
-    set((state) => ({ diagram: { ...state.diagram, nodes, links }, selectedNodes: [], selectedLinks: [] }))
+    set((state) => {
+      const diagram = { ...state.diagram, nodes, links }
+      return {
+        // Parti d'un plan vide, il n'y a rien à respecter : on range, tout simplement.
+        diagram: partiDeRien && noeuds > 0 ? autoLayoutOf(diagram, state.layout) : diagram,
+        selectedNodes: [],
+        selectedLinks: [],
+      }
+    })
+    if (partiDeRien && noeuds > 0) get().fitView()
     return { noeuds, liaisons }
   },
 
@@ -1773,6 +1786,29 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
    * dans `lib/voice.ts` ; ici on ne fait qu'appliquer l'intention et rendre compte.
    */
   dicteeVocale: null,
+  attenteVocale: false,
+  demandeEcoute: 0,
+  basculerEcoute: () => set((state) => ({ voiceOpen: true, demandeEcoute: state.demandeEcoute + 1 })),
+
+  poserArchitecture: (id) => {
+    const architecture = ARCHITECTURES.find((item) => item.id === id)
+    if (!architecture || lockedStore()) return { noeuds: 0, liaisons: 0 }
+    const plan = analyserDescription(architecture.description, get().diagram)
+    const fait = get().appliquerPlan(plan.etapes.flatMap((etape) => etape.operations))
+    get().setAppView('diagram')
+    get().notify(
+      `${architecture.titre} : ${fait.noeuds} équipement(s) et ${fait.liaisons} liaison(s) posés. Complétez à la voix, à l’assistant ou depuis la palette.`,
+    )
+    return fait
+  },
+
+  runVoiceCommand: (transcript) => {
+    const resultat = get().traiterPhraseVocale(transcript)
+    // Le panneau montre ce que la conversation attend : il doit le savoir à chaque phrase.
+    const attente = voix.attente !== null
+    if (get().attenteVocale !== attente) set({ attenteVocale: attente })
+    return resultat
+  },
 
   /**
    * Une phrase dictée, de bout en bout.
@@ -1781,7 +1817,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
    * d'une dictée, la réponse à une question posée, plusieurs commandes d'un souffle, ou une
    * commande seule. L'exécution proprement dite est dans `executerIntention`.
    */
-  runVoiceCommand: (transcript) => {
+  traiterPhraseVocale: (transcript) => {
     const brute = transcript.trim()
     if (!brute) return { ok: false, message: 'Rien entendu.' }
     const simple = normalizeSpeech(brute)
@@ -1790,7 +1826,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     if (voix.dictee) {
       const dictee = voix.dictee
       const fin =
-        /^(?:fin|arrete|stop|termine|ferme|quitte)(?:\s+de)?(?:\s+la)?\s+(?:dictee|note)$|^(?:dictee|note)\s+terminee$|^(?:termine|fin|stop)$/.test(
+        /^(?:fin|arrete|arreter|stop|termine|terminer|ferme|fermer|quitte|quitter)(?:\s+de)?(?:\s+la)?\s+(?:dict\w*|note)$|^(?:dict\w*|note)\s+termine\w*$|^(?:termine|fin|stop)$/.test(
           simple,
         )
       if (fin) {
@@ -1852,8 +1888,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       voix.touches = []
       voix.liensTouches = []
       voix.erreur = null
-      const annulable = intent.type !== 'undo' && intent.type !== 'redo'
-      const resultat = annulable ? enUneFois(() => get().executerIntention(intent)) : get().executerIntention(intent)
+      const resultat = get().executerIntention(intent)
       if (!resultat.ok) {
         // « introuvable » ne dit rien quand la vraie raison est connue : un type ambigu, un
         // pronom sans contexte. On rend la raison précise.
@@ -1865,8 +1900,9 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     }
 
     /**
-     * Une commande, un cran d'annulation. Relier quatre switchs à deux cœurs pose huit
-     * liaisons : « annule » doit les retirer toutes, pas la dernière.
+     * Une phrase, un cran d'annulation. Relier quatre switchs à deux cœurs pose huit
+     * liaisons, et « ajoute un serveur, relie-le, mets-le en zone DMZ » fait trois choses :
+     * « annule » doit défaire ce qu'on vient de dire, pas le dernier geste de l'application.
      */
     const enUneFois = <T,>(action: () => T): T => {
       const avant = get().past
@@ -1890,21 +1926,26 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       if (voix.touches.length > 0) voix.noeuds = [...voix.touches]
     }
 
-    const messages: string[] = []
-    for (const commande of commandes) {
-      const resultat = executerUne(commande)
-      if (!resultat.ok) {
-        if (commandes.length === 1) return resultat
-        // On s'arrête à la première qui échoue : celles qui suivent en dépendent presque
-        // toujours, et les exécuter quand même ferait autre chose que ce qui était voulu.
-        const fait = messages.length > 0 ? `${messages.join(' ')} ` : ''
-        return { ok: false, message: `${fait}Arrêt à « ${commande} » : ${resultat.message}` }
+    const derouler = (): { ok: boolean; message: string } => {
+      const messages: string[] = []
+      for (const commande of commandes) {
+        const resultat = executerUne(commande)
+        if (!resultat.ok) {
+          if (commandes.length === 1) return resultat
+          // On s'arrête à la première qui échoue : celles qui suivent en dépendent presque
+          // toujours, et les exécuter quand même ferait autre chose que ce qui était voulu.
+          const fait = messages.length > 0 ? `${messages.join(' ')} ` : ''
+          return { ok: false, message: `${fait}Arrêt à « ${commande} » : ${resultat.message}` }
+        }
+        messages.push(resultat.message)
+        // Une question posée ou une dictée ouverte suspend la suite.
+        if (voix.attente || voix.dictee) break
       }
-      messages.push(resultat.message)
-      // Une question posée ou une dictée ouverte suspend la suite.
-      if (voix.attente || voix.dictee) break
+      return { ok: true, message: messages.join(' ') }
     }
-    return { ok: true, message: messages.join(' ') }
+    // « Annule » et « rétablis » parcourent l'historique : ils n'y ajoutent pas un cran.
+    const seule = commandes.length === 1 ? interpret(commandes[0]) : null
+    return seule?.type === 'undo' || seule?.type === 'redo' ? derouler() : enUneFois(derouler)
   },
 
   executerIntention: (intent) => {
@@ -2041,6 +2082,23 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       return { noeuds: [], erreur: `Équipement « ${cible} » introuvable.` }
     }
 
+    /**
+     * Garde à l'écran ce qui vient d'être posé. Celui qui dicte ne fait pas défiler : un
+     * équipement ajouté hors du cadre est, pour lui, un équipement qui n'a pas été ajouté.
+     * On ne recadre que si c'est nécessaire — changer de zoom à chaque commande fatigue.
+     */
+    const montrer = (noeuds: NetNode[]) => {
+      const { view, canvasSize } = get()
+      if (canvasSize.width <= 0 || canvasSize.height <= 0) return
+      const visible = (node: NetNode) => {
+        const x = node.x * view.zoom + view.tx
+        const y = node.y * view.zoom + view.ty
+        return x >= 0 && y >= 0 && x + NODE_W * view.zoom <= canvasSize.width && y + NODE_H * view.zoom <= canvasSize.height
+      }
+      const courants = noeuds.flatMap((node) => get().diagram.nodes.find((item) => item.id === node.id) ?? [])
+      if (courants.some((node) => !visible(node))) get().fitView()
+    }
+
     /** Note ce qui vient d'être désigné : c'est ce dont on reparlera avec « le » ou « les ». */
     const retenir = (noeuds: NetNode[]) => {
       for (const node of noeuds) if (!voix.touches.includes(node.id)) voix.touches.push(node.id)
@@ -2122,7 +2180,14 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
           si la place est prise, il continue dans la même direction — sous un switch qui a
           déjà quelque chose dessous, on se range à la suite, on ne part pas sur le côté.
         */
-        let position = center()
+        // Sans repère dicté : dans la rangée de ses pairs. Le centre de la vue, où il atterrissait
+        // jusqu'ici, est le plus souvent le milieu du schéma — sur les liaisons des autres.
+        // Sur un plan vide il n'y a pas de rangée : le centre de la vue fait l'affaire.
+        const dejaLa = get().diagram.nodes
+        let position =
+          dejaLa.length === 0
+            ? center()
+            : placeurParCouches(dejaLa, get().layout.direction, [rankOf(intent.kind, null)])(rankOf(intent.kind, null))
         let voisinage = ''
         if (intent.near) {
           const repere = findNode(intent.near.target)
@@ -2187,6 +2252,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         get().select({ nodes: [id] })
         voix.touches = [id]
         const created = get().diagram.nodes.find((node) => node.id === id)
+        if (created) montrer([created])
         return {
           ok: true,
           message: `${intent.label} « ${created?.name ?? intent.label} » ajouté${voisinage}${extras.length > 0 ? `, ${extras.join(', ')}` : ''}.`,
@@ -2224,7 +2290,9 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
               ? ` ${fait.liaisons} liaison(s) posée(s), reliés à ${[...amonts].join(' et ')}.`
               : ` ${fait.liaisons} liaison(s) posée(s) entre eux.`
         const ignore = plan.ignores.length > 0 ? ` Non compris : « ${plan.ignores.join(' », « ')} ».` : ''
-        return { ok: true, message: `${crees.length} équipement(s) ajouté(s) : ${liste}.${raccord}${ignore}` }
+        montrer(crees)
+        const entete = intent.modele ? `${intent.modele} : ${crees.length} équipement(s) posé(s)` : `${crees.length} équipement(s) ajouté(s)`
+        return { ok: true, message: `${entete} : ${liste}.${raccord}${ignore}` }
       }
 
       case 'setKind': {
@@ -3290,13 +3358,14 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         const extremite = (dit: string): string => {
           const equipement = designer(dit)
           if (equipement.noeuds.length === 1) return equipement.noeuds[0].name
-          const cherche = plain(dit).replace(/^(?:la |le |l')?(?:zone|site) /, '')
+          // « la zone Bureaux » : la matrice attend le nom de la zone, sans le mot « zone ».
+          const nom = dit.trim().replace(/^(?:la |le |l['’])?(?:zone|site)\s+/i, '')
           const groupes = new Set<string>()
           for (const node of get().diagram.nodes) {
             if (node.zone) groupes.add(node.zone)
             if (node.site) groupes.add(node.site)
           }
-          return [...groupes].find((groupe) => plain(groupe) === cherche) ?? phrase(dit)
+          return [...groupes].find((groupe) => plain(groupe) === plain(nom)) ?? phrase(nom)
         }
         const flux: FlowDef = {
           id: uid('f'),
@@ -3774,6 +3843,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     oublierVoix()
     set((state) => ({
       dicteeVocale: null,
+      attenteVocale: false,
       diagram,
       pages: state.pages.map((page, index) => (index === state.activePage ? diagram : page)),
       selectedNodes: [],
@@ -3795,6 +3865,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     oublierVoix()
     set({
       dicteeVocale: null,
+      attenteVocale: false,
       diagram: completes[index],
       pages: completes,
       activePage: index,
@@ -3911,7 +3982,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
   newDiagram: () => {
     get().pushHistory()
     oublierVoix()
-    set({ diagram: emptyDiagram(), selectedNodes: [], selectedLinks: [], connectFrom: null, dicteeVocale: null })
+    set({ diagram: emptyDiagram(), selectedNodes: [], selectedLinks: [], connectFrom: null, dicteeVocale: null, attenteVocale: false })
   },
 
   loadSample: () => {
@@ -3919,6 +3990,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
     oublierVoix()
     set((state) => ({
       dicteeVocale: null,
+      attenteVocale: false,
       diagram: autoLayoutOf(sampleDiagram(), state.layout),
       selectedNodes: [],
       selectedLinks: [],
@@ -3929,6 +4001,86 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   notify: (toast) => set({ toast }),
 }))
+
+/**
+ * Où poser un équipement qui arrive dans un schéma existant.
+ *
+ * On ne déplace rien de ce que l'utilisateur a disposé — mais on ne rejette pas non plus
+ * l'arrivant tout en bas, ni au milieu de la vue, sur les liaisons des autres. Un switch
+ * d'accès se pose au bout de la rangée des switchs d'accès ; une couche qui n'existait pas
+ * encore s'intercale entre ses voisines s'il y a la place, sinon se range après la dernière.
+ * Jamais sur un équipement déjà là.
+ *
+ * `rangsAVenir` annonce les couches des équipements à poser : les couches nouvelles sont
+ * réservées dans l'ordre des rangs, quel que soit l'ordre dans lequel on les pose ensuite.
+ * La fonction rendue se souvient de ce qu'elle a posé.
+ */
+function placeurParCouches(
+  existants: NetNode[],
+  direction: LayoutOptions['direction'],
+  rangsAVenir: number[],
+): (rang: number) => { x: number; y: number } {
+  const vide = existants.length === 0
+  const vertical = direction === 'TB'
+  const pasTravers = vertical ? NODE_W + 60 : NODE_H + 50
+  const pasCouche = vertical ? NODE_H + 90 : NODE_W + 110
+  const bornes = diagramBounds(existants)
+  const mediane = (valeurs: number[]) => [...valeurs].sort((a, b) => a - b)[Math.floor(valeurs.length / 2)]
+
+  /** Par rang : la position de la couche, et le bout de la rangée. */
+  const rangees = new Map<number, { couche: number; bout: number }>()
+  const parRang = new Map<number, NetNode[]>()
+  for (const node of existants) {
+    const rang = rankOf(node.kind, node.rank ?? null)
+    parRang.set(rang, [...(parRang.get(rang) ?? []), node])
+  }
+  for (const [rang, membres] of parRang) {
+    rangees.set(rang, {
+      couche: mediane(membres.map((node) => (vertical ? node.y : node.x))),
+      bout: Math.max(...membres.map((node) => (vertical ? node.x : node.y))),
+    })
+  }
+
+  // Les couches nouvelles, dans l'ordre des rangs : chacune se cale sur celle d'avant.
+  const debutTravers = vide ? 0 : (vertical ? bornes.minX : bornes.minY) - pasTravers
+  let apresTout = vide ? -pasCouche : vertical ? bornes.maxY : bornes.maxX
+  const nouveaux = [...new Set(rangsAVenir)].filter((rang) => !rangees.has(rang)).sort((a, b) => a - b)
+  for (const rang of nouveaux) {
+    const connus = [...rangees.keys()].sort((a, b) => a - b)
+    const avant = connus.filter((autre) => autre < rang).pop()
+    const apres = connus.find((autre) => autre > rang)
+    const coucheAvant = avant === undefined ? undefined : rangees.get(avant)?.couche
+    const coucheApres = apres === undefined ? undefined : rangees.get(apres)?.couche
+    let couche: number
+    if (coucheAvant !== undefined && coucheApres !== undefined) {
+      // Entre deux couches, s'il y a la place d'une rangée ; sinon après tout le reste.
+      couche =
+        coucheApres - coucheAvant >= pasCouche * 1.6
+          ? Math.round((coucheAvant + coucheApres) / 2)
+          : (apresTout += pasCouche)
+    } else if (coucheAvant !== undefined) couche = coucheAvant + pasCouche
+    else if (coucheApres !== undefined) couche = coucheApres - pasCouche
+    else couche = apresTout += pasCouche
+    apresTout = Math.max(apresTout, couche)
+    rangees.set(rang, { couche, bout: debutTravers })
+  }
+
+  const occupes = existants.map((node) => ({ x: node.x, y: node.y }))
+  const prise = (x: number, y: number) =>
+    occupes.some((point) => Math.abs(point.x - x) < NODE_W * 0.8 && Math.abs(point.y - y) < NODE_H * 1.2)
+
+  return (rang) => {
+    const rangee = rangees.get(rang) ?? { couche: (apresTout += pasCouche), bout: debutTravers }
+    rangees.set(rang, rangee)
+    let travers = rangee.bout + pasTravers
+    const ici = () => (vertical ? { x: travers, y: rangee.couche } : { x: rangee.couche, y: travers })
+    for (let essai = 0; essai < 80 && prise(ici().x, ici().y); essai += 1) travers += pasTravers
+    rangee.bout = travers
+    const position = { x: Math.round(ici().x), y: Math.round(ici().y) }
+    occupes.push(position)
+    return position
+  }
+}
 
 /** Incrémente le suffixe numérique d'un nom : SW-ACC-A1 → SW-ACC-A2, FW-01 → FW-02. */
 function nextName(name: string, taken: Set<string>): string {

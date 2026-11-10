@@ -158,3 +158,60 @@ describe('raccordement', () => {
     assert.equal(liaisons(plan).length, 1, 'ce lien fait partie de la grappe')
   })
 })
+
+describe('ce qui est dicté n’est pas jeté', () => {
+  const noms = (texte) => crees(texte).plan.etapes.flatMap((e) => e.operations).filter((o) => o.type === 'noeud').map((o) => o.nom)
+
+  it('un nom dicté est gardé', () => {
+    // Devenaient « FW » et « RTR », sans un mot.
+    assert.deepEqual(noms('un pare-feu FW-09 et un routeur RTR-09').sort(), ['FW-09', 'RTR-09'])
+    assert.deepEqual(noms('un serveur SRV-WEB-01, un serveur SRV-DB-01'), ['SRV-WEB-01', 'SRV-DB-01'])
+  })
+
+  it('une liste de noms, quand le compte y est', () => {
+    // Donnait « CORE-A et CORE-B-01 », « CORE-A et CORE-B-02 ».
+    assert.deepEqual(noms('deux switchs cœur nommés CORE-A et CORE-B'), ['CORE-A', 'CORE-B'])
+  })
+
+  it('un nom seul pour plusieurs sert de base à la série', () => {
+    assert.deepEqual(noms('trois serveurs nommés APP'), ['APP-01', 'APP-02', 'APP-03'])
+  })
+
+  it('un constructeur ou un sigle n’est pas un nom', () => {
+    assert.deepEqual(noms('deux pare-feu Fortinet en grappe'), ['FW-01', 'FW-02'])
+    assert.deepEqual(noms('deux switches cœur en MLAG, zone DC-1'), ['SW-CORE-01', 'SW-CORE-02'])
+  })
+
+  it('une adresse dictée pour un équipement seul', () => {
+    const { plan } = crees('un pare-feu avec IP 10.0.0.1')
+    const noeud = plan.etapes.flatMap((e) => e.operations).find((o) => o.type === 'noeud')
+    assert.equal(noeud.patch.ip, '10.0.0.1')
+  })
+
+  it('ce qui ne peut pas être placé est signalé', () => {
+    assert.match(crees('deux serveurs avec IP 10.0.0.5').plan.ignores.join(' '), /10\.0\.0\.5/)
+    assert.match(crees('deux serveurs SRV-A1 reliés à SW-CORE-01').plan.ignores.join(' '), /reliés à SW-CORE-01/)
+    assert.match(crees('un serveur SRV-01 dans la baie A1').plan.ignores.join(' '), /dans la baie A1/)
+  })
+
+  it('un mot en trop devant le type est signalé, pas avalé', () => {
+    // « à joute » — « ajoute » mal entendu — disparaissait sans un mot.
+    assert.deepEqual(crees('un serveur SRV-01, à joute un pare-feu FW-01').plan.ignores, ['joute'])
+    assert.deepEqual(crees('bidule deux serveurs web').plan.ignores, ['bidule'])
+  })
+
+  it('mais pas ce qui qualifie le type, ni les adjectifs courants', () => {
+    for (const phrase of [
+      'deux routeurs de périmètre en grappe', 'trois serveurs web', 'deux nouveaux switchs d’accès',
+      'une paire de pare-feu', 'un cœur redondé', 'un cluster de trois ESXi', 'un autre serveur',
+      'deux pare-feu Fortinet en grappe actif/passif, zone DMZ',
+    ]) {
+      assert.deepEqual(crees(phrase).plan.ignores, [], `« ${phrase} »`)
+    }
+  })
+
+  it('un nom de liaison ou de baie ne devient pas celui de l’équipement', () => {
+    assert.deepEqual(noms('un serveur SRV-01 dans la baie A1'), ['SRV-01'])
+    assert.ok(!noms('deux serveurs reliés à SW-CORE-01').includes('SW-CORE-01'))
+  })
+})

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { describe, it } from 'node:test'
+import { readFileSync } from 'node:fs'
+import { before, describe, it } from 'node:test'
 
 /**
  * Reconnaître un type d'équipement dans ce qu'on dit.
@@ -12,7 +13,7 @@ import { describe, it } from 'node:test'
  * Deux listes donc : ce qui doit être reconnu, et ce qui ne doit surtout pas l'être.
  */
 
-const { findDeviceScored } = await import('../../src/lib/catalog.ts')
+const { findDeviceScored, registerPack } = await import('../../src/lib/catalog.ts')
 const { analyserDescription } = await import('../../src/lib/assistant.ts')
 const { interpret } = await import('../../src/lib/voice.ts')
 
@@ -41,7 +42,8 @@ describe('mots de tous les jours', () => {
 })
 
 describe('ce qui ne doit pas être deviné', () => {
-  // Aucun de ces mots n'est un type du catalogue de base : la bonne réponse est « inconnu ».
+  // Aucun de ces mots n'est un type du catalogue embarqué : la bonne réponse est « inconnu ».
+  // (Le lot industriel, chargé plus bas comme le fait l'application, en apporte deux.)
   for (const mots of ['automate', 'capteur', 'smartphone', 'tablette', 'application', 'antenne', 'écran', 'truc', 'ca va']) {
     it(`« ${mots} » n’est rapproché d’aucun type`, () => assert.equal(type(mots), undefined))
   }
@@ -104,5 +106,33 @@ describe('la voix et l’assistant s’accordent', () => {
 
   it('la voix refuse un type inconnu', () => {
     assert.equal(interpret('ajoute un automate'), null)
+  })
+})
+
+describe('avec le lot industriel déposé', () => {
+  /*
+    L'application charge au démarrage les lots déposés dans `public/catalog`. Le lot
+    industriel en fait partie : avec lui, « automate » et « capteur » sont de vrais types —
+    et ses synonymes (« supervision », « sonde », « passerelle ») ne doivent pas détourner
+    les mots que le catalogue embarqué connaissait déjà.
+  */
+  before(() => {
+    registerPack(JSON.parse(readFileSync(new URL('../../public/catalog/ot-industriel.json', import.meta.url), 'utf8')))
+  })
+
+  for (const [mots, attendu] of [
+    ['automate', 'plc'], ['automates', 'plc'], ['capteur', 'iot-sensor'], ['switch industriel', 'industrial-switch'],
+    ['supervision SCADA', 'scada'],
+    // Ce que le lot ne doit pas détourner.
+    ['supervision', 'nms'], ['sonde', 'ips'], ['switch', 'switch'], ['switch d’accès', 'access-switch'], ['serveur', 'server'],
+  ]) {
+    it(`« ${mots} »`, () => assert.equal(type(mots), attendu))
+  }
+
+  it('la voix et l’assistant posent alors des automates', () => {
+    assert.equal(interpret('ajoute un automate')?.kind, 'plc')
+    const plan = analyserDescription('un pare-feu, quatre automates', { title: '', nodes: [], links: [] })
+    assert.equal(plan.noeuds, 5)
+    assert.deepEqual(plan.ignores, [])
   })
 })
