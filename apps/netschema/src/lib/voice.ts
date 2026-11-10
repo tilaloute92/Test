@@ -1014,6 +1014,8 @@ const RULES: Rule[] = [
   (t) => (/^(?:zoom arriere|dezoomer?|eloigne|recule)$/.test(t) ? { type: 'zoom', direction: 'out' } : null),
 
   // ── Projet ─────────────────────────────────────────────────────────────────
+  // Avant « image » : « exporte la page HTML » ne doit pas tomber sur une autre règle.
+  (t) => (/^(?:export|exporte|exporter|genere|generer|telecharge)\b.*\b(?:html|page interactive|page web|page autonome)\b/.test(t) ? { type: 'export', format: 'html' } : null),
   (t) => (/(export|exporte|exporter|enregistre|telecharge).*(png|image)/.test(t) ? { type: 'export', format: 'png' } : null),
   (t) => (/(export|exporte|exporter|enregistre|telecharge).*(svg|vectoriel)/.test(t) ? { type: 'export', format: 'svg' } : null),
   (t) => (/(enregistre le projet|sauvegarde le projet|enregistre le schema)/.test(t) ? { type: 'project', action: 'save' } : null),
@@ -1450,7 +1452,7 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
   },
   {
     title: 'Projet',
-    examples: ['Exporte en PNG', 'Enregistre le projet', 'Titre : Architecture agence'],
+    examples: ['Exporte en PNG', 'Exporte en page HTML', 'Enregistre le projet', 'Titre : Architecture agence'],
   },
 ]
 

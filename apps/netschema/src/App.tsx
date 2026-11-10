@@ -8,6 +8,7 @@ import { DuplicateDialog } from './components/DuplicateDialog'
 import { pointeurCourant } from './lib/pointeur'
 import { QuickImportDialog } from './components/QuickImportDialog'
 import { RepriseDialog } from './components/RepriseDialog'
+import { ExportHtmlDialog } from './components/ExportHtmlDialog'
 import { Inspector } from './components/Inspector'
 import { PageTabs } from './components/PageTabs'
 import { Palette } from './components/Palette'
@@ -235,6 +236,7 @@ export default function App() {
         store.setCommandOpen(false)
         store.setImportOpen(false)
         store.fermerReprise()
+        store.setExportHtmlOuvert(false)
         store.setAssistantOpen(false)
         store.setDuplicateOpen(false)
         store.setMode('select')
@@ -274,6 +276,7 @@ export default function App() {
       <CommandPalette svgRef={svgRef} />
       <QuickImportDialog />
       <RepriseDialog />
+      <ExportHtmlDialog />
       <AssistantPanel />
       <DuplicateDialog />
       <VoicePanel />

@@ -2,12 +2,10 @@ import { VUES_LOGIQUES, type VueLogique } from '../lib/vlanViews'
 import { useMemo, useRef } from 'react'
 import { Btn, Menu, MenuItem, MenuSeparator } from './ui'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
-import { pageInteractive, type PageExportee } from '../lib/exportHtml'
-import { capturerPages } from '../lib/capture'
 import { diagramFileContent, readProjectFile } from '../lib/storage'
 import { USAGES_VLAN, usagesVlans } from '../lib/vlanUsage'
 import { useDiagram } from '../store/useDiagram'
-import { modeDefinition, VIEW_MODES } from '../lib/viewModes'
+import { VIEW_MODES } from '../lib/viewModes'
 import type { DetailLevel, OsiView, UsageVlan, ViewMode, VlanDef } from '../types'
 import { useAudit } from '../store/useAudit'
 
@@ -55,39 +53,6 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
       if (format === 'svg') downloadSvg(svg, filename)
       else await downloadPng(svg, filename, 2)
       store().notify(`Export ${format.toUpperCase()} généré.`)
-    } catch (error) {
-      store().notify(error instanceof Error ? error.message : "L'export a échoué.")
-    }
-  }
-
-  /**
-   * Export « page interactive » : toutes les pages, chacune dans ses quatre vues.
-   *
-   * La capture est faite par le module commun (`capturerPages`) : c'est le rendu réel de
-   * l'application, page après page et mode après mode, avec remise en place de ce qui était
-   * ouvert — y compris l'historique d'annulation, que la bascule de page vide.
-   */
-  const exportPage = async () => {
-    try {
-      const capturees = await capturerPages(VIEW_MODES.map((definition) => definition.id))
-      const pagesExportees: PageExportee[] = capturees.map((page) => ({
-        nom: page.nom,
-        diagram: page.diagram,
-        vues: page.vues.map((vue) => {
-          const definition = modeDefinition(vue.mode)
-          return { id: vue.mode, label: definition.label, hint: definition.hint, svg: vue.svg }
-        }),
-      }))
-      const html = pageInteractive(store().diagram.title, pagesExportees)
-      downloadBlob(
-        new Blob([html], { type: 'text/html;charset=utf-8' }),
-        `${slugify(store().diagram.title)}.html`,
-      )
-      store().notify(
-        pagesExportees.length > 1
-          ? `Page interactive générée : ${pagesExportees.length} pages × ${VIEW_MODES.length} vues dans un seul fichier.`
-          : `Page interactive générée : les ${VIEW_MODES.length} vues dans un seul fichier.`,
-      )
     } catch (error) {
       store().notify(error instanceof Error ? error.message : "L'export a échoué.")
     }
@@ -501,11 +466,11 @@ export function Toolbar({ svgRef }: { svgRef: React.RefObject<SVGSVGElement | nu
                 }}
               />
               <MenuItem
-                label="Page HTML"
-                hint="Autonome : les quatre vues, la navigation, les options"
+                label="Page HTML…"
+                hint="Autonome : choisissez les pages, les vues et les tableaux"
                 onClick={() => {
                   fermer()
-                  void exportPage()
+                  store().setExportHtmlOuvert(true)
                 }}
               />
               <MenuSeparator />

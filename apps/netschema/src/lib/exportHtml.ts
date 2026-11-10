@@ -4,7 +4,8 @@ import { deviceMeta, LINKS } from './catalog'
 import { COULEUR_INTERCONNEXION, marqueInterconnexion, usagesVlans } from './vlanUsage'
 import { mecanismeHa } from './haTech'
 import { LAYER_LABELS_OSI, linkEnd, linkLayers } from './osi'
-import type { Diagram, NetLink, NetNode, ViewMode } from '../types'
+import type { TableauExport } from './exportChoix'
+import type { Diagram, NetLink, NetNode } from '../types'
 
 /**
  * Export « page interactive » : un seul fichier HTML qui contient les quatre vues du schéma,
@@ -20,7 +21,8 @@ import type { Diagram, NetLink, NetNode, ViewMode } from '../types'
  */
 
 export interface VueExportee {
-  id: ViewMode
+  /** Identifiant de la vue dans la page : un mode, ou « logique-rails » pour une lecture logique. */
+  id: string
   label: string
   hint: string
   /** SVG produit par l'application pour ce mode. */
@@ -159,6 +161,9 @@ button{font:inherit;cursor:pointer}
 .onglet{border:1px solid transparent;background:transparent;border-radius:8px;padding:6px 14px;font-size:13px;color:#334155}
 .onglet:hover{background:#f8fafc}
 .onglet.actif{background:#fff;border-color:#cbd5e1;font-weight:600;color:#0f172a;box-shadow:0 1px 2px rgba(15,23,42,.08)}
+header .onglet{color:#cbd5e1}
+header .onglet:hover{background:rgba(255,255,255,.14);color:#fff}
+header .onglet.actif,header .onglet.actif:hover{background:#fff;color:#0f172a}
 main{display:flex;min-height:calc(100vh - 116px)}
 aside{width:290px;flex:none;background:#fff;border-right:1px solid #e2e8f0;padding:16px;overflow:auto}
 aside h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin:18px 0 8px}
@@ -545,12 +550,29 @@ function legende(pages: PageExportee[]): string {
   return `<h2>Types de liaisons</h2><div class="legende">${lignes}${interco}</div>`
 }
 
-export function pageInteractive(titre: string, pages: PageExportee[]): string {
+export interface OptionsPage {
+  /** Tableaux à joindre au schéma. Absent : tous. */
+  tableaux?: TableauExport[]
+  /** Nombre de pages du document, pour dire dans le pied si l'export en laisse de côté. */
+  pagesDuDocument?: number
+}
+
+/**
+ * Assemble la page à partir de ce qui a été capturé — ni plus, ni moins : seules les pages et
+ * les vues fournies y figurent, avec les tableaux demandés.
+ *
+ * Les fiches d'équipement et le détail des liaisons au survol restent complets même sans
+ * tableaux : ils font partie du schéma, pas des onglets de données.
+ */
+export function pageInteractive(titre: string, pages: PageExportee[], options: OptionsPage = {}): string {
+  const tableaux = new Set<TableauExport>(options.tableaux ?? ['equipements', 'liaisons', 'flux'])
   const equipements = pages.flatMap((page) => lignesEquipements(page.diagram, page.nom))
   const liaisons = pages.flatMap((page) => lignesLiaisons(page.diagram, page.nom))
   // La matrice de flux voyage avec le schéma : c'est la pièce qu'on relit en même temps.
-  const flux = pages.flatMap((page) => lignesFlux(page.diagram, page.nom))
+  const flux = tableaux.has('flux') ? pages.flatMap((page) => lignesFlux(page.diagram, page.nom)) : []
   const multi = pages.length > 1
+  const nombreDeVues = pages[0]?.vues.length ?? 0
+  const pagesLaissees = Math.max(0, (options.pagesDuDocument ?? pages.length) - pages.length)
   const donnees = {
     titre,
     pages: pages.map((page, index) => ({
@@ -561,8 +583,9 @@ export function pageInteractive(titre: string, pages: PageExportee[]): string {
     equipements,
     liaisons,
   }
-  // `</script>` à l'intérieur d'une chaîne fermerait la balise : on coupe la séquence.
-  const json = JSON.stringify(donnees).replace(/<\//g, '<\\/')
+  // Aucun « < » dans le bloc de données : `</script>` y fermerait la balise, et `<!--` suffit
+  // à dérégler l'analyse d'un bloc script. Écrit `\u003c`, le caractère se relit tel quel.
+  const json = JSON.stringify(donnees).replace(/</g, '\\u003c')
   const date = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
 
   const ongletsPages = multi
@@ -607,13 +630,13 @@ export function pageInteractive(titre: string, pages: PageExportee[]): string {
   <span class="meta">${pages.length} page(s) · ${equipements.length} équipement(s) · ${liaisons.length} liaison(s)${flux.length > 0 ? ` · ${flux.length} flux` : ''} · ${echapper(date)}</span>
   <span class="grandit"></span>
   <button class="onglet actif" id="page-onglet-plan" type="button">Schéma</button>
-  <button class="onglet" id="page-onglet-equipements" type="button">Équipements</button>
-  <button class="onglet" id="page-onglet-liaisons" type="button">Liaisons</button>
+  ${tableaux.has('equipements') ? '<button class="onglet" id="page-onglet-equipements" type="button">Équipements</button>' : ''}
+  ${tableaux.has('liaisons') ? '<button class="onglet" id="page-onglet-liaisons" type="button">Liaisons</button>' : ''}
   ${flux.length > 0 ? '<button class="onglet" id="page-onglet-flux" type="button">Flux</button>' : ''}
 </header>
 
 ${ongletsPages}
-<nav class="onglets">${ongletsVues}</nav>
+${nombreDeVues > 1 ? `<nav class="onglets">${ongletsVues}</nav>` : ''}
 
 <main>
   <aside id="colonne-options">
@@ -646,7 +669,9 @@ ${svgVues}
     </div>
   </section>
 
-  <div class="tableau" id="page-equipements" style="display:none">
+  ${
+    tableaux.has('equipements')
+      ? `<div class="tableau" id="page-equipements" style="display:none">
     ${tableau(
       multi ? ['Page', ...colonnesEquipements] : colonnesEquipements,
       equipements.map((ligne) => {
@@ -667,9 +692,13 @@ ${svgVues}
         return multi ? [ligne.page, ...cellules] : cellules
       }),
     )}
-  </div>
+  </div>`
+      : ''
+  }
 
-  <div class="tableau" id="page-liaisons" style="display:none">
+  ${
+    tableaux.has('liaisons')
+      ? `<div class="tableau" id="page-liaisons" style="display:none">
     ${tableau(
       multi ? ['Page', ...colonnesLiaisons] : colonnesLiaisons,
       liaisons.map((ligne) => {
@@ -690,7 +719,9 @@ ${svgVues}
         return multi ? [ligne.page, ...cellules] : cellules
       }),
     )}
-  </div>
+  </div>`
+      : ''
+  }
   ${
     flux.length > 0
       ? `<div class="tableau" id="page-flux" style="display:none">
@@ -708,7 +739,11 @@ ${svgVues}
 </main>
 
 <div id="bulle"></div>
-<footer>Page autonome produite par ${APP_SIGNATURE} — aucune connexion requise. Toutes les pages, leurs vues et l'intégralité des informations sont dans ce seul fichier.</footer>
+<footer>Page autonome produite par ${APP_SIGNATURE} — aucune connexion requise. ${
+    pagesLaissees > 0
+      ? `Ce fichier contient ${pages.length} page(s) sur les ${pages.length + pagesLaissees} du document, en ${nombreDeVues} vue(s).`
+      : `Toutes les pages du document y figurent, en ${nombreDeVues} vue(s).`
+  }</footer>
 
 <script type="application/json" id="donnees">${json}</script>
 <script>${SCRIPT}</script>

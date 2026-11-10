@@ -180,7 +180,7 @@ export type VoiceIntent =
   | { type: 'titleBlock'; champ: 'reference' | 'indice' | 'auteur' | 'organisation' | 'diffusion'; valeur: string }
   | { type: 'annotate'; kind: 'note' | 'zone' | 'arrow'; text?: string }
   // Projet
-  | { type: 'export'; format: 'svg' | 'png' }
+  | { type: 'export'; format: 'svg' | 'png' | 'html' }
   | { type: 'project'; action: 'new' | 'sample' | 'save' }
   | { type: 'title'; title: string }
   | { type: 'import' }

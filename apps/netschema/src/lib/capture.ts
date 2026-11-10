@@ -15,12 +15,13 @@ import { getDiagramSvg } from './exportRegistry'
 import { svgMarkup } from './exportImage'
 import { useDiagram } from '../store/useDiagram'
 import type { Diagram, ViewMode } from '../types'
+import type { VueLogique } from './vlanViews'
 
 export interface PageCapturee {
   nom: string
   diagram: Diagram
-  /** Un SVG par mode demandé, dans l'ordre. */
-  vues: { mode: ViewMode; svg: string }[]
+  /** Un SVG par vue demandée, dans l'ordre. */
+  vues: { mode: ViewMode; logique?: VueLogique; svg: string }[]
 }
 
 /** Laisse le navigateur peindre avant de relever le SVG. */
@@ -43,6 +44,18 @@ async function attendreLeCanevas(delaiMs = 3000): Promise<SVGSVGElement> {
   }
 }
 
+/** Une vue à capturer : un mode, et pour le mode logique laquelle de ses lectures. */
+export interface VueDemandee {
+  mode: ViewMode
+  logique?: VueLogique
+}
+
+/** Ce qu'un changement de mode ou de lecture logique réécrit, et qu'un export doit rendre. */
+const REGLAGES_DE_VUE = [
+  'viewMode', 'vueLogique', 'view', 'osi', 'strictOsi',
+  'showIp', 'showVlans', 'showSpeeds', 'showGrid', 'showLayerLabels', 'showZones', 'showSites', 'showClusters', 'showLags',
+] as const
+
 /**
  * Capture toutes les pages du document dans les modes demandés.
  *
@@ -50,37 +63,54 @@ async function attendreLeCanevas(delaiMs = 3000): Promise<SVGSVGElement> {
  * le schéma tel qu'il est tenu, pas ses quatre lectures.
  */
 export async function capturerPages(modes: ViewMode[] = []): Promise<PageCapturee[]> {
+  const vues = modes.length > 0 ? modes.map((mode): VueDemandee => ({ mode })) : null
+  return capturerSelection(null, vues)
+}
+
+/**
+ * Capture les pages et les vues demandées.
+ *
+ * `pages` à `null` : toutes. `vues` à `null` : la vue affichée, telle quelle.
+ *
+ * Changer de mode réécrit les cases d'affichage, et une lecture logique recadre le plan :
+ * remettre le mode d'origine à la fin ne suffisait pas — les cases que l'utilisateur avait
+ * décochées se retrouvaient cochées après un export. On relève donc tous ces réglages
+ * avant de commencer, et on les rend tels quels.
+ */
+export async function capturerSelection(pages: number[] | null, vues: VueDemandee[] | null): Promise<PageCapturee[]> {
   const store = useDiagram.getState
   const moduleInitial = store().appView
   const pageInitiale = store().activePage
-  const modeInitial = store().viewMode
   const { past, future } = store()
+  const etat = store()
+  const reglages = Object.fromEntries(REGLAGES_DE_VUE.map((cle) => [cle, etat[cle]]))
 
   if (moduleInitial !== 'diagram') store().setAppView('diagram')
 
   const capturees: PageCapturee[] = []
   try {
     const svg = await attendreLeCanevas()
-    const pages = store().pagesCompletes()
-    for (let index = 0; index < pages.length; index += 1) {
-      store().selectPage(index)
-      const vues: PageCapturee['vues'] = []
-      for (const mode of modes.length > 0 ? modes : [store().viewMode]) {
-        store().setViewMode(mode)
+    const toutes = store().pagesCompletes()
+    const index = (pages ?? toutes.map((_, position) => position)).filter((position) => position >= 0 && position < toutes.length)
+    for (const position of index) {
+      store().selectPage(position)
+      const prises: PageCapturee['vues'] = []
+      for (const vue of vues ?? [{ mode: store().viewMode, logique: store().viewMode === 'logique' ? store().vueLogique : undefined }]) {
+        if (vue.mode === 'logique' && vue.logique) store().setVueLogique(vue.logique)
+        else store().setViewMode(vue.mode)
         await repeindre()
-        vues.push({ mode, svg: svgMarkup(svg) })
+        prises.push({ mode: vue.mode, logique: vue.logique, svg: svgMarkup(svg) })
       }
       capturees.push({
-        nom: pages[index].pageName ?? `Schéma ${index + 1}`,
+        nom: toutes[position].pageName ?? `Schéma ${position + 1}`,
         diagram: store().diagram,
-        vues,
+        vues: prises,
       })
     }
   } finally {
     store().selectPage(pageInitiale)
-    store().setViewMode(modeInitial)
     if (moduleInitial !== 'diagram') store().setAppView(moduleInitial)
-    useDiagram.setState({ past, future })
+    useDiagram.setState({ ...reglages, past, future })
   }
   return capturees
 }

@@ -450,8 +450,8 @@ deux onduleurs`}</pre>
             « mode architecture ».
           </P>
           <Note>
-            L'export <b>HTML</b> embarque les quatre vues dans un seul fichier : on passe de
-            l'une à l'autre sans NetSchema, chez le destinataire.
+            L'export <b>HTML</b> embarque les vues de votre choix dans un seul fichier : on
+            passe de l'une à l'autre sans NetSchema, chez le destinataire.
           </Note>
         </>
       ),
@@ -667,8 +667,8 @@ deux onduleurs`}</pre>
           <Note>
             Chaque page est un schéma complet et indépendant : ses équipements, ses liaisons,
             son plan d'adressage, ses baies. L'inventaire et les baies affichent la page
-            ouverte. L'export <b>HTML</b>, lui, embarque <b>toutes les pages</b> — chacune dans
-            ses quatre vues.
+            ouverte. L'export <b>HTML</b>, lui, peut embarquer <b>plusieurs pages</b> : vous
+            cochez celles que vous voulez, et les vues de chacune.
           </Note>
           <Note>
             L'annulation (<Keys>Ctrl</Keys> <Keys>Z</Keys>) ne traverse pas les pages : changer
@@ -807,7 +807,7 @@ deux onduleurs`}</pre>
     {
       id: 'export',
       title: 'Exporter : SVG, PNG, page interactive',
-      keywords: 'export svg png html page interactive partager transmettre document imprimer navigation autonome hors ligne',
+      keywords: 'export svg png html page interactive partager transmettre document imprimer navigation autonome hors ligne choisir onglets pages vues tableaux selection',
       body: (
         <>
           <P>
@@ -825,18 +825,51 @@ deux onduleurs`}</pre>
                 une diapositive.
               </>,
               <>
-                <b>HTML</b> — une <b>page autonome</b> qui contient <b>toutes les pages du
-                document</b>, chacune dans <b>ses quatre vues</b>,
-                toutes les informations saisies et de quoi s'y déplacer. Un seul fichier, qui
-                s'ouvre d'un double-clic sur n'importe quel poste : ni serveur, ni Internet, ni
-                NetSchema.
+                <b>HTML</b> — une <b>page autonome</b> qui contient les pages et les vues que
+                vous choisissez, les informations saisies et de quoi s'y déplacer. Un seul
+                fichier, qui s'ouvre d'un double-clic sur n'importe quel poste : ni serveur, ni
+                Internet, ni NetSchema.
               </>,
             ]}
           />
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="pb-1.5 text-[12px] font-semibold text-slate-700">
+              Choisir ce que contient la page HTML
+            </p>
+            <P>
+              <b>Exporter ▸ Page HTML…</b> ouvre un choix en trois parties ; le bas de la fenêtre
+              annonce ce que contiendra le fichier (« 2 pages × 3 vues = 6 schémas, 2 tableaux »)
+              avant de le produire.
+            </P>
+            <List
+              items={[
+                <>
+                  <b>Les onglets</b> : les pages du document. Toutes, la page ouverte seule, ou
+                  celles que vous cochez — le destinataire d'un site n'a pas à recevoir les
+                  cinq autres.
+                </>,
+                <>
+                  <b>Les vues</b> de chaque page : architecture, technique, présentation, et les
+                  trois lectures logiques une à une — routage, plan VLAN, domaines de diffusion.
+                  Jusqu'ici une seule des trois partait, celle qui se trouvait affichée.
+                </>,
+                <>
+                  <b>Les tableaux</b> joints : équipements, liaisons, flux. Sans eux la page
+                  reste complète — la fiche d'un équipement et le détail d'une liaison au survol
+                  gardent toutes leurs informations.
+                </>,
+                <>
+                  Vos vues et vos tableaux sont <b>retenus</b> pour l'export suivant. L'affichage
+                  de l'application — mode, cases cochées, zoom — est remis tel qu'il était.
+                </>,
+                <>À la voix : « exporte en page HTML ».</>,
+              ]}
+            />
+          </div>
           <P>Dans la page exportée, le destinataire retrouve :</P>
           <List
             items={[
-              <>les <b>quatre vues</b> en onglets — architecture, technique, logique, présentation ;</>,
+              <>les <b>pages</b> et les <b>vues</b> choisies, en onglets ;</>,
               <>
                 des <b>cases à cocher</b> pour montrer ou masquer séparément les adresses IP,
                 les VLAN et les débits, ainsi que les cadres de groupes et les noms de
@@ -846,8 +879,8 @@ deux onduleurs`}</pre>
               <>la <b>fiche</b> d'un équipement d'un clic, le <b>détail d'une liaison</b> au survol ;</>,
               <>une <b>recherche</b> qui estompe tout ce qui ne correspond pas ;</>,
               <>
-                deux <b>tableaux</b> — équipements et liaisons — avec l'intégralité des
-                informations, y compris ce que le schéma ne montre pas.
+                les <b>tableaux</b> retenus — équipements, liaisons, flux — avec l'intégralité
+                des informations, y compris ce que le schéma ne montre pas.
               </>,
             ]}
           />

@@ -474,6 +474,9 @@ interface DiagramStore {
   setPanelOpen: (panneau: Panneau, ouvert: boolean) => void
   setCommandOpen: (open: boolean) => void
   setImportOpen: (open: boolean) => void
+  /** Dialogue de l'export en page HTML : choix des pages, des vues et des tableaux. */
+  exportHtmlOuvert: boolean
+  setExportHtmlOuvert: (open: boolean) => void
   /** Dialogue « reprendre de l'inventaire ». */
   repriseOuverte: boolean
   /** Équipements cochés d'avance à l'ouverture : ceux qu'on avait sélectionnés dans l'inventaire. */
@@ -1816,6 +1819,9 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   setCommandOpen: (commandOpen) => set({ commandOpen }),
   setImportOpen: (importOpen) => set({ importOpen }),
+
+  exportHtmlOuvert: false,
+  setExportHtmlOuvert: (exportHtmlOuvert) => set({ exportHtmlOuvert }),
 
   repriseOuverte: false,
   repriseChoix: [],
@@ -3340,6 +3346,10 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         get().setCollapsed([])
         return { ok: true, message: 'Tout est déplié.' }
       case 'export': {
+        if (intent.format === 'html') {
+          get().setExportHtmlOuvert(true)
+          return { ok: true, message: 'Export en page HTML : cochez les pages, les vues et les tableaux à y mettre.' }
+        }
         const svg = getDiagramSvg()
         if (!svg) return { ok: false, message: 'Ouvrez le schéma avant d’exporter.' }
         const filename = `${slugify(get().diagram.title)}.${intent.format}`
