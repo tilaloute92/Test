@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { autoLayout, diagramBounds, layerBands } from '../lib/layout'
-import { deviceMeta, findDevice, ROLES , rankOf } from '../lib/catalog'
+import { deviceMeta, findDevice, findDeviceScored, LINKS, ROLES , rankOf } from '../lib/catalog'
 import { bestMatch } from '../lib/speech'
 import { searchModels } from '../lib/vendors'
 import { STATUS_LABELS } from '../lib/inventory'
@@ -21,7 +21,8 @@ import { collapsibleGroups, groupKey } from '../lib/derive'
 import { auditDiagram } from '../lib/ha'
 import { analyseImpact } from '../lib/impact'
 import { constructeurDe, proposerMecanisme } from '../lib/haTech'
-import type { OperationPlan } from '../lib/assistant'
+import { analyserDescription, nomPropose, type OperationPlan } from '../lib/assistant'
+import { cheminsEntre } from '../lib/paths'
 import {
   dupliquer,
   encombrement,
@@ -36,7 +37,9 @@ import {
 import type { DiscoveryResult } from '../lib/discovery'
 import { downloadBlob, downloadPng, downloadSvg, slugify } from '../lib/exportImage'
 import { getDiagramSvg } from '../lib/exportRegistry'
-import { interpret, isEditingIntent } from '../lib/voice'
+import { interpret, isEditingIntent, normalizeSpeech, type VoiceIntent } from '../lib/voice'
+import { decouperCommandes, REPERE_PRONOM } from '../lib/voiceGrammar'
+import { eclaterAjouts, phrase } from '../lib/voiceParle'
 import { inventoryFromCsv } from '../lib/inventory'
 import { deduceVlans } from '../lib/osi'
 import { analyserVlans } from '../lib/vlanImport'
@@ -132,6 +135,40 @@ const DEFAULT_LAYOUT: LayoutOptions = {
 }
 
 const HISTORY_LIMIT = 60
+
+/**
+ * Mémoire de la conversation vocale.
+ *
+ * Elle n'est pas dans le magasin : rien de tout cela ne se dessine, et rien ne doit
+ * provoquer un rendu. C'est ce qui permet de dire « relie-le au cœur » sans répéter le nom
+ * qu'on vient de donner — exactement comme on parle à quelqu'un.
+ */
+const voix = {
+  /** Équipements dont on vient de parler : ce que désignent « le », « les », « celui-ci ». */
+  noeuds: [] as string[],
+  /** Liaisons dont on vient de parler : « cette liaison », « passe-la en fibre ». */
+  liens: [] as string[],
+  /** Équipements et liaisons désignés pendant la commande en cours. */
+  touches: [] as string[],
+  liensTouches: [] as string[],
+  /** Raison précise du dernier échec de désignation, pour remplacer un « introuvable » muet. */
+  erreur: null as string | null,
+  /** Action suspendue à un « oui ». */
+  attente: null as null | { executer: () => { ok: boolean; message: string } },
+  /** Dictée en cours : tout ce qui est dit devient du texte, jusqu'à « fin de dictée ». */
+  dictee: null as null | { noeud: string | null; nom: string; texte: string[] },
+}
+
+/** Oublie la conversation : un autre document, c'est une autre conversation. */
+function oublierVoix() {
+  voix.noeuds = []
+  voix.liens = []
+  voix.touches = []
+  voix.liensTouches = []
+  voix.erreur = null
+  voix.attente = null
+  voix.dictee = null
+}
 export const GRID = 20
 
 export interface ViewState {
@@ -418,6 +455,10 @@ interface DiagramStore {
   setImportOpen: (open: boolean) => void
   setVoiceOpen: (open: boolean) => void
   runVoiceCommand: (transcript: string) => { ok: boolean; message: string }
+  /** Exécute une intention déjà comprise. `runVoiceCommand` orchestre, celle-ci agit. */
+  executerIntention: (intent: VoiceIntent) => { ok: boolean; message: string }
+  /** Dictée en cours : l'équipement qui reçoit le texte, ou « plan » pour une note libre. */
+  dicteeVocale: string | null
   /**
    * Duplique la sélection sur place. `decalage` place la copie ; 0/0 sert au glisser-copier,
    * où c'est le déplacement de la souris qui la positionne ensuite.
@@ -1731,17 +1772,142 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
    * Exécute une commande dictée (ou tapée dans le panneau vocal). L'interprétation vit
    * dans `lib/voice.ts` ; ici on ne fait qu'appliquer l'intention et rendre compte.
    */
+  dicteeVocale: null,
+
+  /**
+   * Une phrase dictée, de bout en bout.
+   *
+   * Quatre choses se décident ici, avant toute interprétation : la phrase est-elle la suite
+   * d'une dictée, la réponse à une question posée, plusieurs commandes d'un souffle, ou une
+   * commande seule. L'exécution proprement dite est dans `executerIntention`.
+   */
   runVoiceCommand: (transcript) => {
-    const intent = interpret(transcript)
-    if (!intent) {
-      return { ok: false, message: `Commande non comprise : « ${transcript.trim()} »` }
-    }
-    // Lire, naviguer, interroger et exporter restent permis sur un schéma verrouillé ; le
-    // modifier est refusé avec l'explication, plutôt que de ne rien faire en silence.
-    if (lockedStore() && isEditingIntent(intent)) {
-      return { ok: false, message: 'Schéma verrouillé : dites « déverrouille le schéma » pour le modifier.' }
+    const brute = transcript.trim()
+    if (!brute) return { ok: false, message: 'Rien entendu.' }
+    const simple = normalizeSpeech(brute)
+
+    // ── Dictée en cours : tout est du texte, sauf l'ordre d'y mettre fin ──────────────────
+    if (voix.dictee) {
+      const dictee = voix.dictee
+      const fin =
+        /^(?:fin|arrete|stop|termine|ferme|quitte)(?:\s+de)?(?:\s+la)?\s+(?:dictee|note)$|^(?:dictee|note)\s+terminee$|^(?:termine|fin|stop)$/.test(
+          simple,
+        )
+      if (fin) {
+        voix.dictee = null
+        set({ dicteeVocale: null })
+        if (dictee.noeud === null) {
+          if (dictee.texte.length === 0) return { ok: true, message: 'Dictée fermée, rien n’a été noté.' }
+          get().addAnnotation('note', { text: dictee.texte.join(' ') })
+          return { ok: true, message: `Dictée fermée : note de ${dictee.texte.length} phrase(s) posée sur le plan.` }
+        }
+        return {
+          ok: true,
+          message:
+            dictee.texte.length === 0
+              ? 'Dictée fermée, rien n’a été noté.'
+              : `Dictée fermée : ${dictee.texte.length} phrase(s) notée(s) sur ${dictee.nom}.`,
+        }
+      }
+      const texte = phrase(brute)
+      dictee.texte.push(texte)
+      if (dictee.noeud !== null) {
+        // Écrit au fil de l'eau : une dictée qu'on oublie de fermer ne perd rien.
+        const cible = get().diagram.nodes.find((node) => node.id === dictee.noeud)
+        if (!cible) {
+          voix.dictee = null
+          set({ dicteeVocale: null })
+          return { ok: false, message: 'L’équipement de la dictée n’existe plus : dictée fermée.' }
+        }
+        get().updateNode(cible.id, { notes: cible.notes ? `${cible.notes}\n${texte}` : texte })
+      }
+      return { ok: true, message: `Noté : « ${texte} »` }
     }
 
+    // ── Réponse à une confirmation demandée ───────────────────────────────────────────────
+    if (voix.attente) {
+      const attente = voix.attente
+      voix.attente = null
+      if (/^(?:oui|ouais|yes|ok|okay|d'accord|confirme|je confirme|vas y|vas-y|c'est ca|exact|affirmatif|absolument|bien sur|fais le)(?:\s|$)/.test(simple)) {
+        return attente.executer()
+      }
+      if (/^(?:non|no|annule|abandonne|laisse|stop|surtout pas|ne fais rien)(?:\s|$)/.test(simple)) {
+        return { ok: true, message: 'Abandonné : rien n’a été supprimé.' }
+      }
+      // Toute autre phrase vaut abandon : un « oui » dit plus tard ne doit plus rien supprimer.
+    }
+
+    // ── Une ou plusieurs commandes ────────────────────────────────────────────────────────
+    const commandes = decouperCommandes(brute).flatMap(eclaterAjouts)
+    if (commandes.length === 0) return { ok: false, message: `Commande non comprise : « ${brute} »` }
+
+    const executerUne = (commande: string): { ok: boolean; message: string } => {
+      const intent = interpret(commande)
+      if (!intent) return { ok: false, message: `Commande non comprise : « ${commande} »` }
+      // Lire, naviguer, interroger et exporter restent permis sur un schéma verrouillé ; le
+      // modifier est refusé avec l'explication, plutôt que de ne rien faire en silence.
+      if (lockedStore() && isEditingIntent(intent)) {
+        return { ok: false, message: 'Schéma verrouillé : dites « déverrouille le schéma » pour le modifier.' }
+      }
+      voix.touches = []
+      voix.liensTouches = []
+      voix.erreur = null
+      const annulable = intent.type !== 'undo' && intent.type !== 'redo'
+      const resultat = annulable ? enUneFois(() => get().executerIntention(intent)) : get().executerIntention(intent)
+      if (!resultat.ok) {
+        // « introuvable » ne dit rien quand la vraie raison est connue : un type ambigu, un
+        // pronom sans contexte. On rend la raison précise.
+        if (voix.erreur && /introuvable/.test(resultat.message)) return { ok: false, message: voix.erreur }
+        return resultat
+      }
+      memoriserContexte(intent)
+      return resultat
+    }
+
+    /**
+     * Une commande, un cran d'annulation. Relier quatre switchs à deux cœurs pose huit
+     * liaisons : « annule » doit les retirer toutes, pas la dernière.
+     */
+    const enUneFois = <T,>(action: () => T): T => {
+      const avant = get().past
+      const repere = avant[avant.length - 1]
+      const resultat = action()
+      const apres = get().past
+      const index = repere ? apres.lastIndexOf(repere) : -1
+      const garder = index + 2
+      if ((repere ? index >= 0 : true) && apres.length > garder) set({ past: apres.slice(0, garder) })
+      return resultat
+    }
+
+    /** Ce dont on vient de parler devient ce que « le », « les », « cette liaison » désignent. */
+    const memoriserContexte = (intent: VoiceIntent) => {
+      if (intent.type === 'delete' || intent.type === 'linkDelete') {
+        voix.liens = []
+        if (intent.type === 'delete') voix.noeuds = []
+        return
+      }
+      if (voix.liensTouches.length > 0) voix.liens = [...voix.liensTouches]
+      if (voix.touches.length > 0) voix.noeuds = [...voix.touches]
+    }
+
+    const messages: string[] = []
+    for (const commande of commandes) {
+      const resultat = executerUne(commande)
+      if (!resultat.ok) {
+        if (commandes.length === 1) return resultat
+        // On s'arrête à la première qui échoue : celles qui suivent en dépendent presque
+        // toujours, et les exécuter quand même ferait autre chose que ce qui était voulu.
+        const fait = messages.length > 0 ? `${messages.join(' ')} ` : ''
+        return { ok: false, message: `${fait}Arrêt à « ${commande} » : ${resultat.message}` }
+      }
+      messages.push(resultat.message)
+      // Une question posée ou une dictée ouverte suspend la suite.
+      if (voix.attente || voix.dictee) break
+    }
+    return { ok: true, message: messages.join(' ') }
+  },
+
+  executerIntention: (intent) => {
     const state = get()
     /**
      * Point de dépose d'un équipement ajouté à la voix : le centre de la vue, décalé jusqu'à
@@ -1787,75 +1953,206 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         .replace(/[\u0300-\u036f]/g, '')
         .toLowerCase()
         .trim()
-    /**
-     * Cible d'une commande : un nom d'équipement, « la sélection », ou « tous les … »
-     * suivi d'un type. C'est ce qui permet de dicter une modification en lot.
-     */
-    const resolveTargets = (target: string): NetNode[] => {
-      const nodes = get().diagram.nodes
-      const needle = plain(target)
-      if (/^(la selection|selection|ca|cela|eux|celles ci|ceux ci)$/.test(needle)) {
-        return nodes.filter((node) => get().selectedNodes.includes(node.id))
-      }
-      const bulk = needle.match(/^(?:tous|toutes)\s+(?:les|des)\s+(.+)$/)
-      if (bulk) {
-        const device = findDevice(bulk[1])
-        return device ? nodes.filter((node) => node.kind === device.id) : []
-      }
-      const single = findNode(target)
-      return single ? [single] : []
-    }
-
-    /** Message d'échec parlant : « aucun téléphone IP » plutôt que « introuvable ». */
-    const missMessage = (target: string): string => {
-      const needle = plain(target)
-      if (/^(la selection|selection|ca|cela)$/.test(needle)) return 'Rien n’est sélectionné.'
-      const bulk = needle.match(/^(?:tous|toutes)\s+(?:les|des)\s+(.+)$/)
-      if (bulk) {
-        const device = findDevice(bulk[1])
-        return device
-          ? `Aucun équipement « ${device.label} » dans le schéma.`
-          : `Type d’équipement « ${bulk[1]} » inconnu.`
-      }
-      return `Équipement « ${target} » introuvable.`
-    }
-
-    /** Une liaison désignée par ses deux extrémités, dans un sens ou dans l'autre. */
-    const findLink = (fromName: string, toName: string) => {
-      const from = findNode(fromName)
-      const to = findNode(toName)
-      if (!from || !to) return { from, to, link: undefined }
-      const link = get().diagram.links.find(
-        (item) =>
-          (item.from === from.id && item.to === to.id) || (item.from === to.id && item.to === from.id),
-      )
-      return { from, to, link }
-    }
-
-    /**
-     * Retrouve un équipement par son nom. La dictée rend rarement « SW-CORE-01 » à la
-     * lettre : on accepte « sw core 01 », « swcore1 », et à défaut le nom le plus proche
-     * au sens de la distance d'édition.
-     */
-    const findNode = (name: string) => {
+    /** Retrouve un équipement par son nom, tel que la dictée le rend. */
+    const trouverParNom = (name: string): NetNode | undefined => {
       const needle = plain(name)
+      if (!needle) return undefined
       const squeezed = needle.replace(/[\s-]/g, '')
       const nodes = get().diagram.nodes
       return (
         nodes.find((node) => plain(node.name) === needle) ??
+        nodes.find((node) => plain(node.name).replace(/[\s-]/g, '') === squeezed) ??
         nodes.find((node) => plain(node.name).startsWith(needle)) ??
-        nodes.find((node) => plain(node.name).replace(/[\s-]/g, '').includes(squeezed)) ??
+        (squeezed.length >= 3
+          ? nodes.find((node) => plain(node.name).replace(/[\s-]/g, '').includes(squeezed))
+          : undefined) ??
         bestMatch(name, nodes, (node) => node.name)?.item
       )
     }
 
+    /**
+     * Ce qu'une désignation dictée désigne vraiment.
+     *
+     * On ne nomme pas toujours : on dit « le », « les deux cœurs », « tous les switchs
+     * d'accès », « SW-01 et SW-02 », « le routeur ». Chaque forme a sa règle, dans cet ordre :
+     * le pronom d'abord, puis le nom exact — « Opérateur A et B » peut être un nom —, puis la
+     * liste, puis le type. Quand le type désigne plusieurs équipements et que la phrase n'en
+     * voulait qu'un, on ne choisit pas : on nomme les candidats.
+     */
+    const designer = (cible: string): { noeuds: NetNode[]; erreur?: string } => {
+      const nodes = get().diagram.nodes
+      const needle = plain(cible)
+      if (!needle) return { noeuds: [], erreur: 'Aucun équipement désigné.' }
+
+      if (needle === REPERE_PRONOM || /^(?:lui|eux|elles|celui ci|ceux ci)$/.test(needle)) {
+        const contexte = nodes.filter((node) => voix.noeuds.includes(node.id))
+        if (contexte.length > 0) return { noeuds: contexte }
+        const selection = nodes.filter((node) => get().selectedNodes.includes(node.id))
+        if (selection.length > 0) return { noeuds: selection }
+        return {
+          noeuds: [],
+          erreur: 'Je ne sais pas de quel équipement vous parlez : nommez-le, ou faites d’abord une sélection.',
+        }
+      }
+      if (/^(?:la selection|selection|ca|cela|celles ci)$/.test(needle)) {
+        const selection = nodes.filter((node) => get().selectedNodes.includes(node.id))
+        return selection.length > 0 ? { noeuds: selection } : { noeuds: [], erreur: 'Rien n’est sélectionné.' }
+      }
+
+      const sansArticle = cible.trim().replace(/^(?:le|la|les|l'|l’|au|aux|du|des|de la|un|une)\s+/i, '')
+      const direct = trouverParNom(cible) ?? trouverParNom(sansArticle)
+      if (direct) return { noeuds: [direct] }
+
+      // « A et B », « A, B et C ».
+      const morceaux = cible
+        .split(/\s*,\s*|\s+et\s+/i)
+        .map((morceau) => morceau.trim())
+        .filter(Boolean)
+      if (morceaux.length > 1) {
+        const tous: NetNode[] = []
+        for (const morceau of morceaux) {
+          const partie = designer(morceau)
+          if (partie.erreur) return { noeuds: [], erreur: partie.erreur }
+          for (const node of partie.noeuds) if (!tous.includes(node)) tous.push(node)
+        }
+        return { noeuds: tous }
+      }
+
+      // Par type : « tous les switchs d'accès », « les deux cœurs », « le routeur ».
+      const parType = needle.match(
+        /^(tous les |toutes les |tous |toutes )?(les |des |aux |ces |mes )?(\d+ |deux |trois |quatre |cinq |six )?(?:le |la |l'|au |du |un |une )?(.+)$/,
+      )
+      const typeDemande = parType?.[4]?.trim()
+      const trouve = typeDemande ? findDeviceScored(typeDemande) : undefined
+      if (trouve && trouve.score >= 0.8) {
+        const candidats = nodes.filter((node) => node.kind === trouve.device.id)
+        const libelle = trouve.device.label.toLowerCase()
+        if (candidats.length === 0) return { noeuds: [], erreur: `Aucun ${libelle} dans le schéma.` }
+        const pluriel = Boolean(parType?.[1] || parType?.[2] || parType?.[3])
+        if (pluriel || candidats.length === 1) return { noeuds: candidats }
+        return {
+          noeuds: [],
+          erreur: `Plusieurs équipements « ${trouve.device.label} » : ${candidats
+            .slice(0, 6)
+            .map((node) => node.name)
+            .join(', ')}. Dites lequel, ou « les ${libelle} » pour tous.`,
+        }
+      }
+      return { noeuds: [], erreur: `Équipement « ${cible} » introuvable.` }
+    }
+
+    /** Note ce qui vient d'être désigné : c'est ce dont on reparlera avec « le » ou « les ». */
+    const retenir = (noeuds: NetNode[]) => {
+      for (const node of noeuds) if (!voix.touches.includes(node.id)) voix.touches.push(node.id)
+    }
+
+    /** Cible d'une commande, quelle que soit la façon dont elle est dite. */
+    const resolveTargets = (target: string): NetNode[] => {
+      const resultat = designer(target)
+      if (resultat.erreur) voix.erreur = resultat.erreur
+      retenir(resultat.noeuds)
+      return resultat.noeuds
+    }
+
+    /** Message d'échec parlant : la raison précise, plutôt qu'un « introuvable » uniforme. */
+    const missMessage = (target: string): string =>
+      designer(target).erreur ?? `Équipement « ${target} » introuvable.`
+
+    /**
+     * Un équipement, et un seul. La dictée rend rarement « SW-CORE-01 » à la lettre : on
+     * accepte « sw core 01 », « swcore1 », le nom le plus proche — et aussi « le », « le
+     * routeur » quand il n'y en a qu'un.
+     */
+    const findNode = (name: string): NetNode | undefined => {
+      const resultat = designer(name)
+      if (resultat.noeuds.length === 1) {
+        retenir(resultat.noeuds)
+        return resultat.noeuds[0]
+      }
+      voix.erreur =
+        resultat.erreur ??
+        `Cette commande ne prend qu’un équipement, et « ${name} » en désigne ${resultat.noeuds.length}.`
+      return undefined
+    }
+
+    /** Liaisons entre deux équipements, dans un sens ou dans l'autre. */
+    const liaisonsEntre = (a: string, b: string): NetLink[] =>
+      get().diagram.links.filter(
+        (item) => (item.from === a && item.to === b) || (item.from === b && item.to === a),
+      )
+
+    /** Ce qu'une modification de liaison a changé, dit en clair pour la réponse parlée. */
+    const direPatch = (patch: Partial<NetLink>, port?: string): string => {
+      const morceaux = [
+        patch.kind ? LINKS[patch.kind]?.label?.toLowerCase() : null,
+        patch.speed ?? null,
+        patch.mode === 'trunk' ? 'trunk' : patch.mode === 'access' ? 'accès' : null,
+        patch.vlans ? `VLAN ${patch.vlans}` : null,
+        patch.lag ? `agrégat ${patch.lag}` : null,
+        port ? `port ${port}` : null,
+        patch.label ? `« ${patch.label} »` : null,
+        patch.redundant ? 'secours' : null,
+      ].filter(Boolean)
+      return morceaux.join(', ')
+    }
+
     switch (intent.type) {
       case 'add': {
-        const position = center()
         get().setAppView('diagram')
 
-        const seed: Partial<NetNode> = {}
-        if (intent.name) seed.name = intent.name
+        // Un nom déjà pris : à la voix, deux équipements du même nom ne se distinguent plus.
+        // On refuse, et on dit comment retrouver celui qui existe.
+        let nomVoulu = intent.name
+        if (nomVoulu && intent.descriptif) {
+          // « Serveur web » dit deux fois : le second s'appelle « Serveur web 2 ».
+          const pris = new Set(get().diagram.nodes.map((node) => node.name))
+          if ([...pris].some((nom) => plain(nom) === plain(nomVoulu ?? ''))) nomVoulu = nextName(nomVoulu, pris)
+        } else if (nomVoulu) {
+          const homonyme = get().diagram.nodes.find((node) => plain(node.name) === plain(nomVoulu ?? ''))
+          if (homonyme) {
+            return {
+              ok: false,
+              message: `« ${homonyme.name} » existe déjà. Donnez un autre nom, ou dites « sélectionne ${homonyme.name} ».`,
+            }
+          }
+        }
+
+        /*
+          Où poser le nouvel arrivant. « Sous SW-CORE-01 » le place à l'aplomb de son repère ;
+          si la place est prise, il continue dans la même direction — sous un switch qui a
+          déjà quelque chose dessous, on se range à la suite, on ne part pas sur le côté.
+        */
+        let position = center()
+        let voisinage = ''
+        if (intent.near) {
+          const repere = findNode(intent.near.target)
+          if (!repere) return { ok: false, message: missMessage(intent.near.target) }
+          const pas = {
+            below: [0, NODE_H + 90],
+            above: [0, -(NODE_H + 90)],
+            right: [NODE_W + 70, 0],
+            left: [-(NODE_W + 70), 0],
+          }[intent.near.side]
+          const libre = (x: number, y: number) =>
+            !get().diagram.nodes.some(
+              (node) => Math.abs(node.x - x) < NODE_W * 0.8 && Math.abs(node.y - y) < NODE_H * 1.2,
+            )
+          let [x, y] = [repere.x + pas[0], repere.y + pas[1]]
+          for (let essai = 0; essai < 12 && !libre(x, y); essai += 1) {
+            x += pas[0] === 0 ? 0 : Math.sign(pas[0]) * (NODE_W + 40)
+            y += pas[1] === 0 ? 0 : Math.sign(pas[1]) * (NODE_H + 40)
+          }
+          position = { x, y }
+          voisinage = { below: 'sous', above: 'au-dessus de', right: 'à droite de', left: 'à gauche de' }[intent.near.side]
+          voisinage = `, ${voisinage} ${repere.name}`
+          // Le repère a servi à placer : ce n'est pas de lui qu'on reparlera, c'est du nouveau.
+          voix.touches = []
+        }
+
+        const seed: Partial<NetNode> = {
+          // Sans nom dicté, la convention du schéma : « FW-02 » se redit, « Pare-feu 2 » non.
+          name: nomVoulu ?? nomPropose(intent.kind, get().diagram),
+        }
         for (const [field, value] of Object.entries(intent.props ?? {})) {
           if (field === 'vlan') seed.vlan = /^\d+$/.test(value) ? `VLAN ${value}` : value
           else if (field === 'rackUnit' || field === 'heightU' || field === 'powerW') {
@@ -1880,19 +2177,54 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         }
 
         if (intent.connectTo) {
-          const peer = findNode(intent.connectTo)
-          if (peer) {
-            get().addLink(id, peer.id)
-            extras.push(`relié à ${peer.name}`)
-          } else extras.push(`« ${intent.connectTo} » introuvable`)
+          const pairs = designer(intent.connectTo)
+          if (pairs.noeuds.length > 0) {
+            for (const peer of pairs.noeuds) get().addLink(id, peer.id)
+            extras.push(`relié à ${pairs.noeuds.map((node) => node.name).join(' et ')}`)
+          } else extras.push(pairs.erreur ?? `« ${intent.connectTo} » introuvable`)
         }
 
         get().select({ nodes: [id] })
+        voix.touches = [id]
         const created = get().diagram.nodes.find((node) => node.id === id)
         return {
           ok: true,
-          message: `${intent.label} « ${created?.name ?? intent.label} » ajouté${extras.length > 0 ? `, ${extras.join(', ')}` : ''}.`,
+          message: `${intent.label} « ${created?.name ?? intent.label} » ajouté${voisinage}${extras.length > 0 ? `, ${extras.join(', ')}` : ''}.`,
         }
+      }
+
+      case 'build': {
+        const avant = new Set(get().diagram.nodes.map((node) => node.id))
+        const plan = analyserDescription(intent.description, get().diagram, { raccorder: intent.raccorder })
+        if (plan.noeuds === 0) {
+          return { ok: false, message: `Je n’ai reconnu aucun équipement dans « ${intent.description} ».` }
+        }
+        get().setAppView('diagram')
+        const fait = get().appliquerPlan(plan.etapes.flatMap((etape) => etape.operations))
+        const crees = get().diagram.nodes.filter((node) => !avant.has(node.id))
+        get().select({ nodes: crees.map((node) => node.id) })
+        voix.touches = crees.map((node) => node.id)
+
+        // Ce à quoi les nouveaux ont été raccordés dans le schéma existant : il faut le dire,
+        // puisque personne ne l'a demandé mot pour mot.
+        const nomsCrees = new Set(crees.map((node) => node.name))
+        const amonts = new Set<string>()
+        for (const operation of plan.etapes.flatMap((etape) => etape.operations)) {
+          if (operation.type !== 'liaison') continue
+          for (const nom of [operation.de, operation.vers]) if (!nomsCrees.has(nom)) amonts.add(nom)
+        }
+        const liste =
+          crees.length <= 6
+            ? crees.map((node) => node.name).join(', ')
+            : `${crees.slice(0, 5).map((node) => node.name).join(', ')}… et ${crees.length - 5} autres`
+        const raccord =
+          fait.liaisons === 0
+            ? ''
+            : amonts.size > 0
+              ? ` ${fait.liaisons} liaison(s) posée(s), reliés à ${[...amonts].join(' et ')}.`
+              : ` ${fait.liaisons} liaison(s) posée(s) entre eux.`
+        const ignore = plan.ignores.length > 0 ? ` Non compris : « ${plan.ignores.join(' », « ')} ».` : ''
+        return { ok: true, message: `${crees.length} équipement(s) ajouté(s) : ${liste}.${raccord}${ignore}` }
       }
 
       case 'setKind': {
@@ -1929,36 +2261,90 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       }
 
       case 'linkDelete': {
-        const { from, to, link } = findLink(intent.from, intent.to)
-        if (!from) return { ok: false, message: `Équipement « ${intent.from} » introuvable.` }
-        if (!to) return { ok: false, message: `Équipement « ${intent.to} » introuvable.` }
-        if (!link) return { ok: false, message: `Aucune liaison entre ${from.name} et ${to.name}.` }
-        get().select({ links: [link.id] })
+        let aSupprimer: NetLink[]
+        let libelle: string
+        if (!intent.from && !intent.to) {
+          // « supprime cette liaison » : celle dont on vient de parler, à défaut la sélection.
+          const contexte = get().diagram.links.filter((item) => voix.liens.includes(item.id))
+          aSupprimer = contexte.length > 0 ? contexte : get().diagram.links.filter((item) => get().selectedLinks.includes(item.id))
+          if (aSupprimer.length === 0) {
+            return { ok: false, message: 'Je ne sais pas de quelle liaison vous parlez : dites « le lien entre A et B ».' }
+          }
+          libelle = aSupprimer.length === 1 ? 'Liaison supprimée.' : `${aSupprimer.length} liaisons supprimées.`
+        } else {
+          const from = findNode(intent.from)
+          if (!from) return { ok: false, message: missMessage(intent.from) }
+          const to = findNode(intent.to)
+          if (!to) return { ok: false, message: missMessage(intent.to) }
+          aSupprimer = liaisonsEntre(from.id, to.id)
+          if (aSupprimer.length === 0) return { ok: false, message: `Aucune liaison entre ${from.name} et ${to.name}.` }
+          libelle =
+            aSupprimer.length === 1
+              ? `Liaison ${from.name} – ${to.name} supprimée.`
+              : `${aSupprimer.length} liaisons supprimées entre ${from.name} et ${to.name}.`
+        }
+        get().select({ links: aSupprimer.map((item) => item.id) })
         get().deleteSelection()
-        return { ok: true, message: `Liaison ${from.name} – ${to.name} supprimée.` }
+        return { ok: true, message: libelle }
       }
 
       case 'linkEdit': {
-        const { from, to, link } = findLink(intent.from, intent.to)
-        if (!from) return { ok: false, message: `Équipement « ${intent.from} » introuvable.` }
-        if (!to) return { ok: false, message: `Équipement « ${intent.to} » introuvable.` }
-
-        // « la liaison entre A et B est en fibre » vaut aussi bien pour une liaison qui
-        // existe déjà que pour une qui reste à créer.
-        let id = link?.id
+        let cibles: NetLink[]
+        let entete: string
         let created = false
-        if (!id) {
-          get().addLink(from.id, to.id)
-          id = get().selectedLinks[0]
-          created = true
-        }
-        if (!id) return { ok: false, message: 'La liaison n’a pas pu être créée.' }
+        const nomDe = (id: string) => get().diagram.nodes.find((node) => node.id === id)?.name ?? '?'
 
-        get().updateLink(id, intent.patch)
-        get().select({ links: [id] })
+        if (!intent.from && !intent.to) {
+          // « passe-la en fibre », « cette liaison est en 10 giga » : la liaison du contexte.
+          const contexte = get().diagram.links.filter((item) => voix.liens.includes(item.id))
+          cibles = contexte.length > 0 ? contexte : get().diagram.links.filter((item) => get().selectedLinks.includes(item.id))
+          if (cibles.length === 0) {
+            return { ok: false, message: 'Je ne sais pas de quelle liaison vous parlez : dites « le lien entre A et B ».' }
+          }
+          entete = cibles.length === 1 ? `Liaison ${nomDe(cibles[0].from)} – ${nomDe(cibles[0].to)}` : `${cibles.length} liaisons`
+        } else {
+          const from = findNode(intent.from)
+          if (!from) return { ok: false, message: missMessage(intent.from) }
+          const to = findNode(intent.to)
+          if (!to) return { ok: false, message: missMessage(intent.to) }
+          if (from.id === to.id) return { ok: false, message: 'Une liaison relie deux équipements différents.' }
+
+          // « la liaison entre A et B est en fibre » vaut aussi bien pour une liaison qui
+          // existe déjà que pour une qui reste à créer.
+          let entre = liaisonsEntre(from.id, to.id)
+          if (entre.length === 0) {
+            get().addLink(from.id, to.id)
+            entre = liaisonsEntre(from.id, to.id)
+            created = true
+          }
+          if (entre.length === 0) return { ok: false, message: 'La liaison n’a pas pu être créée.' }
+          cibles = intent.tous ? entre : [entre[0]]
+          entete = `Liaison ${from.name} – ${to.name}`
+          if (intent.tous && entre.length > 1) entete = `${entre.length} liaisons ${from.name} – ${to.name}`
+        }
+
+        // Le port se pose du côté de l'équipement qui le porte, quel que soit le sens dans
+        // lequel la liaison a été tirée.
+        const porteur = intent.port ? designer(intent.port.device).noeuds[0] : undefined
+        for (const item of cibles) {
+          const patch: Partial<NetLink> = { ...intent.patch }
+          if (intent.port && porteur) {
+            if (item.from === porteur.id) patch.portA = intent.port.name
+            else if (item.to === porteur.id) patch.portB = intent.port.name
+          }
+          get().updateLink(item.id, patch)
+        }
+        get().select({ links: cibles.map((item) => item.id) })
+        voix.liensTouches = cibles.map((item) => item.id)
+
+        const quoi = direPatch(intent.patch, intent.port?.name)
+        const conseil =
+          intent.patch.lag && cibles.length === 1
+            ? ' Un seul brin pour l’instant : dites « double le lien » pour former le faisceau.'
+            : ''
         return {
           ok: true,
-          message: `Liaison ${from.name} – ${to.name} ${created ? 'créée' : 'modifiée'}.`,
+          message: `${entete}${created ? ' créée' : ''}${quoi ? ` : ${quoi}` : ' modifiée'}.${conseil}`,
         }
       }
 
@@ -1969,6 +2355,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         if (ids.length === 0) return { ok: false, message: `Aucun ${intent.label.toLowerCase()} dans le schéma.` }
         get().setAppView('diagram')
         get().select({ nodes: ids })
+        voix.touches = ids
         return {
           ok: true,
           message:
@@ -1978,23 +2365,88 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         }
       }
       case 'link': {
-        const from = findNode(intent.from)
-        const to = findNode(intent.to)
-        if (!from) return { ok: false, message: `Équipement « ${intent.from} » introuvable.` }
-        if (!to) return { ok: false, message: `Équipement « ${intent.to} » introuvable.` }
-        get().addLink(from.id, to.id)
-        if (intent.linkKind) {
-          const created = get().selectedLinks[0]
-          if (created) get().updateLink(created, { kind: intent.linkKind })
+        // Les paires à relier. « Relie tous les switchs d'accès aux deux cœurs » en fait
+        // autant qu'il y a de couples ; « relie-les entre eux » n'en fait qu'une.
+        let paires: [NetNode, NetNode][]
+        let sujets: NetNode[]
+        if (intent.mutual) {
+          const groupe = designer(intent.from)
+          if (groupe.erreur) return { ok: false, message: groupe.erreur }
+          if (groupe.noeuds.length !== 2) {
+            return {
+              ok: false,
+              message: `« Entre eux » relie deux équipements, et ${groupe.noeuds.length} sont désignés. Nommez les deux à relier.`,
+            }
+          }
+          paires = [[groupe.noeuds[0], groupe.noeuds[1]]]
+          sujets = groupe.noeuds
+        } else {
+          const de = designer(intent.from)
+          if (de.erreur) return { ok: false, message: de.erreur }
+          const vers = designer(intent.to)
+          if (vers.erreur) return { ok: false, message: vers.erreur }
+          paires = []
+          for (const a of de.noeuds) for (const b of vers.noeuds) if (a.id !== b.id) paires.push([a, b])
+          sujets = de.noeuds
+          if (paires.length === 0) return { ok: false, message: 'Une liaison relie deux équipements différents.' }
         }
-        return { ok: true, message: `${from.name} relié à ${to.name}.` }
+        if (paires.length > 40) {
+          return { ok: false, message: `Cela ferait ${paires.length} liaisons d’un coup : désignez moins d’équipements.` }
+        }
+
+        const posees: string[] = []
+        let deja = 0
+        for (const [a, b] of paires) {
+          // « relie » dit deux fois ne pose pas deux câbles : un second brin se demande.
+          if (!intent.extra && liaisonsEntre(a.id, b.id).length > 0) {
+            deja += 1
+            continue
+          }
+          const seed: Partial<NetLink> = {}
+          if (intent.linkKind) seed.kind = intent.linkKind
+          if (intent.speed) seed.speed = intent.speed
+          get().addLink(a.id, b.id, Object.keys(seed).length > 0 ? seed : undefined)
+          const cree = get().selectedLinks[0]
+          if (cree) posees.push(cree)
+        }
+        // Le sujet reste le sujet : après « relie-le à A », « relie-le à B » parle du même.
+        voix.touches = sujets.map((node) => node.id)
+        voix.liensTouches = posees
+        if (posees.length > 0) get().select({ links: posees })
+
+        const [a, b] = paires[0]
+        if (posees.length === 0) {
+          return {
+            ok: true,
+            message:
+              paires.length === 1
+                ? `${a.name} et ${b.name} sont déjà reliés. Dites « double le lien » pour un second brin.`
+                : 'Ces équipements sont déjà reliés entre eux.',
+          }
+        }
+        const detail = [intent.linkKind ? LINKS[intent.linkKind]?.label?.toLowerCase() : null, intent.speed]
+          .filter(Boolean)
+          .join(', ')
+        const suite = `${detail ? ` (${detail})` : ''}${deja > 0 ? ` ; ${deja} l’étaient déjà` : ''}`
+        if (paires.length === 1) {
+          return { ok: true, message: `${a.name} relié à ${b.name}${intent.extra ? ' par un second brin' : ''}${suite}.` }
+        }
+        const cibles = [...new Set(paires.map(([, vers]) => vers.name))]
+        return {
+          ok: true,
+          message: `${posees.length} liaisons posées vers ${cibles.slice(0, 4).join(' et ')}${suite}.`,
+        }
       }
 
       case 'rename': {
         const node = findNode(intent.target)
-        if (!node) return { ok: false, message: `Équipement « ${intent.target} » introuvable.` }
-        get().updateNode(node.id, { name: intent.name })
-        return { ok: true, message: `${node.name} renommé en ${intent.name}.` }
+        if (!node) return { ok: false, message: missMessage(intent.target) }
+        const nom = intent.name.trim()
+        if (!nom) return { ok: false, message: 'Quel nom lui donner ?' }
+        const homonyme = get().diagram.nodes.find((autre) => autre.id !== node.id && plain(autre.name) === plain(nom))
+        if (homonyme) return { ok: false, message: `« ${homonyme.name} » existe déjà : choisissez un autre nom.` }
+        get().updateNode(node.id, { name: nom })
+        return { ok: true, message: `${node.name} renommé en ${nom}.` }
       }
 
       case 'setField': {
@@ -2558,28 +3010,91 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       case 'fit':
         get().fitView()
         return { ok: true, message: 'Vue ajustée.' }
-      case 'undo':
-        get().undo()
-        return { ok: true, message: 'Annulé.' }
-      case 'redo':
+      case 'undo': {
+        const voulues = intent.times ?? 1
+        let faites = 0
+        while (faites < voulues && get().past.length > 0) {
+          get().undo()
+          faites += 1
+        }
+        if (faites === 0) return { ok: false, message: 'Rien à annuler.' }
+        return { ok: true, message: faites === 1 ? 'Annulé.' : `${faites} actions annulées.` }
+      }
+      case 'redo': {
+        if (get().future.length === 0) {
+          // « rétablis » se dit aussi d'une panne simulée : s'il n'y a rien à refaire et
+          // qu'une simulation est en cours, c'est d'elle qu'on parle.
+          const pannes = get().pannes
+          if (pannes.nodes.length + pannes.links.length > 0) {
+            get().clearPannes()
+            return { ok: true, message: 'Simulation remise à zéro : réseau intact.' }
+          }
+          return { ok: false, message: 'Rien à rétablir.' }
+        }
         get().redo()
         return { ok: true, message: 'Rétabli.' }
+      }
       case 'delete': {
+        /*
+          Supprimer se rattrape — « annule » — mais pas toujours : celui qui dicte ne regarde
+          pas forcément l'écran. Au-delà de trois équipements, ou pour tout le schéma, on
+          annonce ce qui va partir et on attend un « oui ». Toute autre phrase abandonne.
+        */
+        const SEUIL_CONFIRMATION = 3
+        if (intent.all) {
+          const { nodes, links } = get().diagram
+          const annotations = get().diagram.annotations ?? []
+          if (nodes.length === 0 && annotations.length === 0) return { ok: false, message: 'Le schéma est déjà vide.' }
+          voix.attente = {
+            executer: () => {
+              get().selectAll()
+              get().deleteSelection()
+              oublierVoix()
+              return { ok: true, message: `Schéma vidé : ${nodes.length} équipement(s) supprimé(s). Dites « annule » pour revenir.` }
+            },
+          }
+          return {
+            ok: true,
+            message: `Cela supprime tout le schéma : ${nodes.length} équipement(s) et ${links.length} liaison(s). Dites « oui » pour confirmer, « non » pour abandonner.`,
+          }
+        }
         if (intent.target) {
           const targets = resolveTargets(intent.target)
           if (targets.length === 0) return { ok: false, message: missMessage(intent.target) }
-          get().select({ nodes: targets.map((node) => node.id) })
-          get().deleteSelection()
+          const ids = targets.map((node) => node.id)
+          const supprimer = () => {
+            get().select({ nodes: ids })
+            get().deleteSelection()
+            return {
+              ok: true,
+              message:
+                targets.length === 1 ? `${targets[0].name} supprimé.` : `${targets.length} équipements supprimés.`,
+            }
+          }
+          if (targets.length <= SEUIL_CONFIRMATION) return supprimer()
+          voix.attente = { executer: supprimer }
+          const apercu = targets.slice(0, 5).map((node) => node.name).join(', ')
           return {
             ok: true,
-            message:
-              targets.length === 1 ? `${targets[0].name} supprimé.` : `${targets.length} équipements supprimés.`,
+            message: `Cela supprime ${targets.length} équipements : ${apercu}${targets.length > 5 ? '…' : ''}. Dites « oui » pour confirmer, « non » pour abandonner.`,
           }
         }
-        const count = state.selectedNodes.length + state.selectedLinks.length
-        if (count === 0) return { ok: false, message: 'Rien n’est sélectionné.' }
-        get().deleteSelection()
-        return { ok: true, message: `${count} élément(s) supprimé(s).` }
+        const { selectedNodes, selectedLinks, selectedAnnotations } = get()
+        const count = selectedNodes.length + selectedLinks.length + selectedAnnotations.length
+        if (count === 0) {
+          return { ok: false, message: 'Rien n’est sélectionné : dites « supprime NOM », ou sélectionnez d’abord.' }
+        }
+        const supprimer = () => {
+          get().select({ nodes: selectedNodes, links: selectedLinks, annotations: selectedAnnotations })
+          get().deleteSelection()
+          return { ok: true, message: `${count} élément(s) supprimé(s).` }
+        }
+        if (selectedNodes.length <= SEUIL_CONFIRMATION) return supprimer()
+        voix.attente = { executer: supprimer }
+        return {
+          ok: true,
+          message: `Cela supprime ${selectedNodes.length} équipements sélectionnés. Dites « oui » pour confirmer, « non » pour abandonner.`,
+        }
       }
       case 'connect':
         get().setAppView('diagram')
@@ -2672,6 +3187,161 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       case 'import':
         get().setImportOpen(true)
         return { ok: true, message: 'Import rapide ouvert.' }
+      case 'confirm':
+        // Arrive ici seulement quand rien n'attendait de réponse.
+        return { ok: false, message: 'Rien n’attend de confirmation.' }
+
+      case 'note': {
+        let cible: NetNode | undefined
+        let texte = intent.text
+        if (intent.libre !== undefined) {
+          /*
+            Sans deux-points, rien ne dit où finit le nom. On prend le plus long début de
+            phrase qui est exactement un nom du schéma — puis, à défaut, un pronom ou un type
+            seul de son espèce. Jamais d'à-peu-près ici : un texte libre ressemble à tout.
+          */
+          const mots = intent.libre.split(/\s+/)
+          const exact = (nom: string) => {
+            const cherche = plain(nom).replace(/[\s-]/g, '')
+            return cherche ? get().diagram.nodes.find((node) => plain(node.name).replace(/[\s-]/g, '') === cherche) : undefined
+          }
+          for (let longueur = Math.min(mots.length - 1, 6); longueur >= 1 && !cible; longueur -= 1) {
+            const trouve = exact(mots.slice(0, longueur).join(' '))
+            if (trouve) {
+              cible = trouve
+              texte = phrase(mots.slice(longueur).join(' '))
+            }
+          }
+          for (let longueur = Math.min(mots.length - 1, 4); longueur >= 1 && !cible; longueur -= 1) {
+            const debut = mots.slice(0, longueur).join(' ')
+            const parType = findDeviceScored(debut.replace(/^(?:le|la|l'|l’|du|au)\s*/i, ''))
+            const estPronom = plain(debut) === REPERE_PRONOM
+            if (!estPronom && !(parType && parType.score >= 0.9)) continue
+            const designe = designer(debut)
+            if (designe.noeuds.length === 1) {
+              cible = designe.noeuds[0]
+              texte = phrase(mots.slice(longueur).join(' '))
+            }
+          }
+          if (!cible) {
+            return {
+              ok: false,
+              message: `Je ne trouve pas l’équipement au début de « ${intent.libre} ». Dites « note sur NOM : texte ».`,
+            }
+          }
+          retenir([cible])
+        } else if (intent.target) {
+          cible = findNode(intent.target)
+          if (!cible) return { ok: false, message: missMessage(intent.target) }
+        }
+        if (!cible) return { ok: false, message: 'Dites sur quel équipement porte la note.' }
+        if (!texte.trim()) return { ok: false, message: 'La note est vide.' }
+        const actuelle = get().diagram.nodes.find((node) => node.id === cible.id)?.notes?.trim()
+        const suite = intent.append && actuelle
+        get().updateNode(cible.id, { notes: suite ? `${actuelle}\n${texte}` : texte })
+        return {
+          ok: true,
+          message: suite ? `Ajouté à la note de ${cible.name} : « ${texte} »` : `Note de ${cible.name} : « ${texte} »`,
+        }
+      }
+
+      case 'dictation': {
+        if (intent.action === 'stop') return { ok: false, message: 'Aucune dictée en cours.' }
+        let cible: NetNode | undefined
+        if (intent.target) {
+          cible = findNode(intent.target)
+          if (!cible) return { ok: false, message: missMessage(intent.target) }
+        } else {
+          // Sans équipement désigné : celui dont on parle, s'il n'y en a qu'un ; sinon le plan.
+          const contexte = get().diagram.nodes.filter((node) => voix.noeuds.includes(node.id))
+          const selection = get().diagram.nodes.filter((node) => get().selectedNodes.includes(node.id))
+          cible = contexte.length === 1 ? contexte[0] : selection.length === 1 ? selection[0] : undefined
+          if (cible) retenir([cible])
+        }
+        voix.dictee = { noeud: cible?.id ?? null, nom: cible?.name ?? 'le plan', texte: [] }
+        set({ dicteeVocale: cible?.name ?? 'une note du plan' })
+        return {
+          ok: true,
+          message: cible
+            ? `Dictée ouverte sur ${cible.name} : tout ce que vous dites s’ajoute à sa note. Dites « fin de dictée » pour reprendre les commandes.`
+            : 'Dictée ouverte : tout ce que vous dites ira dans une note du plan. Dites « fin de dictée » pour reprendre les commandes.',
+        }
+      }
+
+      case 'annotationRemove': {
+        const annotations = get().diagram.annotations ?? []
+        if (annotations.length === 0) return { ok: false, message: 'Aucune note sur le plan.' }
+        if (intent.which === 'all') {
+          get().select({ nodes: [], annotations: annotations.map((item) => item.id) })
+          get().deleteSelection()
+          return { ok: true, message: `${annotations.length} annotation(s) supprimée(s).` }
+        }
+        const derniere = annotations[annotations.length - 1]
+        get().removeAnnotation(derniere.id)
+        return { ok: true, message: `Dernière annotation supprimée${derniere.text ? ` : « ${derniere.text} »` : ''}.` }
+      }
+
+      case 'flow': {
+        /*
+          Une extrémité de flux est un équipement, une zone ou un site — ce que la matrice
+          sait recouper avec le schéma. On reprend l'orthographe du schéma quand le nom dicté
+          y correspond, pour que le contrôle des flux le reconnaisse.
+        */
+        const extremite = (dit: string): string => {
+          const equipement = designer(dit)
+          if (equipement.noeuds.length === 1) return equipement.noeuds[0].name
+          const cherche = plain(dit).replace(/^(?:la |le |l')?(?:zone|site) /, '')
+          const groupes = new Set<string>()
+          for (const node of get().diagram.nodes) {
+            if (node.zone) groupes.add(node.zone)
+            if (node.site) groupes.add(node.site)
+          }
+          return [...groupes].find((groupe) => plain(groupe) === cherche) ?? phrase(dit)
+        }
+        const flux: FlowDef = {
+          id: uid('f'),
+          from: extremite(intent.from),
+          to: extremite(intent.to),
+          service: intent.service,
+          action: intent.decision,
+        }
+        get().upsertFlow(flux)
+        voix.touches = []
+        return {
+          ok: true,
+          message: `Flux ${flux.service ? `${flux.service} ` : ''}${flux.from} → ${flux.to} ${
+            intent.decision === 'refuse' ? 'refusé' : 'autorisé'
+          }, inscrit dans la matrice.`,
+        }
+      }
+
+      case 'panel': {
+        get().setPanelOpen(intent.panel, intent.open)
+        const noms = { palette: 'Palette', inspecteur: 'Inspecteur', minicarte: 'Mini-carte' }
+        return { ok: true, message: `${noms[intent.panel]} ${intent.open ? 'affiché' : 'masqué'}${intent.panel === 'inspecteur' ? '' : 'e'}.` }
+      }
+
+      case 'path': {
+        const depart = findNode(intent.from)
+        if (!depart) return { ok: false, message: missMessage(intent.from) }
+        const arrivee = findNode(intent.to)
+        if (!arrivee) return { ok: false, message: missMessage(intent.to) }
+        const rapport = cheminsEntre(get().diagram, depart.id, arrivee.id)
+        const chemin = rapport.chemins[0]
+        if (!chemin) return { ok: false, message: `Aucun chemin entre ${depart.name} et ${arrivee.name}.` }
+        get().setAppView('diagram')
+        get().montrerLiens(chemin.etapes.flatMap((etape) => (etape.link ? [etape.link.id] : [])))
+        const trajet = chemin.etapes.map((etape) => etape.node.name).join(' → ')
+        const secours = rapport.chemins.length > 1 ? ` ${rapport.chemins.length - 1} chemin(s) de secours.` : ' Pas de chemin de secours.'
+        const goulot = chemin.goulot ? ` Goulot : ${chemin.goulot.debit}.` : ''
+        return { ok: true, message: `${chemin.sauts} saut(s) : ${trajet}.${secours}${goulot}` }
+      }
+
+      case 'blink': {
+        get().setDureeClignotement(intent.seconds)
+        return { ok: true, message: `Les liaisons désignées clignotent ${get().dureeClignotement} secondes.` }
+      }
+
       case 'help':
         get().setAppView('guide')
         get().setVoiceOpen(true)
@@ -3101,7 +3771,9 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   loadDiagram: (diagram) => {
     get().pushHistory()
+    oublierVoix()
     set((state) => ({
+      dicteeVocale: null,
       diagram,
       pages: state.pages.map((page, index) => (index === state.activePage ? diagram : page)),
       selectedNodes: [],
@@ -3119,8 +3791,10 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       title: classeur.title,
       pageName: page.pageName ?? `Schéma ${position + 1}`,
     }))
-    // Un autre document : l'historique de l'ancien n'a plus de sens.
+    // Un autre document : l'historique de l'ancien n'a plus de sens, la conversation non plus.
+    oublierVoix()
     set({
+      dicteeVocale: null,
       diagram: completes[index],
       pages: completes,
       activePage: index,
@@ -3236,12 +3910,15 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   newDiagram: () => {
     get().pushHistory()
-    set({ diagram: emptyDiagram(), selectedNodes: [], selectedLinks: [], connectFrom: null })
+    oublierVoix()
+    set({ diagram: emptyDiagram(), selectedNodes: [], selectedLinks: [], connectFrom: null, dicteeVocale: null })
   },
 
   loadSample: () => {
     get().pushHistory()
+    oublierVoix()
     set((state) => ({
+      dicteeVocale: null,
       diagram: autoLayoutOf(sampleDiagram(), state.layout),
       selectedNodes: [],
       selectedLinks: [],

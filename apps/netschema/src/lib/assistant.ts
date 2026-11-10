@@ -20,7 +20,7 @@
  * tant que le plan n'est pas accepté.
  */
 
-import { allDevices, deviceMeta, LAYER_LABELS, rankOf } from './catalog'
+import { deviceMeta, findDeviceScored, LAYER_LABELS, rankOf } from './catalog'
 import { mecanismeHa, planDeDonneesEffectif, proposerMecanisme } from './haTech'
 import { suggestLinkKind } from './linkRules'
 import { prepareSpeech } from './speech'
@@ -146,6 +146,18 @@ function nommer(base: string, combien: number, pris: Set<string>): string[] {
   return noms
 }
 
+/**
+ * Nom proposé pour un équipement ajouté seul, selon la convention du schéma.
+ *
+ * Sert à l'ajout à la voix : un équipement qu'on vient de créer en parlant, il faut pouvoir
+ * le désigner en parlant. « FW-02 » se dit et se retrouve ; « Pare-feu 2 » se confond avec
+ * le type lui-même.
+ */
+export function nomPropose(kind: string, diagram: Pick<Diagram, 'nodes'>): string {
+  const pris = new Set(diagram.nodes.map((node) => node.name.trim().toLowerCase()))
+  return nommer(prefixeDe(kind), 1, pris)[0]
+}
+
 // ─── Analyse de la demande ───────────────────────────────────────────────────
 
 interface Groupe {
@@ -222,56 +234,16 @@ function normaliser(valeur: string): string {
     .toLowerCase()
 }
 
-/** Pluriels retirés mot à mot : « switches d'accès » doit rencontrer « Switch accès ». */
-function sansPluriel(valeur: string): string {
-  return valeur.replace(/(\w{3,}?)(?:es|s|x)\b/g, '$1')
-}
-
-/** Mots significatifs d'un libellé ou d'une demande. */
-function mots(valeur: string): string[] {
-  return sansPluriel(normaliser(valeur))
-    .split(/[^a-z0-9]+/)
-    .filter((mot) => mot.length > 1)
-}
-
 /**
- * Qualité du rapprochement entre une demande et un type du catalogue.
+ * Type du catalogue que désigne la demande, ou rien.
  *
- * On compte les mots communs plutôt que d'accepter le premier candidat venu : « switches
- * d'accès » partage ses deux mots avec « Switch accès » et un seul avec « Switch
- * distribution », alors que les deux contiennent « switch ». Les mots du libellé restés sans
- * correspondance pèsent en sens inverse, sans quoi un type au nom long gagnerait toujours.
+ * C'est le reconnaisseur de la commande vocale : une seule définition de « ce mot désigne ce
+ * type » pour toute l'application. L'assistant avait la sienne, plus permissive — « caméra »
+ * y devenait une autorité de certification, dont le synonyme « ca » en est le début.
  */
-function scoreType(
-  device: { label: string; id: string; aliases?: string[] },
-  demande: string[],
-): number {
-  if (demande.length === 0) return 0
-  let meilleur = 0
-  for (const brut of [device.label, device.id, ...(device.aliases ?? [])]) {
-    const cible = mots(brut)
-    if (cible.length === 0) continue
-    const communs = cible.filter((mot) =>
-      demande.some((attendu) => attendu === mot || attendu.startsWith(mot) || mot.startsWith(attendu)),
-    ).length
-    if (communs === 0) continue
-    const score = communs * 10 - (cible.length - communs) * 3 - (demande.length - communs)
-    meilleur = Math.max(meilleur, score)
-  }
-  return meilleur
-}
-
-/** Type du catalogue qui correspond le mieux à la demande, ou rien. */
 function chercherType(requete: string): string | undefined {
-  const demande = mots(requete)
-  if (demande.length === 0) return undefined
-  let gagnant: { id: string; score: number } | undefined
-  for (const device of allDevices()) {
-    if (device.unknown) continue
-    const score = scoreType(device, demande)
-    if (score > 0 && (!gagnant || score > gagnant.score)) gagnant = { id: device.id, score }
-  }
-  return gagnant?.id
+  const trouve = findDeviceScored(requete)
+  return trouve && trouve.score >= 0.8 ? trouve.device.id : undefined
 }
 
 /**

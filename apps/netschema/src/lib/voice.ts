@@ -1,19 +1,24 @@
 import { findDevice, findDeviceScored, type DeviceMeta } from './catalog'
 import { COULEURS_GRAPPE } from './couleurs'
 import { prepareSpeech } from './speech'
-import type {
-  AppView,
-  AssetStatus,
-  DetailLevel,
-  HaRole,
-  LayoutDirection,
-  LinkKind,
-  LinkShape,
-  LinkStyle,
-  OsiView,
-  ViewMode,
-  ZOrder,
-} from '../types'
+import {
+  cleanName,
+  LINK_WORDS,
+  normalizeSpeech,
+  rawValue,
+  type LinkPatch,
+  type NodeField,
+  type Rule,
+  type ToggleKey,
+  type VoiceIntent,
+} from './voiceBase'
+import { nettoyerPhrase, resoudrePronoms } from './voiceGrammar'
+import { detecterConstruction, formaterNomEpele, REGLES_PARLEES } from './voiceParle'
+import type { AssetStatus, HaRole, LinkShape, OsiView, ViewMode, ZOrder } from '../types'
+
+// Les intentions et les outils partagés vivent dans le socle ; on les réexporte pour que
+// rien de ce qui importait `voice` n'ait à changer.
+export * from './voiceBase'
 
 /**
  * Commandes vocales.
@@ -21,164 +26,6 @@ import type {
  * L'interprétation est volontairement séparée de la reconnaissance : `interpret()` est une
  * fonction pure qui transforme une phrase en intention. Elle sert aussi bien à la dictée
  * qu'au champ de saisie du panneau — et c'est ce qui la rend testable sans microphone.
- */
-/** Champs d'équipement modifiables à la voix. */
-export type NodeField =
-  | 'ip'
-  | 'vlan'
-  | 'zone'
-  | 'site'
-  | 'cluster'
-  | 'owner'
-  | 'serial'
-  | 'model'
-  | 'vip'
-  | 'notes'
-  | 'rackUnit'
-  | 'heightU'
-  | 'powerW'
-
-export type VoiceIntent =
-  // Édition
-  | {
-      type: 'add'
-      kind: string
-      label: string
-      /** Nom dicté : « ajoute un switch cœur SW-CORE-03 ». */
-      name?: string
-      /** Attributs dictés dans la même phrase (IP, zone, site, grappe, VLAN…). */
-      props?: Partial<Record<NodeField, string>>
-      /** Baie d'implantation dictée. */
-      rack?: string
-      /** Équipement auquel raccorder le nouvel arrivant. */
-      connectTo?: string
-    }
-  | { type: 'setKind'; target: string; kind: string; label: string }
-  | { type: 'move'; target: string; direction: 'left' | 'right' | 'up' | 'down'; amount: number }
-  | { type: 'linkEdit'; from: string; to: string; patch: LinkPatch }
-  | { type: 'linkDelete'; from: string; to: string }
-  | { type: 'selectKind'; kind: string; label: string }
-  | { type: 'link'; from: string; to: string; linkKind?: LinkKind }
-  | { type: 'rename'; target: string; name: string }
-  | { type: 'setField'; target: string; field: NodeField; value: string }
-  | { type: 'setRole'; target: string; role: HaRole }
-  | { type: 'setStatus'; target: string; status: AssetStatus }
-  | { type: 'setPinned'; target?: string; pinned: boolean }
-  | { type: 'zorder'; target?: string; where: ZOrder }
-  | { type: 'linkAttach'; target?: string; reset: true }
-  | { type: 'lock'; what: 'diagram' | 'labels'; locked: boolean }
-  | {
-      type: 'impact'
-      action: 'fail' | 'unplug' | 'reset' | 'open'
-      target?: string
-      to?: string
-    }
-  | {
-      type: 'groupRename'
-      what: 'site' | 'zone' | 'cluster' | 'layer'
-      from: string
-      to: string
-    }
-  | {
-      type: 'page'
-      action: 'add' | 'select' | 'next' | 'previous' | 'rename' | 'remove' | 'duplicate'
-      /** Nom de la page visée, ou nouveau nom pour un renommage. */
-      name?: string
-      /** Numéro de page, à partir de 1. */
-      number?: number
-    }
-  | { type: 'duplicate'; target?: string; copies?: number }
-  | { type: 'duplicateSeries' }
-  | { type: 'clipboard'; action: 'copy' | 'cut' | 'paste' }
-  | { type: 'delete'; target?: string }
-  | { type: 'selectAll' }
-  | { type: 'clearSelection' }
-  | { type: 'connect' }
-  | { type: 'pattern'; query: string }
-  // Navigation et lecture
-  | { type: 'focus'; name: string }
-  | { type: 'layout' }
-  | { type: 'fit' }
-  | { type: 'zoom'; direction: 'in' | 'out' }
-  | { type: 'undo' }
-  | { type: 'redo' }
-  | { type: 'osi'; layer: OsiView }
-  | { type: 'detail'; level: DetailLevel }
-  | { type: 'view'; view: AppView }
-  | { type: 'assistant' }
-  | { type: 'viewMode'; mode: ViewMode }
-  | { type: 'vueLogique'; vue: 'routage' | 'rails' | 'domaines' }
-  | { type: 'vlanFocus'; id: string | null }
-  | { type: 'collapse'; label?: string }
-  | { type: 'expand' }
-  | { type: 'direction'; direction: LayoutDirection }
-  | { type: 'linkStyle'; style: LinkStyle }
-  | { type: 'route'; shape: LinkShape }
-  | { type: 'toggle'; key: ToggleKey; value: boolean }
-  // Déductions : l'application sait lire le schéma pour en tirer ce qu'on y a mis sans le
-  // dire. Deux commandes, un travail d'une demi-heure à la main.
-  | { type: 'deduireHa' }
-  | { type: 'deduireVlans' }
-  // Mise en page d'une sélection
-  | { type: 'align'; mode: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom' }
-  | { type: 'distribute'; axis: 'x' | 'y' }
-  // Grappes, agrégats, baies, plan d'adressage
-  | { type: 'clusterColor'; cluster: string; couleur: string; libelle: string }
-  | { type: 'vlanRemove'; id: string }
-  | { type: 'rackAdd'; name: string; units?: number }
-  | { type: 'rackRemove'; name: string }
-  | { type: 'lagRename'; nom: string }
-  | { type: 'lagHidden'; hidden: boolean }
-  | { type: 'strictOsi'; strict: boolean }
-  | { type: 'titleBlock'; champ: 'reference' | 'indice' | 'auteur' | 'organisation' | 'diffusion'; valeur: string }
-  | { type: 'annotate'; kind: 'note' | 'zone' | 'arrow'; text?: string }
-  // Projet
-  | { type: 'export'; format: 'svg' | 'png' }
-  | { type: 'project'; action: 'new' | 'sample' | 'save' }
-  | { type: 'title'; title: string }
-  | { type: 'import' }
-  // Inventaire et baies
-  | { type: 'rackAssign'; target: string; rack: string }
-  | { type: 'rackDetach'; target: string }
-  | { type: 'vlanAdd'; id: string; name?: string; subnet?: string }
-  // Questions
-  | { type: 'query'; question: QueryKind; argument?: string }
-  | { type: 'help' }
-
-/** Modifications applicables à une liaison désignée à la voix. */
-export interface LinkPatch {
-  kind?: LinkKind
-  speed?: string
-  label?: string
-  redundant?: boolean
-  vlans?: string
-  subnet?: string
-  mode?: 'access' | 'trunk'
-}
-
-export type ToggleKey =
-  | 'showGrid'
-  | 'showZones'
-  | 'showSites'
-  | 'showClusters'
-  | 'showIp'
-  | 'showVlans'
-  | 'showSpeeds'
-  | 'showLayerLabels'
-  | 'showAudit'
-  | 'showHops'
-  | 'spreadLinks'
-  | 'snap'
-  | 'showLegend'
-  | 'showLags'
-
-export type QueryKind = 'count' | 'countKind' | 'ha' | 'spof' | 'power' | 'freeUnits' | 'vlans' | 'racks'
-
-/**
- * Normalisation d'une phrase dictée : sans accents, en minuscules, ponctuation de phrase
- * retirée. Les points entre chiffres sont conservés — sans quoi « 10.0.0.9 » deviendrait
- * « 10 0 0 9 ». Chaque remplacement garde la longueur du texte, ce qui permet de retrouver
- * la casse d'origine par simple index.
  */
 /**
  * Une couleur de grappe désignée par son nom courant.
@@ -199,18 +46,6 @@ function couleurParNom(nom: string): { id: string; label: string } | undefined {
     const label = normalizeSpeech(couleur.label.replace(/\s*\(defaut\)/i, '').replace(/\s*\(défaut\)/i, ''))
     return label === cherche
   })
-}
-
-export function normalizeSpeech(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[?!,;]/g, ' ')
-    .replace(/\.(?!\d)/g, ' ')
-    .replace(/[’']/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim()
 }
 
 /** Retire les tournures de politesse et les mots outils en tête de phrase. */
@@ -258,31 +93,6 @@ const STATUS_WORDS: Record<string, AssetStatus> = {
   sorti: 'retire',
 }
 
-const LINK_WORDS: Record<string, LinkKind> = {
-  cuivre: 'ethernet',
-  ethernet: 'ethernet',
-  fibre: 'fiber',
-  optique: 'fiber',
-  trunk: 'trunk',
-  lacp: 'trunk',
-  agregat: 'trunk',
-  stack: 'stack',
-  mlag: 'stack',
-  wan: 'wan',
-  mpls: 'wan',
-  vpn: 'vpn',
-  tunnel: 'vpn',
-  wifi: 'wireless',
-  'sans fil': 'wireless',
-  overlay: 'overlay',
-  vxlan: 'overlay',
-  heartbeat: 'heartbeat',
-  'battement de coeur': 'heartbeat',
-  replication: 'replication',
-  electrique: 'power',
-  alimentation: 'power',
-}
-
 const TOGGLE_WORDS: { pattern: RegExp; key: ToggleKey }[] = [
   { pattern: /grille/, key: 'showGrid' },
   { pattern: /zones?/, key: 'showZones' },
@@ -307,22 +117,26 @@ const TOGGLE_WORDS: { pattern: RegExp; key: ToggleKey }[] = [
   { pattern: /agregats?|port[- ]?channels?|lacp|faisceaux?|bundles?/, key: 'showLags' },
 ]
 
-/** Nettoie un nom dicté : « le switch cœur un » reste tel quel, la ponctuation part. */
-function cleanName(value: string): string {
-  return value
-    .replace(/^(le|la|les|l'|du|de la|des|un|une)\s+/i, '')
-    .replace(/\s+(s'?il te plait|merci)$/i, '')
-    .trim()
-}
-
-type Rule = (text: string, raw: string) => VoiceIntent | null | undefined
-
 /**
  * Mots-clés qui introduisent un complément dans une phrase de création :
  * « ajoute un switch cœur SW-CORE-03 dans la zone Datacenter avec l'IP 10.10.0.13 ».
  */
 const CLAUSE_KEYWORDS =
-  "appelee?|appele|nommee?|nomme|de nom|avec l'ip|avec ip|adresse ip|dans la zone|en zone|zone|sur le site|site|dans la grappe|grappe|cluster|en vlan|vlan|dans la baie|reliee? a|reliee? au|relie a|relie au|raccordee? a|raccorde a|connectee? a|connecte a|rattachee? a|rattache a|en u|hauteur|puissance"
+  "appelee?|appele|nommee?|nomme|de nom|avec l'ip|avec ip|adresse ip|dans la zone|en zone|zone|sur le site|site|dans la grappe|grappe|cluster|en vlan|vlan|dans la baie|reliee? a|reliee? au|relie a|relie au|raccordee? a|raccorde a|connectee? a|connecte a|rattachee? a|rattache a|en u|hauteur|puissance|en dessous de|au[- ]dessous de|au[- ]dessus de|sous|a droite de|a gauche de|a cote de|pres de"
+
+/** Compléments de position : « sous SW-CORE-01 », « à droite de SW-ACC-02 ». */
+const CLAUSE_POSITION: Record<string, 'below' | 'above' | 'left' | 'right'> = {
+  'en dessous de': 'below',
+  'au dessous de': 'below',
+  'au-dessous de': 'below',
+  sous: 'below',
+  'au dessus de': 'above',
+  'au-dessus de': 'above',
+  'a droite de': 'right',
+  'a cote de': 'right',
+  'pres de': 'right',
+  'a gauche de': 'left',
+}
 
 const CLAUSE_FIELD: Record<string, string> = {
   appele: 'name',
@@ -386,9 +200,14 @@ function splitClauses(text: string, raw: string): Clauses {
   const values: Record<string, string> = {}
   found.forEach((clause, index) => {
     const end = found[index + 1]?.start ?? text.length
+    const value = raw.slice(clause.valueStart, end).trim()
+    const cote = CLAUSE_POSITION[clause.key]
+    if (cote) {
+      if (value && !values.near) values.near = `${cote}:${value}`
+      return
+    }
     const field = CLAUSE_FIELD[clause.key]
     if (!field) return
-    const value = raw.slice(clause.valueStart, end).trim()
     if (value && !values[field]) values[field] = value
   })
 
@@ -400,7 +219,10 @@ function splitClauses(text: string, raw: string): Clauses {
  * Reconnaît un type d'équipement en tête de phrase, et considère le reste comme son nom :
  * « switch cœur SW-CORE-03 » donne le type « Switch cœur » et le nom « SW-CORE-03 ».
  */
-function matchDevice(phrase: string, rawPhrase: string): { kind: string; label: string; name?: string } | null {
+function matchDevice(
+  phrase: string,
+  rawPhrase: string,
+): { kind: string; label: string; name?: string; descriptif?: boolean } | null {
   const words = phrase.split(' ').filter(Boolean)
   const rawWords = rawPhrase.split(' ').filter(Boolean)
   // Chaque découpage possible est noté : 1 pour une trouvaille stricte du catalogue, moins
@@ -415,25 +237,52 @@ function matchDevice(phrase: string, rawPhrase: string): { kind: string; label: 
   if (scored.length === 0) return null
 
   const bestScore = Math.max(...scored.map((entry) => entry.score))
+  // Le découpage le plus long l'emporte quand il désigne un type plus précis (« switch
+  // d'accès » plutôt que « switch »). S'il désigne le même type, le mot en plus n'apporte
+  // rien — dans « serveur srv fic 01 », « srv » est le début du nom — et le plus sûr gagne.
   const chosen = scored
     .filter((entry) => entry.score >= bestScore - 0.15)
-    .reduce((longest, entry) => (entry.words > longest.words ? entry : longest))
-  const name = rawWords.slice(chosen.words).join(' ').trim()
-  return { kind: chosen.device.id, label: chosen.device.label, name: name || undefined }
+    .reduce((garde, entry) => {
+      if (entry.device.id === garde.device.id) return entry.score > garde.score ? entry : garde
+      return entry.words > garde.words ? entry : garde
+    })
+  return { kind: chosen.device.id, label: chosen.device.label, ...nomDicte(rawWords, chosen.words) }
 }
 
 /**
- * Récupère une valeur avec sa casse d'origine.
+ * Le nom, dans ce qui suit le type.
  *
- * Les règles travaillent sur le texte normalisé (sans accents ni majuscules) ; pour tout ce
- * qui sera écrit dans la fiche — un nom, un titre, une adresse — on relit la phrase brute
- * avec le même motif, insensible à la casse. Les mots-clés du motif sont sans accent, ils
- * correspondent donc des deux côtés.
+ * Tout ce qui suit le type n'est pas le nom : dans « serveur de fichiers SRV-FIC-01 », seul
+ * le dernier mot en est un. On le reconnaît à sa forme — un code, avec une capitale ou un
+ * chiffre accolé à des lettres — ou à ce qu'il s'épelle (« s w core zéro un »). Ce qui le
+ * précède qualifie l'équipement et ne va pas dans le nom.
+ *
+ * Sans rien qui ressemble à un nom, c'est la phrase elle-même qui en tient lieu : « serveur
+ * web » s'appelle « Serveur web », pas « web ». Le marqueur `descriptif` le signale, pour
+ * qu'un second « serveur web » soit numéroté plutôt que refusé comme homonyme.
  */
-function rawValue(raw: string, pattern: RegExp, group: number, fallback: string): string {
-  const match = raw.match(pattern)
-  const value = match?.[group]?.trim()
-  return value ? cleanName(value) : fallback
+function nomDicte(rawWords: string[], typeWords: number): { name?: string; descriptif?: boolean } {
+  const reste = rawWords.slice(typeWords)
+  if (reste.length === 0) return {}
+  const estUnCode = (mot: string) =>
+    /^[a-zà-ÿ]$/i.test(mot) || (/[a-zà-ÿ]/i.test(mot) && (/\d/.test(mot) || /[A-ZÀ-Ý]/.test(mot)))
+  for (let debut = 0; debut < reste.length; debut += 1) {
+    const suite = reste.slice(debut).join(' ')
+    if (estUnCode(reste[debut]) || formaterNomEpele(suite) !== suite) return { name: suite }
+  }
+  const entier = rawWords.join(' ')
+  return { name: entier.charAt(0).toUpperCase() + entier.slice(1), descriptif: true }
+}
+
+/**
+ * La phrase est-elle, tout entière, une demande d'aller à une vue ?
+ * « inventaire », « ouvre l'inventaire », « va sur les baies », « reviens au schéma ».
+ */
+function vue(t: string, noms: string): boolean {
+  return new RegExp(
+    `^(?:(?:va|aller|ouvre|ouvrir|affiche|afficher|montre|montrer|passe|passer|bascule|basculer|reviens|revenir|retourne|retourner|retour|vue|onglet)\\s+)?` +
+      `(?:(?:a|au|aux|sur|dans|vers|en)\\s+)?(?:(?:moi)\\s+)?(?:l'|le |la |les |du |de la |des |mon |ma |mes )?(?:vue\\s+)?(?:${noms})$`,
+  ).test(t)
 }
 
 /**
@@ -441,6 +290,10 @@ function rawValue(raw: string, pattern: RegExp, group: number, fallback: string)
  * pour qu'« ajoute FW-01 à la grappe FW-HA » ne soit pas lu comme « ajoute un équipement ».
  */
 const RULES: Rule[] = [
+  // La langue parlée d'abord : ses tournures sont plus précises que celles qui suivent, et
+  // plusieurs d'entre elles tombaient auparavant dans une règle voisine qui faisait autre chose.
+  ...REGLES_PARLEES,
+
   // ── Annotations ────────────────────────────────────────────────────────────
   // Placées avant « ajoute <équipement> » : « ajoute une note » désigne une annotation,
   // pas un type du catalogue.
@@ -538,7 +391,10 @@ const RULES: Rule[] = [
     return match ? { type: 'impact', action: 'unplug', target: cleanName(match[1]), to: cleanName(match[2]) } : null
   },
   (t) =>
-    /^(?:retablis|retablir|remets|reinitialise|arrete la simulation|fin de simulation|tout va bien)$/.test(t)
+    // « rétablis » et « remets » tout seuls rétablissent la dernière action annulée : c'est
+    // ce qu'on veut dire neuf fois sur dix. L'exécution garde le bon sens — si une panne est
+    // simulée et qu'il n'y a rien à rétablir, c'est la simulation qu'elle remet à zéro.
+    /^(?:retablis (?:le reseau|la simulation|tout)|remets (?:le reseau|tout) en (?:marche|service|etat)|reinitialise|reinitialise la simulation|arrete la simulation|fin de simulation|tout va bien)$/.test(t)
       ? { type: 'impact', action: 'reset' }
       : null,
   (t) =>
@@ -863,9 +719,12 @@ const RULES: Rule[] = [
     return match ? { type: 'pattern', query: match[1].trim() } : null
   },
   (t, raw) => {
-    const match = t.match(
-      /^(?:ajoute|ajouter|cree|creer|nouveau|nouvelle|pose|poser|insere|inserer)\s+(?:(?:un|une|le|la|les|des)\s+|l')?(.+)$/,
-    )
+    // « mets », « place », « installe » sont des verbes à tout faire : ils ne créent un
+    // équipement que devant un article indéfini. « Mets SW-01 dans la zone DMZ » n'en crée pas.
+    const match =
+      t.match(
+        /^(?:ajoute|ajouter|rajoute|cree|creer|nouveau|nouvelle|pose|poser|insere|inserer)\s+(?:(?:un|une|le|la|les|des)\s+|l')?(.+)$/,
+      ) ?? t.match(/^(?:mets|place|installe|donne moi|il me faut)\s+(?:un|une)\s+(.+)$/)
     if (!match) return null
     const offset = t.length - match[1].length
     const { head, rawHead, values } = splitClauses(match[1], raw.slice(offset))
@@ -876,14 +735,19 @@ const RULES: Rule[] = [
     for (const field of ['ip', 'zone', 'site', 'cluster', 'vlan', 'rackUnit', 'heightU', 'powerW'] as NodeField[]) {
       if (values[field]) props[field] = values[field]
     }
+    const nom = values.name ?? device.name
+    const [cote, repere] = values.near ? values.near.split(/:(.+)/) : []
     return {
       type: 'add',
       kind: device.kind,
       label: device.label,
-      name: values.name ?? device.name,
+      // Un nom épelé — « s w core zéro un » — retrouve la forme qu'on lui aurait tapée.
+      name: nom ? formaterNomEpele(nom) : undefined,
+      descriptif: !values.name && device.descriptif ? true : undefined,
       props: Object.keys(props).length > 0 ? props : undefined,
       rack: values.rack,
       connectTo: values.connectTo,
+      near: repere ? { target: cleanName(repere), side: cote as 'below' | 'above' | 'left' | 'right' } : undefined,
     }
   },
   // Presse-papiers : ce qui voyage d'une page ou d'un document à l'autre.
@@ -1058,8 +922,9 @@ const RULES: Rule[] = [
     const toggle = TOGGLE_WORDS.find((item) => item.pattern.test(match[2].trim()))
     return toggle ? { type: 'toggle', key: toggle.key, value: show } : null
   },
-  (t) => (/(annule|annuler|retour arriere)/.test(t) ? { type: 'undo' } : null),
-  (t) => (/(retabli|retablir|refaire|refais)/.test(t) ? { type: 'redo' } : null),
+  // Les formes parlées d'« annule » et de « refais » sont traitées en tête, ancrées. Ces deux
+  // règles attrapaient le mot n'importe où dans la phrase : « la commande est annulée »,
+  // dictée dans une note, annulait la dernière action.
   (t) => (/(toutes les couches|toutes couches)/.test(t) ? { type: 'osi', layer: 'all' } : null),
   (t) => {
     const match = t.match(/(?:couche|niveau|vue)\s+(?:osi\s+)?(1|2|3|un|deux|trois|physique|liaison|reseau)/)
@@ -1067,7 +932,8 @@ const RULES: Rule[] = [
   },
   (t) => (/(synthese|vue resumee|resume)/.test(t) ? { type: 'detail', level: 'summary' } : null),
   (t) => (/(sans les postes|masque les postes|cache les postes)/.test(t) ? { type: 'detail', level: 'no-endpoints' } : null),
-  (t) => (/(detail complet|tout le detail|montre tout)/.test(t) ? { type: 'detail', level: 'full' } : null),
+  // « montre tout » cadre le schéma à l'écran ; il ne change plus le niveau de détail.
+  (t) => (/(detail complet|tout le detail|montre tout le detail)/.test(t) ? { type: 'detail', level: 'full' } : null),
   // Modes de visualisation : « mode présentation », « vue technique », « en architecture ».
   (t) => {
     const match = t.match(
@@ -1103,24 +969,31 @@ const RULES: Rule[] = [
     /(assistant|aide a la conception|aide moi a construire|aide moi a dessiner)/.test(t)
       ? { type: 'assistant' }
       : null,
-  (t) => (/(guide|mode d'emploi|manuel|documentation|notice|tutoriel)/.test(t) ? { type: 'view', view: 'guide' } : null),
-  (t) => (/(inventaire|parc)/.test(t) ? { type: 'view', view: 'inventory' } : null),
-  (t) => (/(baies?|racks?|salle serveur|salle machine)/.test(t) ? { type: 'view', view: 'racks' } : null),
-  (t) => (/(decouverte|scan reseau|releve)/.test(t) ? { type: 'view', view: 'discovery' } : null),
+  /*
+    Navigation entre les vues.
+
+    Ces règles cherchaient leur mot n'importe où : toute phrase contenant « baie », « parc »,
+    « plan » ou « dossier » ouvrait une vue. « Note sur SW-CORE-01 : baie B12 » ouvrait les
+    baies. La phrase entière doit maintenant être une demande de navigation — un verbe de
+    déplacement facultatif, puis le nom de la vue, et rien d'autre.
+  */
+  (t) => (vue(t, "guide|mode d'emploi|manuel|documentation|notice|tutoriel") ? { type: 'view', view: 'guide' } : null),
+  (t) => (vue(t, 'inventaire|parc') ? { type: 'view', view: 'inventory' } : null),
+  (t) => (vue(t, 'baies?|racks?|salle serveur|salle machine|salle des machines') ? { type: 'view', view: 'racks' } : null),
+  (t) => (vue(t, 'decouverte|scan reseau|scan du reseau|releve') ? { type: 'view', view: 'discovery' } : null),
+  (t) => (vue(t, 'matrice de flux|matrice des flux|matrice|flux|flux reseau') ? { type: 'view', view: 'flows' } : null),
   (t) =>
-    /(matrice de flux|matrice|les flux|flux reseau)/.test(t) ? { type: 'view', view: 'flows' } : null,
-  (t) =>
-    /(dossier|controle qualite|completude|comparer|comparaison)/.test(t)
+    vue(t, 'dossier|dossier technique|controle qualite|completude|comparaison')
       ? { type: 'view', view: 'dossier' }
       : null,
-  (t) => (/(schema|cartographie|carte|plan)$/.test(t) ? { type: 'view', view: 'diagram' } : null),
+  (t) => (vue(t, 'schema|cartographie|carte|plan|dessin') ? { type: 'view', view: 'diagram' } : null),
   (t) => {
     const match = t.match(/^(?:replie|replier|ferme|fermer)\s+(?:la zone|le site|la grappe|le groupe)?\s*(.*)$/)
     return match ? { type: 'collapse', label: cleanName(match[1]) || undefined } : null
   },
   (t) => (/(deplie|deplier|tout ouvrir|tout deplier|ouvre tout)/.test(t) ? { type: 'expand' } : null),
-  (t) => (/(zoom avant|agrandi|agrandir|rapproche)/.test(t) ? { type: 'zoom', direction: 'in' } : null),
-  (t) => (/(zoom arriere|dezoome|dezoomer|eloigne|recule)/.test(t) ? { type: 'zoom', direction: 'out' } : null),
+  (t) => (/^(?:zoom avant|agrandi[sr]?|rapproche|avance)$/.test(t) ? { type: 'zoom', direction: 'in' } : null),
+  (t) => (/^(?:zoom arriere|dezoomer?|eloigne|recule)$/.test(t) ? { type: 'zoom', direction: 'out' } : null),
 
   // ── Projet ─────────────────────────────────────────────────────────────────
   (t) => (/(export|exporte|exporter|enregistre|telecharge).*(png|image)/.test(t) ? { type: 'export', format: 'png' } : null),
@@ -1152,10 +1025,20 @@ const RULES: Rule[] = [
  * est alors signalée à l'utilisateur plutôt que d'être exécutée au hasard.
  */
 export function interpret(transcript: string): VoiceIntent | null {
+  // La langue parlée d'abord : hésitations, politesse, verbe à l'impératif, mots mal
+  // entendus. Tout ce qui suit travaille sur une phrase propre.
+  const nettoye = nettoyerPhrase(transcript)
+  if (!nettoye) return null
+
+  // Plusieurs équipements d'une phrase : l'assistant de conception s'en charge. Le contrôle
+  // se fait avant la normalisation, qui effacerait les virgules dont il a besoin.
+  const construction = detecterConstruction(nettoye)
+  if (construction) return construction
+
   // Nombres dictés en chiffres, séparateurs parlés en symboles, sigles recollés : le texte
   // préparé sert de référence pour les deux versions (normalisée et d'origine), ce qui
   // garde leur alignement caractère par caractère.
-  const prepared = prepareSpeech(transcript)
+  const prepared = prepareSpeech(resoudrePronoms(nettoye))
   const normalized = normalizeSpeech(prepared)
   const text = stripPrefix(normalized)
   if (!text) return null
@@ -1260,6 +1143,12 @@ const EDITING_INTENTS = new Set<VoiceIntent['type']>([
   'rackRemove',
   'lagRename',
   'titleBlock',
+  // Ce que la voix sait désormais écrire d'autre.
+  'build',
+  'note',
+  'dictation',
+  'annotationRemove',
+  'flow',
   // Les commandes de page ne sont pas gardées ici : un verrou porte sur une page, il ne doit
   // pas empêcher d'en créer une autre ni d'aller la voir. Le magasin refuse de lui seul de
   // renommer ou de supprimer une page verrouillée.
