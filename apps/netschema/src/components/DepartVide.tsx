@@ -7,8 +7,9 @@ import { Btn } from './ui'
  *
  * Un plan vide n'affichait qu'une consigne — « glissez un équipement depuis la palette » —
  * et laissait poser les vingt premières boîtes une à une. Il propose maintenant ce qui va
- * plus vite : partir d'une architecture type, la décrire en une phrase, la dicter, ou
- * importer une liste. La palette reste là pour qui préfère dessiner.
+ * plus vite : partir d'une architecture type, reprendre des équipements déjà enregistrés
+ * dans l'inventaire, décrire le réseau en une phrase, le dicter, ou importer une liste. La
+ * palette reste là pour qui préfère dessiner.
  *
  * Le fond laisse passer la souris : on peut toujours glisser un équipement sur le plan,
  * y compris au-dessus de ce panneau.
@@ -59,6 +60,9 @@ export function DepartVide() {
         <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
           <Btn variant="primary" onClick={() => store().setAssistantOpen(true)} title="Décrire l’architecture en français (Ctrl+J)">
             Décrire mon réseau…
+          </Btn>
+          <Btn onClick={() => store().ouvrirReprise()} title="Poser sur cette page des équipements déjà enregistrés, avec leurs fiches et leurs liaisons">
+            Reprendre de l’inventaire…
           </Btn>
           <Btn onClick={() => store().basculerEcoute()} title="Dicter le schéma à la voix (F2)">
             Dicter

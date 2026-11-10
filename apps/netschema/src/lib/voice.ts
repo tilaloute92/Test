@@ -1213,6 +1213,8 @@ const EDITING_INTENTS = new Set<VoiceIntent['type']>([
   'flowRemove',
   'annotationEdit',
   'rackEdit',
+  // La reprise écrit sur la page ouverte ; créer une page de la sélection n'y touche pas.
+  'reprise',
   // Les commandes de page ne sont pas gardées ici : un verrou porte sur une page, il ne doit
   // pas empêcher d'en créer une autre ni d'aller la voir. Le magasin refuse de lui seul de
   // renommer ou de supprimer une page verrouillée.
@@ -1232,6 +1234,16 @@ export const VOICE_EXAMPLE_GROUPS: { title: string; examples: string[] }[] = [
       'Ajoute trois switchs d’accès sans les relier',
       'Ajoute une paire de pare-feu',
       'Ouvre l’assistant de conception',
+    ],
+  },
+  {
+    title: 'Repartir de l’inventaire',
+    examples: [
+      'Reprends de l’inventaire',
+      'Reprends SW-CORE-01 et FW-01',
+      'Reprends tous les switchs d’accès',
+      'Reprends les équipements du site Lyon',
+      'Crée une page Agence avec la sélection',
     ],
   },
   {

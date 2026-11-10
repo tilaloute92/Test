@@ -88,6 +88,8 @@ const VERBES: [RegExp, string][] = [
   [/^enregistr(?:e|es|é|er|ez)$/i, 'enregistre'],
   [/^intitul(?:e|es|é|er|ez)$/i, 'intitule'],
   [/^dict(?:e|es|é|er|ez)$/i, 'dicte'],
+  [/^repren(?:ds|d|dre|ez)$/i, 'reprends'],
+  [/^r[ée]cup[èeé]r(?:e|es|er|ez)$/i, 'récupère'],
 ]
 
 /** Impératif d'un mot s'il s'agit d'un verbe de commande, sinon rien. */
@@ -211,7 +213,7 @@ export function resoudrePronoms(phrase: string): string {
  * qu'avec un pronom accroché — « et passe-le en fibre » —, ce qui lève le doute.
  */
 const VERBES_FRANCS =
-  'ajout(?:e|es|er|ez)|cr[ée](?:e|er)|mets|mettre|ins[èe]re|ins[ée]rer|reli(?:e|es|er|ez|s|t)|connect(?:e|es|er|ez)|branch(?:e|er)|raccord(?:e|er)|c[âa]bl(?:e|er)|supprim(?:e|es|er|ez)|enl[èe]ve|enlever|retir(?:e|er)|effac(?:e|er)|renomm(?:e|er)|appell(?:e)|appeler|s[ée]lectionn(?:e|er)|d[ée]s[ée]lectionn(?:e|er)|d[ée]plac(?:e|er)|d[ée]cal(?:e|er)|dupliqu(?:e|er)|annul(?:e|er)|affich(?:e|er)|masqu(?:e|er)|montr(?:e|er)|zoom(?:e|er)|d[ée]zoom(?:e|er)|agr[èe]g(?:e|er)|autoris(?:e|er)|refus(?:e|er)|construi(?:s|re)|transform(?:e|er)|verrouill(?:e|er)|d[ée]verrouill(?:e|er)|align(?:e|er)|export(?:e|er)|enregistr(?:e|er)|intitul(?:e|er)'
+  'ajout(?:e|es|er|ez)|cr[ée](?:e|er)|mets|mettre|ins[èe]re|ins[ée]rer|reli(?:e|es|er|ez|s|t)|connect(?:e|es|er|ez)|branch(?:e|er)|raccord(?:e|er)|c[âa]bl(?:e|er)|supprim(?:e|es|er|ez)|enl[èe]ve|enlever|retir(?:e|er)|effac(?:e|er)|renomm(?:e|er)|appell(?:e)|appeler|s[ée]lectionn(?:e|er)|d[ée]s[ée]lectionn(?:e|er)|d[ée]plac(?:e|er)|d[ée]cal(?:e|er)|dupliqu(?:e|er)|annul(?:e|er)|affich(?:e|er)|masqu(?:e|er)|montr(?:e|er)|zoom(?:e|er)|d[ée]zoom(?:e|er)|agr[èe]g(?:e|er)|autoris(?:e|er)|refus(?:e|er)|construi(?:s|re)|transform(?:e|er)|verrouill(?:e|er)|d[ée]verrouill(?:e|er)|align(?:e|er)|export(?:e|er)|enregistr(?:e|er)|intitul(?:e|er)|repren(?:ds|dre)|r[ée]cup[èe]r(?:e|er)'
 
 /** Tout verbe de commande, dès lors qu'un pronom y est accroché. */
 const VERBE_A_PRONOM = '[a-zà-ÿ]+-(?:le|la|les|lui)'

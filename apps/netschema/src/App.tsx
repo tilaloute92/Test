@@ -7,6 +7,7 @@ import { AssistantPanel } from './components/AssistantPanel'
 import { DuplicateDialog } from './components/DuplicateDialog'
 import { pointeurCourant } from './lib/pointeur'
 import { QuickImportDialog } from './components/QuickImportDialog'
+import { RepriseDialog } from './components/RepriseDialog'
 import { Inspector } from './components/Inspector'
 import { PageTabs } from './components/PageTabs'
 import { Palette } from './components/Palette'
@@ -233,6 +234,7 @@ export default function App() {
       if (event.key === 'Escape') {
         store.setCommandOpen(false)
         store.setImportOpen(false)
+        store.fermerReprise()
         store.setAssistantOpen(false)
         store.setDuplicateOpen(false)
         store.setMode('select')
@@ -271,6 +273,7 @@ export default function App() {
       <UsersDialog />
       <CommandPalette svgRef={svgRef} />
       <QuickImportDialog />
+      <RepriseDialog />
       <AssistantPanel />
       <DuplicateDialog />
       <VoicePanel />

@@ -126,6 +126,13 @@ export type VoiceIntent =
   | { type: 'vlanPropagation'; on: boolean }
   /** Déplacer la page ouverte d'un rang parmi les onglets. */
   | { type: 'pageMove'; direction: -1 | 1 }
+  /**
+   * Reprendre sur la page des équipements enregistrés sur les autres pages du document.
+   * Sans cible, le dialogue de choix s'ouvre.
+   */
+  | { type: 'reprise'; cible?: string }
+  /** Une page neuve faite des équipements sélectionnés, avec les liaisons tracées entre eux. */
+  | { type: 'pageDepuisSelection'; name?: string }
   /** Renommer une baie ou changer sa hauteur utile. */
   | { type: 'rackEdit'; rack: string; name?: string; units?: number }
   | { type: 'duplicateSeries' }

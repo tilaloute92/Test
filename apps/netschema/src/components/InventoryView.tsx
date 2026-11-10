@@ -242,6 +242,19 @@ export function InventoryView() {
           <span className="text-[12px] text-slate-500">
             {rows.length} ligne(s){totalPower > 0 ? ` · ${totalPower} W` : ''}
           </span>
+          <Btn
+            variant="primary"
+            onClick={() => useDiagram.getState().ouvrirReprise(selectionVisible.map((node) => node.name))}
+            title={
+              selectionVisible.length > 0
+                ? 'Poser les équipements sélectionnés sur une nouvelle page, avec leurs fiches et les liaisons tracées entre eux'
+                : 'Choisir des équipements de l’inventaire et les poser sur une nouvelle page'
+            }
+          >
+            {selectionVisible.length > 0
+              ? `Créer un schéma avec la sélection (${selectionVisible.length})`
+              : 'Créer un schéma depuis l’inventaire…'}
+          </Btn>
           <Btn onClick={exportCsv}>Exporter CSV</Btn>
           <Btn onClick={() => fileRef.current?.click()}>Importer CSV</Btn>
           <input

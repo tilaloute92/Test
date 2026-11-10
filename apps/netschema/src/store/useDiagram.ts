@@ -22,6 +22,7 @@ import { auditDiagram } from '../lib/ha'
 import { analyseImpact } from '../lib/impact'
 import { constructeurDe, proposerMecanisme } from '../lib/haTech'
 import { ARCHITECTURES } from '../lib/architectures'
+import { cleNom, inventaireDuDocument, preparerReprise, sansTrace } from '../lib/reprise'
 import { analyserDescription, nomPropose, type OperationPlan } from '../lib/assistant'
 import { cheminsEntre } from '../lib/paths'
 import {
@@ -473,6 +474,23 @@ interface DiagramStore {
   setPanelOpen: (panneau: Panneau, ouvert: boolean) => void
   setCommandOpen: (open: boolean) => void
   setImportOpen: (open: boolean) => void
+  /** Dialogue « reprendre de l'inventaire ». */
+  repriseOuverte: boolean
+  /** Équipements cochés d'avance à l'ouverture : ceux qu'on avait sélectionnés dans l'inventaire. */
+  repriseChoix: string[]
+  ouvrirReprise: (choix?: string[]) => void
+  fermerReprise: () => void
+  /**
+   * Reprend sur une page des équipements déjà enregistrés ailleurs : leurs fiches, les
+   * liaisons tracées entre eux, leurs baies, les VLAN qu'ils citent. Sur la page ouverte, ou
+   * sur une page neuve si `nouvellePage` est donné (une chaîne vide laisse l'application la
+   * nommer). Un équipement déjà sur la page n'est pas repris une seconde fois.
+   */
+  reprendreEquipements: (
+    sources: Diagram[],
+    noms: string[],
+    options?: { liaisons?: boolean; nouvellePage?: string; disposition?: 'origine' | 'auto' },
+  ) => { equipements: number; liaisons: number; dejaLa: string[]; introuvables: string[] }
   setVoiceOpen: (open: boolean) => void
   runVoiceCommand: (transcript: string) => { ok: boolean; message: string }
   /** Exécute une intention déjà comprise. `runVoiceCommand` orchestre, celle-ci agit. */
@@ -1798,6 +1816,64 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
 
   setCommandOpen: (commandOpen) => set({ commandOpen }),
   setImportOpen: (importOpen) => set({ importOpen }),
+
+  repriseOuverte: false,
+  repriseChoix: [],
+  ouvrirReprise: (choix = []) => set({ repriseOuverte: true, repriseChoix: choix }),
+  fermerReprise: () => set({ repriseOuverte: false, repriseChoix: [] }),
+
+  reprendreEquipements: (sources, noms, options = {}) => {
+    const rien = { equipements: 0, liaisons: 0, dejaLa: [] as string[], introuvables: [] as string[] }
+    // On prépare d'abord, sur la page telle qu'elle sera : une page neuve ne se crée que
+    // s'il y a quelque chose à y mettre.
+    const surPageNeuve = options.nouvellePage !== undefined
+    if (!surPageNeuve && lockedStore()) return rien
+    const cible = surPageNeuve ? emptyDiagram() : get().diagram
+    const reprise = preparerReprise(sources, noms, cible, { liaisons: options.liaisons !== false })
+    const bilan = { equipements: reprise.nodes.length, liaisons: reprise.links.length, dejaLa: reprise.dejaLa, introuvables: reprise.introuvables }
+    if (reprise.nodes.length === 0) return bilan
+
+    if (surPageNeuve) get().addPage(options.nouvellePage || undefined)
+    else get().pushHistory()
+
+    const page = get().diagram
+    const partiDeRien = page.nodes.length === 0
+    /*
+      La disposition d'origine n'a de sens que sur une page vide, quand une même page portait
+      tous les équipements. Dans une page déjà dessinée, chacun rejoint la rangée de ses
+      pairs ; et sur une page vide sans disposition à reprendre, le placement automatique
+      range l'ensemble.
+    */
+    const commeALOrigine = partiDeRien && reprise.dispositionOrigine && options.disposition !== 'auto'
+    let nodes = reprise.nodes
+    let links = reprise.links
+    if (!commeALOrigine) {
+      const placer = placeurParCouches(page.nodes, get().layout.direction, nodes.map((node) => rankOf(node.kind, node.rank ?? null)))
+      nodes = nodes.map((node) => ({ ...node, ...placer(rankOf(node.kind, node.rank ?? null)) }))
+      links = links.map(sansTrace)
+    }
+    set((state) => {
+      const diagram: Diagram = {
+        ...state.diagram,
+        nodes: [...state.diagram.nodes, ...nodes],
+        links: [...state.diagram.links, ...links],
+        racks: reprise.racks.length > 0 ? [...(state.diagram.racks ?? []), ...reprise.racks] : state.diagram.racks,
+        vlans: reprise.vlans.length > 0 ? [...(state.diagram.vlans ?? []), ...reprise.vlans] : state.diagram.vlans,
+        clusterColors:
+          Object.keys(reprise.clusterColors).length > 0
+            ? { ...(state.diagram.clusterColors ?? {}), ...reprise.clusterColors }
+            : state.diagram.clusterColors,
+      }
+      return {
+        diagram: partiDeRien && !commeALOrigine ? autoLayoutOf(diagram, state.layout) : diagram,
+        selectedNodes: nodes.map((node) => node.id),
+        selectedLinks: [],
+        appView: 'diagram' as const,
+      }
+    })
+    get().fitView()
+    return bilan
+  },
   setVoiceOpen: (voiceOpen) => set({ voiceOpen }),
 
   /**
@@ -2014,11 +2090,11 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
         .toLowerCase()
         .trim()
     /** Retrouve un équipement par son nom, tel que la dictée le rend. */
-    const trouverParNom = (name: string): NetNode | undefined => {
+    const trouverParNom = (name: string, parmi?: NetNode[]): NetNode | undefined => {
       const needle = plain(name)
       if (!needle) return undefined
       const squeezed = needle.replace(/[\s-]/g, '')
-      const nodes = get().diagram.nodes
+      const nodes = parmi ?? get().diagram.nodes
       return (
         nodes.find((node) => plain(node.name) === needle) ??
         nodes.find((node) => plain(node.name).replace(/[\s-]/g, '') === squeezed) ??
@@ -2039,12 +2115,14 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
      * liste, puis le type. Quand le type désigne plusieurs équipements et que la phrase n'en
      * voulait qu'un, on ne choisit pas : on nomme les candidats.
      */
-    const designer = (cible: string): { noeuds: NetNode[]; erreur?: string } => {
-      const nodes = get().diagram.nodes
+    const designer = (cible: string, parmi?: NetNode[]): { noeuds: NetNode[]; erreur?: string } => {
+      // `parmi` : désigner ailleurs que sur la page — dans l'inventaire du document. Les
+      // pronoms et la sélection n'y ont pas cours : ils parlent de ce qui est sur la page.
+      const nodes = parmi ?? get().diagram.nodes
       const needle = plain(cible)
       if (!needle) return { noeuds: [], erreur: 'Aucun équipement désigné.' }
 
-      if (needle === REPERE_PRONOM || /^(?:lui|eux|elles|celui ci|ceux ci)$/.test(needle)) {
+      if (!parmi && (needle === REPERE_PRONOM || /^(?:lui|eux|elles|celui ci|ceux ci)$/.test(needle))) {
         const contexte = nodes.filter((node) => voix.noeuds.includes(node.id))
         if (contexte.length > 0) return { noeuds: contexte }
         const selection = nodes.filter((node) => get().selectedNodes.includes(node.id))
@@ -2054,13 +2132,13 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
           erreur: 'Je ne sais pas de quel équipement vous parlez : nommez-le, ou faites d’abord une sélection.',
         }
       }
-      if (/^(?:la selection|selection|ca|cela|celles ci)$/.test(needle)) {
+      if (!parmi && /^(?:la selection|selection|ca|cela|celles ci)$/.test(needle)) {
         const selection = nodes.filter((node) => get().selectedNodes.includes(node.id))
         return selection.length > 0 ? { noeuds: selection } : { noeuds: [], erreur: 'Rien n’est sélectionné.' }
       }
 
       const sansArticle = cible.trim().replace(/^(?:le|la|les|l'|l’|au|aux|du|des|de la|un|une)\s+/i, '')
-      const direct = trouverParNom(cible) ?? trouverParNom(sansArticle)
+      const direct = trouverParNom(cible, parmi) ?? trouverParNom(sansArticle, parmi)
       if (direct) return { noeuds: [direct] }
 
       // « A et B », « A, B et C ».
@@ -2071,7 +2149,7 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       if (morceaux.length > 1) {
         const tous: NetNode[] = []
         for (const morceau of morceaux) {
-          const partie = designer(morceau)
+          const partie = designer(morceau, parmi)
           if (partie.erreur) return { noeuds: [], erreur: partie.erreur }
           for (const node of partie.noeuds) if (!tous.includes(node)) tous.push(node)
         }
@@ -2087,7 +2165,9 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
       if (trouve && trouve.score >= 0.8) {
         const candidats = nodes.filter((node) => node.kind === trouve.device.id)
         const libelle = trouve.device.label.toLowerCase()
-        if (candidats.length === 0) return { noeuds: [], erreur: `Aucun ${libelle} dans le schéma.` }
+        if (candidats.length === 0) {
+          return { noeuds: [], erreur: parmi ? `Aucun ${libelle} à reprendre dans l’inventaire.` : `Aucun ${libelle} dans le schéma.` }
+        }
         const pluriel = Boolean(parType?.[1] || parType?.[2] || parType?.[3])
         if (pluriel || candidats.length === 1) return { noeuds: candidats }
         return {
@@ -3401,6 +3481,92 @@ export const useDiagram = create<DiagramStore>((set, get) => ({
           message: `Flux ${flux.service ? `${flux.service} ` : ''}${flux.from} → ${flux.to} ${
             intent.decision === 'refuse' ? 'refusé' : 'autorisé'
           }, inscrit dans la matrice.`,
+        }
+      }
+
+      case 'reprise': {
+        if (!intent.cible) {
+          get().ouvrirReprise()
+          return { ok: true, message: 'Inventaire ouvert : cochez les équipements à reprendre.' }
+        }
+        // L'inventaire, vu de cette page : ce que portent les autres pages et qu'elle n'a pas.
+        const pages = get().pagesCompletes()
+        const autres = pages.filter((_, index) => index !== get().activePage)
+        const ici = new Set(get().diagram.nodes.map((node) => cleNom(node.name)))
+        const inventaire = inventaireDuDocument(autres)
+        const disponibles = inventaire.filter((item) => !ici.has(item.cle))
+        if (inventaire.length === 0) {
+          return {
+            ok: false,
+            message: 'Rien à reprendre : les autres pages du document sont vides. Depuis l’onglet Inventaire, sélectionnez des équipements puis « Créer un schéma avec la sélection ».',
+          }
+        }
+        if (disponibles.length === 0) return { ok: false, message: 'Tout l’inventaire est déjà sur cette page.' }
+
+        const dit = plain(intent.cible)
+        let choisis: NetNode[] = []
+        const groupe = dit.match(
+          /^(?:tout |tous les equipements |les equipements |l'equipement |ceux )?(?:du |de la |de l'|des |d'|la |le |l')?(site|zone|page|grappe|cluster|baie) (.+)$/,
+        )
+        if (/^(?:tout|tout l'inventaire|l'inventaire|tous les equipements|tout le parc|le parc)$/.test(dit)) {
+          choisis = disponibles.map((item) => item.node)
+        } else if (groupe) {
+          const valeur = groupe[2]
+          const baies = new Map(autres.flatMap((page) => (page.racks ?? []).map((rack) => [rack.id, plain(rack.name)] as const)))
+          choisis = disponibles
+            .filter((item) => {
+              const node = item.node
+              if (groupe[1] === 'site') return plain(node.site ?? '') === valeur
+              if (groupe[1] === 'zone') return plain(node.zone ?? '') === valeur
+              if (groupe[1] === 'page') return item.pages.some((nom) => plain(nom) === valeur)
+              if (groupe[1] === 'baie') return baies.get(node.rack ?? '') === valeur
+              return plain(node.cluster ?? '') === valeur
+            })
+            .map((item) => item.node)
+          if (choisis.length === 0) {
+            return { ok: false, message: `Aucun équipement à reprendre pour « ${groupe[1]} ${groupe[2]} ».` }
+          }
+        } else {
+          const designes = designer(intent.cible, disponibles.map((item) => item.node))
+          if (designes.noeuds.length === 0) {
+            const dejaIci = designer(intent.cible)
+            if (dejaIci.noeuds.length > 0) {
+              return { ok: false, message: `${dejaIci.noeuds.map((node) => node.name).join(', ')} : déjà sur cette page.` }
+            }
+            return { ok: false, message: (designes.erreur ?? '').replace(/introuvable\.$/, 'introuvable dans l’inventaire.') || 'Rien à reprendre.' }
+          }
+          choisis = designes.noeuds
+        }
+
+        const fait = get().reprendreEquipements(autres, choisis.map((node) => node.name))
+        voix.touches = [...get().selectedNodes]
+        const liste =
+          choisis.length <= 6
+            ? choisis.map((node) => node.name).join(', ')
+            : `${choisis.slice(0, 5).map((node) => node.name).join(', ')}… et ${choisis.length - 5} autres`
+        return {
+          ok: true,
+          message: `${fait.equipements} équipement(s) repris de l’inventaire : ${liste}.${
+            fait.liaisons > 0 ? ` ${fait.liaisons} liaison(s) déjà tracée(s) reprise(s).` : ''
+          }`,
+        }
+      }
+
+      case 'pageDepuisSelection': {
+        const selection = get().diagram.nodes.filter((node) => get().selectedNodes.includes(node.id))
+        if (selection.length === 0) {
+          return { ok: false, message: 'Rien n’est sélectionné : sélectionnez d’abord les équipements à emporter.' }
+        }
+        const origine = get().diagram.pageName ?? 'Schéma'
+        const fait = get().reprendreEquipements([get().diagram], selection.map((node) => node.name), {
+          nouvellePage: intent.name ?? '',
+        })
+        voix.touches = [...get().selectedNodes]
+        return {
+          ok: true,
+          message: `Page « ${get().diagram.pageName} » créée avec ${fait.equipements} équipement(s) de « ${origine} »${
+            fait.liaisons > 0 ? ` et ${fait.liaisons} liaison(s)` : ''
+          }.`,
         }
       }
 

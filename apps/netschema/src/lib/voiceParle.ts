@@ -353,6 +353,28 @@ export const REGLES_PARLEES: Rule[] = [
       : null
   },
 
+  // ── Repartir de l'inventaire ───────────────────────────────────────────────
+  (t, raw) => {
+    // « crée une page Agence avec la sélection ».
+    const page = t.match(
+      /^(?:cree|ajoute|fais|ouvre|nouvelle|nouveau)\s+(?:une?\s+)?(?:nouvelle\s+|nouveau\s+)?(?:page|schema|vue)(?:\s+(.+?))?\s+(?:avec|a partir de|depuis|de)\s+(?:la\s+|ma\s+)?selection$/,
+    )
+    if (page) return { type: 'pageDepuisSelection', name: page[1] ? phrase(brut(raw, t, page[1])) : undefined }
+
+    const inventaire = "(?:de|depuis|dans|a partir de)\\s+l'inventaire"
+    // Sans dire quoi : le dialogue de choix.
+    if (
+      new RegExp(`^(?:reprends|recupere|ouvre|choisis|pioche|pars)\\s+(?:${inventaire}|la reprise|des equipements\\s+${inventaire})$`).test(t) ||
+      /^(?:reprise|reprendre de l'inventaire|partir de l'inventaire)$/.test(t)
+    ) {
+      return { type: 'reprise' }
+    }
+    const reprends =
+      t.match(new RegExp(`^(?:reprends|recupere)\\s+(.+?)(?:\\s+${inventaire})?$`)) ??
+      t.match(new RegExp(`^(?:ajoute|rajoute|mets|place|pose|importe)\\s+(.+?)\\s+${inventaire}$`))
+    return reprends ? { type: 'reprise', cible: brut(raw, t, reprends[1]) } : null
+  },
+
   // ── Ordre des pages ────────────────────────────────────────────────────────
   // Avant « déplace X à droite », qui prendrait « la page » pour un équipement.
   (t) => {

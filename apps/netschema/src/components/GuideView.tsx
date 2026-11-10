@@ -129,8 +129,10 @@ export function GuideView() {
             <Step n={1}>
               Partez d'une <b>architecture type</b> : un plan vide en propose sept (petit site,
               campus trois niveaux, salle serveurs spine-leaf…), posées, nommées et raccordées
-              d'un clic. Ou posez les équipements un à un : glissez-les depuis la palette, ou
-              dites-les (« ajoute deux switchs cœur et quatre switchs d'accès »).
+              d'un clic. Si les équipements existent déjà dans l'inventaire, <b>reprenez-les</b>{' '}
+              : ils arrivent avec leurs fiches et leurs liaisons. Ou posez-les un à un : glissez-les
+              depuis la palette, ou dites-les (« ajoute deux switchs cœur et quatre switchs
+              d'accès »).
             </Step>
             <Step n={2}>
               Reliez-les : touche <Keys>L</Keys> puis un clic sur chaque extrémité. Le type de
@@ -2021,9 +2023,54 @@ deux onduleurs`}</pre>
     {
       id: 'inventaire',
       title: 'Inventaire et baies',
-      keywords: 'inventaire baies racks glpi parc garantie numero de serie responsable modele constructeur rack unite u puissance implantation',
+      keywords: 'inventaire baies racks glpi parc garantie numero de serie responsable modele constructeur rack unite u puissance implantation reprendre reprise reutiliser nouveau schema nouvelle page selection deja enregistre',
       body: (
         <>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="pb-1.5 text-[12px] font-semibold text-slate-700">
+              Repartir des équipements déjà enregistrés
+            </p>
+            <P>
+              Un équipement saisi une fois ne se ressaisit pas pour figurer sur un second schéma.
+              Il arrive avec sa <b>fiche</b> (modèle, numéro de série, adresse, garantie…), les{' '}
+              <b>liaisons déjà tracées</b> entre les équipements repris — débit, ports, agrégats
+              compris —, sa <b>baie</b> et les <b>VLAN</b> qu'il cite.
+            </P>
+            <List
+              items={[
+                <>
+                  <b>Depuis l'inventaire</b> : filtrez (site, constructeur, baie…), sélectionnez
+                  les lignes — Maj pour une plage, « Tout sélectionner » pour le filtre entier —
+                  puis <b>Créer un schéma avec la sélection</b>. Une nouvelle page s'ouvre, les
+                  équipements disposés comme sur la page d'origine.
+                </>,
+                <>
+                  <b>Depuis une page vide</b> : <b>Reprendre de l'inventaire…</b> liste tous les
+                  équipements du document, toutes pages confondues, chacun une seule fois avec sa
+                  fiche la mieux renseignée. Le pied du dialogue annonce ce qui suivra avant que
+                  vous ne validiez.
+                </>,
+                <>
+                  <b>Depuis un autre document</b> : le même dialogue lit un autre schéma du
+                  serveur, ou un fichier NetSchema enregistré.
+                </>,
+                <>
+                  <b>Dans un schéma déjà dessiné</b> : chaque équipement repris rejoint la rangée
+                  de ses pairs, rien ne bouge, et ce qui est déjà sur la page n'est pas repris
+                  une seconde fois.
+                </>,
+                <>
+                  À la voix : « reprends SW-CORE-01 et FW-01 », « reprends tous les switchs
+                  d'accès », « reprends les équipements du site Lyon », « crée une page Agence
+                  avec la sélection ».
+                </>,
+                <>
+                  <b>Les exemplaires sont indépendants</b> : modifier l'adresse d'un équipement
+                  sur une page ne la change pas sur les autres.
+                </>,
+              ]}
+            />
+          </div>
           <List
             items={[
               <>
